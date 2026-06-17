@@ -5,26 +5,25 @@ from httpx import AsyncClient
 @pytest.mark.asyncio
 async def test_create_and_list_property(
     client: AsyncClient,
-    landlord_payload: dict[str, str],
+    landlord_register_payload: dict[str, str],
+    property_payload: dict[str, str | int],
 ) -> None:
-    user_response = await client.post("/api/v1/users", json=landlord_payload)
+    user_response = await client.post("/api/v1/auth/register", json=landlord_register_payload)
     landlord_id = user_response.json()["id"]
+    login_response = await client.post(
+        "/api/v1/auth/login",
+        json={
+            "username_or_email": landlord_register_payload["username"],
+            "password": landlord_register_payload["password"],
+        },
+    )
+    token = login_response.json()["access_token"]
 
-    property_payload = {
-        "landlord_id": landlord_id,
-        "title": "Sunny two-bedroom apartment",
-        "description": "Near metro with good natural light.",
-        "address": "88 University Road",
-        "district": "SIP",
-        "price_monthly": "5200.00",
-        "area_sqm": "72.50",
-        "bedrooms": 2,
-        "bathrooms": 1,
-        "property_type": "apartment",
-        "status": "available",
-    }
-
-    create_response = await client.post("/api/v1/properties", json=property_payload)
+    create_response = await client.post(
+        "/api/v1/properties",
+        json={**property_payload, "landlord_id": landlord_id},
+        headers={"Authorization": f"Bearer {token}"},
+    )
     assert create_response.status_code == 201
     created = create_response.json()
     assert created["title"] == property_payload["title"]
@@ -36,7 +35,20 @@ async def test_create_and_list_property(
 
 
 @pytest.mark.asyncio
-async def test_create_property_requires_existing_landlord(client: AsyncClient) -> None:
+async def test_create_property_requires_existing_landlord(
+    client: AsyncClient,
+    landlord_register_payload: dict[str, str],
+) -> None:
+    await client.post("/api/v1/auth/register", json=landlord_register_payload)
+    login_response = await client.post(
+        "/api/v1/auth/login",
+        json={
+            "username_or_email": landlord_register_payload["username"],
+            "password": landlord_register_payload["password"],
+        },
+    )
+    token = login_response.json()["access_token"]
+
     response = await client.post(
         "/api/v1/properties",
         json={
@@ -46,6 +58,20 @@ async def test_create_property_requires_existing_landlord(client: AsyncClient) -
             "district": "Unknown",
             "price_monthly": "1.00",
         },
+        headers={"Authorization": f"Bearer {token}"},
     )
 
     assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_unauthenticated_user_cannot_create_property(
+    client: AsyncClient,
+    property_payload: dict[str, str | int],
+) -> None:
+    response = await client.post(
+        "/api/v1/properties",
+        json={**property_payload, "landlord_id": 1},
+    )
+
+    assert response.status_code == 401

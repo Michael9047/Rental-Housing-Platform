@@ -1,7 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_db_session
+from app.api.deps import get_db_session, require_landlord
+from app.models.user import User
 from app.schemas.property import PropertyCreate, PropertyRead, PropertyUpdate
 from app.services.property_service import PropertyService
 from app.services.user_service import UserService
@@ -13,12 +14,18 @@ router = APIRouter()
 async def create_property(
     property_in: PropertyCreate,
     session: AsyncSession = Depends(get_db_session),
+    current_user: User = Depends(require_landlord),
 ) -> PropertyRead:
     landlord = await UserService(session).get(property_in.landlord_id)
     if not landlord:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="landlord_id does not reference an existing user",
+        )
+    if current_user.role.value != "admin" and property_in.landlord_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Landlords can only create properties for themselves",
         )
     return await PropertyService(session).create(property_in)
 
@@ -55,8 +62,19 @@ async def update_property(
     property_id: int,
     property_in: PropertyUpdate,
     session: AsyncSession = Depends(get_db_session),
+    current_user: User = Depends(require_landlord),
 ) -> PropertyRead:
-    property_obj = await PropertyService(session).update(property_id, property_in)
+    property_service = PropertyService(session)
+    existing_property = await property_service.get(property_id)
+    if not existing_property:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Property not found")
+    if current_user.role.value != "admin" and existing_property.landlord_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Landlords can only update their own properties",
+        )
+
+    property_obj = await property_service.update(property_id, property_in)
     if not property_obj:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Property not found")
     return property_obj
@@ -66,7 +84,18 @@ async def update_property(
 async def delete_property(
     property_id: int,
     session: AsyncSession = Depends(get_db_session),
+    current_user: User = Depends(require_landlord),
 ) -> None:
-    deleted = await PropertyService(session).delete(property_id)
+    property_service = PropertyService(session)
+    existing_property = await property_service.get(property_id)
+    if not existing_property:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Property not found")
+    if current_user.role.value != "admin" and existing_property.landlord_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Landlords can only delete their own properties",
+        )
+
+    deleted = await property_service.delete(property_id)
     if not deleted:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Property not found")

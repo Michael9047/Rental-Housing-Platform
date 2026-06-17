@@ -48,3 +48,29 @@ def landlord_payload() -> dict[str, str]:
         "email": "landlord@example.com",
         "role": "landlord",
     }
+
+
+@pytest.fixture
+def landlord_register_payload() -> dict[str, str]:
+    return {
+        "username": "auth_landlord",
+        "email": "auth_landlord@example.com",
+        "password": "secure-password",
+        "role": "landlord",
+    }
+
+
+@pytest.fixture
+def property_payload() -> dict[str, str | int]:
+    return {
+        "title": "Sunny two-bedroom apartment",
+        "description": "Near metro with good natural light.",
+        "address": "88 University Road",
+        "district": "SIP",
+        "price_monthly": "5200.00",
+        "area_sqm": "72.50",
+        "bedrooms": 2,
+        "bathrooms": 1,
+        "property_type": "apartment",
+        "status": "available",
+    }

@@ -49,12 +49,14 @@ The API docs will be available at `http://127.0.0.1:8000/docs`.
 
 ## Current Scope
 
-This first scaffold implements only:
+The backend currently implements:
 
 - Health check
 - User CRUD
-- Property CRUD
+- Auth registration, login, JWT verification, and current-user lookup
+- Role-based dependencies for landlord/admin access
+- Public property reads and authenticated landlord/admin property writes
 - PostgreSQL connection
 - Alembic initial migration
 
-Future modules such as WeChat login, booking, payment, embeddings, and AI recommendations are intentionally left out of the first implementation pass.
+Future modules such as WeChat login, booking, payment, embeddings, refresh token rotation, and AI recommendations are intentionally left out of the current implementation pass.

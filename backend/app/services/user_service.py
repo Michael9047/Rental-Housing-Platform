@@ -1,4 +1,4 @@
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.user import User
@@ -18,6 +18,16 @@ class UserService:
 
     async def get(self, user_id: int) -> User | None:
         return await self.session.get(User, user_id)
+
+    async def get_by_username_or_email(self, identifier: str) -> User | None:
+        stmt = select(User).where(
+            or_(
+                User.username == identifier,
+                User.email == identifier,
+            )
+        )
+        result = await self.session.scalars(stmt)
+        return result.first()
 
     async def list(self, *, skip: int = 0, limit: int = 20) -> list[User]:
         stmt = select(User).order_by(User.created_at.desc()).offset(skip).limit(limit)

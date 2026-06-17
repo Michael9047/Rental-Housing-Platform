@@ -23,6 +23,16 @@ class Settings(BaseSettings):
 
     redis_url: str = Field(default="redis://localhost:6379/0", validation_alias="REDIS_URL")
 
+    auth_secret_key: str = Field(
+        default="dev-only-change-me",
+        validation_alias="AUTH_SECRET_KEY",
+    )
+    auth_algorithm: str = Field(default="HS256", validation_alias="AUTH_ALGORITHM")
+    access_token_expire_minutes: int = Field(
+        default=60,
+        validation_alias="ACCESS_TOKEN_EXPIRE_MINUTES",
+    )
+
 
 @lru_cache
 def get_settings() -> Settings:
