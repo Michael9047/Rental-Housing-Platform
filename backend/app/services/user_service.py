@@ -2,7 +2,7 @@ from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.user import User
-from app.schemas.user import UserCreate, UserUpdate
+from app.schemas.user import UserCreate, UserProfileUpdate, UserUpdate
 
 
 class UserService:
@@ -34,7 +34,7 @@ class UserService:
         result = await self.session.scalars(stmt)
         return list(result)
 
-    async def update(self, user_id: int, user_in: UserUpdate) -> User | None:
+    async def update(self, user_id: int, user_in: UserUpdate | UserProfileUpdate) -> User | None:
         user = await self.get(user_id)
         if not user:
             return None

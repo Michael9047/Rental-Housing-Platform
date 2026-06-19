@@ -28,6 +28,14 @@ class UserUpdate(BaseModel):
     status: UserStatus | None = None
 
 
+class UserProfileUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    username: str | None = Field(default=None, min_length=1, max_length=100)
+    phone: str | None = Field(default=None, max_length=32)
+    email: EmailStr | None = None
+
+
 class UserRead(UserBase):
     model_config = ConfigDict(from_attributes=True)
 
