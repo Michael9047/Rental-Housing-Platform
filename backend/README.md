@@ -47,7 +47,39 @@ uvicorn app.main:app --reload
 
 The API docs will be available at `http://127.0.0.1:8000/docs`.
 
-## Current Scope
+## Phase 4: pgvector + Search
+
+The backend now supports hybrid semantic search via pgvector:
+
+1. Run the pgvector migration:
+
+```powershell
+alembic upgrade head
+```
+
+This enables the `vector` extension and adds an `embedding` column to the `properties` table with an IVFFlat index.
+
+2. Start the Celery worker (for async embedding generation):
+
+```powershell
+celery -A app.celery_app worker -Q embedding --loglevel=info
+```
+
+3. The new search endpoint is at `GET /api/v1/properties/search`:
+
+- `q` ¡ª natural language query (generates embedding for semantic search)
+- `district`, `price_min`, `price_max`, `bedrooms`, `property_type` ¡ª structured filters
+- Results include a `similarity` score when `q` is provided
+
+Embedding generation is dispatched to Celery automatically on property create/update. Without a running Celery worker, properties will be saved without embeddings and will not appear in semantic search results.
+
+To reindex all properties without embeddings, use the Celery task:
+
+```powershell
+celery -A app.celery_app call app.tasks.embedding_tasks.reindex_all_properties
+```
+
+## Previous Scope
 
 The backend currently implements:
 

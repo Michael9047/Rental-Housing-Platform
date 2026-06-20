@@ -1,11 +1,24 @@
 import enum
 from decimal import Decimal
 
-from sqlalchemy import CheckConstraint, Enum, ForeignKey, Index, Numeric, String, Text
+from sqlalchemy import CheckConstraint, Enum, ForeignKey, Index, Numeric, String, Text as SAText
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.types import TypeDecorator
 
 from app.models.mixins import TimestampMixin
 from app.db.session import Base
+
+
+class VectorColumn(TypeDecorator):
+    impl = SAText
+    cache_ok = True
+
+    def load_dialect_impl(self, dialect):
+        if dialect.name == "postgresql":
+            from pgvector.sqlalchemy import Vector as PgVector
+
+            return dialect.type_descriptor(PgVector(1536))
+        return dialect.type_descriptor(SAText())
 
 
 class PropertyType(str, enum.Enum):
@@ -36,7 +49,7 @@ class Property(TimestampMixin, Base):
     landlord_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
 
     title: Mapped[str] = mapped_column(String(200), nullable=False)
-    description: Mapped[str | None] = mapped_column(Text)
+    description: Mapped[str | None] = mapped_column(SAText)
     address: Mapped[str] = mapped_column(String(300), nullable=False)
     district: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
     price_monthly: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
@@ -56,5 +69,7 @@ class Property(TimestampMixin, Base):
     )
     latitude: Mapped[Decimal | None] = mapped_column(Numeric(9, 6))
     longitude: Mapped[Decimal | None] = mapped_column(Numeric(9, 6))
+
+    embedding: Mapped[list[float] | None] = mapped_column(VectorColumn)
 
     landlord: Mapped["User"] = relationship(back_populates="properties")

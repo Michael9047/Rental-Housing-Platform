@@ -15,6 +15,7 @@ TEST_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
 @pytest_asyncio.fixture
 async def session_maker() -> AsyncGenerator[async_sessionmaker[AsyncSession], None]:
     engine = create_async_engine(TEST_DATABASE_URL)
+
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 

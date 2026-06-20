@@ -1,9 +1,11 @@
+from decimal import Decimal
+
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_db_session, require_landlord
 from app.models.user import User
-from app.schemas.property import PropertyCreate, PropertyRead, PropertyUpdate
+from app.schemas.property import PropertyCreate, PropertyRead, PropertySearchResult, PropertyUpdate
 from app.services.property_service import PropertyService
 from app.services.user_service import UserService
 
@@ -28,6 +30,50 @@ async def create_property(
             detail="Landlords can only create properties for themselves",
         )
     return await PropertyService(session).create(property_in)
+
+
+@router.get("/search", response_model=list[PropertySearchResult])
+async def search_properties(
+    q: str | None = Query(default=None, description="Natural language search query"),
+    district: str | None = Query(default=None),
+    price_min: Decimal | None = Query(default=None, ge=0),
+    price_max: Decimal | None = Query(default=None, ge=0),
+    bedrooms: int | None = Query(default=None, ge=0),
+    property_type: str | None = Query(default=None),
+    limit: int = Query(default=20, ge=1, le=100),
+    session: AsyncSession = Depends(get_db_session),
+) -> list[PropertySearchResult]:
+    results = await PropertyService(session).search(
+        query=q,
+        district=district,
+        price_min=price_min,
+        price_max=price_max,
+        bedrooms=bedrooms,
+        property_type=property_type,
+        limit=limit,
+    )
+    return [
+        PropertySearchResult(
+            id=prop.id,
+            landlord_id=prop.landlord_id,
+            title=prop.title,
+            description=prop.description,
+            address=prop.address,
+            district=prop.district,
+            price_monthly=prop.price_monthly,
+            area_sqm=prop.area_sqm,
+            bedrooms=prop.bedrooms,
+            bathrooms=prop.bathrooms,
+            property_type=prop.property_type,
+            status=prop.status,
+            latitude=prop.latitude,
+            longitude=prop.longitude,
+            created_at=prop.created_at,
+            updated_at=prop.updated_at,
+            similarity=sim,
+        )
+        for prop, sim in results
+    ]
 
 
 @router.get("", response_model=list[PropertyRead])

@@ -10,3 +10,10 @@ PyJWT==2.9.0
 pydantic-settings==2.4.0
 SQLAlchemy==2.0.32
 uvicorn[standard]==0.30.6
+
+celery==5.4.0
+pgvector==0.3.6
+openai==1.82.0
+redis==5.0.8
+
+redis==5.0.8

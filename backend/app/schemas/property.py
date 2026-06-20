@@ -47,3 +47,8 @@ class PropertyRead(PropertyBase):
     landlord_id: int
     created_at: datetime
     updated_at: datetime
+
+
+
+class PropertySearchResult(PropertyRead):
+    similarity: float | None = None
