@@ -5,10 +5,18 @@
     :body-style="{ padding: '0' }"
     @click=".push(/property/)"
   >
-    <!-- Placeholder image -->
+    <!-- Property image -->
     <div class="card-image">
-      <el-icon :size="48" color="#c0c4cc"><PictureFilled /></el-icon>
-      <span class="image-placeholder">暂无图片</span>
+      <img
+        v-if="primaryImageUrl"
+        :src="primaryImageUrl"
+        alt="property image"
+        class="property-img"
+      />
+      <template v-else>
+        <el-icon :size="48" color="#c0c4cc"><PictureFilled /></el-icon>
+        <span class="image-placeholder">????</span>
+      </template>
     </div>
 
     <div class="card-body">
