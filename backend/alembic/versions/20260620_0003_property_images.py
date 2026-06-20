@@ -12,7 +12,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision: str = "20260620_0003_property_images"
-down_revision: Union[str, None] = "20260620_0002_pgvector_embedding"
+down_revision: Union[str, None] = "20260617_0001"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

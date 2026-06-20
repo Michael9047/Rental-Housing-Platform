@@ -22,10 +22,6 @@ property_status = sa.Enum("available", "rented", "maintenance", "offline", name=
 
 
 def upgrade() -> None:
-    user_role.create(op.get_bind(), checkfirst=True)
-    user_status.create(op.get_bind(), checkfirst=True)
-    property_type.create(op.get_bind(), checkfirst=True)
-    property_status.create(op.get_bind(), checkfirst=True)
 
     op.create_table(
         "users",
@@ -94,7 +90,4 @@ def downgrade() -> None:
     op.drop_index(op.f("ix_users_email"), table_name="users")
     op.drop_table("users")
 
-    property_status.drop(op.get_bind(), checkfirst=True)
-    property_type.drop(op.get_bind(), checkfirst=True)
-    user_status.drop(op.get_bind(), checkfirst=True)
-    user_role.drop(op.get_bind(), checkfirst=True)
+    pass  # Enums are dropped automatically with tables
