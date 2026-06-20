@@ -1,4 +1,4 @@
-.env
+﻿.env
 .venv/
 __pycache__/
 .pytest_cache/
@@ -6,3 +6,7 @@ __pycache__/
 .ruff_cache/
 *.pyc
 data/
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
