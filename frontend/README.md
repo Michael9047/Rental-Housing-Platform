@@ -102,3 +102,22 @@ All API calls go through /api/v1/:
 - GET /properties/:id - Get property
 - PATCH /properties/:id - Update property (owner/admin)
 - DELETE /properties/:id - Delete property (owner/admin)
+
+## Phase 6: Property Images
+
+### Pages
+- **PropertyImages** (`/property/:id/images`) - Image management: upload, preview, set cover, delete
+- Property detail pages now show image carousel (`el-carousel`)
+- Property cards display the primary image (or placeholder if none)
+
+### Components Updated
+- `PropertyCard.vue` - Shows primary image instead of placeholder
+- `PropertyDetail.vue` - Image gallery with carousel and preview
+- `ManageProperties.vue` - Added "Manage Images" button
+- `CreateProperty.vue` - Redirects to image upload after creation
+
+### Services
+- `propertyService.listImages(propertyId)`
+- `propertyService.uploadImages(propertyId, files)` (multipart/form-data)
+- `propertyService.deleteImage(propertyId, imageId)`
+- `propertyService.setPrimaryImage(propertyId, imageId)`

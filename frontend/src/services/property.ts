@@ -5,6 +5,7 @@ import type {
   PropertyUpdate,
   PropertySearchResult,
   PropertySearchParams,
+  PropertyImage,
 } from '@/types/property'
 
 export const propertyService = {

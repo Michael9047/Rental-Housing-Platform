@@ -1,7 +1,7 @@
 ﻿import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { propertyService } from '@/services/property'
-import type { Property, PropertyCreate, PropertyUpdate, PropertySearchResult, PropertySearchParams } from '@/types/property'
+import type { Property, PropertyCreate, PropertyUpdate, PropertySearchResult, PropertySearchParams, PropertyImage } from '@/types/property'
 
 export const usePropertyStore = defineStore('property', () => {
   const properties = ref<Property[]>([])
@@ -11,6 +11,8 @@ export const usePropertyStore = defineStore('property', () => {
 
   // Cached search conditions
   const lastSearchParams = ref<PropertySearchParams>({})
+  const propertyImages = ref<PropertyImage[]>([])
+  const imagesLoading = ref(false)
 
   async function fetchList(params?: { skip?: number; limit?: number; district?: string; status?: string }) {
     loading.value = true
@@ -63,6 +65,40 @@ export const usePropertyStore = defineStore('property', () => {
     }
   }
 
+
+  async function fetchImages(propertyId: number) {
+    imagesLoading.value = true
+    try {
+      propertyImages.value = await propertyService.listImages(propertyId)
+    } finally {
+      imagesLoading.value = false
+    }
+  }
+
+  async function uploadImages(propertyId: number, files: File[]): Promise<PropertyImage[]> {
+    imagesLoading.value = true
+    try {
+      const images = await propertyService.uploadImages(propertyId, files)
+      propertyImages.value = await propertyService.listImages(propertyId)
+      return images
+    } finally {
+      imagesLoading.value = false
+    }
+  }
+
+  async function deleteImage(propertyId: number, imageId: number) {
+    await propertyService.deleteImage(propertyId, imageId)
+    propertyImages.value = propertyImages.value.filter((img) => img.id !== imageId)
+  }
+
+  async function setPrimaryImage(propertyId: number, imageId: number) {
+    await propertyService.setPrimaryImage(propertyId, imageId)
+    propertyImages.value = propertyImages.value.map((img) => ({
+      ...img,
+      is_primary: img.id === imageId,
+    }))
+  }
+
   async function remove(id: number) {
     loading.value = true
     try {
@@ -80,11 +116,17 @@ export const usePropertyStore = defineStore('property', () => {
     currentProperty,
     loading,
     lastSearchParams,
+    propertyImages,
+    imagesLoading,
     fetchList,
     fetchSearch,
     fetchById,
     create,
     update,
     remove,
+    fetchImages,
+    uploadImages,
+    deleteImage,
+    setPrimaryImage,
   }
 })

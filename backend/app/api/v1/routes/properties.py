@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import get_db_session, require_landlord
 from app.models.user import User
 from app.schemas.property import PropertyCreate, PropertyRead, PropertySearchResult, PropertyUpdate
+from app.schemas.property_image import PropertyImageRead
 from app.services.property_service import PropertyService
 from app.services.user_service import UserService
 
@@ -70,6 +71,20 @@ async def search_properties(
             longitude=prop.longitude,
             created_at=prop.created_at,
             updated_at=prop.updated_at,
+            images=[
+                PropertyImageRead(
+                    id=img.id,
+                    property_id=img.property_id,
+                    filename=img.filename,
+                    original_name=img.original_name,
+                    mime_type=img.mime_type,
+                    file_size=img.file_size,
+                    sort_order=img.sort_order,
+                    is_primary=img.is_primary,
+                    created_at=img.created_at,
+                )
+                for img in (prop.images or [])
+            ],
             similarity=sim,
         )
         for prop, sim in results

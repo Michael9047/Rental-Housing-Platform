@@ -73,3 +73,7 @@ class Property(TimestampMixin, Base):
     embedding: Mapped[list[float] | None] = mapped_column(VectorColumn)
 
     landlord: Mapped["User"] = relationship(back_populates="properties")
+
+    images: Mapped[list["PropertyImage"]] = relationship(
+        "PropertyImage", back_populates="property", cascade="all, delete-orphan", lazy="selectin"
+    )

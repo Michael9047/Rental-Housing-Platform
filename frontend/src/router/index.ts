@@ -40,6 +40,12 @@ const routes: RouteRecordRaw[] = [
         component: () => import('@/views/ManageProperties.vue'),
         meta: { requiresAuth: true, requiresLandlord: true },
       },
+      {
+        path: 'property/:id/images',
+        name: 'property-images',
+        component: () => import('@/views/PropertyImages.vue'),
+        meta: { requiresAuth: true, requiresLandlord: true },
+      },
     ],
   },
   {

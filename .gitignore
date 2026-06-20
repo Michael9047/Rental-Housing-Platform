@@ -1,4 +1,4 @@
-﻿.env
+.env
 .venv/
 __pycache__/
 .pytest_cache/
@@ -10,3 +10,6 @@ data/
 # Frontend
 frontend/node_modules/
 frontend/dist/
+
+# Uploads
+backend/uploads/

@@ -41,10 +41,19 @@
 import { PictureFilled } from '@element-plus/icons-vue'
 import type { Property, PropertySearchResult, PropertyType } from '@/types/property'
 
-defineProps<{
+import { computed } from 'vue'
+
+const props = defineProps<{
   property: Property | PropertySearchResult
   showSimilarity?: boolean
 }>()
+
+const primaryImageUrl = computed(() => {
+  const images = props.property.images
+  if (!images || images.length === 0) return null
+  const primary = images.find((img) => img.is_primary) || images[0]
+  return `/api/v1/uploads/${primary.filename}`
+})
 
 const typeLabels: Record<PropertyType, string> = {
   apartment: '公寓',
@@ -77,6 +86,12 @@ const typeLabels: Record<PropertyType, string> = {
 .image-placeholder {
   font-size: 13px;
   color: #c0c4cc;
+}
+
+.property-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
 .card-body {

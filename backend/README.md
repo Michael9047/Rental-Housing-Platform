@@ -92,3 +92,29 @@ The backend currently implements:
 - Alembic initial migration
 
 Future modules such as WeChat login, booking, payment, embeddings, refresh token rotation, and AI recommendations are intentionally left out of the current implementation pass.
+
+## Phase 6: Property Images & Media Upload
+
+### Image Storage
+- Images are stored locally in `backend/uploads/` (configurable via `UPLOAD_DIR`)
+- Max file size: 5MB (configurable via `MAX_UPLOAD_SIZE`)
+- Allowed types: JPEG, PNG, WebP (configurable via `ALLOWED_IMAGE_TYPES`)
+- Max 10 images per property (configurable via `MAX_IMAGES_PER_PROPERTY`)
+- Filenames use UUID to prevent collisions
+
+### API Endpoints
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/api/v1/properties/{id}/images` | Upload images (multipart) |
+| GET | `/api/v1/properties/{id}/images` | List images for a property |
+| DELETE | `/api/v1/properties/{id}/images/{img_id}` | Delete an image |
+| PATCH | `/api/v1/properties/{id}/images/{img_id}/primary` | Set primary image |
+| GET | `/api/v1/uploads/{filename}` | Serve static image files |
+
+### Model
+- `PropertyImage`: id, property_id (FK), filename, original_name, mime_type, file_size, sort_order, is_primary, created_at, updated_at
+
+### Testing
+```bash
+pytest tests/test_images.py -v
+```

@@ -4,6 +4,22 @@
       <!-- Back button -->
       <el-button text :icon="ArrowLeft" @click=".back()" class="back-btn">返回</el-button>
 
+      <!-- Image Gallery -->
+      <div v-if="property.images && property.images.length > 0" class="image-gallery">
+        <el-carousel :interval="4000" type="card" height="400px" trigger="click">
+          <el-carousel-item v-for="img in sortedImages" :key="img.id">
+            <el-image
+              :src="`/api/v1/uploads/${img.filename}`"
+              fit="cover"
+              class="gallery-image"
+              :preview-src-list="allImageUrls"
+              :initial-index="sortedImages.indexOf(img)"
+              preview-teleported
+            />
+          </el-carousel-item>
+        </el-carousel>
+      </div>
+
       <!-- Title & Basic Info -->
       <div class="detail-header">
         <h1>{{ property.title }}</h1>
@@ -95,6 +111,20 @@ const typeLabels: Record<PropertyType, string> = {
   shared: '合租',
 }
 
+const sortedImages = computed(() => {
+  const imgs = property.value?.images
+  if (!imgs) return []
+  return [...imgs].sort((a, b) => {
+    if (a.is_primary) return -1
+    if (b.is_primary) return 1
+    return a.sort_order - b.sort_order
+  })
+})
+
+const allImageUrls = computed(() =>
+  sortedImages.value.map((img) => `/api/v1/uploads/${img.filename}`)
+)
+
 const statusLabel = computed(() => property.value ? statusLabels[property.value.status] : '')
 const typeLabel = computed(() => property.value ? typeLabels[property.value.property_type] : '')
 
@@ -127,6 +157,15 @@ onMounted(() => {
 
 .back-btn {
   margin-bottom: 16px;
+}
+
+.image-gallery {
+  margin-bottom: 24px;
+}
+
+.gallery-image {
+  width: 100%;
+  height: 400px;
 }
 
 .detail-header h1 {

@@ -20,6 +20,8 @@ export interface Property {
   longitude: number | null
   created_at: string
   updated_at: string
+  images?: PropertyImage[]
+  primary_image_url?: string | null
 }
 
 // Matches backend: app/schemas/property.py PropertyCreate
@@ -69,4 +71,18 @@ export interface PropertySearchParams {
   bedrooms?: number
   property_type?: PropertyType
   limit?: number
+}
+
+
+// Property Image
+export interface PropertyImage {
+  id: number
+  property_id: number
+  filename: string
+  original_name: string
+  mime_type: string
+  file_size: number
+  sort_order: number
+  is_primary: boolean
+  created_at: string
 }

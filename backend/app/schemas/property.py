@@ -3,6 +3,8 @@ from decimal import Decimal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.schemas.property_image import PropertyImageRead
+
 from app.models.property import PropertyStatus, PropertyType
 
 
@@ -47,8 +49,30 @@ class PropertyRead(PropertyBase):
     landlord_id: int
     created_at: datetime
     updated_at: datetime
+    images: list[PropertyImageRead] = []
+
+    @property
+    def primary_image_url(self) -> str | None:
+        for img in self.images:
+            if img.is_primary:
+                return f"/api/v1/uploads/{img.filename}"
+        return None
 
 
 
-class PropertySearchResult(PropertyRead):
+class PropertySearchResult(PropertyBase):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    landlord_id: int
+    created_at: datetime
+    updated_at: datetime
+    images: list[PropertyImageRead] = []
     similarity: float | None = None
+
+    @property
+    def primary_image_url(self) -> str | None:
+        for img in self.images:
+            if img.is_primary:
+                return f"/api/v1/uploads/{img.filename}"
+        return None

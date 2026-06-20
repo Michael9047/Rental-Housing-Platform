@@ -42,6 +42,14 @@ class Settings(BaseSettings):
         validation_alias="OPENAI_EMBEDDING_MODEL",
     )
 
+    upload_dir: str = Field(default="./uploads", validation_alias="UPLOAD_DIR")
+    max_upload_size: int = Field(default=5 * 1024 * 1024, validation_alias="MAX_UPLOAD_SIZE")
+    allowed_image_types: list[str] = Field(
+        default=["image/jpeg", "image/png", "image/webp"],
+        validation_alias="ALLOWED_IMAGE_TYPES",
+    )
+    max_images_per_property: int = Field(default=10, validation_alias="MAX_IMAGES_PER_PROPERTY")
+
 
 @lru_cache
 def get_settings() -> Settings:
