@@ -1,4 +1,4 @@
-import { createRouter, createWebHistory } from 'vue-router'
+﻿import { createRouter, createWebHistory } from 'vue-router'
 import type { RouteRecordRaw } from 'vue-router'
 import DefaultLayout from '@/layouts/DefaultLayout.vue'
 
@@ -44,6 +44,12 @@ const routes: RouteRecordRaw[] = [
         path: 'property/manage',
         name: 'manage-properties',
         component: () => import('@/views/ManageProperties.vue'),
+        meta: { requiresAuth: true, requiresLandlord: true },
+      },
+      {
+        path: 'property/:id/edit',
+        name: 'edit-property',
+        component: () => import('@/views/CreateProperty.vue'),
         meta: { requiresAuth: true, requiresLandlord: true },
       },
       {

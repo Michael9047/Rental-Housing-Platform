@@ -1,8 +1,8 @@
-<template>
+﻿<template>
   <div class="manage-page">
     <div class="page-header">
       <h2>房源管理</h2>
-      <el-button type="primary" :icon="Plus" @click="$router.push('/property/create')">
+      <el-button type="primary" :icon="Plus" @click="goCreate">
         发布新房源
       </el-button>
     </div>
@@ -34,10 +34,13 @@
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="200" fixed="right">
+        <el-table-column label="操作" width="260" fixed="right">
           <template #default="{ row }">
             <el-button size="small" text type="primary" @click="editProperty(row.id)">
               编辑
+            </el-button>
+            <el-button size="small" text type="success" @click="manageImages(row.id)">
+              图片
             </el-button>
             <el-button size="small" text type="warning" @click="toggleStatus(row)">
               {{ row.status === 'offline' ? '上架' : '下架' }}
@@ -96,7 +99,15 @@ function statusTagType(status: PropertyStatus): string {
   return map[status]
 }
 
+function goCreate() {
+  router.push('/property/create')
+}
+
 function editProperty(id: number) {
+  router.push('/property/' + id + '/edit')
+}
+
+function manageImages(id: number) {
   router.push('/property/' + id + '/images')
 }
 
@@ -105,7 +116,7 @@ async function toggleStatus(property: Property) {
   try {
     await propertyStore.update(property.id, { status: newStatus })
     ElMessage.success(newStatus === 'offline' ? '已下架' : '已上架')
-    propertyStore.fetchList()
+    propertyStore.fetchList({ limit: 100 })
   } catch {
     // handled by interceptor
   }

@@ -37,6 +37,9 @@ export const usePropertyStore = defineStore('property', () => {
     loading.value = true
     try {
       currentProperty.value = await propertyService.getById(id)
+    } catch {
+      currentProperty.value = null
+      throw new Error('Failed to load property')
     } finally {
       loading.value = false
     }

@@ -1,4 +1,4 @@
-﻿.env
+.env
 .env.prod.local
 .venv/
 __pycache__/
@@ -17,3 +17,6 @@ backend/uploads/
 
 # Docker
 docker-compose.override.yml
+
+# ER diagrams and dev docs
+docs/er-diagrams/
