@@ -1,0 +1,72 @@
+﻿/* pages/booking/booking.wxss */
+.page { padding-bottom: 20rpx; }
+
+.tabs {
+  display: flex;
+  background: #fff;
+  border-bottom: 1rpx solid #eee;
+}
+
+.tab {
+  flex: 1;
+  text-align: center;
+  padding: 24rpx 0;
+  font-size: 28rpx;
+  color: #666;
+}
+
+.tab.active {
+  color: #07c160;
+  border-bottom: 4rpx solid #07c160;
+}
+
+.booking-list {
+  padding: 20rpx 30rpx;
+}
+
+.booking-card {
+  display: flex;
+  background: #fff;
+  border-radius: 12rpx;
+  margin-bottom: 16rpx;
+  padding: 20rpx;
+  box-shadow: 0 2rpx 8rpx rgba(0,0,0,0.05);
+}
+
+.booking-cover {
+  width: 160rpx;
+  height: 120rpx;
+  border-radius: 8rpx;
+  margin-right: 20rpx;
+}
+
+.booking-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
+.booking-title {
+  font-size: 30rpx;
+  font-weight: 600;
+  color: #333;
+}
+
+.booking-time {
+  font-size: 24rpx;
+  color: #999;
+}
+
+.booking-status {
+  font-size: 24rpx;
+  padding: 4rpx 12rpx;
+  border-radius: 6rpx;
+  align-self: flex-start;
+}
+
+.status-pending { color: #e6a23c; background: #fdf6ec; }
+.status-approved { color: #07c160; background: #e8f8ef; }
+.status-cancelled, .status-rejected { color: #999; background: #f5f5f5; }
+
+.empty { text-align: center; padding: 100rpx 0; color: #999; font-size: 28rpx; }

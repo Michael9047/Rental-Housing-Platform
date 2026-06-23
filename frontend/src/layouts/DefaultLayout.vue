@@ -23,6 +23,9 @@
       </div>
       <div class="header-right">
         <template v-if="authStore.isLoggedIn">
+          <el-badge :value="unreadCount" :hidden="unreadCount === 0" :max="99" class="notification-badge">
+            <el-button :icon="Bell" circle @click="router.push('/notifications')" />
+          </el-badge>
           <el-dropdown trigger="click">
             <span class="user-dropdown">
               <el-avatar :size="32" :icon="UserFilled" />
@@ -31,11 +34,18 @@
             </span>
             <template #dropdown>
               <el-dropdown-menu>
-                <el-dropdown-item @click=".push('/profile')">
+                <el-dropdown-item @click="router.push('/profile')">
                   <el-icon><User /></el-icon> 个人中心
                 </el-dropdown-item>
-                <el-dropdown-item v-if="authStore.isLandlord" @click=".push('/property/manage')">
+                <el-dropdown-item v-if="authStore.isLoggedIn" @click="router.push('/notifications')">
+                  <el-icon><Bell /></el-icon> 通知
+                  <el-badge v-if="unreadCount > 0" :value="unreadCount" class="dropdown-badge" />
+                </el-dropdown-item>
+                <el-dropdown-item v-if="authStore.isLandlord" @click="router.push('/property/manage')">
                   <el-icon><Setting /></el-icon> 房源管理
+                </el-dropdown-item>
+                <el-dropdown-item v-if="authStore.isAdmin" @click="router.push('/admin')">
+                  <el-icon><DataAnalysis /></el-icon> 管理后台
                 </el-dropdown-item>
                 <el-dropdown-item divided @click="authStore.logout()">
                   <el-icon><SwitchButton /></el-icon> 退出登录
@@ -45,8 +55,8 @@
           </el-dropdown>
         </template>
         <template v-else>
-          <el-button type="primary" @click=".push('/login')">登录</el-button>
-          <el-button @click=".push('/register')">注册</el-button>
+          <el-button type="primary" @click="router.push('/login')">登录</el-button>
+          <el-button @click="router.push('/register')">注册</el-button>
         </template>
       </div>
     </el-header>
@@ -67,6 +77,10 @@
             <el-icon><Search /></el-icon>
             <span>搜索房源</span>
           </el-menu-item>
+          <el-menu-item v-if="authStore.isLoggedIn" index="/chat">
+            <el-icon><ChatDotRound /></el-icon>
+            <span>AI 助手</span>
+          </el-menu-item>
           <template v-if="authStore.isLandlord">
             <el-menu-item index="/property/create">
               <el-icon><Plus /></el-icon>
@@ -81,6 +95,41 @@
             <el-icon><User /></el-icon>
             <span>个人中心</span>
           </el-menu-item>
+
+          <el-divider v-if="authStore.isAdmin" style="margin: 8px 0" />
+
+          <template v-if="authStore.isAdmin">
+            <el-sub-menu index="admin-sub">
+              <template #title>
+                <el-icon><DataAnalysis /></el-icon>
+                <span>管理后台</span>
+              </template>
+              <el-menu-item index="/admin">
+                <el-icon><Odometer /></el-icon>
+                <span>仪表盘</span>
+              </el-menu-item>
+              <el-menu-item index="/admin/users">
+                <el-icon><UserFilled /></el-icon>
+                <span>用户管理</span>
+              </el-menu-item>
+              <el-menu-item index="/admin/properties">
+                <el-icon><House /></el-icon>
+                <span>房源审核</span>
+              </el-menu-item>
+              <el-menu-item index="/admin/import">
+                <el-icon><Upload /></el-icon>
+                <span>数据导入</span>
+              </el-menu-item>
+              <el-menu-item index="/admin/logs">
+                <el-icon><Document /></el-icon>
+                <span>审计日志</span>
+              </el-menu-item>
+              <el-menu-item index="/admin/embeddings">
+                <el-icon><Cpu /></el-icon>
+                <span>Embedding</span>
+              </el-menu-item>
+            </el-sub-menu>
+          </template>
         </el-menu>
       </el-aside>
 
@@ -93,19 +142,24 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { Search, UserFilled, ArrowDown, House, HomeFilled, User, Setting, SwitchButton, Plus, List } from '@element-plus/icons-vue'
+import { Search, UserFilled, ArrowDown, House, HomeFilled, User, Setting, SwitchButton, Plus, List, Bell, DataAnalysis, Odometer, Document, Cpu, ChatDotRound, Upload } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
+import { notificationService } from '@/services/notification'
 
 const router = useRouter()
 const route = useRoute()
 const authStore = useAuthStore()
 
 const searchQuery = ref('')
+const unreadCount = ref(0)
 
 const activeMenu = computed(() => {
   const path = route.path
+  if (path.startsWith('/admin')) return path
+  if (path.startsWith('/notifications')) return '/notifications'
+  if (path.startsWith('/chat')) return '/chat'
   if (path.startsWith('/property/')) {
     if (path === '/property/create') return '/property/create'
     if (path === '/property/manage') return '/property/manage'
@@ -119,6 +173,18 @@ function handleSearch() {
     router.push({ name: 'search', query: { q: searchQuery.value.trim() } })
   }
 }
+
+async function fetchUnreadCount() {
+  if (!authStore.isLoggedIn) return
+  try {
+    const resp = await notificationService.getUnreadCount()
+    unreadCount.value = resp.count
+  } catch {
+    // ignore
+  }
+}
+
+onMounted(fetchUnreadCount)
 </script>
 
 <style scoped>
@@ -165,6 +231,10 @@ function handleSearch() {
   gap: 12px;
 }
 
+.notification-badge {
+  margin-right: 4px;
+}
+
 .user-dropdown {
   display: flex;
   align-items: center;
@@ -175,6 +245,10 @@ function handleSearch() {
 .username {
   font-size: 14px;
   color: #303133;
+}
+
+:deep(.dropdown-badge) {
+  margin-left: 8px;
 }
 
 .layout-body {

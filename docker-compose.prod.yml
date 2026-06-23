@@ -1,0 +1,216 @@
+﻿# =============================================================================
+# Production Deployment — Rental Housing Matching System
+# =============================================================================
+# Usage:
+#   docker compose -f docker-compose.prod.yml --env-file .env.prod up -d
+# =============================================================================
+
+services:
+  # ---- PostgreSQL 16 + pgvector ----
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: rental_postgres
+    restart: unless-stopped
+    env_file: .env.prod
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-rental_housing}
+      POSTGRES_USER: ${POSTGRES_USER:-rental}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-rental} -d ${POSTGRES_DB:-rental_housing}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    deploy:
+      resources:
+        limits:
+          memory: 1g
+        reservations:
+          memory: 256m
+
+  # ---- Redis (with AOF persistence) ----
+  redis:
+    image: redis:7-alpine
+    container_name: rental_redis
+    restart: unless-stopped
+    env_file: .env.prod
+    command: >
+      redis-server
+      --appendonly yes
+      --appendfsync everysec
+      --maxmemory 256mb
+      --maxmemory-policy allkeys-lru
+      --requirepass ${REDIS_PASSWORD:-}
+    volumes:
+      - redis_data:/data
+    networks:
+      - data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 256m
+        reservations:
+          memory: 64m
+
+  # ---- FastAPI Backend ----
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    image: rental-housing-backend:latest
+    container_name: rental_backend
+    restart: unless-stopped
+    env_file: .env.prod
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-rental}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-rental_housing}
+      ALEMBIC_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-rental}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-rental_housing}
+      REDIS_URL: redis://:${REDIS_PASSWORD:-}@redis:6379/0
+      ENVIRONMENT: production
+      DEBUG: "false"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - backend
+      - data
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+        reservations:
+          memory: 128m
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ---- Celery Worker ----
+  celery-worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    image: rental-housing-backend:latest
+    container_name: rental_celery_worker
+    restart: unless-stopped
+    env_file: .env.prod
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-rental}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-rental_housing}
+      REDIS_URL: redis://:${REDIS_PASSWORD:-}@redis:6379/0
+      ENVIRONMENT: production
+      DEBUG: "false"
+    command: >
+      celery -A app.celery_app worker
+      --loglevel=info
+      --concurrency=4
+      --queues=celery,embedding,import
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - backend
+      - data
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+        reservations:
+          memory: 128m
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ---- Celery Beat (scheduled tasks) ----
+  celery-beat:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    image: rental-housing-backend:latest
+    container_name: rental_celery_beat
+    restart: unless-stopped
+    env_file: .env.prod
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-rental}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-rental_housing}
+      REDIS_URL: redis://:${REDIS_PASSWORD:-}@redis:6379/0
+      ENVIRONMENT: production
+      DEBUG: "false"
+    command: >
+      celery -A app.celery_app beat
+      --loglevel=info
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - backend
+      - data
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ---- Nginx (Frontend SPA + API Reverse Proxy) ----
+  nginx:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    image: rental-housing-frontend:latest
+    container_name: rental_nginx
+    restart: unless-stopped
+    ports:
+      - "${NGINX_PORT:-80}:80"
+    depends_on:
+      - backend
+    networks:
+      - frontend
+      - backend
+    deploy:
+      resources:
+        limits:
+          memory: 128m
+        reservations:
+          memory: 32m
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+# ---- Volumes ----
+volumes:
+  postgres_data:
+    driver: local
+    name: rental_postgres_data
+  redis_data:
+    driver: local
+    name: rental_redis_data
+
+# ---- Networks (three-tier isolation) ----
+networks:
+  frontend:
+    driver: bridge
+    internal: false
+  backend:
+    driver: bridge
+    internal: true
+  data:
+    driver: bridge
+    internal: true

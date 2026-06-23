@@ -1,4 +1,4 @@
-from functools import lru_cache
+﻿from functools import lru_cache
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -32,6 +32,16 @@ class Settings(BaseSettings):
         default=60,
         validation_alias="ACCESS_TOKEN_EXPIRE_MINUTES",
     )
+    refresh_token_expire_days: int = Field(
+        default=7,
+        validation_alias="REFRESH_TOKEN_EXPIRE_DAYS",
+    )
+
+    # CORS
+    cors_origins: list[str] = Field(
+        default=["http://localhost:5173"],
+        validation_alias="CORS_ORIGINS",
+    )
 
     openai_api_key: str = Field(
         default="",
@@ -41,6 +51,10 @@ class Settings(BaseSettings):
         default="text-embedding-3-small",
         validation_alias="OPENAI_EMBEDDING_MODEL",
     )
+    openai_chat_model: str = Field(
+        default="gpt-4o",
+        validation_alias="OPENAI_CHAT_MODEL",
+    )
 
     upload_dir: str = Field(default="./uploads", validation_alias="UPLOAD_DIR")
     max_upload_size: int = Field(default=5 * 1024 * 1024, validation_alias="MAX_UPLOAD_SIZE")
@@ -49,6 +63,30 @@ class Settings(BaseSettings):
         validation_alias="ALLOWED_IMAGE_TYPES",
     )
     max_images_per_property: int = Field(default=10, validation_alias="MAX_IMAGES_PER_PROPERTY")
+
+    # WeChat Mini Program
+    wechat_appid: str = Field(
+        default="",
+        validation_alias="WECHAT_APPID",
+    )
+    wechat_secret: str = Field(
+        default="",
+        validation_alias="WECHAT_SECRET",
+    )
+    wechat_token_url: str = Field(
+        default="https://api.weixin.qq.com/cgi-bin/token",
+        validation_alias="WECHAT_TOKEN_URL",
+    )
+
+    # Rate limiting
+    rate_limit_requests: int = Field(
+        default=100,
+        validation_alias="RATE_LIMIT_REQUESTS",
+    )
+    rate_limit_window_seconds: int = Field(
+        default=60,
+        validation_alias="RATE_LIMIT_WINDOW_SECONDS",
+    )
 
 
 @lru_cache

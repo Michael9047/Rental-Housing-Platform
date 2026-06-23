@@ -1,8 +1,10 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
+import json
 import logging
 import threading
 from decimal import Decimal
+from typing import Any
 
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -11,6 +13,31 @@ from app.models.property import Property
 from app.schemas.property import PropertyCreate, PropertyUpdate
 
 logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Redis cache helpers (lazy import to avoid hard dependency at module level)
+# ---------------------------------------------------------------------------
+
+CACHE_TTL_SECONDS = 300  # 5 minutes for search results
+
+
+def _cache_key(prefix: str, **kwargs: Any) -> str:
+    """Build a deterministic cache key from search parameters."""
+    raw = json.dumps(kwargs, sort_keys=True, default=str)
+    return f"search:{prefix}:{raw}"
+
+
+async def _get_redis() -> "Redis | None":  # noqa: F821
+    """Return an async Redis client if available."""
+    try:
+        from redis.asyncio import Redis as AsyncRedis
+
+        from app.core.config import get_settings
+
+        return AsyncRedis.from_url(get_settings().redis_url, decode_responses=False)
+    except Exception:
+        logger.debug("Redis not available; search caching disabled.")
+        return None
 
 
 class PropertyService:
@@ -56,6 +83,39 @@ class PropertyService:
         property_type: str | None = None,
         limit: int = 20,
     ) -> list[tuple[Property, float | None]]:
+        # --- Cache check for non-vector searches (cacheable) ---
+        if not query:
+            cache_params = {
+                "district": district,
+                "price_min": str(price_min) if price_min else None,
+                "price_max": str(price_max) if price_max else None,
+                "bedrooms": bedrooms,
+                "property_type": property_type,
+                "limit": limit,
+            }
+            cache_key_str = _cache_key("filter", **cache_params)
+            redis = await _get_redis()
+            if redis is not None:
+                try:
+                    cached = await redis.get(cache_key_str)
+                    if cached:
+                        logger.debug("Search cache hit for key=%s", cache_key_str)
+                        rows_data = json.loads(cached)
+                        await redis.aclose()
+                        return [
+                            (Property(**row["property"]), row["similarity"])
+                            for row in rows_data
+                        ]
+                except Exception:
+                    logger.debug("Cache retrieval failed, proceeding without cache.")
+                finally:
+                    if redis is not None:
+                        try:
+                            await redis.aclose()
+                        except Exception:
+                            pass
+
+        # --- Build query ---
         if query:
             from app.services.embedding_service import EmbeddingService
             from pgvector.sqlalchemy import l2_distance
@@ -89,7 +149,34 @@ class PropertyService:
         stmt = stmt.limit(limit)
         result = await self.session.execute(stmt)
         rows = result.all()
-        return [(row[0], row[1]) for row in rows]
+        results = [(row[0], row[1]) for row in rows]
+
+        # --- Cache non-vector results ---
+        if not query:
+            redis = await _get_redis()
+            if redis is not None:
+                try:
+                    rows_data = [
+                        {
+                            "property": {
+                                k: (str(v) if isinstance(v, Decimal) else v)
+                                for k, v in row[0].__dict__.items()
+                                if not k.startswith("_")
+                            },
+                            "similarity": row[1],
+                        }
+                        for row in rows
+                    ]
+                    await redis.setex(cache_key_str, CACHE_TTL_SECONDS, json.dumps(rows_data, default=str))
+                except Exception:
+                    logger.debug("Cache write failed, continuing.")
+                finally:
+                    try:
+                        await redis.aclose()
+                    except Exception:
+                        pass
+
+        return results
 
     async def update(self, property_id: int, property_in: PropertyUpdate) -> Property | None:
         property_obj = await self.get(property_id)

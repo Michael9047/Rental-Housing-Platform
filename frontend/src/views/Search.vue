@@ -6,7 +6,17 @@
     <el-card class="filter-card" shadow="never">
       <el-form :inline="true" :model="filters" class="filter-form">
         <el-form-item label="关键词">
-          <el-input v-model="filters.q" placeholder="搜索描述..." clearable />
+          <el-input v-model="filters.q" placeholder="描述、小区、配套..." clearable style="width: 240px" />
+        </el-form-item>
+        <el-form-item>
+          <el-tooltip content="开启后使用语义匹配，理解自然语言描述；关闭则仅用精确筛选" placement="top">
+            <el-switch
+              v-model="semanticMode"
+              active-text="语义"
+              inactive-text="精确"
+              :disabled="!filters.q"
+            />
+          </el-tooltip>
         </el-form-item>
         <el-form-item label="区域">
           <el-select v-model="filters.district" placeholder="全部区域" clearable>
@@ -40,7 +50,7 @@
           </el-select>
         </el-form-item>
         <el-form-item>
-          <el-button type="primary" :icon="Search" @click="doSearch">搜索</el-button>
+          <el-button type="primary" :icon="SearchIcon" @click="doSearch">搜索</el-button>
           <el-button @click="resetFilters">重置</el-button>
         </el-form-item>
       </el-form>
@@ -48,14 +58,17 @@
 
     <!-- Results -->
     <div class="results-header">
-      <span>共找到 <strong>{{ searchResults.length }}</strong> 套房源</span>
+      <span>
+        共找到 <strong>{{ searchResults.length }}</strong> 套房源
+        <el-tag v-if="semanticMode && filters.q" type="success" size="small" style="margin-left: 8px">语义匹配</el-tag>
+      </span>
     </div>
 
     <div v-loading="loading">
       <el-empty v-if="!loading && searchResults.length === 0" description="暂无匹配房源" />
       <el-row v-else :gutter="20">
         <el-col v-for="p in searchResults" :key="p.id" :span="8" style="margin-bottom: 20px">
-          <PropertyCard :property="p" :show-similarity="!!filters.q" />
+          <PropertyCard :property="p" :show-similarity="semanticMode && !!filters.q" />
         </el-col>
       </el-row>
     </div>
@@ -65,7 +78,7 @@
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
-import { Search } from '@element-plus/icons-vue'
+import { Search as SearchIcon } from '@element-plus/icons-vue'
 import { usePropertyStore } from '@/stores/property'
 import { storeToRefs } from 'pinia'
 import PropertyCard from '@/components/PropertyCard.vue'
@@ -76,6 +89,7 @@ const propertyStore = usePropertyStore()
 const { searchResults, loading } = storeToRefs(propertyStore)
 
 const districts = ['工业园区', '姑苏区', '高新区', '吴中区', '相城区', '吴江区']
+const semanticMode = ref(true)
 
 const filters = reactive<PropertySearchParams>({
   q: (route.query.q as string) || '',
@@ -89,7 +103,9 @@ const filters = reactive<PropertySearchParams>({
 
 function doSearch() {
   const params: PropertySearchParams = {}
-  if (filters.q) params.q = filters.q
+  if (semanticMode.value && filters.q) {
+    params.q = filters.q
+  }
   if (filters.district) params.district = filters.district
   if (filters.price_min != null) params.price_min = filters.price_min
   if (filters.price_max != null) params.price_max = filters.price_max

@@ -1,0 +1,6 @@
+﻿{
+  "usingComponents": {
+    "map-view": "/components/map-view/map-view"
+  },
+  "navigationBarTitleText": "房源详情"
+}

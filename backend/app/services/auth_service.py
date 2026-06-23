@@ -1,4 +1,5 @@
-from jwt import InvalidTokenError
+﻿from jwt import InvalidTokenError
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import create_access_token as encode_access_token
@@ -7,6 +8,7 @@ from app.models.user import User, UserStatus
 from app.schemas.auth import RegisterRequest
 from app.schemas.user import UserCreate
 from app.services.user_service import UserService
+from app.services.wechat_service import WeChatService
 
 
 class AuthService:
@@ -47,3 +49,28 @@ class AuthService:
         if not user or user.status != UserStatus.active:
             return None
         return user
+
+    async def wechat_login(self, code: str) -> tuple[User, bool]:
+        """WeChat Mini Program login: exchange code for openid, find or create user, return JWT-ready user."""
+        wechat = WeChatService()
+        session_data = await wechat.jscode2session(code)
+
+        # Look up existing user by openid
+        stmt = select(User).where(User.wechat_openid == session_data.openid)
+        result = await self.session.scalars(stmt)
+        user = result.first()
+
+        is_new = False
+        if not user:
+            is_new = True
+            user_in = UserCreate(
+                username=f"wx_{session_data.openid[-12:]}",
+                password_hash=hash_password(session_data.openid),
+                role="tenant",
+            )
+            user = await self.users.create(user_in)
+            user.wechat_openid = session_data.openid
+            await self.session.commit()
+            await self.session.refresh(user)
+
+        return user, is_new

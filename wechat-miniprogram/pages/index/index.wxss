@@ -1,0 +1,72 @@
+﻿/* pages/index/index.wxss */
+.page {
+  padding-bottom: 20rpx;
+}
+
+.search-section {
+  padding: 20rpx 30rpx;
+  background: #fff;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+
+.search-box {
+  display: flex;
+  align-items: center;
+  background: #f5f5f5;
+  border-radius: 40rpx;
+  padding: 12rpx 20rpx;
+}
+
+.search-input {
+  flex: 1;
+  margin-left: 12rpx;
+  font-size: 28rpx;
+}
+
+.map-btn {
+  font-size: 24rpx;
+  margin-left: 12rpx;
+}
+
+.banner-swiper {
+  height: 320rpx;
+  margin: 20rpx 30rpx;
+  border-radius: 16rpx;
+  overflow: hidden;
+}
+
+.banner-img {
+  width: 100%;
+  height: 100%;
+}
+
+.section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 20rpx 30rpx;
+}
+
+.section-title {
+  font-size: 34rpx;
+  font-weight: 600;
+  color: #333;
+}
+
+.section-more {
+  font-size: 26rpx;
+  color: #07c160;
+}
+
+.property-list {
+  padding: 0 30rpx;
+}
+
+.empty, .loading {
+  text-align: center;
+  padding: 80rpx 0;
+  color: #999;
+  font-size: 28rpx;
+}

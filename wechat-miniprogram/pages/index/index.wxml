@@ -1,0 +1,48 @@
+﻿<!--pages/index/index.wxml-->
+<view class="page">
+  <!-- Search Bar -->
+  <view class="search-section">
+    <view class="search-box">
+      <icon type="search" size="16" color="#999"></icon>
+      <input
+        class="search-input"
+        placeholder="搜索房源、区域、户型..."
+        value="{{searchKeyword}}"
+        bindinput="onSearchInput"
+        bindconfirm="onSearch"
+        confirm-type="search"
+      />
+      <button class="map-btn" bindtap="onMapMode" size="mini">地图</button>
+    </view>
+  </view>
+
+  <!-- Banner -->
+  <swiper class="banner-swiper" indicator-dots autoplay circular>
+    <swiper-item wx:for="{{banners}}" wx:key="id">
+      <image src="{{item.image}}" mode="aspectFill" class="banner-img" />
+    </swiper-item>
+  </swiper>
+
+  <!-- Section Title -->
+  <view class="section-header">
+    <text class="section-title">推荐房源</text>
+    <text class="section-more" bindtap="onSearch">更多 ></text>
+  </view>
+
+  <!-- Property List -->
+  <view class="property-list">
+    <block wx:for="{{recommendList}}" wx:key="id">
+      <property-card property="{{item}}" bindtap="onTapProperty" data-id="{{item.id}}" />
+    </block>
+  </view>
+
+  <!-- Empty State -->
+  <view class="empty" wx:if="{{!loading && recommendList.length === 0}}">
+    <text>暂无推荐房源</text>
+  </view>
+
+  <!-- Loading -->
+  <view class="loading" wx:if="{{loading}}">
+    <text>加载中...</text>
+  </view>
+</view>

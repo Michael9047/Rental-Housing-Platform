@@ -1,0 +1,52 @@
+﻿<!--pages/me/me.wxml-->
+<view class="page">
+  <!-- Login prompt -->
+  <view class="login-section" wx:if="{{!isLoggedIn}}">
+    <view class="avatar-placeholder">?</view>
+    <text class="login-hint">登录后查看个人信息</text>
+    <button class="wx-login-btn" bindtap="onLogin">微信一键登录</button>
+  </view>
+
+  <!-- User Info -->
+  <view class="user-card" wx:if="{{isLoggedIn && userInfo}}">
+    <view class="avatar">{{userInfo.username[0]}}</view>
+    <view class="user-detail">
+      <view class="user-name">{{userInfo.username}}</view>
+      <view class="user-role">{{roleLabels[userInfo.role] || userInfo.role}}</view>
+      <view class="user-phone" wx:if="{{userInfo.phone}}">{{userInfo.phone}}</view>
+    </view>
+  </view>
+
+  <!-- WeChat Binding -->
+  <view class="menu-section" wx:if="{{isLoggedIn}}">
+    <view class="menu-title">微信绑定</view>
+    <view class="menu-item">
+      <text class="menu-label">绑定状态</text>
+      <text class="menu-value {{userInfo.wechat_openid ? 'bound' : 'unbound'}}">{{userInfo.wechat_openid ? '已绑定' : '未绑定'}}</text>
+    </view>
+    <button class="phone-btn" open-type="getPhoneNumber" bindgetphonenumber="onBindPhone" wx:if="{{!userInfo.phone}}">
+      绑定手机号
+    </button>
+  </view>
+
+  <!-- Menu -->
+  <view class="menu-section" wx:if="{{isLoggedIn}}">
+    <view class="menu-title">功能菜单</view>
+    <view class="menu-item" bindtap="onGoBookings">
+      <text class="menu-label">我的预约</text>
+      <text class="menu-arrow">></text>
+    </view>
+    <view class="menu-item">
+      <text class="menu-label">身份</text>
+      <view class="role-switch">
+        <text class="role-option {{userInfo.role === 'tenant' ? 'active' : ''}}" data-role="tenant" bindtap="onRoleSwitch">租客</text>
+        <text class="role-option {{userInfo.role === 'landlord' ? 'active' : ''}}" data-role="landlord" bindtap="onRoleSwitch">房东</text>
+      </view>
+    </view>
+  </view>
+
+  <!-- Logout -->
+  <view class="logout-section" wx:if="{{isLoggedIn}}">
+    <button class="logout-btn" bindtap="onLogout">退出登录</button>
+  </view>
+</view>

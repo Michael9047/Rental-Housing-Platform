@@ -1,0 +1,44 @@
+﻿<!--pages/search/search.wxml-->
+<view class="page">
+  <!-- Search Bar -->
+  <search-bar
+    value="{{keyword}}"
+    placeholder="搜索房源"
+    bind:search="onSearchConfirm"
+    bind:input="onKeywordInput"
+  />
+
+  <!-- Filters -->
+  <view class="filters">
+    <picker mode="selector" range="{{['全部','工业园区','高新区','吴中区','相城区','姑苏区','吴江区']}}" bindchange="onFilterChange" data-field="district">
+      <view class="filter-item">{{filters.district || '区域'}}</view>
+    </picker>
+    <picker mode="selector" range="{{['全部','公寓','住宅','别墅','商铺']}}" bindchange="onFilterChange" data-field="propertyType">
+      <view class="filter-item">{{filters.propertyType || '类型'}}</view>
+    </picker>
+    <input class="filter-price" placeholder="最低价" type="number" bindblur="onFilterChange" data-field="minPrice" />
+    <input class="filter-price" placeholder="最高价" type="number" bindblur="onFilterChange" data-field="maxPrice" />
+  </view>
+
+  <!-- Search Results -->
+  <view class="property-list">
+    <block wx:for="{{results}}" wx:key="id">
+      <property-card property="{{item}}" bindtap="onTapProperty" data-id="{{item.id}}" />
+    </block>
+  </view>
+
+  <!-- Empty State -->
+  <view class="empty" wx:if="{{!loading && results.length === 0}}">
+    <text>未找到匹配的房源</text>
+  </view>
+
+  <!-- Loading -->
+  <view class="loading" wx:if="{{loading}}">
+    <text>搜索中...</text>
+  </view>
+
+  <!-- No More -->
+  <view class="no-more" wx:if="{{!hasMore && results.length > 0}}">
+    <text>没有更多了</text>
+  </view>
+</view>

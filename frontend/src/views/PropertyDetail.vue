@@ -2,7 +2,7 @@
   <div class="detail-page" v-loading="loading">
     <div v-if="property">
       <!-- Back button -->
-      <el-button text :icon="ArrowLeft" @click=".back()" class="back-btn">返回</el-button>
+      <el-button text :icon="ArrowLeft" @click="$router.back()" class="back-btn">返回</el-button>
 
       <!-- Image Gallery -->
       <div v-if="property.images && property.images.length > 0" class="image-gallery">
@@ -31,10 +31,20 @@
         </div>
       </div>
 
-      <!-- Price -->
+      <!-- Price & Book Button -->
       <div class="price-section">
-        <span class="price-value">{{ property.price_monthly }}</span>
-        <span class="price-unit">元/月</span>
+        <div class="price-info">
+          <span class="price-value">{{ property.price_monthly }}</span>
+          <span class="price-unit">元/月</span>
+        </div>
+        <el-button
+          v-if="authStore.isLoggedIn && !authStore.isLandlord"
+          type="primary"
+          size="large"
+          @click="showBookingDialog = true"
+        >
+          预约看房
+        </el-button>
       </div>
 
       <!-- Key Details -->
@@ -82,20 +92,60 @@
     </div>
 
     <el-empty v-else-if="!loading" description="房源未找到" />
+
+    <!-- Booking Dialog -->
+    <el-dialog v-model="showBookingDialog" title="预约看房" width="480px">
+      <el-form :model="bookingForm" label-width="100px">
+        <el-form-item label="预约日期">
+          <el-date-picker
+            v-model="bookingForm.scheduled_date"
+            type="date"
+            placeholder="选择看房日期"
+            value-format="YYYY-MM-DD"
+            style="width: 100%"
+          />
+        </el-form-item>
+        <el-form-item label="留言">
+          <el-input
+            v-model="bookingForm.message"
+            type="textarea"
+            :rows="3"
+            placeholder="给房东留言（如：联系方式、看房时间偏好等）"
+          />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="showBookingDialog = false">取消</el-button>
+        <el-button type="primary" :loading="submitting" @click="handleBook">
+          提交预约
+        </el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
-import { onMounted, computed } from 'vue'
+import { onMounted, ref, reactive, computed } from 'vue'
 import { useRoute } from 'vue-router'
 import { ArrowLeft } from '@element-plus/icons-vue'
 import { usePropertyStore } from '@/stores/property'
+import { useAuthStore } from '@/stores/auth'
+import { bookingService } from '@/services/booking'
 import { storeToRefs } from 'pinia'
+import { ElMessage } from 'element-plus'
 import type { PropertyStatus, PropertyType } from '@/types/property'
 
 const route = useRoute()
 const propertyStore = usePropertyStore()
+const authStore = useAuthStore()
 const { currentProperty: property, loading } = storeToRefs(propertyStore)
+
+const showBookingDialog = ref(false)
+const submitting = ref(false)
+const bookingForm = reactive({
+  scheduled_date: '',
+  message: '',
+})
 
 const statusLabels: Record<PropertyStatus, string> = {
   available: '可租',
@@ -143,6 +193,31 @@ function formatDate(dateStr: string): string {
   return new Date(dateStr).toLocaleDateString('zh-CN')
 }
 
+async function handleBook() {
+  if (!bookingForm.scheduled_date && !bookingForm.message) {
+    ElMessage.warning('请至少填写预约日期或留言')
+    return
+  }
+  submitting.value = true
+  try {
+    await bookingService.create({
+      property_id: property.value!.id,
+      scheduled_date: bookingForm.scheduled_date || undefined,
+      message: bookingForm.message || undefined,
+    })
+    ElMessage.success('预约提交成功')
+    showBookingDialog.value = false
+    bookingForm.scheduled_date = ''
+    bookingForm.message = ''
+  } catch (err: any) {
+    if (err?.response?.status === 409) {
+      ElMessage.warning('您已对该房源发起过预约')
+    }
+  } finally {
+    submitting.value = false
+  }
+}
+
 onMounted(() => {
   const id = Number(route.params.id)
   if (id) propertyStore.fetchById(id)
@@ -188,6 +263,9 @@ onMounted(() => {
 }
 
 .price-section {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
   margin-bottom: 24px;
 }
 

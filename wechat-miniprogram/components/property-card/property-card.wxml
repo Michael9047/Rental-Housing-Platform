@@ -1,0 +1,14 @@
+﻿<!--components/property-card/property-card.wxml-->
+<view class="card" bindtap="onTap">
+  <image class="card-cover" src="{{coverUrl}}" mode="aspectFill" lazy-load />
+  <view class="card-body">
+    <view class="card-title">{{property.title}}</view>
+    <view class="card-address">{{property.address}}</view>
+    <view class="card-footer">
+      <view class="card-tags" wx:if="{{property.tags}}">
+        <text class="card-tag" wx:for="{{property.tags}}" wx:for-item="tag" wx:key="*this">{{tag}}</text>
+      </view>
+      <view class="card-price">¥{{property.price}}<text class="card-unit">/月</text></view>
+    </view>
+  </view>
+</view>

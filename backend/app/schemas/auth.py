@@ -1,4 +1,4 @@
-from datetime import datetime
+﻿from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, model_validator
 
@@ -35,14 +35,36 @@ class TokenResponse(BaseModel):
     token_type: str = "bearer"
 
 
+class WeChatLoginRequest(BaseModel):
+    code: str = Field(min_length=1, description="wx.login() returned code")
+
+
+class WeChatPhoneRequest(BaseModel):
+    code: str = Field(min_length=1, description="wx.getPhoneNumber() returned code")
+    iv: str | None = Field(default=None, description="Encrypted data IV")
+    encrypted_data: str | None = Field(default=None, description="Encrypted data")
+
+
 class CurrentUserResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
     username: str
     phone: str | None = None
+    wechat_openid: str | None = None
     email: EmailStr | None = None
     role: UserRole
     status: UserStatus
     created_at: datetime
     updated_at: datetime
+
+
+class WeChatLoginResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    is_new_user: bool = False
+    user: CurrentUserResponse
+
+
+class WeChatConfigResponse(BaseModel):
+    appid: str

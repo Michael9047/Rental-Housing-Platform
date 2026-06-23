@@ -1,4 +1,4 @@
-from collections.abc import AsyncGenerator
+﻿from collections.abc import AsyncGenerator
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
@@ -35,6 +35,15 @@ async def require_landlord(current_user: User = Depends(get_current_user)) -> Us
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Landlord or admin role required",
+        )
+    return current_user
+
+
+async def require_tenant(current_user: User = Depends(get_current_user)) -> User:
+    if current_user.role not in {UserRole.tenant, UserRole.admin}:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Tenant or admin role required",
         )
     return current_user
 
