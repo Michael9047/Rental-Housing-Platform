@@ -15,7 +15,7 @@
       />
       <template v-else>
         <el-icon :size="48" color="#c0c4cc"><PictureFilled /></el-icon>
-        <span class="image-placeholder">????</span>
+        <span class="image-placeholder">暂无图片</span>
       </template>
     </div>
 

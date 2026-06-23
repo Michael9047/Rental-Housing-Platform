@@ -276,6 +276,8 @@ const historyTotal = ref(0)
 const detailVisible = ref(false)
 const detailTask = ref<ImportTaskDetail | null>(null)
 
+const requiredFields = REQUIRED_FIELDS
+
 const missingRequired = computed(() => {
   return REQUIRED_FIELDS.filter((f) => !previewHeaders.value.includes(f))
 })

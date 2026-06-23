@@ -24,13 +24,13 @@
         </el-table-column>
         <el-table-column prop="property_type" label="类型" width="80">
           <template #default="{ row }">
-            <el-tag size="small" type="info">{{ typeLabels[row.property_type] }}</el-tag>
+            <el-tag size="small" type="info">{{ typeLabels[row.property_type as PropertyType] }}</el-tag>
           </template>
         </el-table-column>
         <el-table-column prop="status" label="状态" width="90">
           <template #default="{ row }">
             <el-tag size="small" :type="statusTagType(row.status)">
-              {{ statusLabels[row.status] }}
+              {{ statusLabels[row.status as PropertyStatus] }}
             </el-tag>
           </template>
         </el-table-column>
@@ -97,7 +97,7 @@ function statusTagType(status: PropertyStatus): string {
 }
 
 function editProperty(id: number) {
-  router.push('/property/' + row.id + '/images')
+  router.push('/property/' + id + '/images')
 }
 
 async function toggleStatus(property: Property) {

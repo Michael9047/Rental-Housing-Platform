@@ -67,7 +67,7 @@ const { properties } = storeToRefs(propertyStore)
 
 const query = ref('')
 const selectedDistrict = ref('')
-const searchHints = [
+const _searchHints = [
   '地铁站附近两室一厅',
   '工业园区预算2500以内',
   '带阳台精装修公寓',

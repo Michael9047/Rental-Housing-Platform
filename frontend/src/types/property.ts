@@ -24,6 +24,7 @@ export interface Property {
   updated_at: string
   images?: PropertyImage[]
   primary_image_url?: string | null
+  similarity?: number | null
 }
 
 // Matches backend: app/schemas/property.py PropertyCreate

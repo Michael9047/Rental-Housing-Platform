@@ -75,3 +75,29 @@ def property_payload() -> dict[str, str | int]:
         "property_type": "apartment",
         "status": "available",
     }
+
+
+def pytest_addoption(parser):
+    parser.addoption(
+        "--run-pgvector",
+        action="store_true",
+        default=False,
+        help="Run tests that require a real PostgreSQL with pgvector",
+    )
+
+
+def pytest_configure(config):
+    config.addinivalue_line(
+        "markers",
+        "pgvector: tests requiring real PostgreSQL with pgvector extension",
+    )
+
+
+def pytest_collection_modifyitems(config, items):
+    import pytest
+    if config.getoption("--run-pgvector"):
+        return
+    skip_pgvector = pytest.mark.skip(reason="Need --run-pgvector flag to run pgvector tests")
+    for item in items:
+        if "pgvector" in item.keywords:
+            item.add_marker(skip_pgvector)

@@ -69,7 +69,7 @@
           <el-button type="primary" native-type="submit" :loading="submitting">
             发布
           </el-button>
-          <el-button @click=".back()">取消</el-button>
+          <el-button @click="$router.back()">取消</el-button>
         </el-form-item>
       </el-form>
     </el-card>
@@ -126,7 +126,7 @@ async function handleCreate() {
 
   submitting.value = true
   try {
-    const created = await propertyStore.create({
+    const _created = await propertyStore.create({
       title: form.title,
       address: form.address,
       district: form.district,

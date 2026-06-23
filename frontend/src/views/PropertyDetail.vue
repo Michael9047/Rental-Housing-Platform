@@ -27,7 +27,7 @@
           <el-tag :type="statusTagType">{{ statusLabel }}</el-tag>
           <el-tag type="info">{{ typeLabel }}</el-tag>
           <span class="meta-item">{{ property.district }}</span>
-          <span class="meta-item">{{ property.address }}</span>
+          <span class="meta-item">{{ property?.address }}</span>
         </div>
       </div>
 
@@ -105,12 +105,12 @@
         </div>
       </template>
       <div class="map-section">
-        <p class="map-address"><strong>{{ property.address }}</strong></p>
-        <p v-if="property.latitude" class="map-coords">
-          经纬度: {{ property.latitude.toFixed(4) }}, {{ property.longitude.toFixed(4) }}
+        <p class="map-address"><strong>{{ property?.address }}</strong></p>
+        <p v-if="property?.latitude" class="map-coords">
+          经纬度: {{ property?.latitude?.toFixed(4) }}, {{ property?.longitude?.toFixed(4) }}
         </p>
         <el-link
-          :href="'https://uri.amap.com/marker?position=' + (property.longitude || 120.585) + ',' + (property.latitude || 31.299)"
+          :href="'https://uri.amap.com/marker?position=' + (property?.longitude || 120.585) + ',' + (property?.latitude || 31.299)"
           target="_blank"
           type="primary">
           在高德地图中查看 ↗
@@ -126,9 +126,9 @@
         </div>
       </template>
       <div v-loading="poiLoading">
-        <p class="poi-summary">{{ poiData.content }}</p>
-        <div v-if="poiData.poi_data" class="poi-grid">
-          <div v-for="(items, cat) in poiData.poi_data" :key="cat" class="poi-cat">
+        <p class="poi-summary">{{ poiData?.content }}</p>
+        <div v-if="poiData?.poi_data" class="poi-grid">
+          <div v-for="(items, cat) in poiData?.poi_data" :key="cat" class="poi-cat">
             <h4>{{ cat }}</h4>
             <div v-for="item in items" :key="item.name" class="poi-row">
               <span>{{ item.name }}</span>
@@ -177,7 +177,7 @@ import { ArrowLeft } from '@element-plus/icons-vue'
 import { usePropertyStore } from '@/stores/property'
 import { useAuthStore } from '@/stores/auth'
 import { bookingService } from '@/services/booking'
-import { propertyService } from '@/services/property'
+import { propertyService, type PropertyPOI } from '@/services/property'
 import { storeToRefs } from 'pinia'
 import { ElMessage } from 'element-plus'
 import type { PropertyStatus, PropertyType } from '@/types/property'
@@ -187,9 +187,9 @@ const propertyStore = usePropertyStore()
 const authStore = useAuthStore()
 const { currentProperty: property, loading } = storeToRefs(propertyStore)
 
-const poiData = ref(null)
+const poiData = ref<PropertyPOI | null>(null)
 const poiLoading = ref(false)
-async function loadPOI(pid) {
+async function loadPOI(pid: number) {
   poiLoading.value = true
   try {
     const d = await propertyService.getPropertyPOI(pid)

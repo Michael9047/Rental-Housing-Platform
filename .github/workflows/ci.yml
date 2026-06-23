@@ -1,4 +1,4 @@
-﻿name: CI Pipeline
+name: CI Pipeline
 
 on:
   push:
@@ -37,9 +37,36 @@ jobs:
       - name: Mypy type check
         run: mypy app/ --ignore-missing-imports --no-strict-optional
 
-  # ---- Backend Tests ----
+  # ---- Backend Unit Tests (SQLite) ----
   backend-tests:
-    name: Backend Tests
+    name: Backend Unit Tests
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest pytest-asyncio httpx
+
+      - name: Run unit tests
+        env:
+          AUTH_SECRET_KEY: ci-test-secret-key
+          ENVIRONMENT: ci
+          DEBUG: "false"
+        run: pytest tests/ -v --tb=short -k "not pgvector"
+
+  # ---- Backend pgvector Integration Tests ----
+  backend-pgvector-tests:
+    name: Backend pgvector Tests
     runs-on: ubuntu-24.04
     services:
       postgres:
@@ -82,7 +109,13 @@ jobs:
           pip install -r requirements.txt
           pip install pytest pytest-asyncio httpx
 
-      - name: Run tests
+      - name: Run Alembic migrations
+        env:
+          DATABASE_URL: postgresql+asyncpg://rental:rental@localhost:5432/rental_housing_test
+          ALEMBIC_DATABASE_URL: postgresql+psycopg://rental:rental@localhost:5432/rental_housing_test
+        run: alembic upgrade head
+
+      - name: Run pgvector tests
         env:
           DATABASE_URL: postgresql+asyncpg://rental:rental@localhost:5432/rental_housing_test
           ALEMBIC_DATABASE_URL: postgresql+psycopg://rental:rental@localhost:5432/rental_housing_test
@@ -90,7 +123,7 @@ jobs:
           AUTH_SECRET_KEY: ci-test-secret-key
           ENVIRONMENT: ci
           DEBUG: "false"
-        run: pytest tests/ -v --tb=short
+        run: pytest tests/ -v --tb=short --run-pgvector -m pgvector
 
   # ---- Frontend Build Check ----
   frontend-build:
@@ -114,11 +147,33 @@ jobs:
       - name: Build
         run: npm run build
 
+  # ---- Frontend Tests ----
+  frontend-tests:
+    name: Frontend Tests
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Run tests
+        run: npm test
+
   # ---- Docker Build & Push ----
   docker-build:
     name: Docker Build & Push
     runs-on: ubuntu-24.04
-    needs: [backend-lint, backend-tests, frontend-build]
+    needs: [backend-lint, backend-tests, backend-pgvector-tests, frontend-build, frontend-tests]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     steps:
       - uses: actions/checkout@v4
