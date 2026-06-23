@@ -1,7 +1,7 @@
 import enum
 from decimal import Decimal
 
-from sqlalchemy import CheckConstraint, Enum, ForeignKey, Index, Numeric, String, Text as SAText
+from sqlalchemy import CheckConstraint, Enum, Float, ForeignKey, Index, Integer, Numeric, String, Text as SAText
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.types import TypeDecorator
 
@@ -69,6 +69,9 @@ class Property(TimestampMixin, Base):
     )
     latitude: Mapped[Decimal | None] = mapped_column(Numeric(9, 6))
     longitude: Mapped[Decimal | None] = mapped_column(Numeric(9, 6))
+
+    deposit_amount: Mapped[int | None] = mapped_column(Integer, nullable=True, default=1000)
+    service_fee_rate: Mapped[float | None] = mapped_column(Float, nullable=True, default=0.10)
 
     embedding: Mapped[list[float] | None] = mapped_column(VectorColumn)
 

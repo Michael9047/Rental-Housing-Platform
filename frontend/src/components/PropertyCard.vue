@@ -1,9 +1,9 @@
-﻿<template>
+<template>
   <el-card
     class="property-card"
     shadow="hover"
     :body-style="{ padding: '0' }"
-    @click=".push(/property/)"
+    @click="$router.push(`/property/${property.id}`)"
   >
     <!-- Property image -->
     <div class="card-image">
@@ -141,6 +141,12 @@ const typeLabels: Record<PropertyType, string> = {
   display: flex;
   justify-content: space-between;
   align-items: center;
+}
+
+.card-deposit {
+  font-size: 12px;
+  color: #909399;
+  margin-left: 8px;
 }
 
 .card-price {

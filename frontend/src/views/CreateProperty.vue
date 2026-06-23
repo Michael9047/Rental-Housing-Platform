@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <div class="create-page">
     <h2>发布房源</h2>
 
@@ -139,7 +139,7 @@ async function handleCreate() {
       description: form.description || undefined,
     })
     ElMessage.success('房源发布成功')
-    router.push(/property/)
+    router.push('/property/')
   } catch {
     // handled by interceptor
   } finally {

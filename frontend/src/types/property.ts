@@ -7,7 +7,9 @@ export interface Property {
   id: number
   landlord_id: number
   title: string
-  description: string | null
+  description: string
+  deposit_amount?: number
+  service_fee_rate?: number | null
   address: string
   district: string
   price_monthly: number

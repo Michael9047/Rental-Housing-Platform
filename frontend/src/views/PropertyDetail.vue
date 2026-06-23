@@ -36,6 +36,10 @@
         <div class="price-info">
           <span class="price-value">{{ property.price_monthly }}</span>
           <span class="price-unit">元/月</span>
+        <div v-if="property.deposit_amount" class="fee-info">
+          <span>押金: ¥{{ property.deposit_amount }}</span>
+          <span v-if="property.service_fee_rate"> | 服务费: {{ (property.service_fee_rate * 100).toFixed(0) }}%</span>
+        </div>
         </div>
         <el-button
           v-if="authStore.isLoggedIn && !authStore.isLandlord"
@@ -93,6 +97,48 @@
 
     <el-empty v-else-if="!loading" description="房源未找到" />
 
+    <!-- 位置信息 -->
+    <el-card class="info-card" shadow="hover">
+      <template #header>
+        <div class="card-header">
+          <span>位置信息</span>
+        </div>
+      </template>
+      <div class="map-section">
+        <p class="map-address"><strong>{{ property.address }}</strong></p>
+        <p v-if="property.latitude" class="map-coords">
+          经纬度: {{ property.latitude.toFixed(4) }}, {{ property.longitude.toFixed(4) }}
+        </p>
+        <el-link
+          :href="'https://uri.amap.com/marker?position=' + (property.longitude || 120.585) + ',' + (property.latitude || 31.299)"
+          target="_blank"
+          type="primary">
+          在高德地图中查看 ↗
+        </el-link>
+      </div>
+    </el-card>
+
+    <!-- 周边设施 -->
+    <el-card v-if="poiData" class="info-card" shadow="hover">
+      <template #header>
+        <div class="card-header">
+          <span>周边设施</span>
+        </div>
+      </template>
+      <div v-loading="poiLoading">
+        <p class="poi-summary">{{ poiData.content }}</p>
+        <div v-if="poiData.poi_data" class="poi-grid">
+          <div v-for="(items, cat) in poiData.poi_data" :key="cat" class="poi-cat">
+            <h4>{{ cat }}</h4>
+            <div v-for="item in items" :key="item.name" class="poi-row">
+              <span>{{ item.name }}</span>
+              <span class="poi-dist">{{ item.distance }}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </el-card>
+
     <!-- Booking Dialog -->
     <el-dialog v-model="showBookingDialog" title="预约看房" width="480px">
       <el-form :model="bookingForm" label-width="100px">
@@ -131,6 +177,7 @@ import { ArrowLeft } from '@element-plus/icons-vue'
 import { usePropertyStore } from '@/stores/property'
 import { useAuthStore } from '@/stores/auth'
 import { bookingService } from '@/services/booking'
+import { propertyService } from '@/services/property'
 import { storeToRefs } from 'pinia'
 import { ElMessage } from 'element-plus'
 import type { PropertyStatus, PropertyType } from '@/types/property'
@@ -139,6 +186,20 @@ const route = useRoute()
 const propertyStore = usePropertyStore()
 const authStore = useAuthStore()
 const { currentProperty: property, loading } = storeToRefs(propertyStore)
+
+const poiData = ref(null)
+const poiLoading = ref(false)
+async function loadPOI(pid) {
+  poiLoading.value = true
+  try {
+    const d = await propertyService.getPropertyPOI(pid)
+    poiData.value = d
+  } catch {
+    poiData.value = null
+  } finally {
+    poiLoading.value = false
+  }
+}
 
 const showBookingDialog = ref(false)
 const submitting = ref(false)
@@ -220,7 +281,11 @@ async function handleBook() {
 
 onMounted(() => {
   const id = Number(route.params.id)
-  if (id) propertyStore.fetchById(id)
+  if (id) {
+    propertyStore.fetchById(id).then(() => {
+      if (property.value) loadPOI(property.value.id)
+    })
+  }
 })
 </script>
 

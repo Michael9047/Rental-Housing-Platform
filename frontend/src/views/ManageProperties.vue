@@ -1,8 +1,8 @@
-﻿<template>
+<template>
   <div class="manage-page">
     <div class="page-header">
       <h2>房源管理</h2>
-      <el-button type="primary" :icon="Plus" @click=".push('/property/create')">
+      <el-button type="primary" :icon="Plus" @click="$router.push('/property/create')">
         发布新房源
       </el-button>
     </div>
@@ -97,7 +97,7 @@ function statusTagType(status: PropertyStatus): string {
 }
 
 function editProperty(id: number) {
-  router.push(/property/)
+  router.push('/property/' + row.id + '/images')
 }
 
 async function toggleStatus(property: Property) {

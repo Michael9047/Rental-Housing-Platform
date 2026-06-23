@@ -1,6 +1,6 @@
-﻿from fastapi import APIRouter
+from fastapi import APIRouter
 
-from app.api.v1.routes import admin, auth, bookings, chat, health, images, imports, notifications, properties, users, wechat
+from app.api.v1.routes import admin, auth, bookings, chat, contracts, health, images, imports, notifications, payments, pois, properties, users, wechat
 
 api_router = APIRouter()
 api_router.include_router(health.router, tags=["health"])
@@ -14,3 +14,6 @@ api_router.include_router(chat.router, prefix="/chat", tags=["chat"])
 api_router.include_router(admin.router, prefix="/admin", tags=["admin"])
 api_router.include_router(imports.router, prefix="/import", tags=["import"])
 api_router.include_router(wechat.router, tags=["wechat"])
+api_router.include_router(contracts.router, prefix="/contracts", tags=["contracts"])
+api_router.include_router(payments.router, prefix="/payments", tags=["payments"])
+api_router.include_router(pois.router, prefix="/pois", tags=["pois"])

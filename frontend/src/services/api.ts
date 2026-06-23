@@ -1,4 +1,4 @@
-﻿import axios from 'axios'
+import axios from 'axios'
 import { ElMessage } from 'element-plus'
 
 const api = axios.create({
@@ -14,7 +14,7 @@ api.interceptors.request.use(
   (config) => {
     const token = localStorage.getItem('access_token')
     if (token) {
-      config.headers.Authorization = Bearer 
+      config.headers.Authorization = `Bearer ${token}`
     }
     return config
   },
@@ -25,17 +25,27 @@ api.interceptors.request.use(
 api.interceptors.response.use(
   (response) => response,
   (error) => {
+    const isLoginPage = window.location.pathname === '/login'
+    
     if (error.response?.status === 401) {
-      localStorage.removeItem('access_token')
-      localStorage.removeItem('user')
-      window.location.href = '/login'
+      // Don't redirect during login attempt - just show the error
+      if (!isLoginPage) {
+        localStorage.removeItem('access_token')
+        localStorage.removeItem('user')
+        window.location.href = '/login'
+      }
+      // Still show the error message
+      const detail = error.response?.data?.detail
+      if (detail && typeof detail === 'string') {
+        ElMessage.error(detail)
+      }
       return Promise.reject(error)
     }
     const detail = error.response?.data?.detail
     if (detail) {
       if (Array.isArray(detail)) {
         detail.forEach((d: { msg: string }) => ElMessage.error(d.msg))
-      } else {
+      } else if (typeof detail === 'string') {
         ElMessage.error(detail)
       }
     }

@@ -21,7 +21,8 @@ class PropertyBase(BaseModel):
     status: PropertyStatus = PropertyStatus.available
     latitude: Decimal | None = Field(default=None, ge=-90, le=90)
     longitude: Decimal | None = Field(default=None, ge=-180, le=180)
-
+    deposit_amount: int | None = None
+    service_fee_rate: float | None = None
 
 class PropertyCreate(PropertyBase):
     landlord_id: int

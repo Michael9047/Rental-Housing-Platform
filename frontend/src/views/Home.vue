@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <div class="home-page">
     <!-- Hero Section -->
     <div class="hero">
@@ -40,7 +40,7 @@
     <div class="latest-section">
       <div class="section-header">
         <h2>最新房源</h2>
-        <el-button text type="primary" @click=".push('/search')">
+        <el-button text type="primary" @click="$router.push('/search')">
           查看更多 <el-icon><ArrowRight /></el-icon>
         </el-button>
       </div>
@@ -67,6 +67,12 @@ const { properties } = storeToRefs(propertyStore)
 
 const query = ref('')
 const selectedDistrict = ref('')
+const searchHints = [
+  '地铁站附近两室一厅',
+  '工业园区预算2500以内',
+  '带阳台精装修公寓',
+  '学校周边适合合租',
+]
 
 const districts = ['工业园区', '姑苏区', '高新区', '吴中区', '相城区', '吴江区']
 
@@ -112,6 +118,40 @@ onMounted(() => {
   font-size: 16px;
   color: #909399;
   margin-bottom: 32px;
+}
+
+.ai-search-wrapper {
+  max-width: 640px;
+  margin: 0 auto;
+}
+
+.ai-search-label {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-bottom: 12px;
+  font-size: 16px;
+  color: #409eff;
+  font-weight: 600;
+}
+
+.ai-search-hints {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.hint-tag {
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.hint-tag:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(64, 158, 255, 0.3);
 }
 
 .hero-search {

@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import json
 import logging
@@ -54,7 +54,17 @@ class PropertyService:
         return property_obj
 
     async def get(self, property_id: int) -> Property | None:
-        return await self.session.get(Property, property_id)
+        property_obj = await self.session.get(Property, property_id)
+        if property_obj is not None:
+            # Preload POI data
+            from sqlalchemy import select as sa_select
+            from app.models.poi import PropertyPOI
+            stmt = sa_select(PropertyPOI).where(PropertyPOI.property_id == property_id)
+            result = await self.session.execute(stmt)
+            poi = result.scalars().first()
+            if poi:
+                property_obj.poi = poi
+        return property_obj
 
     async def list(
         self,

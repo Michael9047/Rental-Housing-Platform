@@ -1,4 +1,4 @@
-﻿from datetime import datetime
+from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -12,7 +12,9 @@ class BookingCreate(BaseModel):
 
 
 class BookingUpdate(BaseModel):
-    status: BookingStatus
+    status: BookingStatus | None = None
+    deposit_status: str | None = None
+    payment_transaction_id: str | None = None
 
 
 class BookingRead(BaseModel):
@@ -25,5 +27,9 @@ class BookingRead(BaseModel):
     status: BookingStatus
     message: str | None
     scheduled_date: str | None
+    deposit_amount: int | None = None
+    service_fee: int | None = None
+    deposit_status: str | None = None
+    payment_transaction_id: str | None = None
     created_at: datetime
     updated_at: datetime

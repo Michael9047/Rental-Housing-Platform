@@ -1,4 +1,4 @@
-﻿import { createRouter, createWebHistory } from 'vue-router'
+import { createRouter, createWebHistory } from 'vue-router'
 import type { RouteRecordRaw } from 'vue-router'
 import DefaultLayout from '@/layouts/DefaultLayout.vue'
 
@@ -50,6 +50,18 @@ const routes: RouteRecordRaw[] = [
         path: 'property/:id/images',
         name: 'property-images',
         component: () => import('@/views/PropertyImages.vue'),
+        meta: { requiresAuth: true, requiresLandlord: true },
+      },
+      {
+        path: 'bookings/tenant',
+        name: 'tenant-bookings',
+        component: () => import('@/views/TenantBookings.vue'),
+        meta: { requiresAuth: true },
+      },
+      {
+        path: 'bookings/landlord',
+        name: 'landlord-bookings',
+        component: () => import('@/views/LandlordBookings.vue'),
         meta: { requiresAuth: true, requiresLandlord: true },
       },
       {

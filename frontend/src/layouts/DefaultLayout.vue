@@ -41,6 +41,12 @@
                   <el-icon><Bell /></el-icon> 通知
                   <el-badge v-if="unreadCount > 0" :value="unreadCount" class="dropdown-badge" />
                 </el-dropdown-item>
+                <el-dropdown-item v-if="authStore.isLoggedIn && !authStore.isLandlord" @click="router.push('/bookings/tenant')">
+                  <el-icon><List /></el-icon> 我的预订
+                </el-dropdown-item>
+                <el-dropdown-item v-if="authStore.isLandlord" @click="router.push('/bookings/landlord')">
+                  <el-icon><Tickets /></el-icon> 预订管理
+                </el-dropdown-item>
                 <el-dropdown-item v-if="authStore.isLandlord" @click="router.push('/property/manage')">
                   <el-icon><Setting /></el-icon> 房源管理
                 </el-dropdown-item>
@@ -76,6 +82,14 @@
           <el-menu-item index="/search">
             <el-icon><Search /></el-icon>
             <span>搜索房源</span>
+          </el-menu-item>
+          <el-menu-item v-if="authStore.isLoggedIn && !authStore.isLandlord" index="/bookings/tenant">
+            <el-icon><List /></el-icon>
+            <span>我的预订</span>
+          </el-menu-item>
+          <el-menu-item v-if="authStore.isLandlord" index="/bookings/landlord">
+            <el-icon><Tickets /></el-icon>
+            <span>预订管理</span>
           </el-menu-item>
           <el-menu-item v-if="authStore.isLoggedIn" index="/chat">
             <el-icon><ChatDotRound /></el-icon>
