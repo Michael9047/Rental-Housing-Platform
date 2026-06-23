@@ -59,10 +59,13 @@ jobs:
 
       - name: Run unit tests
         env:
+          DATABASE_URL: sqlite+aiosqlite:///:memory:
+          REDIS_URL: redis://localhost:6379/0
           AUTH_SECRET_KEY: ci-test-secret-key
           ENVIRONMENT: ci
           DEBUG: "false"
-        run: pytest tests/ -v --tb=short -k "not pgvector"
+          OPENAI_API_KEY: ""
+        run: python -m pytest tests/ -v --tb=short -k "not pgvector"
 
   # ---- Backend pgvector Integration Tests ----
   backend-pgvector-tests:
@@ -113,7 +116,7 @@ jobs:
         env:
           DATABASE_URL: postgresql+asyncpg://rental:rental@localhost:5432/rental_housing_test
           ALEMBIC_DATABASE_URL: postgresql+psycopg://rental:rental@localhost:5432/rental_housing_test
-        run: alembic upgrade head
+        run: python -m alembic upgrade head
 
       - name: Run pgvector tests
         env:
@@ -123,7 +126,7 @@ jobs:
           AUTH_SECRET_KEY: ci-test-secret-key
           ENVIRONMENT: ci
           DEBUG: "false"
-        run: pytest tests/ -v --tb=short --run-pgvector -m pgvector
+        run: python -m pytest tests/ -v --tb=short --run-pgvector -m pgvector
 
   # ---- Frontend Build Check ----
   frontend-build:
@@ -164,10 +167,10 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
 
       - name: Install dependencies
-        run: npm ci --no-audit --no-fund
+        run: npm install --no-audit --no-fund
 
       - name: Run tests
-        run: npm test
+        run: npx vitest run
 
   # ---- Docker Build & Push ----
   docker-build:
