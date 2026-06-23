@@ -1,8 +1,8 @@
-﻿<template>
+<template>
   <div class="manage-page">
     <div class="page-header">
       <h2>房源管理</h2>
-      <el-button type="primary" :icon="Plus" @click="goCreate">
+      <el-button type="primary" :icon="Plus" @click="$router.push('/property/create')">
         发布新房源
       </el-button>
     </div>
@@ -34,7 +34,7 @@
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="260" fixed="right">
+        <el-table-column label="操作" width="240" fixed="right">
           <template #default="{ row }">
             <el-button size="small" text type="primary" @click="editProperty(row.id)">
               编辑
@@ -99,10 +99,6 @@ function statusTagType(status: PropertyStatus): string {
   return map[status]
 }
 
-function goCreate() {
-  router.push('/property/create')
-}
-
 function editProperty(id: number) {
   router.push('/property/' + id + '/edit')
 }
@@ -116,7 +112,7 @@ async function toggleStatus(property: Property) {
   try {
     await propertyStore.update(property.id, { status: newStatus })
     ElMessage.success(newStatus === 'offline' ? '已下架' : '已上架')
-    propertyStore.fetchList({ limit: 100 })
+    propertyStore.fetchList()
   } catch {
     // handled by interceptor
   }

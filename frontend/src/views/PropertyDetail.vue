@@ -7,13 +7,13 @@
       <!-- Image Gallery -->
       <div v-if="property.images && property.images.length > 0" class="image-gallery">
         <el-carousel :interval="4000" type="card" height="400px" trigger="click">
-          <el-carousel-item v-for="(img, idx) in sortedImages" :key="img.id">
+          <el-carousel-item v-for="img in sortedImages" :key="img.id">
             <el-image
               :src="`/api/v1/uploads/${img.filename}`"
               fit="cover"
               class="gallery-image"
               :preview-src-list="allImageUrls"
-              :initial-index="idx"
+              :initial-index="sortedImages.indexOf(img)"
               preview-teleported
             />
           </el-carousel-item>
@@ -27,7 +27,7 @@
           <el-tag :type="statusTagType">{{ statusLabel }}</el-tag>
           <el-tag type="info">{{ typeLabel }}</el-tag>
           <span class="meta-item">{{ property.district }}</span>
-          <span class="meta-item">{{ property.address }}</span>
+          <span class="meta-item">{{ property?.address }}</span>
         </div>
       </div>
 
@@ -94,61 +94,50 @@
         <p class="meta-text">更新于 {{ formatDate(property.updated_at) }}</p>
       </el-card>
 
-      <!-- 位置信息 -->
-      <el-card class="info-card" shadow="hover">
-        <template #header>
-          <div class="card-header">
-            <span>位置信息</span>
-          </div>
-        </template>
-        <div class="map-section">
-          <p class="map-address"><strong>{{ property.address }}</strong></p>
-          <p v-if="property.latitude" class="map-coords">
-            经纬度: {{ Number(property.latitude).toFixed(4) }}, {{ Number(property.longitude).toFixed(4) }}
-          </p>
-          <el-link
-            :href="'https://uri.amap.com/marker?position=' + (property.longitude || 120.585) + ',' + (property.latitude || 31.299)"
-            target="_blank"
-            type="primary">
-            在高德地图中查看 ↗
-          </el-link>
-        </div>
-      </el-card>
-
-      <!-- 周边设施 -->
-      <el-card v-if="poiData" class="info-card" shadow="hover">
-        <template #header>
-          <div class="card-header">
-            <span>周边设施</span>
-          </div>
-        </template>
-        <div v-loading="poiLoading">
-          <p class="poi-summary">{{ poiData.content }}</p>
-          <div v-if="poiData.poi_data" class="poi-categories">
-            <div v-for="(items, category) in poiData.poi_data" :key="category" class="poi-category">
-              <h4>{{ category }}</h4>
-              <ul>
-                <li v-for="item in items" :key="item.name">
-                  {{ item.name }} - {{ item.distance }}
-                </li>
-              </ul>
-            </div>
-          </div>
-        </div>
+      <!-- Map -->
+      <el-card shadow="never" class="detail-card">
+        <template #header><span>位置地图</span></template>
+        <AmapMap
+          :latitude="property.latitude"
+          :longitude="property.longitude"
+          :address="property.address"
+        />
       </el-card>
     </div>
 
     <el-empty v-else-if="!loading" description="房源未找到" />
 
-    <!-- 预约看房对话框 -->
-    <el-dialog v-model="showBookingDialog" title="预约看房" width="450px">
-      <el-form :model="bookingForm" label-width="80px">
+    <!-- 周边设施 -->
+    <el-card v-if="poiData" class="info-card" shadow="hover">
+      <template #header>
+        <div class="card-header">
+          <span>周边设施</span>
+        </div>
+      </template>
+      <div v-loading="poiLoading">
+        <p class="poi-summary">{{ poiData?.content }}</p>
+        <div v-if="poiData?.poi_data" class="poi-grid">
+          <div v-for="(items, cat) in poiData?.poi_data" :key="cat" class="poi-cat">
+            <h4>{{ cat }}</h4>
+            <div v-for="item in items" :key="item.name" class="poi-row">
+              <span>{{ item.name }}</span>
+              <span class="poi-dist">{{ item.distance }}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </el-card>
+
+    <!-- Booking Dialog -->
+    <el-dialog v-model="showBookingDialog" title="预约看房" width="480px">
+      <el-form :model="bookingForm" label-width="100px">
         <el-form-item label="预约日期">
           <el-date-picker
             v-model="bookingForm.scheduled_date"
             type="date"
-            placeholder="选择日期"
+            placeholder="选择看房日期"
             value-format="YYYY-MM-DD"
+            style="width: 100%"
           />
         </el-form-item>
         <el-form-item label="留言">
@@ -156,7 +145,7 @@
             v-model="bookingForm.message"
             type="textarea"
             :rows="3"
-            placeholder="给房东留言..."
+            placeholder="给房东留言（如：联系方式、看房时间偏好等）"
           />
         </el-form-item>
       </el-form>
@@ -171,7 +160,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, onUnmounted, watch, ref, reactive, computed } from 'vue'
+import { onMounted, ref, reactive, computed } from 'vue'
 import { useRoute } from 'vue-router'
 import { ArrowLeft } from '@element-plus/icons-vue'
 import { usePropertyStore } from '@/stores/property'
@@ -181,6 +170,7 @@ import { propertyService, type PropertyPOI } from '@/services/property'
 import { storeToRefs } from 'pinia'
 import { ElMessage } from 'element-plus'
 import type { PropertyStatus, PropertyType } from '@/types/property'
+import AmapMap from '@/components/AmapMap.vue'
 
 const route = useRoute()
 const propertyStore = usePropertyStore()
@@ -279,33 +269,13 @@ async function handleBook() {
   }
 }
 
-function loadProperty(id: number) {
-  if (isNaN(id) || id <= 0) return
-  propertyStore.fetchById(id)
-    .then(() => {
+onMounted(() => {
+  const id = Number(route.params.id)
+  if (id) {
+    propertyStore.fetchById(id).then(() => {
       if (property.value) loadPOI(property.value.id)
     })
-    .catch(() => {
-      // fetchById already handles loading state cleanup; just clear stale POI
-      poiData.value = null
-    })
-}
-
-// Watch route param changes to support navigating between properties
-const stopWatch = watch(
-  () => route.params.id,
-  (newId) => {
-    poiData.value = null
-    loadProperty(Number(newId))
   }
-)
-
-onMounted(() => {
-  loadProperty(Number(route.params.id))
-})
-
-onUnmounted(() => {
-  stopWatch()
 })
 </script>
 
@@ -398,62 +368,5 @@ onUnmounted(() => {
   font-size: 13px;
   color: #909399;
   margin-bottom: 4px;
-}
-
-.info-card {
-  margin-bottom: 16px;
-}
-
-.map-section {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.map-address {
-  font-size: 14px;
-  color: #303133;
-}
-
-.map-coords {
-  font-size: 12px;
-  color: #909399;
-}
-
-.poi-summary {
-  font-size: 14px;
-  color: #303133;
-  line-height: 1.6;
-}
-
-.poi-categories {
-  margin-top: 12px;
-}
-
-.poi-category {
-  margin-bottom: 10px;
-}
-
-.poi-category h4 {
-  font-size: 13px;
-  color: #606266;
-  margin-bottom: 4px;
-}
-
-.poi-category ul {
-  margin: 0;
-  padding-left: 16px;
-}
-
-.poi-category li {
-  font-size: 13px;
-  color: #909399;
-  line-height: 1.6;
-}
-
-.fee-info {
-  font-size: 13px;
-  color: #909399;
-  margin-top: 4px;
 }
 </style>

@@ -1,28 +1,26 @@
-﻿<template>
+<template>
   <div class="create-page">
-    <h2>{{ isEdit ? '编辑房源' : '发布房源' }}</h2>
-
-    <!-- 智能文本输入（仅创建模式） -->
-    <el-card v-if="!isEdit" shadow="never" class="smart-card">
+    <h2>{{ isEditMode ? '编辑房源' : '发布房源' }}</h2>    <!-- ????????????? -->
+    <el-card v-if="!isEditMode" shadow="never" class="smart-card">
       <template #header>
-        <span>📝 快速发布 — 粘贴房源描述，自动识别信息</span>
+        <span>?? ???? ? ?????????????</span>
       </template>
       <el-input
         v-model="rawText"
         type="textarea"
         :rows="5"
-        placeholder="例如：工业园区独墅湖高教区仁爱路199号翰林缘单身公寓，月租2200元，押金2200元，服务费10%，38平米，独立卫浴，适合白领和学生。楼下便利店、餐厅齐全。"
+        placeholder="????????????????199???????????2200????2200?????10%?38???????????????????????????"
       />
       <div class="smart-actions">
         <el-button type="primary" :loading="parsing" @click="smartParse" :disabled="!rawText.trim()">
-          🔍 智能识别
+          ?? ????
         </el-button>
-        <el-button @click="rawText = ''" :disabled="!rawText.trim()">清空</el-button>
+        <el-button @click="rawText = ''" :disabled="!rawText.trim()">??</el-button>
       </div>
       <div v-if="parseResult" class="parse-result">
         <el-alert
           v-if="parseResult.unrecognized.length"
-          :title="'未识别内容: ' + parseResult.unrecognized.join('；')"
+          :title="'?????: ' + parseResult.unrecognized.join('?')"
           type="warning"
           :closable="false"
           show-icon
@@ -30,7 +28,7 @@
         />
         <el-alert
           v-else
-          title="已全部识别，请检查后提交"
+          title="????????????"
           type="success"
           :closable="false"
           show-icon
@@ -39,17 +37,15 @@
       </div>
     </el-card>
 
-    <!-- 表单编辑 -->
+
+
     <el-card shadow="never">
-      <template #header>
-        <span>{{ isEdit ? '编辑房源信息' : '房源信息' }}</span>
-      </template>
       <el-form
         ref="formRef"
         :model="form"
         :rules="rules"
         label-width="100px"
-        @submit.prevent="handleSubmit"
+        @submit.prevent="handleCreate"
       >
         <el-form-item label="标题" prop="title">
           <el-input v-model="form.title" placeholder="例如：园区两室一厅精装修" maxlength="200" show-word-limit />
@@ -57,6 +53,13 @@
 
         <el-form-item label="地址" prop="address">
           <el-input v-model="form.address" placeholder="详细地址" />
+          <p class="geocode-hint">
+            <span v-if="geocodeStatus === 'loading'">正在自动回填经纬度…</span>
+            <span v-else-if="geocodeStatus === 'ready'">已自动回填经纬度</span>
+            <span v-else-if="geocodeStatus === 'missing-key'">未配置高德地图 Key，无法自动回填</span>
+            <span v-else-if="geocodeStatus === 'error'">自动回填失败，可继续保存后再手动补充</span>
+            <span v-else>输入地址后会自动回填经纬度</span>
+          </p>
         </el-form-item>
 
         <el-form-item label="区域" prop="district">
@@ -65,27 +68,17 @@
           </el-select>
         </el-form-item>
 
-        <el-row :gutter="20">
-          <el-col :span="12">
-            <el-form-item label="月租金" prop="price_monthly">
-              <el-input-number v-model="form.price_monthly" :min="0" :precision="2" controls-position="right" style="width: 200px" />
-              <span style="margin-left: 8px; color: #909399">元/月</span>
-            </el-form-item>
-          </el-col>
-          <el-col :span="12">
-            <el-form-item label="押金">
-              <el-input-number v-model="form.deposit_amount" :min="0" :precision="0" controls-position="right" style="width: 180px" />
-              <span style="margin-left: 8px; color: #909399">元</span>
-            </el-form-item>
-          </el-col>
-        </el-row>
+        <el-form-item label="月租金" prop="price_monthly">
+          <el-input-number v-model="form.price_monthly" :min="0" :precision="2" controls-position="right" style="width: 200px" />
+          <span style="margin-left: 8px; color: #909399">元/月</span>
+        </el-form-item>
 
         <el-row :gutter="20">
           <el-col :span="8">
             <el-form-item label="户型">
-              <el-input-number v-model="form.bedrooms" :min="0" controls-position="right" style="width: 80px" />
-              <span style="margin: 0 4px">室</span>
-              <el-input-number v-model="form.bathrooms" :min="0" controls-position="right" style="width: 80px" />
+              <el-input-number v-model="form.bedrooms" :min="0" controls-position="right" style="width: 100px" />
+              <span style="margin-left: 4px">室</span>
+              <el-input-number v-model="form.bathrooms" :min="0" controls-position="right" style="width: 100px; margin-left: 8px" />
               <span style="margin-left: 4px">卫</span>
             </el-form-item>
           </el-col>
@@ -107,12 +100,7 @@
           </el-col>
         </el-row>
 
-        <el-form-item label="服务费率">
-          <el-input-number v-model="form.service_fee_rate" :min="0" :max="1" :precision="2" :step="0.01" controls-position="right" style="width: 140px" />
-          <span style="margin-left: 8px; color: #909399">{{ ((form.service_fee_rate || 0) * 100).toFixed(0) }}%</span>
-        </el-form-item>
-
-        <el-form-item label="描述">
+        <el-form-item label="描述" prop="description">
           <el-input
             v-model="form.description"
             type="textarea"
@@ -121,19 +109,13 @@
           />
         </el-form-item>
 
-        <el-form-item label="经纬度">
-          <el-col :span="11">
-            <el-input v-model="form.latitude" placeholder="纬度 (如 31.315)" />
-          </el-col>
-          <el-col :span="2" style="text-align: center">—</el-col>
-          <el-col :span="11">
-            <el-input v-model="form.longitude" placeholder="经度 (如 120.715)" />
-          </el-col>
+        <el-form-item label="坐标">
+          <el-input :model-value="coordinateText" readonly placeholder="输入地址后自动回填" />
         </el-form-item>
 
         <el-form-item>
           <el-button type="primary" native-type="submit" :loading="submitting">
-            {{ isEdit ? '保存修改' : '发布' }}
+            {{ isEditMode ? '保存修改' : '发布' }}
           </el-button>
           <el-button @click="$router.back()">取消</el-button>
         </el-form-item>
@@ -143,46 +125,53 @@
 </template>
 
 <script setup lang="ts">
-import { reactive, ref, onMounted, computed } from 'vue'
-import { useRouter, useRoute } from 'vue-router'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
 import { usePropertyStore } from '@/stores/property'
 import { useAuthStore } from '@/stores/auth'
 import type { PropertyType } from '@/types/property'
+import { propertyService } from '@/services/property'
 
 const router = useRouter()
 const route = useRoute()
 const propertyStore = usePropertyStore()
 const authStore = useAuthStore()
 
-const isEdit = computed(() => route.name === 'edit-property')
-const editId = computed(() => (isEdit.value ? Number(route.params.id) : null))
-
 const formRef = ref<FormInstance>()
 const submitting = ref(false)
-
-// --- 智能识别 ---
-const rawText = ref('')
-const parsing = ref(false)
-const parseResult = ref<{ unrecognized: string[] } | null>(null)
+const geocodeStatus = ref<'idle' | 'loading' | 'ready' | 'missing-key' | 'error'>('idle')
+const isHydrating = ref(false)
+const geocodeRequestSeq = ref(0)
+let geocodeTimer: number | undefined
 
 const districts = ['工业园区', '姑苏区', '高新区', '吴中区', '相城区', '吴江区']
+
+const propertyId = computed(() => Number(route.params.id))
+const isEditMode = computed(() => route.name === 'edit-property' && Number.isFinite(propertyId.value) && propertyId.value > 0)
 
 const form = reactive({
   title: '',
   address: '',
   district: '',
-  price_monthly: 0 as number | undefined,
-  deposit_amount: undefined as number | undefined,
+  price_monthly: 0,
   bedrooms: 0,
   bathrooms: 0,
   area_sqm: undefined as number | undefined,
   property_type: 'apartment' as PropertyType,
-  service_fee_rate: undefined as number | undefined,
   description: '',
-  latitude: '' as string | undefined,
-  longitude: '' as string | undefined,
+  deposit_amount: undefined as number | undefined,
+  service_fee_rate: undefined as number | undefined,
+  latitude: null as number | null,
+  longitude: null as number | null,
+})
+
+const coordinateText = computed(() => {
+  if (form.latitude == null || form.longitude == null) {
+    return '暂无坐标'
+  }
+  return `${form.latitude.toFixed(6)}, ${form.longitude.toFixed(6)}`
 })
 
 const rules: FormRules = {
@@ -193,8 +182,8 @@ const rules: FormRules = {
   property_type: [{ required: true, message: '请选择类型', trigger: 'change' }],
 }
 
-// --- 智能解析引擎 ---
-const cnNumMap: Record<string, number> = { 一:1,二:2,两:2,三:3,四:4,五:5,六:6,七:7,八:8,九:9,十:10 }
+// --- ?????? ---
+const cnNumMap: Record<string, number> = { ?:1,?:2,?:2,?:3,?:4,?:5,?:6,?:7,?:8,?:9,?:10 }
 
 function parseChineseNumber(s: string): number {
   return cnNumMap[s] ?? parseInt(s)
@@ -206,48 +195,46 @@ function smartParse() {
   const text = rawText.value
   const unrecognized: string[] = []
 
-  // 1. 户型 — 卧室+卫生间
+  // 1. ?? ? ??+???
   const roomPatterns = [
-    /(\d+)室(\d+)厅(\d+)卫/,
-    /(\d+)室(\d+)厅/,
-    /(\d+)室(\d+)卫/,
-    /([一二两三四五六七八九十])室([一二两三四五六七八九十])厅([一二两三四五六七八九十])卫/,
-    /([一二两三四五六七八九十])室([一二两三四五六七八九十])厅/,
-    /([一二两三四五六七八九十])室([一二两三四五六七八九十])卫/,
-    /(\d+)房(\d+)厅(\d+)卫/,
-    /(\d+)房(\d+)厅/,
+    /(\d+)?(\d+)?(\d+)?/,
+    /(\d+)?(\d+)?/,
+    /(\d+)?(\d+)?/,
+    /([???????????])?([???????????])?([???????????])?/,
+    /([???????????])?([???????????])?/,
+    /([???????????])?([???????????])?/,
+    /(\d+)?(\d+)?(\d+)?/,
+    /(\d+)?(\d+)?/,
   ]
   let bedrooms = -1, bathrooms = -1
   for (const p of roomPatterns) {
     const m = text.match(p)
     if (m) {
       bedrooms = parseChineseNumber(m[1])
-      bathrooms = p.source.includes('卫') ? parseChineseNumber(m[p.source.includes('厅') ? (p.source.match(/卫/g)?.length === 1 ? 3 : 3) : 2]) : (p.source.includes('卫') && m[3] ? parseChineseNumber(m[3]) : -1)
+      bathrooms = p.source.includes('?') ? parseChineseNumber(m[p.source.includes('?') ? (p.source.match(/?/g)?.length === 1 ? 3 : 3) : 2]) : (p.source.includes('?') && m[3] ? parseChineseNumber(m[3]) : -1)
       break
     }
   }
-  // 单独匹配 室/卫
   if (bedrooms === -1) {
-    const m = text.match(/(\d+)\s*室/) || text.match(/([一二两三四五六七八九十])\s*室/)
+    const m = text.match(/(\d+)\s*?/) || text.match(/([???????????])\s*?/)
     if (m) bedrooms = parseChineseNumber(m[1])
   }
   if (bathrooms === -1) {
-    const m = text.match(/(\d+)\s*卫/) || text.match(/([一二两三四五六七八九十])\s*卫/)
+    const m = text.match(/(\d+)\s*?/) || text.match(/([???????????])\s*?/)
     if (m) bathrooms = parseChineseNumber(m[1])
   }
-  // 独立卫浴
-  if (bathrooms === -1 && /独立卫浴|独卫/.test(text)) bathrooms = 1
+  if (bathrooms === -1 && /????|??/.test(text)) bathrooms = 1
 
-  // 2. 面积
-  const areaM = text.match(/(\d+(?:\.\d+)?)\s*(?:平米|平方米|㎡|平)/)
+  // 2. ??
+  const areaM = text.match(/(\d+(?:\.\d+)?)\s*(?:??|???|?|?)/)
   const area = areaM ? parseFloat(areaM[1]) : undefined
 
-  // 3. 月租
+  // 3. ??
   const rentPatterns = [
-    /月租\s*(\d+(?:\.\d+)?)/,
-    /(\d+(?:\.\d+)?)\s*元?\s*[\/每]\s*月/,
-    /租金\s*(\d+(?:\.\d+)?)/,
-    /(\d+(?:\.\d+)?)\s*元?\s*(?:每月|一个月)/,
+    /??\s*(\d+(?:\.\d+)?)/,
+    /(\d+(?:\.\d+)?)\s*??\s*[\/?]\s*?/,
+    /??\s*(\d+(?:\.\d+)?)/,
+    /(\d+(?:\.\d+)?)\s*??\s*(?:??|???)/,
   ]
   let rent: number | undefined
   for (const p of rentPatterns) {
@@ -255,41 +242,41 @@ function smartParse() {
     if (m) { rent = parseFloat(m[1]); break }
   }
 
-  // 4. 押金
-  const depositM = text.match(/押金\s*(\d+(?:\.\d+)?)/) || text.match(/押[一1]付[三3]/)
+  // 4. ??
+  const depositM = text.match(/??\s*(\d+(?:\.\d+)?)/) || text.match(/?[?1]?[?3]/)
   const deposit = depositM ? (depositM[1] ? parseFloat(depositM[1]) : (rent ?? 0)) : undefined
 
-  // 5. 服务费
-  const feeM = text.match(/服务费\s*(\d+(?:\.\d+)?)\s*%/)
+  // 5. ???
+  const feeM = text.match(/???\s*(\d+(?:\.\d+)?)\s*%/)
   const fee = feeM ? parseFloat(feeM[1]) / 100 : undefined
 
-  // 6. 类型
+  // 6. ??
   let ptype: PropertyType | undefined
-  if (/别墅/.test(text)) ptype = 'house'
-  else if (/单间|单[身人]公[寓寓]/.test(text)) ptype = 'studio'
-  else if (/合租|合[住宿]/.test(text)) ptype = 'shared'
-  else if (/公寓/.test(text)) ptype = 'apartment'
+  if (/??/.test(text)) ptype = 'house'
+  else if (/??|?[??]?[??]/.test(text)) ptype = 'studio'
+  else if (/??|?[??]/.test(text)) ptype = 'shared'
+  else if (/??/.test(text)) ptype = 'apartment'
 
-  // 7. 区域
+  // 7. ??
   let district = ''
   for (const d of districts) {
     if (text.includes(d)) { district = d; break }
   }
 
-  // 8. 地址 — 提取具体路段信息
+  // 8. ??
   let address = ''
-  const addrM = text.match(/([^，,。.！!；;]+?(?:路|街|道|巷|弄|号|小区|花园|苑|城|湾|岸|郡|府|广场)[^，,。.！!；;]*)/)
+  const addrM = text.match(/([^?,?.?!?;]+?(?:?|?|?|?|?|?|??|??|?|?|?|?|?|?|??)[^?,?.?!?;]*)/)
   if (addrM) address = addrM[1].trim()
 
-  // 9. 标题 — 用区域+类型自动生成
+  // 9. ??
   let title = ''
   if (district) title += district
-  if (address) title += address.replace(/^\S+区/, '').slice(0, 8)
-  if (ptype) title += ({ apartment: '公寓', house: '别墅', studio: '单间', shared: '合租' })[ptype]
+  if (address) title += address.replace(/^\S+?/, '').slice(0, 8)
+  if (ptype) title += ({ apartment: '??', house: '??', studio: '??', shared: '??' })[ptype]
 
-  // 10. 未识别内容
+  // 10. ?????
   let remaining = text
-    .replace(/[，,。.！!；;、\s]+/g, ' ').trim()
+    .replace(/[?,?.?!?;?\s]+/g, ' ').trim()
   const consumed: string[] = []
   if (address) consumed.push(address)
   if (district) consumed.push(district)
@@ -314,12 +301,111 @@ function smartParse() {
 
   parseResult.value = { unrecognized }
   parsing.value = false
-  if (!unrecognized.length) ElMessage.success('智能识别完成，请确认后提交')
-  else ElMessage.info('部分内容已识别，请补充未识别部分')
+  if (!unrecognized.length) ElMessage.success('?????????????')
+  else ElMessage.info('????????????????')
 }
 
-// --- 提交 ---
-async function handleSubmit() {
+function clearGeocodeTimer() {
+  if (geocodeTimer !== undefined) {
+    window.clearTimeout(geocodeTimer)
+    geocodeTimer = undefined
+  }
+}
+
+function resetCoordinates() {
+  form.latitude = null
+  form.longitude = null
+  geocodeStatus.value = 'idle'
+}
+
+async function runGeocode() {
+  const address = form.address.trim()
+  const district = form.district.trim()
+
+  if (!address) {
+    resetCoordinates()
+    return
+  }
+
+  geocodeStatus.value = 'loading'
+  const requestSeq = geocodeRequestSeq.value + 1
+  geocodeRequestSeq.value = requestSeq
+
+  try {
+    const result = await propertyService.geocodeAddress(address, district || undefined)
+    if (requestSeq !== geocodeRequestSeq.value) {
+      return
+    }
+    form.latitude = result.latitude
+    form.longitude = result.longitude
+    geocodeStatus.value = 'ready'
+  } catch (error: any) {
+    if (requestSeq !== geocodeRequestSeq.value) {
+      return
+    }
+    if (error?.response?.status === 503) {
+      geocodeStatus.value = 'missing-key'
+      return
+    }
+    geocodeStatus.value = 'error'
+  }
+}
+
+watch(
+  () => [form.address, form.district],
+  () => {
+    if (isHydrating.value) return
+    clearGeocodeTimer()
+    resetCoordinates()
+    geocodeTimer = window.setTimeout(() => {
+      void runGeocode()
+    }, 500)
+  },
+)
+
+onMounted(async () => {
+  const id = propertyId.value
+  if (!isEditMode.value) {
+    return
+  }
+
+  isHydrating.value = true
+  try {
+    await propertyStore.fetchById(id)
+    const property = propertyStore.currentProperty
+    if (!property) {
+      ElMessage.error('房源未找到')
+      router.push('/property/manage')
+      return
+    }
+
+    form.title = property.title
+    form.address = property.address
+    form.district = property.district
+    form.price_monthly = property.price_monthly
+    form.bedrooms = property.bedrooms
+    form.bathrooms = property.bathrooms
+    form.area_sqm = property.area_sqm ?? undefined
+    form.property_type = property.property_type
+    form.description = property.description || ''
+    form.latitude = property.latitude
+    form.longitude = property.longitude
+
+    if (form.latitude == null || form.longitude == null) {
+      geocodeStatus.value = 'idle'
+    } else {
+      geocodeStatus.value = 'ready'
+    }
+  } finally {
+    isHydrating.value = false
+  }
+})
+
+onBeforeUnmount(() => {
+  clearGeocodeTimer()
+})
+
+async function handleCreate() {
   if (!formRef.value) return
   const valid = await formRef.value.validate().catch(() => false)
   if (!valid) return
@@ -331,69 +417,50 @@ async function handleSubmit() {
 
   submitting.value = true
   try {
-    if (isEdit.value && editId.value) {
-      await propertyStore.update(editId.value, {
-        title: form.title,
-        address: form.address,
-        district: form.district,
-        price_monthly: form.price_monthly,
-        property_type: form.property_type,
-        bedrooms: form.bedrooms,
-        bathrooms: form.bathrooms,
-        area_sqm: form.area_sqm,
-        description: form.description || undefined,
-        latitude: form.latitude ? Number(form.latitude) : undefined,
-        longitude: form.longitude ? Number(form.longitude) : undefined,
-      })
-      ElMessage.success('房源信息已更新')
-      router.push('/property/manage')
-    } else {
-      await propertyStore.create({
-        title: form.title,
-        address: form.address,
-        district: form.district,
-        price_monthly: form.price_monthly!,
-        property_type: form.property_type,
-        landlord_id: authStore.user.id,
-        bedrooms: form.bedrooms,
-        bathrooms: form.bathrooms,
-        area_sqm: form.area_sqm,
-        description: form.description || undefined,
-        latitude: form.latitude ? Number(form.latitude) : undefined,
-        longitude: form.longitude ? Number(form.longitude) : undefined,
-      })
-      ElMessage.success('房源发布成功')
-      router.push('/property/manage')
+    const createPayload = {
+      title: form.title,
+      address: form.address,
+      district: form.district,
+      price_monthly: form.price_monthly,
+      property_type: form.property_type,
+      landlord_id: authStore.user.id,
+      bedrooms: form.bedrooms,
+      bathrooms: form.bathrooms,
+      area_sqm: form.area_sqm,
+      description: form.description || undefined,
+      latitude: form.latitude ?? undefined,
+      longitude: form.longitude ?? undefined,
     }
+
+    const updatePayload = {
+      title: form.title,
+      address: form.address,
+      district: form.district,
+      price_monthly: form.price_monthly,
+      property_type: form.property_type,
+      bedrooms: form.bedrooms,
+      bathrooms: form.bathrooms,
+      area_sqm: form.area_sqm,
+      description: form.description || undefined,
+      latitude: form.latitude ?? undefined,
+      longitude: form.longitude ?? undefined,
+    }
+
+    if (isEditMode.value) {
+      await propertyStore.update(propertyId.value, updatePayload)
+      ElMessage.success('房源修改成功')
+    } else {
+      await propertyStore.create(createPayload)
+      ElMessage.success('房源发布成功')
+    }
+
+    router.push('/property/manage')
   } catch {
     // handled by interceptor
   } finally {
     submitting.value = false
   }
 }
-
-// --- 编辑模式：加载已有数据 ---
-onMounted(async () => {
-  if (isEdit.value && editId.value) {
-    await propertyStore.fetchById(editId.value)
-    const p = propertyStore.currentProperty
-    if (p) {
-      form.title = p.title
-      form.address = p.address
-      form.district = p.district
-      form.price_monthly = p.price_monthly
-      form.deposit_amount = p.deposit_amount
-      form.bedrooms = p.bedrooms
-      form.bathrooms = p.bathrooms
-      form.area_sqm = p.area_sqm ?? undefined
-      form.property_type = p.property_type
-      form.service_fee_rate = p.service_fee_rate ?? undefined
-      form.description = p.description
-      if (p.latitude) form.latitude = String(p.latitude)
-      if (p.longitude) form.longitude = String(p.longitude)
-    }
-  }
-})
 </script>
 
 <style scoped>
@@ -408,6 +475,12 @@ onMounted(async () => {
   margin-bottom: 20px;
 }
 
+.geocode-hint {
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: #909399;
+  line-height: 1.5;
+}
 .smart-card {
   margin-bottom: 20px;
   border: 2px dashed #c0c4cc;
@@ -422,4 +495,5 @@ onMounted(async () => {
 .parse-result {
   margin-top: 12px;
 }
+
 </style>

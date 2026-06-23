@@ -1,4 +1,5 @@
-﻿import csv
+﻿import asyncio
+import csv
 import io
 import json
 import logging
@@ -33,6 +34,7 @@ VALID_STATUSES = {e.value for e in PropertyStatus}
 class ImportService:
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
+        self._created_property_ids: list[int] = []
 
     async def create_import_task(
         self,
@@ -78,6 +80,7 @@ class ImportService:
         file_content: bytes,
         landlord_id: int,
     ) -> DataImport:
+        self._created_property_ids = []
         import_task.status = ImportStatus.processing
         await self.session.commit()
 
@@ -118,6 +121,7 @@ class ImportService:
 
             if success > 0:
                 self._dispatch_batch_embedding()
+                self._dispatch_batch_poi_generation(self._created_property_ids)
 
             return import_task
 
@@ -132,6 +136,7 @@ class ImportService:
             return import_task
 
     async def retry_failed(self, import_task: DataImport, landlord_id: int) -> DataImport:
+        self._created_property_ids = []
         if not import_task.error_log:
             return import_task
 
@@ -173,6 +178,7 @@ class ImportService:
 
         if success_count > 0:
             self._dispatch_batch_embedding()
+            self._dispatch_batch_poi_generation(self._created_property_ids)
 
         return import_task
 
@@ -346,6 +352,7 @@ class ImportService:
         )
         self.session.add(property_obj)
         await self.session.flush()
+        self._created_property_ids.append(property_obj.id)
 
     @staticmethod
     def _dispatch_batch_embedding() -> None:
@@ -355,6 +362,41 @@ class ImportService:
                 batch_embedding_new_properties.delay()
             except Exception:
                 logger.exception("Failed to dispatch batch embedding task")
+
+        thread = threading.Thread(target=_run, daemon=True)
+        thread.start()
+
+    def _dispatch_batch_poi_generation(self, property_ids: list[int]) -> None:
+        if not property_ids:
+            return
+
+        def _run() -> None:
+            try:
+                from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
+                from app.core.config import get_settings
+                from app.models.property import Property
+                from app.services.poi_service import POIService
+
+                async def _generate() -> None:
+                    engine = create_async_engine(get_settings().database_url)
+                    try:
+                        maker = async_sessionmaker(engine, expire_on_commit=False)
+                        async with maker() as session:
+                            poi_service = POIService(session)
+                            for property_id in property_ids:
+                                try:
+                                    prop = await session.get(Property, property_id)
+                                    if prop:
+                                        await poi_service.generate_poi_for_property(prop, force=True)
+                                except Exception:
+                                    logger.exception("Failed to generate POI for imported property %s", property_id)
+                    finally:
+                        await engine.dispose()
+
+                asyncio.run(_generate())
+            except Exception:
+                logger.exception("Failed to dispatch batch POI generation")
 
         thread = threading.Thread(target=_run, daemon=True)
         thread.start()

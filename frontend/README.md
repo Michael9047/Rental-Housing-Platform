@@ -74,6 +74,15 @@ npm run build
 
 The dev server proxies /api requests to the backend at http://localhost:8000.
 
+## Map Integration
+
+房源详情页支持高德地图嵌入展示。若要启用真实地图，请在前端环境变量中配置：
+
+- `VITE_AMAP_KEY` - 高德地图 Web 端 JS API Key
+- `VITE_AMAP_SECURITY_JS_CODE` - 可选，用于需要安全密钥的场景
+
+未配置时，页面会自动降级为高德地图外链查看，不影响房源详情页使用。
+
 ## Routes
 
 | Path | Name | Auth | Description |

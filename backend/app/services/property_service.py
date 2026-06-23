@@ -10,6 +10,7 @@ from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.property import Property
+from app.services.poi_service import POIService
 from app.schemas.property import PropertyCreate, PropertyUpdate
 
 logger = logging.getLogger(__name__)
@@ -49,6 +50,11 @@ class PropertyService:
         self.session.add(property_obj)
         await self.session.commit()
         await self.session.refresh(property_obj)
+
+        try:
+            await POIService(self.session).generate_poi_for_property(property_obj)
+        except Exception:
+            logger.exception("Failed to generate POI for property %s", property_obj.id)
 
         self._dispatch_embedding_task(property_obj.id)
         return property_obj
@@ -198,6 +204,11 @@ class PropertyService:
 
         await self.session.commit()
         await self.session.refresh(property_obj)
+
+        try:
+            await POIService(self.session).generate_poi_for_property(property_obj, force=True)
+        except Exception:
+            logger.exception("Failed to refresh POI for property %s", property_obj.id)
 
         self._dispatch_embedding_task(property_obj.id)
         return property_obj

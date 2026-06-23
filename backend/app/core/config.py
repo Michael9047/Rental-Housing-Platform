@@ -56,6 +56,31 @@ class Settings(BaseSettings):
         validation_alias="OPENAI_CHAT_MODEL",
     )
 
+    amap_web_key: str = Field(
+        default="",
+        validation_alias="AMAP_WEB_KEY",
+    )
+    amap_geocode_url: str = Field(
+        default="https://restapi.amap.com/v3/geocode/geo",
+        validation_alias="AMAP_GEOCODE_URL",
+    )
+    amap_geocode_timeout_seconds: float = Field(
+        default=10.0,
+        validation_alias="AMAP_GEOCODE_TIMEOUT_SECONDS",
+    )
+    amap_around_url: str = Field(
+        default="https://restapi.amap.com/v5/place/around",
+        validation_alias="AMAP_AROUND_URL",
+    )
+    amap_nearby_radius_meters: int = Field(
+        default=2000,
+        validation_alias="AMAP_NEARBY_RADIUS_METERS",
+    )
+    amap_nearby_page_size: int = Field(
+        default=5,
+        validation_alias="AMAP_NEARBY_PAGE_SIZE",
+    )
+
     upload_dir: str = Field(default="./uploads", validation_alias="UPLOAD_DIR")
     max_upload_size: int = Field(default=5 * 1024 * 1024, validation_alias="MAX_UPLOAD_SIZE")
     allowed_image_types: list[str] = Field(

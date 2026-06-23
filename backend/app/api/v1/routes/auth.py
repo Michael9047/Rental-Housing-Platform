@@ -10,7 +10,7 @@ from app.services.audit_service import AuditService
 
 router = APIRouter()
 
-
+#注册
 @router.post("/register", response_model=CurrentUserResponse, status_code=status.HTTP_201_CREATED)
 async def register(
     register_in: RegisterRequest,
@@ -33,7 +33,7 @@ async def register(
             detail="username, email, or phone already exists",
         ) from exc
 
-
+#登陆
 @router.post("/login", response_model=TokenResponse)
 async def login(
     login_in: LoginRequest,
@@ -59,7 +59,7 @@ async def login(
 
     return TokenResponse(access_token=auth_service.create_access_token(user))
 
-
+#
 @router.post("/refresh", response_model=TokenResponse)
 async def refresh_token(request: Request) -> TokenResponse:
     """Issue a new access token using a refresh token from Authorization header."""
