@@ -34,10 +34,13 @@
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="200" fixed="right">
+        <el-table-column label="操作" width="240" fixed="right">
           <template #default="{ row }">
             <el-button size="small" text type="primary" @click="editProperty(row.id)">
               编辑
+            </el-button>
+            <el-button size="small" text type="success" @click="manageImages(row.id)">
+              图片
             </el-button>
             <el-button size="small" text type="warning" @click="toggleStatus(row)">
               {{ row.status === 'offline' ? '上架' : '下架' }}
@@ -97,6 +100,10 @@ function statusTagType(status: PropertyStatus): string {
 }
 
 function editProperty(id: number) {
+  router.push('/property/' + id + '/edit')
+}
+
+function manageImages(id: number) {
   router.push('/property/' + id + '/images')
 }
 

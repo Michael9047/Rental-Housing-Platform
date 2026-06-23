@@ -1,6 +1,6 @@
 <template>
   <div class="create-page">
-    <h2>发布房源</h2>
+    <h2>{{ isEditMode ? '编辑房源' : '发布房源' }}</h2>
 
     <el-card shadow="never">
       <el-form
@@ -16,6 +16,13 @@
 
         <el-form-item label="地址" prop="address">
           <el-input v-model="form.address" placeholder="详细地址" />
+          <p class="geocode-hint">
+            <span v-if="geocodeStatus === 'loading'">正在自动回填经纬度…</span>
+            <span v-else-if="geocodeStatus === 'ready'">已自动回填经纬度</span>
+            <span v-else-if="geocodeStatus === 'missing-key'">未配置高德地图 Key，无法自动回填</span>
+            <span v-else-if="geocodeStatus === 'error'">自动回填失败，可继续保存后再手动补充</span>
+            <span v-else>输入地址后会自动回填经纬度</span>
+          </p>
         </el-form-item>
 
         <el-form-item label="区域" prop="district">
@@ -65,9 +72,13 @@
           />
         </el-form-item>
 
+        <el-form-item label="坐标">
+          <el-input :model-value="coordinateText" readonly placeholder="输入地址后自动回填" />
+        </el-form-item>
+
         <el-form-item>
           <el-button type="primary" native-type="submit" :loading="submitting">
-            发布
+            {{ isEditMode ? '保存修改' : '发布' }}
           </el-button>
           <el-button @click="$router.back()">取消</el-button>
         </el-form-item>
@@ -77,22 +88,31 @@
 </template>
 
 <script setup lang="ts">
-import { reactive, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
 import { usePropertyStore } from '@/stores/property'
 import { useAuthStore } from '@/stores/auth'
 import type { PropertyType } from '@/types/property'
+import { propertyService } from '@/services/property'
 
 const router = useRouter()
+const route = useRoute()
 const propertyStore = usePropertyStore()
 const authStore = useAuthStore()
 
 const formRef = ref<FormInstance>()
 const submitting = ref(false)
+const geocodeStatus = ref<'idle' | 'loading' | 'ready' | 'missing-key' | 'error'>('idle')
+const isHydrating = ref(false)
+const geocodeRequestSeq = ref(0)
+let geocodeTimer: number | undefined
 
 const districts = ['工业园区', '姑苏区', '高新区', '吴中区', '相城区', '吴江区']
+
+const propertyId = computed(() => Number(route.params.id))
+const isEditMode = computed(() => route.name === 'edit-property' && Number.isFinite(propertyId.value) && propertyId.value > 0)
 
 const form = reactive({
   title: '',
@@ -104,6 +124,15 @@ const form = reactive({
   area_sqm: undefined as number | undefined,
   property_type: 'apartment' as PropertyType,
   description: '',
+  latitude: null as number | null,
+  longitude: null as number | null,
+})
+
+const coordinateText = computed(() => {
+  if (form.latitude == null || form.longitude == null) {
+    return '暂无坐标'
+  }
+  return `${form.latitude.toFixed(6)}, ${form.longitude.toFixed(6)}`
 })
 
 const rules: FormRules = {
@@ -113,6 +142,106 @@ const rules: FormRules = {
   price_monthly: [{ required: true, message: '请输入月租金', trigger: 'blur' }],
   property_type: [{ required: true, message: '请选择类型', trigger: 'change' }],
 }
+
+function clearGeocodeTimer() {
+  if (geocodeTimer !== undefined) {
+    window.clearTimeout(geocodeTimer)
+    geocodeTimer = undefined
+  }
+}
+
+function resetCoordinates() {
+  form.latitude = null
+  form.longitude = null
+  geocodeStatus.value = 'idle'
+}
+
+async function runGeocode() {
+  const address = form.address.trim()
+  const district = form.district.trim()
+
+  if (!address) {
+    resetCoordinates()
+    return
+  }
+
+  geocodeStatus.value = 'loading'
+  const requestSeq = geocodeRequestSeq.value + 1
+  geocodeRequestSeq.value = requestSeq
+
+  try {
+    const result = await propertyService.geocodeAddress(address, district || undefined)
+    if (requestSeq !== geocodeRequestSeq.value) {
+      return
+    }
+    form.latitude = result.latitude
+    form.longitude = result.longitude
+    geocodeStatus.value = 'ready'
+  } catch (error: any) {
+    if (requestSeq !== geocodeRequestSeq.value) {
+      return
+    }
+    if (error?.response?.status === 503) {
+      geocodeStatus.value = 'missing-key'
+      return
+    }
+    geocodeStatus.value = 'error'
+  }
+}
+
+watch(
+  () => [form.address, form.district],
+  () => {
+    if (isHydrating.value) return
+    clearGeocodeTimer()
+    resetCoordinates()
+    geocodeTimer = window.setTimeout(() => {
+      void runGeocode()
+    }, 500)
+  },
+)
+
+onMounted(async () => {
+  const id = propertyId.value
+  if (!isEditMode.value) {
+    return
+  }
+
+  isHydrating.value = true
+  try {
+    await propertyStore.fetchById(id)
+    const property = propertyStore.currentProperty
+    if (!property) {
+      ElMessage.error('房源未找到')
+      router.push('/property/manage')
+      return
+    }
+
+    form.title = property.title
+    form.address = property.address
+    form.district = property.district
+    form.price_monthly = property.price_monthly
+    form.bedrooms = property.bedrooms
+    form.bathrooms = property.bathrooms
+    form.area_sqm = property.area_sqm ?? undefined
+    form.property_type = property.property_type
+    form.description = property.description || ''
+    form.latitude = property.latitude
+    form.longitude = property.longitude
+
+    if (form.latitude == null || form.longitude == null) {
+      geocodeStatus.value = 'idle'
+    } else {
+      geocodeStatus.value = 'ready'
+    }
+  } finally {
+    isHydrating.value = false
+  }
+})
+
+onBeforeUnmount(() => {
+  clearGeocodeTimer()
+})
 
 async function handleCreate() {
   if (!formRef.value) return
@@ -126,7 +255,7 @@ async function handleCreate() {
 
   submitting.value = true
   try {
-    const _created = await propertyStore.create({
+    const createPayload = {
       title: form.title,
       address: form.address,
       district: form.district,
@@ -137,9 +266,33 @@ async function handleCreate() {
       bathrooms: form.bathrooms,
       area_sqm: form.area_sqm,
       description: form.description || undefined,
-    })
-    ElMessage.success('房源发布成功')
-    router.push('/property/')
+      latitude: form.latitude ?? undefined,
+      longitude: form.longitude ?? undefined,
+    }
+
+    const updatePayload = {
+      title: form.title,
+      address: form.address,
+      district: form.district,
+      price_monthly: form.price_monthly,
+      property_type: form.property_type,
+      bedrooms: form.bedrooms,
+      bathrooms: form.bathrooms,
+      area_sqm: form.area_sqm,
+      description: form.description || undefined,
+      latitude: form.latitude ?? undefined,
+      longitude: form.longitude ?? undefined,
+    }
+
+    if (isEditMode.value) {
+      await propertyStore.update(propertyId.value, updatePayload)
+      ElMessage.success('房源修改成功')
+    } else {
+      await propertyStore.create(createPayload)
+      ElMessage.success('房源发布成功')
+    }
+
+    router.push('/property/manage')
   } catch {
     // handled by interceptor
   } finally {
@@ -158,5 +311,12 @@ async function handleCreate() {
   font-size: 22px;
   color: #303133;
   margin-bottom: 20px;
+}
+
+.geocode-hint {
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: #909399;
+  line-height: 1.5;
 }
 </style>

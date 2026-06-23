@@ -41,6 +41,12 @@ const routes: RouteRecordRaw[] = [
         meta: { requiresAuth: true, requiresLandlord: true },
       },
       {
+        path: 'property/:id/edit',
+        name: 'edit-property',
+        component: () => import('@/views/CreateProperty.vue'),
+        meta: { requiresAuth: true, requiresLandlord: true },
+      },
+      {
         path: 'property/manage',
         name: 'manage-properties',
         component: () => import('@/views/ManageProperties.vue'),

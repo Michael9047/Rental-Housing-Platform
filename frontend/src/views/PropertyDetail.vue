@@ -93,30 +93,19 @@
         <p class="meta-text">发布于 {{ formatDate(property.created_at) }}</p>
         <p class="meta-text">更新于 {{ formatDate(property.updated_at) }}</p>
       </el-card>
+
+      <!-- Map -->
+      <el-card shadow="never" class="detail-card">
+        <template #header><span>位置地图</span></template>
+        <AmapMap
+          :latitude="property.latitude"
+          :longitude="property.longitude"
+          :address="property.address"
+        />
+      </el-card>
     </div>
 
     <el-empty v-else-if="!loading" description="房源未找到" />
-
-    <!-- 位置信息 -->
-    <el-card class="info-card" shadow="hover">
-      <template #header>
-        <div class="card-header">
-          <span>位置信息</span>
-        </div>
-      </template>
-      <div class="map-section">
-        <p class="map-address"><strong>{{ property?.address }}</strong></p>
-        <p v-if="property?.latitude" class="map-coords">
-          经纬度: {{ property?.latitude?.toFixed(4) }}, {{ property?.longitude?.toFixed(4) }}
-        </p>
-        <el-link
-          :href="'https://uri.amap.com/marker?position=' + (property?.longitude || 120.585) + ',' + (property?.latitude || 31.299)"
-          target="_blank"
-          type="primary">
-          在高德地图中查看 ↗
-        </el-link>
-      </div>
-    </el-card>
 
     <!-- 周边设施 -->
     <el-card v-if="poiData" class="info-card" shadow="hover">
@@ -181,6 +170,7 @@ import { propertyService, type PropertyPOI } from '@/services/property'
 import { storeToRefs } from 'pinia'
 import { ElMessage } from 'element-plus'
 import type { PropertyStatus, PropertyType } from '@/types/property'
+import AmapMap from '@/components/AmapMap.vue'
 
 const route = useRoute()
 const propertyStore = usePropertyStore()

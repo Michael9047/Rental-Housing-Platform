@@ -14,6 +14,17 @@ export interface PropertyPOI {
   generated_at: string
 }
 
+export interface GeocodeResult {
+  address: string
+  latitude: number
+  longitude: number
+  formatted_address?: string | null
+  level?: string | null
+  province?: string | null
+  city?: string | null
+  district?: string | null
+}
+
 export const propertyService = {
   list(params?: { skip?: number; limit?: number; district?: string; status?: string }): Promise<Property[]> {
     return api.get('/properties', { params }).then((r) => r.data)
@@ -33,6 +44,14 @@ export const propertyService = {
 
   update(id: number | string, data: PropertyUpdate): Promise<Property> {
     return api.patch(`/properties/${id}`, data).then((r) => r.data)
+  },
+
+  geocodeAddress(address: string, city?: string): Promise<GeocodeResult> {
+    return api.post('/geo/geocode', { address, city }).then((r) => ({
+      ...r.data,
+      latitude: Number(r.data.latitude),
+      longitude: Number(r.data.longitude),
+    }))
   },
 
   delete(id: number | string): Promise<void> {
