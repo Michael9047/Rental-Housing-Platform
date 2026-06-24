@@ -1,4 +1,11 @@
-﻿from collections.abc import AsyncGenerator
+﻿import os
+from collections.abc import AsyncGenerator
+
+# Ensure tests never call external APIs or require Redis.
+os.environ.setdefault("OPENAI_API_KEY", "")
+os.environ.setdefault("AMAP_WEB_KEY", "")
+os.environ.setdefault("CELERY_TASK_ALWAYS_EAGER", "true")
+os.environ.setdefault("CELERY_TASK_EAGER_PROPAGATES", "true")
 
 import pytest
 import pytest_asyncio

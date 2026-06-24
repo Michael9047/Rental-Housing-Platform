@@ -15,6 +15,9 @@ frontend/dist/
 # Uploads
 backend/uploads/
 
+# Dev database (SQLite)
+*.db
+
 # Docker
 docker-compose.override.yml
 
