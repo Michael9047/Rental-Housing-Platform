@@ -12,6 +12,9 @@ class NotificationType(str, enum.Enum):
     booking_approved = "booking_approved"
     booking_rejected = "booking_rejected"
     booking_cancelled = "booking_cancelled"
+    booking_completed = "booking_completed"
+    payment_received = "payment_received"
+    system = "system"
 
 
 class Notification(TimestampMixin, Base):

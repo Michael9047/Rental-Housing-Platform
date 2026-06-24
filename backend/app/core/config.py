@@ -103,6 +103,32 @@ class Settings(BaseSettings):
         validation_alias="WECHAT_TOKEN_URL",
     )
 
+    # SMS (Alibaba Cloud SMS)
+    sms_provider: str = Field(default="aliyun", validation_alias="SMS_PROVIDER")
+    sms_access_key_id: str = Field(default="", validation_alias="SMS_ACCESS_KEY_ID")
+    sms_access_key_secret: str = Field(default="", validation_alias="SMS_ACCESS_KEY_SECRET")
+    sms_sign_name: str = Field(default="", validation_alias="SMS_SIGN_NAME")
+    sms_template_code: str = Field(default="", validation_alias="SMS_TEMPLATE_CODE")
+    sms_endpoint: str = Field(
+        default="dysmsapi.aliyuncs.com",
+        validation_alias="SMS_ENDPOINT",
+    )
+
+    # Email (SMTP)
+    smtp_host: str = Field(default="", validation_alias="SMTP_HOST")
+    smtp_port: int = Field(default=587, validation_alias="SMTP_PORT")
+    smtp_user: str = Field(default="", validation_alias="SMTP_USER")
+    smtp_password: str = Field(default="", validation_alias="SMTP_PASSWORD")
+    smtp_from_name: str = Field(
+        default="Rental Housing",
+        validation_alias="SMTP_FROM_NAME",
+    )
+    smtp_from_email: str = Field(default="", validation_alias="SMTP_FROM_EMAIL")
+    smtp_use_tls: bool = Field(
+        default=True,
+        validation_alias="SMTP_USE_TLS",
+    )
+
     # Rate limiting
     rate_limit_requests: int = Field(
         default=100,

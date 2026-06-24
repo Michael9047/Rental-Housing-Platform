@@ -7,6 +7,8 @@ from app.celery_app import celery_app
 from app.core.config import get_settings
 from app.models.user import User
 from app.services.wechat_service import WeChatService
+from app.services.sms_service import SmsService
+from app.services.email_service import EmailService
 
 logger = logging.getLogger(__name__)
 
@@ -127,3 +129,88 @@ def send_booking_reminder_message(user_id: int, booking_info: dict) -> None:
         data=data,
         page=f"pages/booking/detail",
     )
+
+
+# ── SMS Notification Task ──────────────────────────────────────────
+
+@celery_app.task(
+    name="send_sms_notification",
+    autoretry_for=(Exception,),
+    retry_backoff=True,
+    max_retries=3,
+)
+def send_sms_notification(user_id: int, content: str) -> dict:
+    """Send an SMS notification to a user."""
+    import asyncio
+
+    async def _run() -> dict:
+        settings = get_settings()
+        engine = create_async_engine(settings.database_url)
+        async_session = async_sessionmaker(engine, expire_on_commit=False)
+
+        async with async_session() as session:
+            user = await session.get(User, user_id)
+            if not user or not user.phone:
+                logger.warning("User %s has no phone, skipping SMS", user_id)
+                await engine.dispose()
+                return {"status": "skipped", "reason": "no phone"}
+
+            phone = user.phone
+            await engine.dispose()
+
+        sms = SmsService()
+        try:
+            result = await sms.send(
+                phone_number=phone,
+                template_param={"content": content[:100] if content else ""},
+            )
+            logger.info("SMS sent to user %s: %s", user_id, result)
+            return result
+        except Exception as exc:
+            logger.exception("Failed to send SMS to user %s", user_id)
+            raise
+
+    return asyncio.run(_run())
+
+
+# ── Email Notification Task ─────────────────────────────────────────
+
+@celery_app.task(
+    name="send_email_notification",
+    autoretry_for=(Exception,),
+    retry_backoff=True,
+    max_retries=3,
+)
+def send_email_notification(user_id: int, subject: str, html_body: str) -> dict:
+    """Send an email notification to a user."""
+    import asyncio
+
+    async def _run() -> dict:
+        settings = get_settings()
+        engine = create_async_engine(settings.database_url)
+        async_session = async_sessionmaker(engine, expire_on_commit=False)
+
+        async with async_session() as session:
+            user = await session.get(User, user_id)
+            if not user or not user.email:
+                logger.warning("User %s has no email, skipping email", user_id)
+                await engine.dispose()
+                return {"status": "skipped", "reason": "no email"}
+
+            to_email = user.email
+            await engine.dispose()
+
+        email_svc = EmailService()
+        try:
+            result = await email_svc.send(
+                to_email=to_email,
+                subject=subject,
+                html_body=html_body,
+            )
+            logger.info("Email sent to user %s: %s", user_id, result)
+            return result
+        except Exception as exc:
+            logger.exception("Failed to send email to user %s", user_id)
+            raise
+
+    return asyncio.run(_run())
