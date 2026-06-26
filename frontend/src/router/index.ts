@@ -18,6 +18,11 @@ const routes: RouteRecordRaw[] = [
         component: () => import('@/views/Search.vue'),
       },
       {
+        path: 'map',
+        name: 'map-search',
+        component: () => import('@/views/MapSearch.vue'),
+      },
+      {
         path: 'property/:id',
         name: 'property-detail',
         component: () => import('@/views/PropertyDetail.vue'),
@@ -105,6 +110,12 @@ const routes: RouteRecordRaw[] = [
         name: 'admin-dashboard',
         component: () => import('@/views/admin/AdminDashboard.vue'),
         meta: { requiresAuth: true, requiresAdmin: true },
+      },
+      {
+        path: 'workspace',
+        name: 'landlord-workspace',
+        component: () => import('@/views/AdminWorkspace.vue'),
+        meta: { requiresAuth: true, requiresLandlord: true },
       },
       {
         path: 'admin/users',

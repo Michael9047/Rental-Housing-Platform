@@ -25,15 +25,9 @@
 
       <div class="header-right">
         <template v-if="authStore.isLoggedIn">
-          <!-- Role labels -->
           <el-tag v-if="authStore.isAdmin" type="danger" size="small" effect="dark">管理员</el-tag>
-          <el-tag v-else-if="authStore.isLandlord" type="warning" size="small" effect="dark">房东</el-tag>
+          <el-tag v-else-if="authStore.isLandlord" type="warning" size="small" effect="dark">公寓运营商</el-tag>
           <el-tag v-else type="info" size="small" effect="plain">租客</el-tag>
-
-          <!-- BD entry -->
-          <el-button v-if="authStore.isLandlord || authStore.isAdmin" text size="small" @click="router.push('/property/manage')">
-            BD管理入口
-          </el-button>
 
           <el-badge :value="unreadCount" :hidden="unreadCount === 0" :max="99">
             <el-button :icon="Bell" circle @click="router.push('/notifications')" />
@@ -47,20 +41,32 @@
             </span>
             <template #dropdown>
               <el-dropdown-menu>
-                <el-dropdown-item @click="router.push('/profile')">
-                  <el-icon><User /></el-icon> 个人中心
-                </el-dropdown-item>
-                <el-dropdown-item v-if="!authStore.isLandlord" @click="router.push('/bookings/tenant')">
-                  <el-icon><List /></el-icon> 我的预订
-                </el-dropdown-item>
-                <el-dropdown-item v-if="authStore.isLandlord || authStore.isAdmin" @click="router.push('/bookings/landlord')">
-                  <el-icon><Tickets /></el-icon> 预订管理
-                </el-dropdown-item>
-                <el-dropdown-item v-if="authStore.isLandlord || authStore.isAdmin" @click="router.push('/property/manage')">
-                  <el-icon><Setting /></el-icon> 房源管理
-                </el-dropdown-item>
+                <!-- 租客菜单 -->
+                <template v-if="!authStore.isLandlord && !authStore.isAdmin">
+                  <el-dropdown-item @click="router.push('/profile')">
+                    <el-icon><User /></el-icon> 个人中心
+                  </el-dropdown-item>
+                  <el-dropdown-item @click="router.push('/bookings/tenant')">
+                    <el-icon><List /></el-icon> 我的预订
+                  </el-dropdown-item>
+                </template>
+                <!-- 房东/管理员菜单 -->
+                <template v-if="authStore.isLandlord || authStore.isAdmin">
+                  <el-dropdown-item @click="router.push('/workspace')">
+                    <el-icon><DataAnalysis /></el-icon> 运营工作台
+                  </el-dropdown-item>
+                  <el-dropdown-item @click="router.push('/bookings/landlord')">
+                    <el-icon><Tickets /></el-icon> 预约管理
+                  </el-dropdown-item>
+                  <el-dropdown-item @click="router.push('/property/manage')">
+                    <el-icon><Setting /></el-icon> 房源管理
+                  </el-dropdown-item>
+                  <el-dropdown-item @click="router.push('/property/create')">
+                    <el-icon><Plus /></el-icon> 发布房源
+                  </el-dropdown-item>
+                </template>
                 <el-dropdown-item v-if="authStore.isAdmin" @click="router.push('/admin')">
-                  <el-icon><DataAnalysis /></el-icon> 管理后台
+                  <el-icon><DataAnalysis /></el-icon> 系统管理
                 </el-dropdown-item>
                 <el-dropdown-item divided @click="authStore.logout()">
                   <el-icon><SwitchButton /></el-icon> 退出登录
@@ -70,9 +76,7 @@
           </el-dropdown>
         </template>
         <template v-else>
-          <el-button type="primary" @click="router.push('/login')" round>
-            登录
-          </el-button>
+          <el-button type="primary" @click="router.push('/login')" round>登录</el-button>
           <el-button @click="router.push('/register')" round>注册</el-button>
         </template>
       </div>
@@ -81,51 +85,64 @@
     <el-container class="layout-body">
       <!-- Sidebar -->
       <el-aside class="layout-sidebar" width="200px">
-        <el-menu
-          :default-active="activeMenu"
-          router
-          class="sidebar-menu"
-        >
+        <el-menu :default-active="activeMenu" router class="sidebar-menu">
+          <!-- 公共 -->
           <el-menu-item index="/">
             <el-icon><HomeFilled /></el-icon>
             <span>首页</span>
           </el-menu-item>
-          <el-menu-item index="/search">
-            <el-icon><Search /></el-icon>
-            <span>搜索房源</span>
-          </el-menu-item>
-          <el-menu-item v-if="authStore.isLoggedIn && !authStore.isLandlord" index="/bookings/tenant">
-            <el-icon><List /></el-icon>
-            <span>我的预订</span>
-          </el-menu-item>
-          <el-menu-item v-if="authStore.isLoggedIn" index="/profile">
-            <el-icon><User /></el-icon>
-            <span>个人中心</span>
-          </el-menu-item>
 
-          <el-divider v-if="authStore.isLandlord || authStore.isAdmin" style="margin: 8px 0" />
+          <!-- ====== 租客侧边栏 ====== -->
+          <template v-if="!authStore.isLandlord && !authStore.isAdmin">
+            <el-menu-item index="/search">
+              <el-icon><Search /></el-icon>
+              <span>搜索房源</span>
+            </el-menu-item>
+            <el-menu-item index="/map">
+              <el-icon><Location /></el-icon>
+              <span>地图找房</span>
+            </el-menu-item>
+            <el-menu-item v-if="authStore.isLoggedIn" index="/bookings/tenant">
+              <el-icon><List /></el-icon>
+              <span>我的预订</span>
+            </el-menu-item>
+            <el-menu-item v-if="authStore.isLoggedIn" index="/profile">
+              <el-icon><User /></el-icon>
+              <span>个人中心</span>
+            </el-menu-item>
+          </template>
 
+          <!-- ====== 房东/管理员侧边栏 ====== -->
           <template v-if="authStore.isLandlord || authStore.isAdmin">
+            <el-menu-item index="/workspace">
+              <el-icon><DataAnalysis /></el-icon>
+              <span>运营工作台</span>
+            </el-menu-item>
+            <el-menu-item index="/property/manage">
+              <el-icon><OfficeBuilding /></el-icon>
+              <span>房源管理</span>
+            </el-menu-item>
             <el-menu-item index="/property/create">
               <el-icon><Plus /></el-icon>
               <span>发布房源</span>
             </el-menu-item>
-            <el-menu-item index="/property/manage">
-              <el-icon><List /></el-icon>
-              <span>房源管理</span>
-            </el-menu-item>
-            <el-menu-item v-if="authStore.isLandlord" index="/bookings/landlord">
+            <el-menu-item index="/bookings/landlord">
               <el-icon><Tickets /></el-icon>
-              <span>预订管理</span>
+              <span>预约管理</span>
+            </el-menu-item>
+            <el-menu-item index="/notifications">
+              <el-icon><Bell /></el-icon>
+              <span>消息通知</span>
             </el-menu-item>
           </template>
 
+          <!-- 管理员额外菜单 -->
           <template v-if="authStore.isAdmin">
             <el-divider style="margin: 8px 0" />
             <el-sub-menu index="admin-sub">
               <template #title>
                 <el-icon><DataAnalysis /></el-icon>
-                <span>管理后台</span>
+                <span>系统管理</span>
               </template>
               <el-menu-item index="/admin">仪表盘</el-menu-item>
               <el-menu-item index="/admin/users">用户管理</el-menu-item>
@@ -148,11 +165,11 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, watch, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import {
   Search, HomeFilled, User, UserFilled, ArrowDown, Setting, SwitchButton,
-  Plus, List, Bell, DataAnalysis, Tickets, ChatDotSquare,
+  Plus, List, Bell, DataAnalysis, Tickets, OfficeBuilding, Location,
 } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 import { notificationService } from '@/services/notification'
@@ -175,6 +192,7 @@ const activeMenu = computed(() => {
     return '/search'
   }
   if (path.startsWith('/bookings/')) return path
+  if (path.startsWith('/workspace')) return '/workspace'
   return path
 })
 
@@ -195,6 +213,11 @@ async function fetchUnreadCount() {
 }
 
 onMounted(fetchUnreadCount)
+
+// 每次路由变化刷新未读数（从通知页回来时数字更新）
+watch(() => route.path, () => {
+  fetchUnreadCount()
+})
 </script>
 
 <style scoped>

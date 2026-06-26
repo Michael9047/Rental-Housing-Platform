@@ -78,6 +78,16 @@ class Settings(BaseSettings):
         validation_alias="WECHAT_TOKEN_URL",
     )
 
+    # AMap (高德地图)
+    amap_api_key: str = Field(
+        default="",
+        validation_alias="AMAP_API_KEY",
+    )
+    amap_js_key: str = Field(
+        default="",
+        validation_alias="AMAP_JS_KEY",
+    )
+
     # Rate limiting
     rate_limit_requests: int = Field(
         default=100,

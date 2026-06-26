@@ -83,7 +83,10 @@ function formatDate(d: string) { return new Date(d).toLocaleDateString('zh-CN') 
 
 async function fetchBookings() {
   loading.value = true
-  try { bookings.value = await bookingService.list() }
+  try {
+    const all = await bookingService.list()
+    bookings.value = all.filter((b) => b.deposit_status !== 'paid' && b.deposit_status !== 'confirmed')
+  }
   catch { /* ignore */ }
   finally { loading.value = false }
 }
