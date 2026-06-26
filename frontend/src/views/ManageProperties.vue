@@ -1,7 +1,6 @@
-﻿<template>
+<template>
   <div class="manage-page">
     <div class="page-header">
-      <h2>房源管理</h2>
       <el-button type="primary" :icon="Plus" @click="goCreate">
         发布新房源
       </el-button>

@@ -14,20 +14,12 @@ class RegisterRequest(BaseModel):
 
 
 class LoginRequest(BaseModel):
-    username_or_email: str | None = Field(default=None, min_length=1, max_length=255)
-    username: str | None = Field(default=None, min_length=1, max_length=100)
-    email: EmailStr | None = None
+    username_or_email: str = Field(min_length=1, max_length=255)
     password: str = Field(min_length=1, max_length=128)
-
-    @model_validator(mode="after")
-    def require_identifier(self) -> "LoginRequest":
-        if not (self.username_or_email or self.username or self.email):
-            raise ValueError("username_or_email, username, or email is required")
-        return self
 
     @property
     def identifier(self) -> str:
-        return self.username_or_email or self.username or str(self.email)
+        return self.username_or_email
 
 
 class TokenResponse(BaseModel):

@@ -1,34 +1,47 @@
-﻿<template>
+<template>
   <el-container class="layout-container">
     <!-- Top Navigation -->
     <el-header class="layout-header">
       <div class="header-left">
         <router-link to="/" class="logo">
-          <el-icon :size="24"><House /></el-icon>
-          <span class="logo-text">租房匹配</span>
+          <span class="logo-icon">🏠</span>
+          <span class="logo-text">AI全球公寓租赁</span>
         </router-link>
       </div>
+
       <div class="header-center">
-        <el-input
-          v-model="searchQuery"
-          placeholder="搜索房源、小区、区域..."
-          :prefix-icon="Search"
-          class="search-input"
-          @keyup.enter="handleSearch"
-        >
-          <template #append>
-            <el-button :icon="Search" @click="handleSearch" />
-          </template>
-        </el-input>
+        <div class="header-search-wrapper">
+          <el-input
+            v-model="searchQuery"
+            placeholder="搜索房源：输入区域、小区、国家、城市..."
+            :prefix-icon="Search"
+            class="search-input"
+            size="large"
+            @keyup.enter="handleSearch"
+          />
+          <el-button type="primary" @click="handleSearch" class="search-btn">搜索</el-button>
+        </div>
       </div>
+
       <div class="header-right">
         <template v-if="authStore.isLoggedIn">
-          <el-badge :value="unreadCount" :hidden="unreadCount === 0" :max="99" class="notification-badge">
+          <!-- Role labels -->
+          <el-tag v-if="authStore.isAdmin" type="danger" size="small" effect="dark">管理员</el-tag>
+          <el-tag v-else-if="authStore.isLandlord" type="warning" size="small" effect="dark">房东</el-tag>
+          <el-tag v-else type="info" size="small" effect="plain">租客</el-tag>
+
+          <!-- BD entry -->
+          <el-button v-if="authStore.isLandlord || authStore.isAdmin" text size="small" @click="router.push('/property/manage')">
+            BD管理入口
+          </el-button>
+
+          <el-badge :value="unreadCount" :hidden="unreadCount === 0" :max="99">
             <el-button :icon="Bell" circle @click="router.push('/notifications')" />
           </el-badge>
+
           <el-dropdown trigger="click">
             <span class="user-dropdown">
-              <el-avatar :size="32" :icon="UserFilled" />
+              <el-avatar :size="34" :icon="UserFilled" />
               <span class="username">{{ authStore.user?.username }}</span>
               <el-icon><ArrowDown /></el-icon>
             </span>
@@ -37,17 +50,13 @@
                 <el-dropdown-item @click="router.push('/profile')">
                   <el-icon><User /></el-icon> 个人中心
                 </el-dropdown-item>
-                <el-dropdown-item v-if="authStore.isLoggedIn" @click="router.push('/notifications')">
-                  <el-icon><Bell /></el-icon> 通知
-                  <el-badge v-if="unreadCount > 0" :value="unreadCount" class="dropdown-badge" />
-                </el-dropdown-item>
-                <el-dropdown-item v-if="authStore.isLoggedIn && !authStore.isLandlord" @click="router.push('/bookings/tenant')">
+                <el-dropdown-item v-if="!authStore.isLandlord" @click="router.push('/bookings/tenant')">
                   <el-icon><List /></el-icon> 我的预订
                 </el-dropdown-item>
-                <el-dropdown-item v-if="authStore.isLandlord" @click="router.push('/bookings/landlord')">
+                <el-dropdown-item v-if="authStore.isLandlord || authStore.isAdmin" @click="router.push('/bookings/landlord')">
                   <el-icon><Tickets /></el-icon> 预订管理
                 </el-dropdown-item>
-                <el-dropdown-item v-if="authStore.isLandlord" @click="router.push('/property/manage')">
+                <el-dropdown-item v-if="authStore.isLandlord || authStore.isAdmin" @click="router.push('/property/manage')">
                   <el-icon><Setting /></el-icon> 房源管理
                 </el-dropdown-item>
                 <el-dropdown-item v-if="authStore.isAdmin" @click="router.push('/admin')">
@@ -61,8 +70,10 @@
           </el-dropdown>
         </template>
         <template v-else>
-          <el-button type="primary" @click="router.push('/login')">登录</el-button>
-          <el-button @click="router.push('/register')">注册</el-button>
+          <el-button type="primary" @click="router.push('/login')" round>
+            登录
+          </el-button>
+          <el-button @click="router.push('/register')" round>注册</el-button>
         </template>
       </div>
     </el-header>
@@ -87,15 +98,14 @@
             <el-icon><List /></el-icon>
             <span>我的预订</span>
           </el-menu-item>
-          <el-menu-item v-if="authStore.isLandlord" index="/bookings/landlord">
-            <el-icon><Tickets /></el-icon>
-            <span>预订管理</span>
+          <el-menu-item v-if="authStore.isLoggedIn" index="/profile">
+            <el-icon><User /></el-icon>
+            <span>个人中心</span>
           </el-menu-item>
-          <el-menu-item v-if="authStore.isLoggedIn" index="/chat">
-            <el-icon><ChatDotRound /></el-icon>
-            <span>AI 助手</span>
-          </el-menu-item>
-          <template v-if="authStore.isLandlord">
+
+          <el-divider v-if="authStore.isLandlord || authStore.isAdmin" style="margin: 8px 0" />
+
+          <template v-if="authStore.isLandlord || authStore.isAdmin">
             <el-menu-item index="/property/create">
               <el-icon><Plus /></el-icon>
               <span>发布房源</span>
@@ -104,44 +114,25 @@
               <el-icon><List /></el-icon>
               <span>房源管理</span>
             </el-menu-item>
+            <el-menu-item v-if="authStore.isLandlord" index="/bookings/landlord">
+              <el-icon><Tickets /></el-icon>
+              <span>预订管理</span>
+            </el-menu-item>
           </template>
-          <el-menu-item v-if="authStore.isLoggedIn" index="/profile">
-            <el-icon><User /></el-icon>
-            <span>个人中心</span>
-          </el-menu-item>
-
-          <el-divider v-if="authStore.isAdmin" style="margin: 8px 0" />
 
           <template v-if="authStore.isAdmin">
+            <el-divider style="margin: 8px 0" />
             <el-sub-menu index="admin-sub">
               <template #title>
                 <el-icon><DataAnalysis /></el-icon>
                 <span>管理后台</span>
               </template>
-              <el-menu-item index="/admin">
-                <el-icon><Odometer /></el-icon>
-                <span>仪表盘</span>
-              </el-menu-item>
-              <el-menu-item index="/admin/users">
-                <el-icon><UserFilled /></el-icon>
-                <span>用户管理</span>
-              </el-menu-item>
-              <el-menu-item index="/admin/properties">
-                <el-icon><House /></el-icon>
-                <span>房源审核</span>
-              </el-menu-item>
-              <el-menu-item index="/admin/import">
-                <el-icon><Upload /></el-icon>
-                <span>数据导入</span>
-              </el-menu-item>
-              <el-menu-item index="/admin/logs">
-                <el-icon><Document /></el-icon>
-                <span>审计日志</span>
-              </el-menu-item>
-              <el-menu-item index="/admin/embeddings">
-                <el-icon><Cpu /></el-icon>
-                <span>Embedding</span>
-              </el-menu-item>
+              <el-menu-item index="/admin">仪表盘</el-menu-item>
+              <el-menu-item index="/admin/users">用户管理</el-menu-item>
+              <el-menu-item index="/admin/properties">房源审核</el-menu-item>
+              <el-menu-item index="/admin/import">数据导入</el-menu-item>
+              <el-menu-item index="/admin/logs">审计日志</el-menu-item>
+              <el-menu-item index="/admin/embeddings">Embedding</el-menu-item>
             </el-sub-menu>
           </template>
         </el-menu>
@@ -150,6 +141,7 @@
       <!-- Main Content -->
       <el-main class="layout-main">
         <router-view />
+        <GlobalFooter />
       </el-main>
     </el-container>
   </el-container>
@@ -158,9 +150,13 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { Search, UserFilled, ArrowDown, House, HomeFilled, User, Setting, SwitchButton, Plus, List, Bell, DataAnalysis, Odometer, Document, Cpu, ChatDotRound, Upload } from '@element-plus/icons-vue'
+import {
+  Search, HomeFilled, User, UserFilled, ArrowDown, Setting, SwitchButton,
+  Plus, List, Bell, DataAnalysis, Tickets, ChatDotSquare,
+} from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 import { notificationService } from '@/services/notification'
+import GlobalFooter from '@/components/GlobalFooter.vue'
 
 const router = useRouter()
 const route = useRoute()
@@ -173,12 +169,12 @@ const activeMenu = computed(() => {
   const path = route.path
   if (path.startsWith('/admin')) return path
   if (path.startsWith('/notifications')) return '/notifications'
-  if (path.startsWith('/chat')) return '/chat'
   if (path.startsWith('/property/')) {
     if (path === '/property/create') return '/property/create'
     if (path === '/property/manage') return '/property/manage'
     return '/search'
   }
+  if (path.startsWith('/bookings/')) return path
   return path
 })
 
@@ -203,17 +199,25 @@ onMounted(fetchUnreadCount)
 
 <style scoped>
 .layout-container {
-  height: 100vh;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
 }
+
+/* ── Header ───────────────────────── */
 
 .layout-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  background: #fff;
-  border-bottom: 1px solid #e4e7ed;
+  background: var(--bg-white);
+  border-bottom: 1px solid var(--border);
   padding: 0 24px;
-  height: 60px;
+  height: 64px;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  box-shadow: var(--shadow-sm);
 }
 
 .header-left .logo {
@@ -221,22 +225,70 @@ onMounted(fetchUnreadCount)
   align-items: center;
   gap: 8px;
   text-decoration: none;
-  color: #409eff;
+}
+
+.logo-icon {
+  font-size: 26px;
 }
 
 .logo-text {
-  font-size: 18px;
+  font-size: 17px;
   font-weight: 700;
+  color: var(--primary);
+  letter-spacing: 0.5px;
 }
 
 .header-center {
   flex: 1;
-  max-width: 480px;
+  max-width: 520px;
   margin: 0 40px;
 }
 
+.header-search-wrapper {
+  display: flex;
+  align-items: center;
+  border-radius: 36px;
+  overflow: hidden;
+  height: 48px;
+}
+
 .search-input {
-  width: 100%;
+  flex: 1;
+  border-radius: 36px 0 0 36px;
+  overflow: hidden;
+}
+
+.search-input :deep(.el-input__wrapper) {
+  border-radius: 36px 0 0 36px !important;
+  background: var(--bg-white) !important;
+  border: 2px solid var(--primary) !important;
+  box-shadow: none !important;
+  height: 48px;
+  padding-left: 16px;
+}
+
+.search-input :deep(.el-input__inner) {
+  color: var(--text-primary);
+}
+
+.search-input :deep(.el-input__prefix) {
+  color: var(--text-muted);
+}
+
+.search-btn {
+  height: 48px !important;
+  border: 2px solid var(--primary) !important;
+  border-radius: 0 36px 36px 0 !important;
+  background: var(--primary) !important;
+  color: #fff !important;
+  font-size: 15px;
+  font-weight: 600;
+  margin-left: -2px;
+  padding: 0 20px !important;
+}
+
+.search-btn:hover {
+  background: var(--primary-light) !important;
 }
 
 .header-right {
@@ -245,43 +297,48 @@ onMounted(fetchUnreadCount)
   gap: 12px;
 }
 
-.notification-badge {
-  margin-right: 4px;
-}
-
 .user-dropdown {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 24px;
+  transition: background 0.2s;
+}
+
+.user-dropdown:hover {
+  background: var(--bg);
 }
 
 .username {
   font-size: 14px;
-  color: #303133;
+  color: var(--text-primary);
+  font-weight: 500;
 }
 
-:deep(.dropdown-badge) {
-  margin-left: 8px;
-}
+/* ── Body ─────────────────────────── */
 
 .layout-body {
-  height: calc(100vh - 60px);
+  flex: 1;
 }
 
 .layout-sidebar {
-  background: #fff;
-  border-right: 1px solid #e4e7ed;
+  background: var(--bg-white);
+  border-right: 1px solid var(--border);
 }
 
 .sidebar-menu {
-  border-right: none;
+  border-right: none !important;
   height: 100%;
+  padding-top: 8px;
 }
 
 .layout-main {
-  background: #f5f7fa;
+  background: var(--bg);
   overflow-y: auto;
   padding: 24px;
+  display: flex;
+  flex-direction: column;
 }
 </style>

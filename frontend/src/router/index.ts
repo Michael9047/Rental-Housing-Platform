@@ -23,15 +23,21 @@ const routes: RouteRecordRaw[] = [
         component: () => import('@/views/PropertyDetail.vue'),
       },
       {
-        path: 'chat',
-        name: 'chat',
-        component: () => import('@/views/Chat.vue'),
-        meta: { requiresAuth: true },
-      },
-      {
         path: 'profile',
         name: 'profile',
         component: () => import('@/views/Profile.vue'),
+        meta: { requiresAuth: true },
+      },
+      {
+        path: 'profile/edit',
+        name: 'profile-edit',
+        component: () => import('@/views/ProfileEdit.vue'),
+        meta: { requiresAuth: true },
+      },
+      {
+        path: 'contract/:id',
+        name: 'contract-view',
+        component: () => import('@/views/ContractView.vue'),
         meta: { requiresAuth: true },
       },
       {
@@ -57,6 +63,24 @@ const routes: RouteRecordRaw[] = [
         name: 'property-images',
         component: () => import('@/views/PropertyImages.vue'),
         meta: { requiresAuth: true, requiresLandlord: true },
+      },
+      {
+        path: 'booking/confirm',
+        name: 'booking-confirm',
+        component: () => import('@/views/BookingConfirm.vue'),
+        meta: { requiresAuth: true },
+      },
+      {
+        path: 'booking/payment/:id',
+        name: 'pending-payment',
+        component: () => import('@/views/PendingPayment.vue'),
+        meta: { requiresAuth: true },
+      },
+      {
+        path: 'booking/payment/:id/deposit',
+        name: 'deposit-payment',
+        component: () => import('@/views/DepositPayment.vue'),
+        meta: { requiresAuth: true },
       },
       {
         path: 'bookings/tenant',

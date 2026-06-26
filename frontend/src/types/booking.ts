@@ -1,5 +1,6 @@
 ﻿export type BookingStatus = 'pending' | 'approved' | 'rejected' | 'cancelled' | 'completed'
 
+// Matches backend: app/schemas/booking.py BookingRead
 export interface Booking {
   id: number
   tenant_id: number
@@ -8,6 +9,10 @@ export interface Booking {
   status: BookingStatus
   message: string | null
   scheduled_date: string | null
+  deposit_amount: number | null
+  service_fee: number | null
+  deposit_status: string | null
+  payment_transaction_id: string | null
   created_at: string
   updated_at: string
 }

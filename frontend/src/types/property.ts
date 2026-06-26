@@ -1,4 +1,4 @@
-﻿// Matches backend: app/models/property.py
+// Matches backend: app/models/property.py
 export type PropertyType = 'apartment' | 'house' | 'studio' | 'shared'
 export type PropertyStatus = 'available' | 'rented' | 'maintenance' | 'offline'
 
@@ -65,15 +65,18 @@ export interface PropertySearchResult extends Property {
   similarity: number | null
 }
 
-// Search parameters matching backend query params
+// Search parameters matching backend query params (GET /properties/search)
+// Note: country/overseas_area are frontend-only filters; backend maps them to district
 export interface PropertySearchParams {
-  q?: string
-  district?: string
-  price_min?: number
-  price_max?: number
-  bedrooms?: number
-  property_type?: PropertyType
-  limit?: number
+  q?: string              // Natural language query → backend pgvector search
+  country?: string         // ⚠️ Frontend filter; mapped to district before sending
+  district?: string        // Backend-supported
+  overseas_area?: string   // ⚠️ Frontend filter; mapped to district before sending
+  price_min?: number       // Backend-supported
+  price_max?: number       // Backend-supported
+  bedrooms?: number        // Backend-supported
+  property_type?: PropertyType  // Backend-supported
+  limit?: number           // Backend-supported (1-100)
 }
 
 

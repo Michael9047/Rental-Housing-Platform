@@ -1,7 +1,5 @@
-﻿<template>
+<template>
   <div class="create-page">
-    <h2>{{ isEdit ? '编辑房源' : '发布房源' }}</h2>
-
     <!-- 智能文本输入（仅创建模式） -->
     <el-card v-if="!isEdit" shadow="never" class="smart-card">
       <template #header>
