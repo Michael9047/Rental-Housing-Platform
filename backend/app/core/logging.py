@@ -168,13 +168,23 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
 
 
 def _build_error_response(status_code: int, detail: str | list[Any], error_type: str = "error") -> JSONResponse:
+    # Ensure detail is always JSON-serializable (Pydantic errors may contain raw exceptions)
+    if isinstance(detail, str):
+        safe_detail = detail
+        safe_details = None
+    else:
+        safe_detail = str(detail)
+        try:
+            safe_details = [{"msg": str(e.get("msg", "")), "loc": e.get("loc", [])} for e in detail if isinstance(e, dict)]
+        except Exception:
+            safe_details = None
     return JSONResponse(
         status_code=status_code,
         content={
             "error": {
                 "type": error_type,
-                "message": detail if isinstance(detail, str) else str(detail),
-                "details": detail if not isinstance(detail, str) else None,
+                "message": safe_detail,
+                "details": safe_details,
             }
         },
     )

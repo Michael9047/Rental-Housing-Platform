@@ -1,7 +1,6 @@
 ﻿<template>
   <div class="notifications-page" v-loading="loading">
     <div class="notifications-header">
-      <h2>通知</h2>
       <el-button v-if="notifications.length > 0" text type="primary" @click="handleMarkAllRead">
         全部已读
       </el-button>
@@ -64,7 +63,7 @@ onMounted(fetchNotifications)
 
 .notifications-header {
   display: flex;
-  justify-content: space-between;
+  justify-content: flex-end;
   align-items: center;
   margin-bottom: 20px;
 }

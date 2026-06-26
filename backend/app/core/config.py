@@ -129,6 +129,12 @@ class Settings(BaseSettings):
         validation_alias="SMTP_USE_TLS",
     )
 
+    # AMap (????) JS? key
+    amap_js_key: str = Field(
+        default="",
+        validation_alias="AMAP_JS_KEY",
+    )
+
     # Rate limiting
     rate_limit_requests: int = Field(
         default=100,

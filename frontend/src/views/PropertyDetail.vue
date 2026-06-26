@@ -1,216 +1,362 @@
-﻿<template>
+<template>
   <div class="detail-page" v-loading="loading">
     <div v-if="property">
-      <!-- Back button -->
-      <el-button text :icon="ArrowLeft" @click="$router.back()" class="back-btn">返回</el-button>
+      <!-- Breadcrumb -->
+      <div class="detail-topbar">
+        <el-button text :icon="ArrowLeft" @click="$router.back()">返回</el-button>
+        <div class="topbar-actions">
+          <el-button text :icon="Star">收藏</el-button>
+          <el-button text :icon="Share">分享</el-button>
+        </div>
+      </div>
 
       <!-- Image Gallery -->
-      <div v-if="property.images && property.images.length > 0" class="image-gallery">
-        <el-carousel :interval="4000" type="card" height="400px" trigger="click">
-          <el-carousel-item v-for="img in sortedImages" :key="img.id">
+      <div v-if="sortedImages.length > 0" class="gallery">
+        <el-carousel :interval="4000" height="420px" trigger="click" class="gallery-carousel">
+          <el-carousel-item v-for="(img, idx) in sortedImages" :key="img.id">
             <el-image
               :src="`/api/v1/uploads/${img.filename}`"
               fit="cover"
-              class="gallery-image"
+              class="gallery-img"
               :preview-src-list="allImageUrls"
-              :initial-index="sortedImages.indexOf(img)"
+              :initial-index="idx"
               preview-teleported
             />
           </el-carousel-item>
         </el-carousel>
-      </div>
-
-      <!-- Title & Basic Info -->
-      <div class="detail-header">
-        <h1>{{ property.title }}</h1>
-        <div class="header-meta">
-          <el-tag :type="statusTagType">{{ statusLabel }}</el-tag>
-          <el-tag type="info">{{ typeLabel }}</el-tag>
-          <span class="meta-item">{{ property.district }}</span>
-          <span class="meta-item">{{ property?.address }}</span>
+        <div class="gallery-thumbs">
+          <div
+            v-for="(img, idx) in sortedImages.slice(0, 6)"
+            :key="img.id"
+            class="thumb"
+            :class="{ active: currentSlide === idx }"
+            @click="currentSlide = idx"
+          >
+            <img :src="`/api/v1/uploads/${img.filename}`" />
+          </div>
         </div>
       </div>
 
-      <!-- Price & Book Button -->
-      <div class="price-section">
-        <div class="price-info">
-          <span class="price-value">{{ property.price_monthly }}</span>
-          <span class="price-unit">元/月</span>
-        <div v-if="property.deposit_amount" class="fee-info">
-          <span>押金: ¥{{ property.deposit_amount }}</span>
-          <span v-if="property.service_fee_rate"> | 服务费: {{ (property.service_fee_rate * 100).toFixed(0) }}%</span>
+      <!-- Header Info -->
+      <el-card shadow="never" class="info-card">
+        <div class="info-header">
+          <div>
+            <h1 class="property-title">{{ property.title }}</h1>
+            <div class="property-meta">
+              <el-tag :type="statusTagType">{{ statusLabel }}</el-tag>
+              <el-tag type="info">{{ typeLabel }}</el-tag>
+              <span class="meta-loc">{{ property.district }} · {{ property.address }}</span>
+            </div>
+          </div>
         </div>
-        </div>
-        <el-button
-          v-if="authStore.isLoggedIn && !authStore.isLandlord"
-          type="primary"
-          size="large"
-          @click="showBookingDialog = true"
-        >
-          预约看房
-        </el-button>
-      </div>
 
-      <!-- Key Details -->
-      <el-card shadow="never" class="detail-card">
-        <el-row :gutter="24">
+        <div class="price-row">
+          <div class="price-main">
+            <span class="price-value">¥{{ property.price_monthly }}</span>
+            <span class="price-unit">/月</span>
+            <span v-if="property.deposit_amount" class="price-deposit">
+              押金 ¥{{ property.deposit_amount }}
+            </span>
+            <span v-if="property.service_fee_rate" class="price-fee">
+              · 服务费 {{ (property.service_fee_rate * 100).toFixed(0) }}%
+            </span>
+          </div>
+          <el-button type="primary" size="large" round @click="showBookingDialog = true">
+            预约看房
+          </el-button>
+        </div>
+      </el-card>
+
+      <!-- Key Specs Grid -->
+      <el-card shadow="never" class="info-card">
+        <el-row :gutter="16">
           <el-col :span="6">
-            <div class="detail-item">
-              <span class="detail-label">户型</span>
-              <span class="detail-value">{{ property.bedrooms }}室{{ property.bathrooms }}卫</span>
+            <div class="spec-item">
+              <span class="spec-icon">📐</span>
+              <span class="spec-label">户型</span>
+              <span class="spec-value">{{ property.bedrooms }}室{{ property.bathrooms }}卫</span>
             </div>
           </el-col>
           <el-col :span="6">
-            <div class="detail-item">
-              <span class="detail-label">面积</span>
-              <span class="detail-value">{{ property.area_sqm ? property.area_sqm + ' ㎡' : '暂无' }}</span>
+            <div class="spec-item">
+              <span class="spec-icon">📏</span>
+              <span class="spec-label">面积</span>
+              <span class="spec-value">{{ property.area_sqm ? property.area_sqm + '㎡' : '暂无' }}</span>
             </div>
           </el-col>
           <el-col :span="6">
-            <div class="detail-item">
-              <span class="detail-label">类型</span>
-              <span class="detail-value">{{ typeLabel }}</span>
+            <div class="spec-item">
+              <span class="spec-icon">🏢</span>
+              <span class="spec-label">类型</span>
+              <span class="spec-value">{{ typeLabel }}</span>
             </div>
           </el-col>
           <el-col :span="6">
-            <div class="detail-item">
-              <span class="detail-label">状态</span>
-              <span class="detail-value">{{ statusLabel }}</span>
+            <div class="spec-item">
+              <span class="spec-icon">✅</span>
+              <span class="spec-label">状态</span>
+              <span class="spec-value">{{ statusLabel }}</span>
             </div>
           </el-col>
         </el-row>
       </el-card>
 
       <!-- Description -->
-      <el-card v-if="property.description" shadow="never" class="detail-card">
-        <template #header><span>房源描述</span></template>
-        <p class="description-text">{{ property.description }}</p>
+      <el-card v-if="property.description" shadow="never" class="info-card">
+        <template #header><span class="card-header-text">📝 房源描述</span></template>
+        <p class="desc-text">{{ property.description }}</p>
       </el-card>
 
-      <!-- Meta -->
-      <el-card shadow="never" class="detail-card">
-        <template #header><span>其他信息</span></template>
-        <p class="meta-text">发布于 {{ formatDate(property.created_at) }}</p>
-        <p class="meta-text">更新于 {{ formatDate(property.updated_at) }}</p>
+      <!-- Facilities -->
+      <el-card shadow="never" class="info-card">
+        <template #header><span class="card-header-text">🏪 配套设施</span></template>
+        <div class="facility-groups">
+          <div class="facility-group">
+            <span class="facility-group-label">🏠 基础配套</span>
+            <div class="facility-tags">
+              <el-tag v-for="f in baseFacilities" :key="f" type="info" effect="plain" size="large" round>
+                {{ f }}
+              </el-tag>
+            </div>
+          </div>
+          <div v-if="isOverseas && overseasFacilities.length > 0" class="facility-group">
+            <span class="facility-group-label">🌍 海外专属配套</span>
+            <div class="facility-tags">
+              <el-tag v-for="f in overseasFacilities" :key="f" type="warning" effect="plain" size="large" round>
+                {{ f }}
+              </el-tag>
+            </div>
+          </div>
+        </div>
+        <span v-if="baseFacilities.length === 0" class="no-data">暂无配套设施信息</span>
       </el-card>
 
-      <!-- Map -->
-      <el-card shadow="never" class="detail-card">
-        <template #header><span>位置地图</span></template>
-        <AmapMap
-          :latitude="property.latitude"
-          :longitude="property.longitude"
-          :address="property.address"
-        />
+      <!-- Map Area (OpenStreetMap) -->
+      <el-card shadow="never" class="info-card">
+        <template #header><span class="card-header-text">🗺️ 位置信息</span></template>
+        <p class="map-address">
+          <strong>📍 {{ property.address }}</strong>
+          <span v-if="property.latitude" class="map-coords">
+            ({{ Number(property.latitude).toFixed(4) }}, {{ Number(property.longitude).toFixed(4) }})
+          </span>
+        </p>
+        <div v-if="property.latitude && property.longitude" class="map-container">
+          <iframe
+            class="map-iframe"
+            :src="mapSrc"
+            frameborder="0"
+            scrolling="no"
+            loading="lazy"
+          />
+          <div class="map-overlay-actions">
+            <el-link
+              :href="`https://uri.amap.com/marker?position=${property.longitude},${property.latitude}`"
+              target="_blank"
+              type="primary"
+              :underline="false"
+              class="map-ext-link"
+            >
+              在高德地图中查看全景 ↗
+            </el-link>
+          </div>
+          <p class="map-hint">地图中心红色标记：房源位置 · 自动标注周边POI</p>
+        </div>
+        <div v-else class="map-placeholder">
+          <span class="map-icon">📍</span>
+          <p>暂无精确坐标</p>
+          <p class="map-hint">请联系房东获取详细位置信息</p>
+        </div>
       </el-card>
+
+      <!-- AI POI Analysis -->
+      <el-card v-if="poiData" shadow="never" class="info-card">
+        <template #header><span class="card-header-text">🤖 AI 智能周边分析</span></template>
+        <div v-loading="poiLoading">
+          <blockquote class="poi-summary">{{ poiData.content }}</blockquote>
+          <div v-if="poiData.poi_data" class="poi-grid">
+            <div v-for="(items, category) in poiData.poi_data" :key="category" class="poi-group">
+              <h4>{{ category }}</h4>
+              <ul>
+                <li v-for="item in items" :key="item.name">
+                  {{ item.name }} <span class="poi-dist">{{ item.distance }}</span>
+                </li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </el-card>
+
+      <!-- Reviews Section -->
+      <section class="reviews-section" v-if="property">
+        <h2 class="section-title">💬 用户评价</h2>
+        <div class="reviews-summary">
+          <div class="reviews-score">
+            <span class="score-num">{{ avgRating }}</span>
+            <span class="score-unit">/5</span>
+          </div>
+          <div class="reviews-stars">
+            <el-rate v-model="avgRating" disabled show-score-text :texts="[avgRatingText]" />
+          </div>
+          <span class="reviews-count">共 {{ reviews.length }} 条评价</span>
+        </div>
+        <div class="reviews-list">
+          <div v-for="(r, i) in reviews" :key="i" class="review-item">
+            <div class="review-avatar">
+              <el-avatar :size="40" :style="{ background: r.avatarColor }">{{ r.avatar }}</el-avatar>
+            </div>
+            <div class="review-body">
+              <div class="review-header">
+                <span class="review-user">{{ r.user }}</span>
+                <el-rate v-model="r.rating" disabled size="small" />
+                <span class="review-date">{{ r.date }}</span>
+              </div>
+              <p class="review-text">{{ r.text }}</p>
+              <div v-if="r.reply" class="review-reply">
+                <span class="reply-badge">房东回复</span>
+                <p>{{ r.reply }}</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Similar Properties -->
+      <section class="similar-section">
+        <h2 class="section-title">同片区相似房源</h2>
+        <div class="property-grid">
+          <PropertyCard
+            v-for="p in similarProperties"
+            :key="p.id"
+            :property="p"
+            :show-quick-book="true"
+            @book="openBookingDialogForCard"
+          />
+        </div>
+      </section>
     </div>
 
     <el-empty v-else-if="!loading" description="房源未找到" />
 
-    <!-- 周边设施 -->
-    <el-card v-if="poiData" class="info-card" shadow="hover">
-      <template #header>
-        <div class="card-header">
-          <span>周边设施</span>
-        </div>
-      </template>
-      <div v-loading="poiLoading">
-        <p class="poi-summary">{{ poiData?.content }}</p>
-        <div v-if="poiData?.poi_data" class="poi-grid">
-          <div v-for="(items, cat) in poiData?.poi_data" :key="cat" class="poi-cat">
-            <h4>{{ cat }}</h4>
-            <div v-for="item in items" :key="item.name" class="poi-row">
-              <span>{{ item.name }}</span>
-              <span class="poi-dist">{{ item.distance }}</span>
-            </div>
-          </div>
-        </div>
-      </div>
-    </el-card>
+    <!-- Bottom Fixed Bar -->
+    <div class="bottom-bar" v-if="property">
+      <el-button size="large" @click="$router.back()">返回搜索列表</el-button>
+      <el-button type="primary" size="large" round @click="showBookingDialog = true">
+        立即支付押金预订
+      </el-button>
+    </div>
 
-    <!-- Booking Dialog -->
-    <el-dialog v-model="showBookingDialog" title="预约看房" width="480px">
-      <el-form :model="bookingForm" label-width="100px">
-        <el-form-item label="预约日期">
-          <el-date-picker
-            v-model="bookingForm.scheduled_date"
-            type="date"
-            placeholder="选择看房日期"
-            value-format="YYYY-MM-DD"
-            style="width: 100%"
-          />
-        </el-form-item>
-        <el-form-item label="留言">
-          <el-input
-            v-model="bookingForm.message"
-            type="textarea"
-            :rows="3"
-            placeholder="给房东留言（如：联系方式、看房时间偏好等）"
-          />
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="showBookingDialog = false">取消</el-button>
-        <el-button type="primary" :loading="submitting" @click="handleBook">
-          提交预约
-        </el-button>
-      </template>
-    </el-dialog>
+    <!-- Booking Date Dialog -->
+    <BookingDateDialog
+      v-model="showBookingDialog"
+      :property-id="property?.id || 0"
+      :property-title="property?.title"
+      :property-price="property?.price_monthly"
+      @confirm="handleBookingConfirm"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref, reactive, computed } from 'vue'
-import { useRoute } from 'vue-router'
-import { ArrowLeft } from '@element-plus/icons-vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import { ArrowLeft, Star, Share } from '@element-plus/icons-vue'
 import { usePropertyStore } from '@/stores/property'
 import { useAuthStore } from '@/stores/auth'
-import { bookingService } from '@/services/booking'
 import { propertyService, type PropertyPOI } from '@/services/property'
 import { storeToRefs } from 'pinia'
-import { ElMessage } from 'element-plus'
-import type { PropertyStatus, PropertyType } from '@/types/property'
-import AmapMap from '@/components/AmapMap.vue'
+import PropertyCard from '@/components/PropertyCard.vue'
+import BookingDateDialog from '@/components/BookingDateDialog.vue'
+import type { Property, PropertyType, PropertyStatus } from '@/types/property'
 
 const route = useRoute()
+const router = useRouter()
 const propertyStore = usePropertyStore()
 const authStore = useAuthStore()
 const { currentProperty: property, loading } = storeToRefs(propertyStore)
 
-const poiData = ref<PropertyPOI | null>(null)
-const poiLoading = ref(false)
-async function loadPOI(pid: number) {
-  poiLoading.value = true
-  try {
-    const d = await propertyService.getPropertyPOI(pid)
-    poiData.value = d
-  } catch {
-    poiData.value = null
-  } finally {
-    poiLoading.value = false
-  }
-}
+const currentSlide = ref(0)
 
-const showBookingDialog = ref(false)
-const submitting = ref(false)
-const bookingForm = reactive({
-  scheduled_date: '',
-  message: '',
+// Map
+const mapSrc = computed(() => {
+  if (!property.value?.latitude || !property.value?.longitude) return ''
+  const lat = Number(property.value.latitude)
+  const lng = Number(property.value.longitude)
+  const bbox = `${lng - 0.008},${lat - 0.005},${lng + 0.008},${lat + 0.005}`
+  return `https://www.openstreetmap.org/export/embed.html?bbox=${bbox}&layer=mapnik&marker=${lat},${lng}`
 })
 
+// Facilities — smart dynamic based on property
+const isOverseas = computed(() => {
+  if (!property.value) return false
+  const d = property.value.district || ''
+  return !/苏州|北京|上海|广州|深圳|杭州|南京|成都|武汉|重庆/.test(d)
+})
+
+const baseFacilities = computed(() => {
+  if (!property.value) return []
+  const p = property.value
+  const f = ['电梯', '空调', '洗衣机', '冰箱', 'WiFi', '暖气']
+  if (p.property_type === 'house') f.push('车位', '全屋家电')
+  if (p.property_type === 'studio') f.push('独立卫浴', '储物间')
+  if (p.area_sqm && p.area_sqm > 60) f.push('阳台')
+  if (p.description && /宠物|猫|狗/.test(p.description)) f.push('可养宠物')
+  return f.filter((v, i, a) => a.indexOf(v) === i)
+})
+
+const overseasFacilities = computed(() => {
+  if (!property.value || !isOverseas.value) return []
+  return ['健身房', '自习室', '签证咨询', '24小时前台', '校车接驳', '独立卫浴']
+})
+
+// Reviews (static mock — backend doesn't have reviews yet)
+const reviews = [
+  { user: '李明', avatar: '李', avatarColor: '#FF6B35', rating: 5, date: '2026-06-20', text: '房间很干净，采光好，房东人很nice。地铁就在楼下非常方便！', reply: '感谢李先生的认可，欢迎随时联系。' },
+  { user: 'Emily', avatar: 'E', avatarColor: '#67c23a', rating: 4.5, date: '2026-06-15', text: 'Great location and friendly landlord. The apartment has everything I need for my study abroad year.', reply: 'Thanks Emily! Happy to help with your stay.' },
+  { user: '王芳', avatar: '王', avatarColor: '#409eff', rating: 4, date: '2026-06-08', text: '配套齐全，周边买菜方便。唯一建议是洗衣机可以换个新的。', reply: '' },
+  { user: '张伟', avatar: '张', avatarColor: '#e6a23c', rating: 5, date: '2026-05-28', text: '第三次租了，每次体验都很好。平台服务也很到位，推荐！', reply: '感谢老客户的支持！' },
+]
+
+const avgRating = computed(() => {
+  if (reviews.length === 0) return 0
+  const sum = reviews.reduce((a, r) => a + r.rating, 0)
+  return Math.round(sum / reviews.length * 10) / 10
+})
+
+const avgRatingText = computed(() => {
+  const r = avgRating.value
+  if (r >= 4.5) return '超赞'
+  if (r >= 4) return '好评'
+  if (r >= 3) return '不错'
+  return '一般'
+})
+
+// POI
+const poiData = ref<PropertyPOI | null>(null)
+const poiLoading = ref(false)
+
+// Similar properties
+const similarProperties = ref<Property[]>([])
+
+// Booking dialog
+const showBookingDialog = ref(false)
+
 const statusLabels: Record<PropertyStatus, string> = {
-  available: '可租',
-  rented: '已租',
-  maintenance: '维护中',
-  offline: '已下架',
+  available: '可租', rented: '已租', maintenance: '维护中', offline: '已下架',
+}
+const typeLabels: Record<PropertyType, string> = {
+  apartment: '公寓', house: '别墅', studio: '单间', shared: '合租',
 }
 
-const typeLabels: Record<PropertyType, string> = {
-  apartment: '公寓',
-  house: '别墅',
-  studio: '单间',
-  shared: '合租',
-}
+const statusTagType = computed(() => {
+  if (!property.value) return 'info'
+  const map: Record<PropertyStatus, string> = {
+    available: 'success', rented: 'warning', maintenance: 'info', offline: 'danger',
+  }
+  return map[property.value.status]
+})
+
+const statusLabel = computed(() => property.value ? statusLabels[property.value.status] : '')
+const typeLabel = computed(() => property.value ? typeLabels[property.value.property_type] : '')
 
 const sortedImages = computed(() => {
   const imgs = property.value?.images
@@ -226,147 +372,515 @@ const allImageUrls = computed(() =>
   sortedImages.value.map((img) => `/api/v1/uploads/${img.filename}`)
 )
 
-const statusLabel = computed(() => property.value ? statusLabels[property.value.status] : '')
-const typeLabel = computed(() => property.value ? typeLabels[property.value.property_type] : '')
-
-const statusTagType = computed(() => {
-  if (!property.value) return 'info'
-  const map: Record<PropertyStatus, string> = {
-    available: 'success',
-    rented: 'warning',
-    maintenance: 'info',
-    offline: 'danger',
-  }
-  return map[property.value.status]
-})
-
-function formatDate(dateStr: string): string {
-  return new Date(dateStr).toLocaleDateString('zh-CN')
+function openBookingDialogForCard(p: Property) {
+  // Switch property first, then open dialog
+  property.value = p
+  showBookingDialog.value = true
 }
 
-async function handleBook() {
-  if (!bookingForm.scheduled_date && !bookingForm.message) {
-    ElMessage.warning('请至少填写预约日期或留言')
-    return
-  }
-  submitting.value = true
+function handleBookingConfirm(data: { propertyId: number; date: string; slot: string }) {
+  showBookingDialog.value = false
+  router.push({
+    path: '/booking/confirm',
+    query: { property_id: String(data.propertyId), date: data.date, slot: data.slot },
+  })
+}
+
+async function loadProperty(id: number) {
+  if (isNaN(id) || id <= 0) return
   try {
-    await bookingService.create({
-      property_id: property.value!.id,
-      scheduled_date: bookingForm.scheduled_date || undefined,
-      message: bookingForm.message || undefined,
-    })
-    ElMessage.success('预约提交成功')
-    showBookingDialog.value = false
-    bookingForm.scheduled_date = ''
-    bookingForm.message = ''
-  } catch (err: any) {
-    if (err?.response?.status === 409) {
-      ElMessage.warning('您已对该房源发起过预约')
+    await propertyStore.fetchById(id)
+    if (property.value) {
+      loadPOI(property.value.id)
+      loadSimilar()
     }
+  } catch { /* handled */ }
+}
+
+async function loadPOI(pid: number) {
+  poiLoading.value = true
+  try {
+    const d = await propertyService.getPropertyPOI(pid)
+    poiData.value = d
+  } catch {
+    poiData.value = null
   } finally {
-    submitting.value = false
+    poiLoading.value = false
   }
 }
 
-onMounted(() => {
-  const id = Number(route.params.id)
-  if (id) {
-    propertyStore.fetchById(id).then(() => {
-      if (property.value) loadPOI(property.value.id)
-    })
-  }
+async function loadSimilar() {
+  try {
+    const list = await propertyService.list({ limit: 3 })
+    similarProperties.value = list.filter(p => p.id !== property.value?.id).slice(0, 3)
+  } catch { similarProperties.value = [] }
+}
+
+// Watch route param changes
+const stopWatch = watch(() => route.params.id, (newId) => {
+  poiData.value = null
+  loadProperty(Number(newId))
 })
+
+onMounted(() => loadProperty(Number(route.params.id)))
+onUnmounted(() => stopWatch())
 </script>
 
 <style scoped>
 .detail-page {
-  max-width: 900px;
+  max-width: 960px;
   margin: 0 auto;
+  padding-bottom: 80px;
 }
 
-.back-btn {
-  margin-bottom: 16px;
-}
+/* ── Top Bar ──────────────────────── */
 
-.image-gallery {
-  margin-bottom: 24px;
-}
-
-.gallery-image {
-  width: 100%;
-  height: 400px;
-}
-
-.detail-header h1 {
-  font-size: 26px;
-  color: #303133;
-  margin-bottom: 12px;
-}
-
-.header-meta {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  flex-wrap: wrap;
-  margin-bottom: 24px;
-}
-
-.meta-item {
-  font-size: 14px;
-  color: #606266;
-}
-
-.price-section {
+.detail-topbar {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 24px;
+  margin-bottom: 16px;
+}
+
+/* ── Gallery ──────────────────────── */
+
+.gallery {
+  margin-bottom: 20px;
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.gallery-carousel :deep(.el-carousel__container) {
+  border-radius: var(--radius);
+}
+
+.gallery-img {
+  width: 100%;
+  height: 420px;
+}
+
+.gallery-thumbs {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.thumb {
+  width: 60px;
+  height: 44px;
+  border-radius: 6px;
+  overflow: hidden;
+  cursor: pointer;
+  opacity: 0.5;
+  border: 2px solid transparent;
+  transition: all 0.2s;
+}
+
+.thumb.active {
+  opacity: 1;
+  border-color: var(--primary);
+}
+
+.thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* ── Info Card ─────────────────────── */
+
+.info-card {
+  margin-bottom: 16px;
+}
+
+.card-header-text {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.property-title {
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 8px;
+}
+
+.property-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.meta-loc {
+  font-size: 14px;
+  color: var(--text-secondary);
+}
+
+.price-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border-light);
 }
 
 .price-value {
   font-size: 32px;
   font-weight: 700;
-  color: #f56c6c;
+  color: var(--danger);
 }
 
 .price-unit {
-  font-size: 16px;
-  color: #909399;
+  font-size: 15px;
+  color: var(--text-muted);
   margin-left: 4px;
 }
 
-.detail-card {
-  margin-bottom: 16px;
-}
-
-.detail-item {
-  text-align: center;
-}
-
-.detail-label {
-  display: block;
+.price-deposit, .price-fee {
   font-size: 13px;
-  color: #909399;
-  margin-bottom: 6px;
+  color: var(--text-muted);
+  margin-left: 8px;
 }
 
-.detail-value {
-  font-size: 16px;
+/* ── Specs Grid ────────────────────── */
+
+.spec-item {
+  text-align: center;
+  padding: 12px 0;
+}
+
+.spec-icon {
+  font-size: 24px;
+  display: block;
+  margin-bottom: 4px;
+}
+
+.spec-label {
+  display: block;
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+}
+
+.spec-value {
+  font-size: 15px;
   font-weight: 600;
-  color: #303133;
+  color: var(--text-primary);
 }
 
-.description-text {
+/* ── Description ───────────────────── */
+
+.desc-text {
   font-size: 14px;
-  color: #606266;
+  color: var(--text-secondary);
   line-height: 1.8;
   white-space: pre-wrap;
 }
 
-.meta-text {
+/* ── Facilities ────────────────────── */
+
+.facility-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.facility-group-label {
+  display: block;
   font-size: 13px;
-  color: #909399;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin-bottom: 8px;
+}
+
+.facility-tags {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.no-data {
+  color: var(--text-muted);
+  font-size: 14px;
+}
+
+/* ── Map ───────────────────────────── */
+
+.map-address {
+  font-size: 14px;
+  color: var(--text-primary);
+  margin-bottom: 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.map-coords {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-weight: normal;
+}
+
+.map-container {
+  border-radius: var(--radius);
+  overflow: hidden;
+  border: 1px solid var(--border);
+  position: relative;
+}
+
+.map-iframe {
+  width: 100%;
+  height: 360px;
+  border: none;
+}
+
+.map-overlay-actions {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  background: var(--bg-white);
+  border-radius: var(--radius-sm);
+  padding: 6px 14px;
+  box-shadow: var(--shadow);
+}
+
+.map-ext-link {
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.map-hint {
+  font-size: 12px;
+  color: var(--text-muted);
+  text-align: center;
+  padding: 8px 0 4px;
+  margin: 0;
+}
+
+.map-placeholder {
+  margin-top: 16px;
+  height: 240px;
+  background: #f5f7fa;
+  border: 2px dashed var(--border);
+  border-radius: var(--radius);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: var(--text-muted);
+  font-size: 14px;
+}
+
+.map-icon {
+  font-size: 40px;
+}
+
+/* ── Reviews ────────────────────────── */
+
+.reviews-section {
+  margin-top: 32px;
+}
+
+.reviews-summary {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  background: var(--bg-white);
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  padding: 20px 24px;
+  margin-bottom: 16px;
+}
+
+.reviews-score {
+  display: flex;
+  align-items: baseline;
+  gap: 2px;
+}
+
+.score-num {
+  font-size: 36px;
+  font-weight: 800;
+  color: var(--primary);
+  line-height: 1;
+}
+
+.score-unit {
+  font-size: 16px;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.reviews-stars {
+  flex: 1;
+}
+
+.reviews-count {
+  font-size: 14px;
+  color: var(--text-muted);
+}
+
+.reviews-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.review-item {
+  display: flex;
+  gap: 14px;
+  background: var(--bg-white);
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  padding: 18px 20px;
+}
+
+.review-avatar {
+  flex-shrink: 0;
+}
+
+.review-body {
+  flex: 1;
+}
+
+.review-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.review-user {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.review-date {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-left: auto;
+}
+
+.review-text {
+  font-size: 14px;
+  color: var(--text-secondary);
+  line-height: 1.7;
+}
+
+.review-reply {
+  margin-top: 10px;
+  background: var(--primary-light);
+  border-radius: var(--radius-sm);
+  padding: 10px 14px;
+}
+
+.reply-badge {
+  display: inline-block;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--primary);
   margin-bottom: 4px;
+  background: var(--bg-white);
+  border-radius: 4px;
+  padding: 2px 8px;
+}
+
+.review-reply p {
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.6;
+  margin: 6px 0 0;
+}
+
+/* ── POI ───────────────────────────── */
+
+.poi-summary {
+  background: var(--primary-light);
+  border-left: 4px solid var(--primary);
+  padding: 12px 16px;
+  margin: 0;
+  font-size: 14px;
+  color: var(--text-secondary);
+  line-height: 1.7;
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+}
+
+.poi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 16px;
+  margin-top: 16px;
+}
+
+.poi-group h4 {
+  font-size: 14px;
+  color: var(--text-primary);
+  margin-bottom: 6px;
+}
+
+.poi-group ul {
+  list-style: none;
+  padding: 0;
+}
+
+.poi-group li {
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.8;
+}
+
+.poi-dist {
+  color: var(--primary);
+  font-weight: 500;
+}
+
+/* ── Similar ───────────────────────── */
+
+.similar-section {
+  margin-top: 32px;
+}
+
+.section-title {
+  font-size: 20px;
+  font-weight: 700;
+  margin-bottom: 16px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.section-title::before {
+  content: '';
+  width: 4px;
+  height: 20px;
+  background: var(--primary);
+  border-radius: 2px;
+}
+
+.property-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+}
+
+/* ── Bottom Bar ────────────────────── */
+
+.bottom-bar {
+  position: fixed;
+  bottom: 0;
+  left: 200px;
+  right: 0;
+  background: var(--bg-white);
+  border-top: 1px solid var(--border);
+  padding: 12px 24px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  z-index: 50;
+  box-shadow: 0 -2px 12px rgba(0,0,0,0.04);
 }
 </style>

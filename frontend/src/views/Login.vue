@@ -1,9 +1,13 @@
-﻿<template>
+<template>
   <div class="auth-page">
+    <div class="auth-bg-decor" />
     <el-card class="auth-card" shadow="always">
-      <template #header>
-        <h2 class="auth-title">登录</h2>
-      </template>
+      <div class="auth-logo">
+        <span class="logo-icon">🏠</span>
+        <span class="logo-text">AI全球公寓租赁</span>
+      </div>
+      <h2 class="auth-title">欢迎回来</h2>
+      <p class="auth-subtitle">登录您的账号，开始智能找房</p>
 
       <el-form
         ref="formRef"
@@ -17,6 +21,7 @@
             v-model="form.username_or_email"
             placeholder="请输入用户名或邮箱"
             :prefix-icon="User"
+            size="large"
           />
         </el-form-item>
 
@@ -27,6 +32,7 @@
             placeholder="请输入密码"
             :prefix-icon="Lock"
             show-password
+            size="large"
           />
         </el-form-item>
 
@@ -35,7 +41,9 @@
             type="primary"
             native-type="submit"
             :loading="authStore.loading"
+            size="large"
             class="submit-btn"
+            round
           >
             登录
           </el-button>
@@ -43,11 +51,9 @@
       </el-form>
 
       <el-divider>其他登录方式</el-divider>
-      <div class="sso-buttons">
-        <el-button class="wechat-btn" @click="handleWechatLogin" :loading="wechatLoading">
-          <el-icon><ChatDotRound /></el-icon> 微信登录
-        </el-button>
-      </div>
+      <el-button class="wechat-btn" @click="handleWechatLogin" :loading="wechatLoading" size="large" round>
+        💚 微信登录
+      </el-button>
       <div class="auth-footer">
         还没有账号？<router-link to="/register">立即注册</router-link>
       </div>
@@ -58,27 +64,16 @@
 <script setup lang="ts">
 import { reactive, ref } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { User, Lock, ChatDotRound } from '@element-plus/icons-vue'
+import { User, Lock } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
 import { useAuthStore } from '@/stores/auth'
 
 const router = useRouter()
-const wechatLoading = ref(false)
-
-async function handleWechatLogin() {
-  wechatLoading.value = true
-  try {
-    // In browser environment, use WeChat OAuth redirect
-    // For demo/development, show a message explaining the flow
-    ElMessage.info('微信登录需要微信内置浏览器或小程序环境。请使用微信扫码或在微信中打开。')
-  } finally {
-    wechatLoading.value = false
-  }
-}
 const route = useRoute()
 const authStore = useAuthStore()
 const formRef = ref<FormInstance>()
+const wechatLoading = ref(false)
 
 const form = reactive({
   username_or_email: '',
@@ -104,7 +99,16 @@ async function handleLogin() {
     const redirect = (route.query.redirect as string) || '/'
     router.push(redirect)
   } catch {
-    // Error already handled by interceptor
+    // handled by interceptor
+  }
+}
+
+async function handleWechatLogin() {
+  wechatLoading.value = true
+  try {
+    ElMessage.info('微信登录需要微信内置浏览器或小程序环境。请使用微信扫码或在微信中打开。')
+  } finally {
+    wechatLoading.value = false
   }
 }
 </script>
@@ -115,41 +119,67 @@ async function handleLogin() {
   justify-content: center;
   align-items: center;
   min-height: 100vh;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, #e8f4fd 0%, #d0e8fb 30%, #f0f2f5 60%, #e8f4fd 100%);
+  position: relative;
+}
+
+.auth-bg-decor {
+  position: absolute;
+  top: -200px;
+  right: -200px;
+  width: 600px;
+  height: 600px;
+  background: radial-gradient(circle, rgba(64,158,255,0.08) 0%, transparent 70%);
+  border-radius: 50%;
 }
 
 .auth-card {
-  width: 400px;
+  width: 420px;
+  border-radius: var(--radius-lg) !important;
+  position: relative;
+}
+
+.auth-logo {
+  text-align: center;
+  margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.logo-icon { font-size: 28px; }
+
+.logo-text {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--primary);
 }
 
 .auth-title {
   text-align: center;
   font-size: 22px;
-  color: #303133;
-  margin: 0;
+  color: var(--text-primary);
+  margin: 0 0 4px;
+}
+
+.auth-subtitle {
+  text-align: center;
+  font-size: 14px;
+  color: var(--text-muted);
+  margin-bottom: 24px;
 }
 
 .submit-btn {
   width: 100%;
-}
-
-.auth-footer {
-  text-align: center;
-  font-size: 14px;
-  color: #909399;
-}
-
-.sso-buttons {
-  display: flex;
-  justify-content: center;
-  margin-bottom: 16px;
+  font-weight: 600;
 }
 
 .wechat-btn {
+  width: 100%;
   background: #07c160;
   border-color: #07c160;
   color: #fff;
-  width: 100%;
 }
 
 .wechat-btn:hover {
@@ -158,12 +188,16 @@ async function handleLogin() {
   color: #fff;
 }
 
-.auth-divider {
-  margin: 20px 0;
+.auth-footer {
+  text-align: center;
+  margin-top: 16px;
+  font-size: 14px;
+  color: var(--text-muted);
 }
 
 .auth-footer a {
-  color: #409eff;
+  color: var(--primary);
   text-decoration: none;
+  font-weight: 600;
 }
 </style>

@@ -1,6 +1,5 @@
 ﻿<template>
   <div class="bookings-page" v-loading="loading">
-    <h2>收到的预约</h2>
 
     <el-empty v-if="!loading && bookings.length === 0" description="暂无预约" />
 
