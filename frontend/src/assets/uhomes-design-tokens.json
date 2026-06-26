@@ -1,0 +1,42 @@
+﻿{
+  "brand": {
+    "name": "uhomes",
+    "primary": "#FF5A5F",
+    "primaryRgb": "rgb(255, 90, 95)",
+    "secondary": "#FAD7B7",
+    "darkBlue": "#2C5166",
+    "purple": "#9286BF"
+  },
+  "typography": {
+    "fontFamily": "Poppins, -apple-system, 'system-ui', 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif",
+    "body": { "size": "14px", "color": "#222222", "lineHeight": "1.5" },
+    "sectionHeading": { "size": "36px", "weight": "600", "color": "#333333" },
+    "heroHeading": { "size": "58px", "weight": "600", "color": "#FFFFFF" },
+    "largeHeading": { "size": "76px", "weight": "600", "color": "#222222" }
+  },
+  "sectionBackgrounds": {
+    "white": "#FFFFFF",
+    "lightPurple": "#EFEBFA",
+    "lightGreen": "#F0F7EF",
+    "dark": "#11080D",
+    "lightPink": "#FFEFF2",
+    "lightBlueGreen": "#E7F2F5"
+  },
+  "layout": {
+    "maxWidth": "1280px",
+    "sectionPadding": "60px 20px"
+  },
+  "homepageSections": [
+    { "name": "hero", "class": "header-section", "bg": "dark", "text": "Home for Global Students" },
+    { "name": "hotCities", "class": "hot-city-section", "bg": "white", "text": "Book Your Perfect Student Housing" },
+    { "name": "mustStay", "class": "must-stay-list-section", "bg": "lightPurple", "text": "Most Popular Homes for Students" },
+    { "name": "about", "class": "about-section", "bg": "white" },
+    { "name": "bookSteps", "class": "book-step-section", "text": "Book in 3 Easy Steps!" },
+    { "name": "testimonials", "class": "students-say-section", "bg": "lightPurple", "text": "Hear What Global Students Say About Us" },
+    { "name": "contact", "class": "get-in-touch-section", "bg": "lightGreen", "text": "Get in Touch" },
+    { "name": "cityIndex", "bg": "white", "text": "Hundreds of cities around the world" },
+    { "name": "faq", "bg": "white", "text": "FAQs on Student Accommodation and Housing" }
+  ],
+  "techStack": "Nuxt.js SPA",
+  "uiLibrary": "Custom CSS"
+}

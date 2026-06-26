@@ -1,4 +1,4 @@
-﻿import enum
+import enum
 
 from sqlalchemy import Enum, ForeignKey, String, Text as SAText
 from sqlalchemy.orm import Mapped, mapped_column, relationship

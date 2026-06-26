@@ -1,7 +1,7 @@
 import enum
 from decimal import Decimal
 
-from sqlalchemy import CheckConstraint, Enum, Float, ForeignKey, Index, Integer, Numeric, String, Text as SAText
+from sqlalchemy import Boolean, CheckConstraint, Enum, Float, ForeignKey, Index, Integer, Numeric, String, Text as SAText
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.types import TypeDecorator
 
@@ -48,6 +48,8 @@ class Property(TimestampMixin, Base):
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
     landlord_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
 
+    institute_id: Mapped[int | None] = mapped_column(ForeignKey("institutes.id", ondelete="SET NULL"), index=True, nullable=True)
+
     title: Mapped[str] = mapped_column(String(200), nullable=False)
     description: Mapped[str | None] = mapped_column(SAText)
     address: Mapped[str] = mapped_column(String(300), nullable=False)
@@ -76,6 +78,8 @@ class Property(TimestampMixin, Base):
     embedding: Mapped[list[float] | None] = mapped_column(VectorColumn)
 
     landlord: Mapped["User"] = relationship(back_populates="properties")
+
+    institute: Mapped["Institute | None"] = relationship(back_populates="properties")
 
     images: Mapped[list["PropertyImage"]] = relationship(
         "PropertyImage", back_populates="property", cascade="all, delete-orphan", lazy="selectin"

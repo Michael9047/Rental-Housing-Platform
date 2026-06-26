@@ -1,3 +1,4 @@
+﻿"""用户模型 - 租客、房东、BD经理、系统管理员"""
 import enum
 
 from sqlalchemy import Enum, String
@@ -10,6 +11,7 @@ from app.db.session import Base
 class UserRole(str, enum.Enum):
     tenant = "tenant"
     landlord = "landlord"
+    bd_manager = "bd_manager"
     admin = "admin"
 
 
