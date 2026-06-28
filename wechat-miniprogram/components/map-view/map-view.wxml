@@ -1,0 +1,9 @@
+﻿<!--components/map-view/map-view.wxml-->
+<map
+  class="map"
+  latitude="{{latitude}}"
+  longitude="{{longitude}}"
+  markers="{{markers.length > 0 ? markers : defaultMarkers}}"
+  scale="14"
+  show-location
+/>

@@ -1,0 +1,13 @@
+﻿<!--components/search-bar/search-bar.wxml-->
+<view class="search-bar">
+  <icon type="search" size="16" color="#999"></icon>
+  <input
+    class="search-input"
+    value="{{value}}"
+    placeholder="{{placeholder}}"
+    bindinput="onInput"
+    bindconfirm="onSearch"
+    confirm-type="search"
+  />
+  <text class="search-btn" bindtap="onSearch">搜索</text>
+</view>

@@ -1,0 +1,36 @@
+﻿<!--pages/chat/chat.wxml-->
+<view class="page">
+  <!-- Messages -->
+  <scroll-view class="message-list" scroll-y scroll-into-view="{{scrollToView}}" scroll-with-animation>
+    <block wx:for="{{messages}}" wx:key="id">
+      <view class="message-wrapper {{item.role}}" id="msg-{{item.id}}">
+        <view class="message-bubble">
+          <text wx:if="{{item.role === 'assistant' && item.loading}}">正在思考中...</text>
+          <text wx:elif="{{item.role === 'user'}}">{{item.content}}</text>
+          <text wx:else>{{item.content || ''}}</text>
+        </view>
+      </view>
+    </block>
+
+    <view class="empty" wx:if="{{messages.length === 0}}">
+      <text>我是AI租房助手</text>
+      <text class="empty-hint">可以问我房源推荐、区域分析、价格趋势等问题</text>
+    </view>
+  </scroll-view>
+
+  <!-- Input Bar -->
+  <view class="input-bar">
+    <input
+      class="chat-input"
+      value="{{inputValue}}"
+      placeholder="输入您的问题..."
+      bindinput="onInput"
+      bindconfirm="onSend"
+      confirm-type="send"
+      disabled="{{sending}}"
+    />
+    <button class="send-btn" bindtap="onSend" disabled="{{sending || !inputValue}}">
+      发送
+    </button>
+  </view>
+</view>

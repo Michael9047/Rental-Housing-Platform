@@ -1,0 +1,7 @@
+﻿{
+  "usingComponents": {
+    "property-card": "/components/property-card/property-card"
+  },
+  "enablePullDownRefresh": true,
+  "navigationBarTitleText": "房源匹配"
+}

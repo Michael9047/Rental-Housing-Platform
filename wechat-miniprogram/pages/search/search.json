@@ -1,0 +1,8 @@
+﻿{
+  "usingComponents": {
+    "search-bar": "/components/search-bar/search-bar",
+    "property-card": "/components/property-card/property-card"
+  },
+  "enablePullDownRefresh": true,
+  "navigationBarTitleText": "搜索房源"
+}

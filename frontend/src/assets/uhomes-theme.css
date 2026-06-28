@@ -1,0 +1,148 @@
+﻿/* ========================================
+   uhomes 主题 CSS 变量
+   基于 uhomes-design-tokens.json 生成
+   ======================================== */
+
+:root {
+  /* === 品牌色 === */
+  --uh-brand-primary: #FF5A5F;
+  --uh-brand-primary-rgb: 255, 90, 95;
+  --uh-brand-secondary: #FAD7B7;
+  --uh-brand-dark-blue: #2C5166;
+  --uh-brand-purple: #9286BF;
+
+  /* === 排版 === */
+  --uh-font-family: "Poppins", -apple-system, "system-ui", "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  --uh-font-size-body: 14px;
+  --uh-font-color-body: #222222;
+  --uh-font-line-height: 1.5;
+
+  --uh-font-size-section-heading: 36px;
+  --uh-font-weight-section-heading: 600;
+  --uh-font-color-section-heading: #333333;
+
+  --uh-font-size-hero-heading: 58px;
+  --uh-font-weight-hero-heading: 600;
+  --uh-font-color-hero-heading: #FFFFFF;
+
+  --uh-font-size-large: 76px;
+  --uh-font-weight-large: 600;
+  --uh-font-color-large: #222222;
+
+  /* === 区块背景 === */
+  --uh-bg-white: #FFFFFF;
+  --uh-bg-light-purple: #EFEBFA;
+  --uh-bg-light-green: #F0F7EF;
+  --uh-bg-dark: #11080D;
+  --uh-bg-light-pink: #FFEFF2;
+  --uh-bg-light-blue-green: #E7F2F5;
+
+  /* === 布局 === */
+  --uh-layout-max-width: 1280px;
+  --uh-section-padding: 60px 20px;
+  --uh-section-padding-mobile: 40px 16px;
+
+  /* === 按钮 === */
+  --uh-btn-primary-bg: #FF5A5F;
+  --uh-btn-primary-hover: #E04A4F;
+  --uh-btn-primary-color: #FFFFFF;
+  --uh-btn-border-radius: 8px;
+  --uh-btn-padding: 12px 32px;
+
+  /* === 卡片 === */
+  --uh-card-border-radius: 12px;
+  --uh-card-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+  --uh-card-hover-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+
+  /* === 导航 === */
+  --uh-nav-height: 72px;
+  --uh-nav-bg: #FFFFFF;
+  --uh-nav-link-color: #333333;
+  --uh-nav-link-hover: #FF5A5F;
+
+  /* === 响应式断点 === */
+  --uh-breakpoint-sm: 576px;
+  --uh-breakpoint-md: 768px;
+  --uh-breakpoint-lg: 992px;
+  --uh-breakpoint-xl: 1200px;
+}
+
+/* === 基础重置 === */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: var(--uh-font-family);
+  font-size: var(--uh-font-size-body);
+  color: var(--uh-font-color-body);
+  line-height: var(--uh-font-line-height);
+}
+
+/* === 容器 === */
+.uh-container {
+  max-width: var(--uh-layout-max-width);
+  margin: 0 auto;
+  padding: 0 20px;
+}
+
+/* === 区块通用样式 === */
+.uh-section {
+  padding: var(--uh-section-padding);
+}
+
+.uh-section__heading {
+  font-size: var(--uh-font-size-section-heading);
+  font-weight: var(--uh-font-weight-section-heading);
+  color: var(--uh-font-color-section-heading);
+  text-align: center;
+  margin-bottom: 40px;
+}
+
+.uh-section__subtitle {
+  font-size: 16px;
+  color: #666666;
+  text-align: center;
+  margin-bottom: 40px;
+  max-width: 600px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+/* === 按钮 === */
+.uh-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--uh-btn-padding);
+  border-radius: var(--uh-btn-border-radius);
+  font-size: 16px;
+  font-weight: 500;
+  cursor: pointer;
+  border: none;
+  transition: all 0.3s ease;
+}
+
+.uh-btn--primary {
+  background: var(--uh-btn-primary-bg);
+  color: var(--uh-btn-primary-color);
+}
+
+.uh-btn--primary:hover {
+  background: var(--uh-btn-primary-hover);
+}
+
+.uh-btn--outline {
+  background: transparent;
+  color: var(--uh-brand-primary);
+  border: 2px solid var(--uh-brand-primary);
+}
+
+.uh-btn--outline:hover {
+  background: var(--uh-brand-primary);
+  color: #FFFFFF;
+}

@@ -1,0 +1,81 @@
+﻿<!--pages/property/property.wxml-->
+<view class="page" wx:if="{{!loading && property}}">
+  <!-- Image Swiper -->
+  <swiper class="image-swiper" indicator-dots autoplay circular>
+    <swiper-item wx:for="{{images}}" wx:key="*this">
+      <image src="{{item}}" mode="aspectFill" class="swiper-img" bindtap="onPreviewImage" data-src="{{item}}" />
+    </swiper-item>
+  </swiper>
+
+  <!-- Basic Info -->
+  <view class="info-section">
+    <view class="price-row">
+      <text class="price">¥{{property.price}}</text>
+      <text class="unit">/月</text>
+      <text class="property-type" wx:if="{{property.property_type}}">{{property.property_type}}</text>
+    </view>
+    <view class="title">{{property.title}}</view>
+    <view class="address">{{property.address}}</view>
+    <view class="tags" wx:if="{{property.tags}}">
+      <text class="tag" wx:for="{{property.tags}}" wx:key="*this">{{item}}</text>
+    </view>
+  </view>
+
+  <!-- Description -->
+  <view class="section">
+    <view class="section-title">房源描述</view>
+    <view class="description">{{property.description}}</view>
+  </view>
+
+  <!-- Details -->
+  <view class="section">
+    <view class="section-title">详细信息</view>
+    <view class="detail-grid">
+      <view class="detail-item">
+        <text class="detail-label">户型</text>
+        <text class="detail-value">{{property.layout || '暂无'}}</text>
+      </view>
+      <view class="detail-item">
+        <text class="detail-label">面积</text>
+        <text class="detail-value">{{property.area || '暂无'}}㎡</text>
+      </view>
+      <view class="detail-item">
+        <text class="detail-label">朝向</text>
+        <text class="detail-value">{{property.orientation || '暂无'}}</text>
+      </view>
+      <view class="detail-item">
+        <text class="detail-label">楼层</text>
+        <text class="detail-value">{{property.floor || '暂无'}}</text>
+      </view>
+    </view>
+  </view>
+
+  <!-- Location Map -->
+  <view class="section" wx:if="{{property.latitude && property.longitude}}">
+    <view class="section-title">位置地图</view>
+    <map-view latitude="{{property.latitude}}" longitude="{{property.longitude}}" />
+  </view>
+
+  <!-- Bottom Action Bar -->
+  <view class="bottom-bar">
+    <button class="call-btn" bindtap="onCallLandlord">联系房东</button>
+    <button class="book-btn" bindtap="onBookViewing">预约看房</button>
+  </view>
+
+  <!-- Booking Modal -->
+  <view class="modal-mask" wx:if="{{bookingVisible}}" bindtap="onCancelBooking">
+    <view class="modal-content" catchtap="">
+      <view class="modal-title">预约看房</view>
+      <view class="modal-property">{{property.title}}</view>
+      <textarea class="modal-textarea" placeholder="备注信息（可选）" value="{{bookingRemark}}" bindinput="onRemarkInput" />
+      <view class="modal-buttons">
+        <button class="cancel-btn" bindtap="onCancelBooking">取消</button>
+        <button class="confirm-btn" bindtap="onSubmitBooking" loading="{{submitting}}" disabled="{{submitting}}">确认预约</button>
+      </view>
+    </view>
+  </view>
+</view>
+
+<view class="loading" wx:if="{{loading}}">
+  <text>加载中...</text>
+</view>

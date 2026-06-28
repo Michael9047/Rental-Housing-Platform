@@ -1,0 +1,32 @@
+﻿<!--pages/booking/detail.wxml-->
+<view class="page" wx:if="{{!loading && booking}}">
+  <view class="status-banner status-{{booking.status}}">
+    {{booking.status === 'pending' ? '待处理' : booking.status === 'approved' ? '已确认' : booking.status === 'cancelled' ? '已取消' : booking.status === 'rejected' ? '已拒绝' : booking.status}}
+  </view>
+
+  <view class="card">
+    <view class="card-title">房源信息</view>
+    <view class="info-row"><text class="label">房源名称</text><text class="value">{{booking.property_title}}</text></view>
+    <view class="info-row"><text class="label">房源地址</text><text class="value">{{booking.property_address}}</text></view>
+  </view>
+
+  <view class="card">
+    <view class="card-title">预约信息</view>
+    <view class="info-row"><text class="label">预约时间</text><text class="value">{{booking.viewing_time || booking.created_at}}</text></view>
+    <view class="info-row"><text class="label">备注</text><text class="value">{{booking.remark || '无'}}</text></view>
+  </view>
+
+  <view class="card" wx:if="{{booking.landlord_name}}">
+    <view class="card-title">房东信息</view>
+    <view class="info-row"><text class="label">姓名</text><text class="value">{{booking.landlord_name}}</text></view>
+    <view class="info-row"><text class="label">电话</text><text class="value">{{booking.landlord_phone}}</text></view>
+  </view>
+
+  <view class="action" wx:if="{{booking.status === 'pending'}}">
+    <button class="cancel-btn" bindtap="onCancelBooking">取消预约</button>
+  </view>
+</view>
+
+<view class="loading" wx:if="{{loading}}">
+  <text>加载中...</text>
+</view>
