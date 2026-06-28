@@ -23,6 +23,10 @@ export const contractService = {
     return api.get(`/contracts/${contractId}`).then((r) => r.data)
   },
 
+  getByBooking(bookingId: number): Promise<Contract> {
+    return api.get(`/contracts/by-booking/${bookingId}`).then((r) => r.data)
+  },
+
   sign(contractId: string): Promise<Contract> {
     return api.post(`/contracts/${contractId}/sign`).then((r) => r.data)
   },

@@ -299,9 +299,23 @@
     <!-- 报修弹窗 -->
     <el-dialog v-model="showNewRepair" title="我要报修" width="420px">
       <el-form label-width="70px">
-        <el-form-item label="房源"><el-select style="width:100%" placeholder="选房源"><el-option v-for="b in bookings" :key="b.id" :label="'房源 #'+b.property_id" :value="b.property_id" /></el-select></el-form-item>
-        <el-form-item label="哪里坏了"><el-select style="width:100%" placeholder="选类型"><el-option label="💧 水电" value="utility" /><el-option label="🔌 家电" value="appliance" /><el-option label="🪟 门窗" value="door" /><el-option label="🧱 墙面地面" value="structure" /><el-option label="其他" value="other" /></el-select></el-form-item>
-        <el-form-item label="描述一下"><el-input type="textarea" :rows="3" placeholder="简单说说哪里出了问题..." /></el-form-item>
+        <el-form-item label="房源">
+          <el-select v-model="repairForm.property_id" style="width:100%" placeholder="选房源">
+            <el-option v-for="b in bookings" :key="b.id" :label="'房源 #'+b.property_id" :value="b.property_id" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="哪里坏了">
+          <el-select v-model="repairForm.type" style="width:100%" placeholder="选类型">
+            <el-option label="💧 水电" value="utility" />
+            <el-option label="🔌 家电" value="appliance" />
+            <el-option label="🪟 门窗" value="door" />
+            <el-option label="🧱 墙面地面" value="structure" />
+            <el-option label="其他" value="other" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="描述一下">
+          <el-input v-model="repairForm.description" type="textarea" :rows="3" placeholder="简单说说哪里出了问题..." />
+        </el-form-item>
       </el-form>
       <template #footer><el-button @click="showNewRepair = false">算了</el-button><el-button type="primary" @click="submitRepair">提交</el-button></template>
     </el-dialog>
@@ -320,7 +334,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, reactive } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { UserFilled } from '@element-plus/icons-vue'
@@ -328,6 +342,7 @@ import { useAuthStore } from '@/stores/auth'
 import { bookingService } from '@/services/booking'
 import { contractService } from '@/services/contract'
 import { propertyService } from '@/services/property'
+import { notificationService } from '@/services/notification'
 import { storeToRefs } from 'pinia'
 import PropertyCard from '@/components/PropertyCard.vue'
 import type { Booking } from '@/types/booking'
@@ -349,14 +364,14 @@ const billTab = ref('unpaid')
 const bookings = ref<Booking[]>([])
 const favorites = ref<Property[]>([])
 const repairs = ref<any[]>([])
-const chats = ref([
-  { id: 1, from: '张房东', time: '30分钟前', text: '明天下午2点可以看房，到了联系我', read: false },
-  { id: 2, from: '李管家', time: '昨天', text: '房子还在的，随时欢迎来看', read: true },
-])
-const notices = ref([
-  { id: 1, time: '今天 10:30', text: '✅ 预约通过啦 — 明天14:00看房，别迟到哦' },
-  { id: 2, time: '昨天 18:00', text: '💳 押金已到账，电子合同已生成' },
-])
+const chats = ref<{ id: number; from: string; time: string; text: string; read: boolean }[]>([])
+const notices = ref<{ id: number; time: string; text: string }[]>([])
+
+const repairForm = reactive({
+  property_id: undefined as number | undefined,
+  type: '',
+  description: '',
+})
 
 const notifSite = ref(true)
 const notifSms = ref(true)
@@ -398,10 +413,21 @@ const paidOrders = computed(() => bookings.value
 // ── Actions ──
 async function fetchAll() {
   pageLoading.value = true
-  try { bookings.value = (await bookingService.list()).filter(b => b.deposit_status !== 'paid' && b.deposit_status !== 'confirmed') }
+  try { bookings.value = await bookingService.list() }
   catch { bookings.value = [] }
-  try { favorites.value = await propertyService.list({ limit: 6 }) }
+  try { favorites.value = await loadFavoriteProperties() }
   catch { favorites.value = [] }
+  repairs.value = loadRepairs()
+  try {
+    const rows = await notificationService.list()
+    notices.value = rows.map(n => ({
+      id: n.id,
+      time: new Date(n.created_at).toLocaleString('zh-CN'),
+      text: `${n.title}${n.content ? ` — ${n.content}` : ''}`,
+    }))
+  } catch {
+    notices.value = []
+  }
   pageLoading.value = false
 }
 async function cancelBooking(b: Booking) {
@@ -414,16 +440,65 @@ async function cancelBooking(b: Booking) {
 }
 function goPay(b: Booking) { router.push({ path: `/booking/payment/${b.id}` }) }
 async function downloadContract(row: any) {
-  try { await contractService.download(row.id); ElMessage.success('正在下载...') }
-  catch { ElMessage.info('下载功能接入中') }
+  try {
+    const contract = await contractService.generate(row.bookingId)
+    const content = await contractService.download(contract.id)
+    const blob = new Blob([content], { type: 'text/plain;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `contract-${contract.id}.txt`
+    a.click()
+    URL.revokeObjectURL(url)
+  } catch { ElMessage.error('下载失败，请稍后重试') }
 }
 function openBookingDialog(p: Property) { router.push({ path: '/booking/confirm', query: { property_id: String(p.id) } }) }
 function viewRepair(row: any) { ElMessage.info(`工单 ${row.id}：${row.status}`) }
-function submitRepair() { ElMessage.success('报修已提交，房东会尽快处理'); showNewRepair.value = false }
+function submitRepair() {
+  if (!repairForm.property_id || !repairForm.type || !repairForm.description.trim()) {
+    ElMessage.warning('请补全报修信息')
+    return
+  }
+  const next = {
+    id: `LOCAL-${Date.now()}`,
+    property: `房源 #${repairForm.property_id}`,
+    desc: repairForm.description.trim(),
+    date: new Date().toLocaleDateString('zh-CN'),
+    status: '待处理',
+  }
+  repairs.value = [next, ...repairs.value]
+  localStorage.setItem(REPAIRS_KEY, JSON.stringify(repairs.value))
+  repairForm.property_id = undefined
+  repairForm.type = ''
+  repairForm.description = ''
+  ElMessage.success('报修记录已保存')
+  showNewRepair.value = false
+}
 function bindWechat() { ElMessage.info('请用微信扫码绑定') }
 
 function maskPhone(p: string | null): string { return p && p.length >= 11 ? p.slice(0, 3) + '****' + p.slice(-4) : (p || '未设置') }
 function formatDate(d: string): string { return d ? new Date(d).toLocaleDateString('zh-CN') : '' }
+
+const FAVORITES_KEY = 'favorite_property_ids'
+const REPAIRS_KEY = 'local_repairs'
+
+async function loadFavoriteProperties(): Promise<Property[]> {
+  const ids = JSON.parse(localStorage.getItem(FAVORITES_KEY) || '[]') as number[]
+  const uniqueIds = [...new Set(ids)].filter(Boolean)
+  const rows = await Promise.allSettled(uniqueIds.map(id => propertyService.getById(id)))
+  return rows
+    .filter((r): r is PromiseFulfilledResult<Property> => r.status === 'fulfilled')
+    .map(r => r.value)
+}
+
+function loadRepairs() {
+  try {
+    const rows = JSON.parse(localStorage.getItem(REPAIRS_KEY) || '[]')
+    return Array.isArray(rows) ? rows : []
+  } catch {
+    return []
+  }
+}
 
 onMounted(() => { authStore.fetchCurrentUser(); fetchAll() })
 </script>

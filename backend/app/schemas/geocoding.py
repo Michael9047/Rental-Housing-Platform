@@ -1,5 +1,3 @@
-from decimal import Decimal
-
 from pydantic import BaseModel, Field
 
 
@@ -10,8 +8,8 @@ class GeocodeRequest(BaseModel):
 
 class GeocodeResponse(BaseModel):
     address: str
-    latitude: Decimal
-    longitude: Decimal
+    latitude: float
+    longitude: float
     formatted_address: str | None = None
     level: str | None = None
     province: str | None = None

@@ -55,16 +55,7 @@
           >
             <span class="method-icon">💚</span>
             <span class="method-name">微信支付</span>
-            <span class="method-desc">推荐使用，极速到账</span>
-          </div>
-          <div
-            class="method-card"
-            :class="{ active: payMethod === 'alipay' }"
-            @click="payMethod = 'alipay'"
-          >
-            <span class="method-icon">💙</span>
-            <span class="method-name">支付宝</span>
-            <span class="method-desc">安全便捷，支持花呗</span>
+            <span class="method-desc">当前环境使用模拟回调确认支付</span>
           </div>
         </div>
       </el-card>
@@ -90,9 +81,10 @@
       sub-title="押金已支付！电子合同已生成，可在个人中心「支付中心」查看"
     >
       <template #extra>
-        <el-button type="primary" @click="$router.push('/profile?tab=contracts')">
-          查看支付中心
+        <el-button v-if="contractId" type="primary" @click="$router.push(`/contract/${contractId}`)">
+          查看电子合同
         </el-button>
+        <el-button type="primary" plain @click="$router.push('/profile?tab=contracts')">查看支付中心</el-button>
         <el-button @click="$router.push('/')">返回首页</el-button>
       </template>
     </el-result>
@@ -106,6 +98,7 @@ import { ArrowLeft } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { bookingService } from '@/services/booking'
 import { paymentService } from '@/services/payment'
+import { contractService } from '@/services/contract'
 import type { Booking } from '@/types/booking'
 
 const route = useRoute()
@@ -115,6 +108,7 @@ const loading = ref(false)
 const paying = ref(false)
 const paySuccess = ref(false)
 const payMethod = ref('wechat')
+const contractId = ref<string | null>(null)
 
 // Exchange rate: ~7.25 CNY per USD (approximate reference rate)
 const USD_RATE = 7.25
@@ -139,10 +133,13 @@ async function doPayment() {
   if (!booking.value) return
   paying.value = true
   try {
-    await paymentService.createPayment({
+    const payment = await paymentService.createPayment({
       booking_id: booking.value.id,
       amount: depositAmount.value,
     })
+    await paymentService.paymentCallback(payment.id)
+    const contract = await contractService.generate(booking.value.id)
+    contractId.value = contract.id
     paySuccess.value = true
     ElMessage.success('定金支付成功！')
   } catch {

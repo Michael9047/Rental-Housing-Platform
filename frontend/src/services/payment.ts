@@ -5,9 +5,13 @@ export interface PaymentResponse {
   booking_id: number
   user_id: number
   amount: number
+  out_trade_no: string | null
+  prepay_id: string | null
   transaction_id: string | null
   status: string
   payment_method: string
+  trade_state: string | null
+  trade_state_desc: string | null
   paid_at: string | null
   created_at: string
   updated_at: string

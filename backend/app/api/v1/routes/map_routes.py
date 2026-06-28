@@ -61,7 +61,7 @@ async def get_map_config():
     """Return map configuration including API keys."""
     settings = get_settings()
     return {
-        "amap_js_key": settings.amap_js_key or settings.amap_api_key or settings.amap_web_key or "",
+        "amap_js_key": settings.amap_js_key or settings.amap_web_key or "",
         "center": [39.9042, 116.4074],  # 北京
         "zoom": 11,
     }

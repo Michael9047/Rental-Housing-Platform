@@ -64,12 +64,6 @@ const routes: RouteRecordRaw[] = [
         meta: { requiresAuth: true, requiresLandlord: true },
       },
       {
-        path: 'property/:id/edit',
-        name: 'edit-property',
-        component: () => import('@/views/CreateProperty.vue'),
-        meta: { requiresAuth: true, requiresLandlord: true },
-      },
-      {
         path: 'property/:id/images',
         name: 'property-images',
         component: () => import('@/views/PropertyImages.vue'),
@@ -192,11 +186,11 @@ router.beforeEach((to, _from, next) => {
     return next({ name: 'home' })
   }
 
-  if (to.meta.requiresLandlord && user && user.role !== 'landlord' && user.role !== 'admin') {
+  if (to.meta.requiresLandlord && (!user || (user.role !== 'landlord' && user.role !== 'admin'))) {
     return next({ name: 'home' })
   }
 
-  if (to.meta.requiresAdmin && user && user.role !== 'admin') {
+  if (to.meta.requiresAdmin && (!user || user.role !== 'admin')) {
     return next({ name: 'home' })
   }
 

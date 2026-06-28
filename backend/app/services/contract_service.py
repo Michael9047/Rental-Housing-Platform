@@ -21,8 +21,9 @@ class ContractService:
         existing = await self.session.execute(
             select(Contract).where(Contract.booking_id == booking.id)
         )
-        if existing.scalars().first():
-            raise ValueError("Contract already exists for this booking")
+        existing_contract = existing.scalars().first()
+        if existing_contract:
+            return existing_contract
 
         tenant = await self.session.get(User, booking.tenant_id)
         property_obj = await self.session.get(Property, booking.property_id)

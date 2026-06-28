@@ -75,10 +75,10 @@ async def update_booking_status(
     session: AsyncSession = Depends(get_db_session),
     current_user: User = Depends(require_landlord),
 ) -> BookingRead:
-    if update_in.status not in {BookingStatus.approved, BookingStatus.rejected}:
+    if update_in.status not in {BookingStatus.approved, BookingStatus.rejected, BookingStatus.completed}:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Status must be approved or rejected",
+            detail="Status must be approved, rejected, or completed",
         )
 
     booking_service = BookingService(session)
@@ -88,6 +88,12 @@ async def update_booking_status(
 
     if current_user.id != booking.landlord_id and current_user.role != UserRole.admin:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only the landlord can update this booking")
+
+    if update_in.status == BookingStatus.completed and booking.status != BookingStatus.approved:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Only approved bookings can be marked completed",
+        )
 
     updated = await booking_service.update_status(booking_id, update_in.status)
     return updated

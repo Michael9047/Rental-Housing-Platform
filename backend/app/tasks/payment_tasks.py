@@ -24,6 +24,10 @@ PAYMENT_SUCCESS_TEMPLATE = "payment_success_template_id"
 PAYMENT_FAILED_TEMPLATE = "payment_failed_template_id"
 
 
+def _status_value(value: object) -> str:
+    return value.value if hasattr(value, "value") else str(value)
+
+
 async def _sync_single_payment(payment: Payment, session: AsyncSession) -> bool:
     """Sync a single payment's status from WeChat Pay.
 
@@ -40,10 +44,10 @@ async def _sync_single_payment(payment: Payment, session: AsyncSession) -> bool:
         return False
 
     trade_state = wx_order.get("trade_state", "")
-    original_status = payment.status
+    original_status = _status_value(payment.status)
 
     if trade_state == "SUCCESS":
-        payment.status = PaymentStatus.success
+        payment.status = PaymentStatus.success.value
         payment.transaction_id = wx_order.get("transaction_id")
         payment.trade_state = trade_state
         payment.trade_state_desc = wx_order.get("trade_state_desc")
@@ -51,26 +55,26 @@ async def _sync_single_payment(payment: Payment, session: AsyncSession) -> bool:
         if success_time:
             payment.paid_at = datetime.fromisoformat(success_time)
     elif trade_state in ("CLOSED", "PAYERROR", "REVOKED"):
-        payment.status = PaymentStatus.failed
+        payment.status = PaymentStatus.failed.value
         payment.trade_state = trade_state
         payment.trade_state_desc = wx_order.get("trade_state_desc")
 
-    if payment.status != original_status:
+    if _status_value(payment.status) != original_status:
         # Update associated booking
         from app.models.booking import Booking
         booking = await session.get(Booking, payment.booking_id)
         if booking:
-            if payment.status == PaymentStatus.success:
+            if _status_value(payment.status) == PaymentStatus.success.value:
                 booking.deposit_status = "confirmed"
-            elif payment.status == PaymentStatus.failed:
+            elif _status_value(payment.status) == PaymentStatus.failed.value:
                 booking.deposit_status = "unpaid"
 
         await session.commit()
         logger.info(
             "Payment %s synced: %s -> %s",
             payment.id,
-            original_status.value,
-            payment.status.value,
+            original_status,
+            _status_value(payment.status),
         )
         return True
 
@@ -97,8 +101,8 @@ def sync_pending_payments() -> dict:
         async with async_session() as session:
             stmt = select(Payment).where(
                 Payment.status.in_([
-                    PaymentStatus.pending,
-                    PaymentStatus.processing,
+                    PaymentStatus.pending.value,
+                    PaymentStatus.processing.value,
                 ])
             )
             result = await session.execute(stmt)
@@ -140,7 +144,7 @@ def close_expired_payments() -> dict:
 
         async with async_session() as session:
             stmt = select(Payment).where(
-                Payment.status == PaymentStatus.pending,
+                Payment.status == PaymentStatus.pending.value,
                 Payment.created_at < cutoff,
             )
             result = await session.execute(stmt)
@@ -152,7 +156,7 @@ def close_expired_payments() -> dict:
                 try:
                     if payment.out_trade_no:
                         await wechat_pay.close_order(payment.out_trade_no)
-                    payment.status = PaymentStatus.closed
+                    payment.status = PaymentStatus.closed.value
                     payment.trade_state_desc = "Expired - closed by system"
 
                     from app.models.booking import Booking

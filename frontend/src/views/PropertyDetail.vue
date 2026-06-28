@@ -5,8 +5,10 @@
       <div class="detail-topbar">
         <el-button text :icon="ArrowLeft" @click="$router.back()">返回</el-button>
         <div class="topbar-actions">
-          <el-button text :icon="Star">收藏</el-button>
-          <el-button text :icon="Share">分享</el-button>
+          <el-button text :type="isFavorited ? 'primary' : undefined" :icon="Star" @click="toggleFavorite">
+            {{ isFavorited ? '已收藏' : '收藏' }}
+          </el-button>
+          <el-button text :icon="Share" @click="shareProperty">分享</el-button>
         </div>
       </div>
 
@@ -195,7 +197,7 @@
             <span class="score-unit">/5</span>
           </div>
           <div class="reviews-stars">
-            <el-rate v-model="avgRating" disabled show-score-text :texts="[avgRatingText]" />
+            <el-rate :model-value="avgRating" disabled show-score-text :texts="[avgRatingText]" />
           </div>
           <span class="reviews-count">共 {{ reviews.length }} 条评价</span>
         </div>
@@ -207,7 +209,7 @@
             <div class="review-body">
               <div class="review-header">
                 <span class="review-user">{{ r.user }}</span>
-                <el-rate v-model="r.rating" disabled size="small" />
+                <el-rate :model-value="r.rating" disabled size="small" />
                 <span class="review-date">{{ r.date }}</span>
               </div>
               <p class="review-text">{{ r.text }}</p>
@@ -217,6 +219,7 @@
               </div>
             </div>
           </div>
+          <el-empty v-if="reviews.length === 0" description="暂无真实评价数据" />
         </div>
       </section>
 
@@ -260,6 +263,7 @@
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ArrowLeft, Star, Share } from '@element-plus/icons-vue'
+import { ElMessage } from 'element-plus'
 import { usePropertyStore } from '@/stores/property'
 import { useAuthStore } from '@/stores/auth'
 import { propertyService, type PropertyPOI } from '@/services/property'
@@ -275,6 +279,8 @@ const authStore = useAuthStore()
 const { currentProperty: property, loading } = storeToRefs(propertyStore)
 
 const currentSlide = ref(0)
+const favoriteIds = ref<number[]>([])
+const FAVORITES_KEY = 'favorite_property_ids'
 
 // Map
 const mapSrc = computed(() => {
@@ -308,18 +314,22 @@ const overseasFacilities = computed(() => {
   return ['健身房', '自习室', '签证咨询', '24小时前台', '校车接驳', '独立卫浴']
 })
 
-// Reviews (static mock — backend doesn't have reviews yet)
-const reviews = [
-  { user: '李明', avatar: '李', avatarColor: '#FF6B35', rating: 5, date: '2026-06-20', text: '房间很干净，采光好，房东人很nice。地铁就在楼下非常方便！', reply: '感谢李先生的认可，欢迎随时联系。' },
-  { user: 'Emily', avatar: 'E', avatarColor: '#67c23a', rating: 4.5, date: '2026-06-15', text: 'Great location and friendly landlord. The apartment has everything I need for my study abroad year.', reply: 'Thanks Emily! Happy to help with your stay.' },
-  { user: '王芳', avatar: '王', avatarColor: '#409eff', rating: 4, date: '2026-06-08', text: '配套齐全，周边买菜方便。唯一建议是洗衣机可以换个新的。', reply: '' },
-  { user: '张伟', avatar: '张', avatarColor: '#e6a23c', rating: 5, date: '2026-05-28', text: '第三次租了，每次体验都很好。平台服务也很到位，推荐！', reply: '感谢老客户的支持！' },
-]
+interface ReviewItem {
+  user: string
+  avatar: string
+  avatarColor: string
+  rating: number
+  date: string
+  text: string
+  reply?: string
+}
+
+const reviews = ref<ReviewItem[]>([])
 
 const avgRating = computed(() => {
-  if (reviews.length === 0) return 0
-  const sum = reviews.reduce((a, r) => a + r.rating, 0)
-  return Math.round(sum / reviews.length * 10) / 10
+  if (reviews.value.length === 0) return 0
+  const sum = reviews.value.reduce((a, r) => a + r.rating, 0)
+  return Math.round(sum / reviews.value.length * 10) / 10
 })
 
 const avgRatingText = computed(() => {
@@ -357,6 +367,7 @@ const statusTagType = computed(() => {
 
 const statusLabel = computed(() => property.value ? statusLabels[property.value.status] : '')
 const typeLabel = computed(() => property.value ? typeLabels[property.value.property_type] : '')
+const isFavorited = computed(() => !!property.value && favoriteIds.value.includes(property.value.id))
 
 const sortedImages = computed(() => {
   const imgs = property.value?.images
@@ -384,6 +395,42 @@ function handleBookingConfirm(data: { propertyId: number; date: string; slot: st
     path: '/booking/confirm',
     query: { property_id: String(data.propertyId), date: data.date, slot: data.slot },
   })
+}
+
+function loadFavoriteIds() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(FAVORITES_KEY) || '[]')
+    favoriteIds.value = Array.isArray(raw) ? raw.filter(Number.isFinite) : []
+  } catch {
+    favoriteIds.value = []
+  }
+}
+
+function saveFavoriteIds() {
+  localStorage.setItem(FAVORITES_KEY, JSON.stringify([...new Set(favoriteIds.value)]))
+}
+
+function toggleFavorite() {
+  if (!property.value) return
+  if (isFavorited.value) {
+    favoriteIds.value = favoriteIds.value.filter(id => id !== property.value?.id)
+    ElMessage.success('已取消收藏')
+  } else {
+    favoriteIds.value = [property.value.id, ...favoriteIds.value]
+    ElMessage.success('已加入收藏')
+  }
+  saveFavoriteIds()
+}
+
+async function shareProperty() {
+  if (!property.value) return
+  const url = window.location.href
+  try {
+    await navigator.clipboard.writeText(url)
+    ElMessage.success('链接已复制')
+  } catch {
+    ElMessage.info(url)
+  }
 }
 
 async function loadProperty(id: number) {
@@ -422,7 +469,10 @@ const stopWatch = watch(() => route.params.id, (newId) => {
   loadProperty(Number(newId))
 })
 
-onMounted(() => loadProperty(Number(route.params.id)))
+onMounted(() => {
+  loadFavoriteIds()
+  loadProperty(Number(route.params.id))
+})
 onUnmounted(() => stopWatch())
 </script>
 

@@ -58,7 +58,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, nextTick, watch } from 'vue'
+import { ref, computed, onMounted, nextTick, watch, shallowRef, markRaw } from 'vue'
 import { ElMessage } from 'element-plus'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
@@ -79,8 +79,8 @@ L.Icon.Default.mergeOptions({
 const searchText = ref('')
 const showList = ref(true)
 const allProperties = ref<Property[]>([])
-const map = ref<L.Map | null>(null)
-const markers = ref<L.Marker[]>([])
+const map = shallowRef<L.Map | null>(null)
+const markers = shallowRef<L.Marker[]>([])
 
 // 默认视图：北京为中心
 const defaultCenter: [number, number] = [39.9042, 116.4074]
@@ -103,11 +103,11 @@ async function loadProperties() {
 function initMap() {
   if (map.value) return
 
-  map.value = L.map('map', {
+  map.value = markRaw(L.map('map', {
     center: defaultCenter,
     zoom: defaultZoom,
     zoomControl: true,
-  })
+  }))
 
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
@@ -140,9 +140,9 @@ function placeMarkers() {
       <a href="/property/${p.id}">查看详情 →</a>
     `
 
-    const marker = L.marker([lat, lng])
+    const marker = markRaw(L.marker([lat, lng])
       .addTo(map.value!)
-      .bindPopup(popupContent, { maxWidth: 280 })
+      .bindPopup(popupContent, { maxWidth: 280 }))
 
     markers.value.push(marker)
   })

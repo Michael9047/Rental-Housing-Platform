@@ -2,121 +2,119 @@
   <div class="contract-page" v-loading="loading">
     <div class="page-header">
       <el-button text :icon="ArrowLeft" @click="$router.back()">返回</el-button>
-      <h2>📄 电子合同</h2>
+      <h2>电子合同</h2>
     </div>
 
-    <el-empty v-if="!loading && !booking" description="合同数据未找到" />
+    <el-empty v-if="!loading && !contract" description="合同数据未找到" />
 
-    <template v-if="booking">
-      <!-- Contract Preview Card -->
+    <template v-if="contract">
       <el-card shadow="never" class="contract-card">
         <div class="contract-watermark">电子合同</div>
 
         <div class="contract-header">
-          <h1>房屋租赁定金合同</h1>
-          <p class="contract-no">合同编号：HT{{ String(booking.id).padStart(8, '0') }}</p>
+          <h1>房屋租赁合同</h1>
+          <p class="contract-no">合同编号：{{ contract.id }}</p>
+          <el-tag :type="contract.status === 'signed' ? 'success' : 'warning'" round>
+            {{ contract.status === 'signed' ? '已签署' : '待签署' }}
+          </el-tag>
         </div>
 
         <el-divider />
 
-        <div class="contract-section">
-          <h3>第一条 租赁双方信息</h3>
-          <el-descriptions :column="2" border>
-            <el-descriptions-item label="出租方（房东）">房东 #{{ booking.landlord_id }}</el-descriptions-item>
-            <el-descriptions-item label="承租方（租客）">{{ authStore.user?.username || '租客' }}</el-descriptions-item>
-            <el-descriptions-item label="房源编号">#{{ booking.property_id }}</el-descriptions-item>
-            <el-descriptions-item label="签订日期">{{ today }}</el-descriptions-item>
-          </el-descriptions>
-        </div>
+        <el-descriptions :column="2" border class="contract-meta">
+          <el-descriptions-item label="预约编号">#{{ contract.booking_id }}</el-descriptions-item>
+          <el-descriptions-item label="房源编号">#{{ contract.property_id }}</el-descriptions-item>
+          <el-descriptions-item label="租客编号">#{{ contract.tenant_id }}</el-descriptions-item>
+          <el-descriptions-item label="模板">{{ contract.template_name }}</el-descriptions-item>
+          <el-descriptions-item label="创建时间">{{ formatDate(contract.created_at) }}</el-descriptions-item>
+          <el-descriptions-item label="签署时间">
+            {{ contract.signed_at ? formatDate(contract.signed_at) : '未签署' }}
+          </el-descriptions-item>
+        </el-descriptions>
 
-        <div class="contract-section">
-          <h3>第二条 押金条款</h3>
-          <el-descriptions :column="2" border>
-            <el-descriptions-item label="押金金额">
-              <strong>¥{{ booking.deposit_amount || 0 }}</strong>
-            </el-descriptions-item>
-            <el-descriptions-item label="支付状态">
-              <el-tag type="success">已支付</el-tag>
-            </el-descriptions-item>
-            <el-descriptions-item label="支付流水号">{{ booking.payment_transaction_id || '—' }}</el-descriptions-item>
-            <el-descriptions-item label="支付时间">{{ formatDate(booking.updated_at) }}</el-descriptions-item>
-          </el-descriptions>
-          <p class="clause-text">
-            1. 承租方在签订正式租赁合同前需支付上述押金作为定约保证。<br />
-            2. 押金将在正式签署租赁合同后自动转为首期租金的一部分。<br />
-            3. 如因出租方原因未能签订正式合同，押金全额无息退还。<br />
-            4. 如因承租方原因取消租赁，按平台取消政策执行退款。
-          </p>
-        </div>
-
-        <div class="contract-section">
-          <h3>第三条 租赁基本条款</h3>
-          <el-descriptions :column="2" border>
-            <el-descriptions-item label="预定看房日期">{{ booking.scheduled_date || '待定' }}</el-descriptions-item>
-            <el-descriptions-item label="合同状态">待签署正式租赁合同</el-descriptions-item>
-          </el-descriptions>
-        </div>
-
-        <div class="contract-section">
-          <h3>第四条 其他约定</h3>
-          <p class="clause-text">
-            1. 本合同为电子合同，与纸质合同具有同等法律效力。<br />
-            2. 双方因本合同发生争议的，应协商解决；协商不成的，提交房源所在地人民法院管辖。<br />
-            3. 本合同的签署、履行、解释及争议解决均适用中华人民共和国法律。
-          </p>
-        </div>
+        <pre class="contract-content">{{ contract.content }}</pre>
       </el-card>
 
-      <!-- Download Button -->
       <div class="download-bar">
-        <el-button type="primary" size="large" round @click="handleDownload">
-          📥 下载电子合同 (PDF)
+        <el-button
+          v-if="contract.status !== 'signed'"
+          type="primary"
+          size="large"
+          round
+          :loading="signing"
+          @click="handleSign"
+        >
+          签署合同
         </el-button>
+        <el-button size="large" round @click="handleDownload">下载合同文本</el-button>
       </div>
     </template>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { ArrowLeft } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
-import { bookingService } from '@/services/booking'
-import { useAuthStore } from '@/stores/auth'
-import type { Booking } from '@/types/booking'
+import { contractService, type Contract } from '@/services/contract'
 
 const route = useRoute()
-const authStore = useAuthStore()
-const booking = ref<Booking | null>(null)
+const contract = ref<Contract | null>(null)
 const loading = ref(false)
-
-const today = computed(() => new Date().toLocaleDateString('zh-CN'))
+const signing = ref(false)
 
 function formatDate(d: string): string {
   if (!d) return ''
-  return new Date(d).toLocaleDateString('zh-CN')
+  return new Date(d).toLocaleString('zh-CN')
 }
 
-function handleDownload() {
-  // In production, call backend to generate PDF
-  // For now, trigger browser print / save
-  ElMessage.success('合同下载功能已触发（生产环境将调用后端PDF生成服务）')
-  window.print()
-}
-
-onMounted(async () => {
-  const id = Number(route.params.id)
+async function loadContract() {
+  const id = String(route.params.id || '')
   if (!id) return
+
   loading.value = true
   try {
-    booking.value = await bookingService.getById(id)
+    contract.value = /^\d+$/.test(id)
+      ? await contractService.generate(Number(id))
+      : await contractService.get(id)
   } catch {
-    // handle
+    contract.value = null
   } finally {
     loading.value = false
   }
-})
+}
+
+async function handleSign() {
+  if (!contract.value) return
+  signing.value = true
+  try {
+    contract.value = await contractService.sign(contract.value.id)
+    ElMessage.success('合同已签署')
+  } catch {
+    ElMessage.error('签署失败，请确认当前账号是否为合同租客')
+  } finally {
+    signing.value = false
+  }
+}
+
+async function handleDownload() {
+  if (!contract.value) return
+  try {
+    const content = await contractService.download(contract.value.id)
+    const blob = new Blob([content], { type: 'text/plain;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `contract-${contract.value.id}.txt`
+    a.click()
+    URL.revokeObjectURL(url)
+  } catch {
+    ElMessage.error('合同下载失败')
+  }
+}
+
+onMounted(loadContract)
 </script>
 
 <style scoped>
@@ -158,11 +156,16 @@ onMounted(async () => {
   z-index: 0;
 }
 
+.contract-header,
+.contract-meta,
+.contract-content {
+  position: relative;
+  z-index: 1;
+}
+
 .contract-header {
   text-align: center;
   padding: 20px 0 10px;
-  position: relative;
-  z-index: 1;
 }
 
 .contract-header h1 {
@@ -175,45 +178,39 @@ onMounted(async () => {
 .contract-no {
   font-size: 14px;
   color: var(--text-muted);
+  margin-bottom: 10px;
 }
 
-.contract-section {
-  margin-bottom: 24px;
-  position: relative;
-  z-index: 1;
-}
-
-.contract-section h3 {
-  font-size: 16px;
-  font-weight: 600;
-  color: var(--text-primary);
-  margin-bottom: 12px;
-}
-
-.clause-text {
-  margin-top: 12px;
-  font-size: 14px;
-  color: var(--text-secondary);
-  line-height: 2;
-  padding: 12px 16px;
-  background: var(--bg);
+.contract-content {
+  margin-top: 20px;
+  padding: 18px;
+  border: 1px solid var(--border-light);
   border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 14px;
+  white-space: pre-wrap;
 }
 
 .download-bar {
   display: flex;
   justify-content: center;
+  gap: 12px;
   margin-top: 20px;
 }
 
 @media print {
-  .page-header, .download-bar {
+  .page-header,
+  .download-bar {
     display: none !important;
   }
+
   .contract-card {
     box-shadow: none !important;
     border: 1px solid #ddd !important;
   }
+
   .contract-watermark {
     color: rgba(0, 0, 0, 0.03) !important;
   }

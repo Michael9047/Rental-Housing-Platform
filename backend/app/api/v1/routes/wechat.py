@@ -55,7 +55,7 @@ async def wechat_phone_bind(
     async with httpx.AsyncClient() as client:
         resp = await client.post(phone_url, params=params, json=body)
         resp.raise_for_status()
-        data = await resp.json()
+        data = resp.json()
 
     if data.get("errcode", 0) != 0:
         raise HTTPException(

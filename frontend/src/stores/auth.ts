@@ -55,8 +55,8 @@ export const useAuthStore = defineStore('auth', () => {
     loading.value = true
     try {
       const tokenResp = await authService.login(data)
-      setAuth(tokenResp.access_token, { } as User)
-      // Fetch full user profile
+      token.value = tokenResp.access_token
+      localStorage.setItem('access_token', tokenResp.access_token)
       const currentUser = await authService.getMe()
       setAuth(tokenResp.access_token, currentUser)
       return currentUser

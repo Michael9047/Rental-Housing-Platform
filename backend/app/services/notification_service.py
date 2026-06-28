@@ -117,6 +117,12 @@ class NotificationService:
         if channels is None:
             channels = ["wechat", "sms", "email"]
 
+        from app.celery_app import celery_app
+
+        if celery_app.conf.task_always_eager:
+            logger.info("Skipping external notification channels in Celery eager mode")
+            return
+
         meta = _CHANNEL_META.get(ntype, {})
 
         try:

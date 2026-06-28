@@ -1,5 +1,4 @@
 from dataclasses import dataclass
-from decimal import Decimal
 
 import httpx
 
@@ -9,8 +8,8 @@ from app.core.config import get_settings
 @dataclass
 class GeocodeResult:
     address: str
-    latitude: Decimal
-    longitude: Decimal
+    latitude: float
+    longitude: float
     formatted_address: str | None = None
     level: str | None = None
     province: str | None = None
@@ -75,8 +74,8 @@ class AmapGeocodingService:
         longitude_str, latitude_str = location.split(",", 1)
         return GeocodeResult(
             address=address.strip(),
-            latitude=Decimal(latitude_str),
-            longitude=Decimal(longitude_str),
+            latitude=float(latitude_str),
+            longitude=float(longitude_str),
             formatted_address=primary.get("formatted_address"),
             level=primary.get("level"),
             province=primary.get("province"),

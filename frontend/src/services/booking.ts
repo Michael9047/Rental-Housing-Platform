@@ -14,7 +14,7 @@ export const bookingService = {
     return api.get(`/bookings/${id}`).then((r) => r.data)
   },
 
-  updateStatus(id: number, status: 'approved' | 'rejected'): Promise<Booking> {
+  updateStatus(id: number, status: 'approved' | 'rejected' | 'completed'): Promise<Booking> {
     return api.patch(`/bookings/${id}/status`, { status }).then((r) => r.data)
   },
 

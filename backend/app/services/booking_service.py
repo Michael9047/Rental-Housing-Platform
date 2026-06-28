@@ -64,15 +64,17 @@ class BookingService:
 
         # Booking confirmation for tenant via WeChat template message (existing flow)
         try:
+            from app.celery_app import celery_app
             from app.tasks.notification_tasks import send_booking_confirm_message
 
-            booking_info = {
-                "property_title": property_obj.title if property_obj else str(property_id),
-                "booking_time": booking_in.scheduled_date or "TBD",
-                "landlord_phone": "",
-                "remark": "Please pay deposit to confirm booking.",
-            }
-            send_booking_confirm_message.delay(tenant_id, booking_info)
+            if not celery_app.conf.task_always_eager:
+                booking_info = {
+                    "property_title": property_obj.title if property_obj else str(property_id),
+                    "booking_time": booking_in.scheduled_date or "TBD",
+                    "landlord_phone": "",
+                    "remark": "Please pay deposit to confirm booking.",
+                }
+                send_booking_confirm_message.delay(tenant_id, booking_info)
         except Exception:
             pass
 

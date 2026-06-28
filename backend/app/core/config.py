@@ -103,6 +103,15 @@ class Settings(BaseSettings):
         validation_alias="WECHAT_TOKEN_URL",
     )
 
+    # WeChat Pay V3. Empty defaults keep local/dev runs from failing when
+    # payment is simulated instead of calling the real WeChat Pay gateway.
+    wechat_pay_mchid: str = Field(default="", validation_alias="WECHAT_PAY_MCHID")
+    wechat_pay_api_v3_key: str = Field(default="", validation_alias="WECHAT_PAY_API_V3_KEY")
+    wechat_pay_serial_no: str = Field(default="", validation_alias="WECHAT_PAY_SERIAL_NO")
+    wechat_pay_private_key_path: str = Field(default="", validation_alias="WECHAT_PAY_PRIVATE_KEY_PATH")
+    wechat_pay_notify_url: str = Field(default="", validation_alias="WECHAT_PAY_NOTIFY_URL")
+    wechat_pay_refund_notify_url: str = Field(default="", validation_alias="WECHAT_PAY_REFUND_NOTIFY_URL")
+
     # SMS (Alibaba Cloud SMS)
     sms_provider: str = Field(default="aliyun", validation_alias="SMS_PROVIDER")
     sms_access_key_id: str = Field(default="", validation_alias="SMS_ACCESS_KEY_ID")
@@ -129,7 +138,7 @@ class Settings(BaseSettings):
         validation_alias="SMTP_USE_TLS",
     )
 
-    # AMap (????) JS? key
+    # AMap JavaScript key for frontend map rendering.
     amap_js_key: str = Field(
         default="",
         validation_alias="AMAP_JS_KEY",
