@@ -1,4 +1,4 @@
-from functools import lru_cache
+﻿from functools import lru_cache
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -55,6 +55,21 @@ class Settings(BaseSettings):
         default="gpt-4o",
         validation_alias="OPENAI_CHAT_MODEL",
     )
+    # DeepSeek LLM（用于 AI 搜房：自然语言解析 + 房源摘要生成）
+    deepseek_api_key: str = Field(
+        default="",
+        validation_alias="DEEPSEEK_API_KEY",
+    )
+    deepseek_chat_model: str = Field(
+        default="deepseek-chat",
+        validation_alias="DEEPSEEK_CHAT_MODEL",
+    )
+    deepseek_base_url: str = Field(
+        default="https://api.deepseek.com",
+        validation_alias="DEEPSEEK_BASE_URL",
+    )
+
+
 
     amap_web_key: str = Field(
         default="",

@@ -94,6 +94,10 @@
 
           <!-- ====== 租客侧边栏 ====== -->
           <template v-if="!authStore.isLandlord && !authStore.isAdmin">
+            <el-menu-item index="/ai-search">
+              <el-icon><MagicStick /></el-icon>
+              <span>AI 找房</span>
+            </el-menu-item>
             <el-menu-item index="/search">
               <el-icon><Search /></el-icon>
               <span>搜索房源</span>
@@ -168,7 +172,7 @@
 import { ref, computed, watch, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import {
-  Search, HomeFilled, User, UserFilled, ArrowDown, Setting, SwitchButton,
+  MagicStick, Search, HomeFilled, User, UserFilled, ArrowDown, Setting, SwitchButton,
   Plus, List, Bell, DataAnalysis, Tickets, OfficeBuilding, Location,
 } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
