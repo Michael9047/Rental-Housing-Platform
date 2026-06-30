@@ -18,6 +18,11 @@ const routes: RouteRecordRaw[] = [
         component: () => import('@/views/Search.vue'),
       },
       {
+        path: 'ai-search',
+        name: 'ai-search',
+        component: () => import('@/views/AiSearch.vue'),
+      },
+      {
         path: 'map',
         name: 'map-search',
         component: () => import('@/views/MapSearch.vue'),
