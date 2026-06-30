@@ -78,14 +78,19 @@ def upgrade() -> None:
     op.create_index("ix_institutes_id", "institutes", ["id"])
     op.create_index("ix_institutes_created_by", "institutes", ["created_by"])
 
-    # --- 4. Add institute_id to properties ---
-    op.add_column("properties", sa.Column("institute_id", sa.Integer(), nullable=True))
-    op.create_index("ix_properties_institute_id", "properties", ["institute_id"])
-    op.create_foreign_key(
-        "fk_properties_institute_id_institutes",
-        "properties", "institutes",
-        ["institute_id"], ["id"],
-        ondelete="SET NULL",
+    # --- 4. Add institute_id to properties (idempotent) ---
+    op.execute(
+        "ALTER TABLE properties ADD COLUMN IF NOT EXISTS institute_id INTEGER"
+    )
+    op.execute(
+        "CREATE INDEX IF NOT EXISTS ix_properties_institute_id ON properties (institute_id)"
+    )
+    op.execute(
+        "DO $$ BEGIN "
+        "ALTER TABLE properties ADD CONSTRAINT fk_properties_institute_id_institutes "
+        "FOREIGN KEY (institute_id) REFERENCES institutes(id) ON DELETE SET NULL; "
+        "EXCEPTION WHEN duplicate_object THEN NULL; "
+        "END $$"
     )
 
     # --- 5. Create saved_searches table ---

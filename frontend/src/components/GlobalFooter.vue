@@ -13,11 +13,11 @@
         <span class="footer-item">🎓 签证租房咨询</span>
       </div>
       <div class="footer-bottom">
-        <span class="footer-item">客服中心</span>
+        <span class="footer-item link" @click="router.push('/customer-service')">客服中心</span>
         <span class="footer-divider">｜</span>
-        <span class="footer-item">平台规则</span>
+        <span class="footer-item link" @click="router.push('/platform-rules')">平台规则</span>
         <span class="footer-divider">｜</span>
-        <span class="footer-item">隐私政策</span>
+        <span class="footer-item link" @click="router.push('/privacy-policy')">隐私政策</span>
         <span class="footer-divider">｜</span>
         <span class="footer-copy">© 2026 AI全球公寓租赁平台</span>
       </div>
@@ -26,6 +26,8 @@
 </template>
 
 <script setup lang="ts">
+import { useRouter } from 'vue-router'
+const router = useRouter()
 </script>
 
 <style scoped>
@@ -64,6 +66,15 @@
 .footer-item {
   font-size: 13px;
   color: var(--text-muted);
+}
+
+.footer-item.link {
+  cursor: pointer;
+  transition: color 0.2s;
+}
+
+.footer-item.link:hover {
+  color: var(--primary);
 }
 
 .footer-divider {

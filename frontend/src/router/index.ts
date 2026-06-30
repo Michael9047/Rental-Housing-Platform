@@ -111,6 +111,21 @@ const routes: RouteRecordRaw[] = [
         meta: { requiresAuth: true, requiresLandlord: true },
       },
       {
+        path: 'customer-service',
+        name: 'customer-service',
+        component: () => import('@/views/CustomerService.vue'),
+      },
+      {
+        path: 'platform-rules',
+        name: 'platform-rules',
+        component: () => import('@/views/PlatformRules.vue'),
+      },
+      {
+        path: 'privacy-policy',
+        name: 'privacy-policy',
+        component: () => import('@/views/PrivacyPolicy.vue'),
+      },
+      {
         path: 'notifications',
         name: 'notifications',
         component: () => import('@/views/Notifications.vue'),
