@@ -320,7 +320,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { UserFilled } from '@element-plus/icons-vue'
@@ -330,6 +330,7 @@ import { contractService } from '@/services/contract'
 import { propertyService } from '@/services/property'
 import { storeToRefs } from 'pinia'
 import PropertyCard from '@/components/PropertyCard.vue'
+import { favoriteService } from '@/services/favorite'
 import type { Booking } from '@/types/booking'
 import type { Property } from '@/types/property'
 
@@ -400,8 +401,18 @@ async function fetchAll() {
   pageLoading.value = true
   try { bookings.value = (await bookingService.list()).filter(b => b.deposit_status !== 'paid' && b.deposit_status !== 'confirmed') }
   catch { bookings.value = [] }
-  try { favorites.value = await propertyService.list({ limit: 6 }) }
-  catch { favorites.value = [] }
+  try {
+    const favItems = await favoriteService.list()
+    const ids = favItems.map((f) => f.property_id)
+    if (ids.length > 0) {
+      const results = await Promise.allSettled(ids.map((id) => propertyService.getById(id)))
+      favorites.value = results
+        .filter((r): r is PromiseFulfilledResult<Property> => r.status === 'fulfilled')
+        .map((r) => r.value)
+    } else {
+      favorites.value = []
+    }
+  } catch { favorites.value = [] }
   pageLoading.value = false
 }
 async function cancelBooking(b: Booking) {
@@ -425,7 +436,15 @@ function bindWechat() { ElMessage.info('请用微信扫码绑定') }
 function maskPhone(p: string | null): string { return p && p.length >= 11 ? p.slice(0, 3) + '****' + p.slice(-4) : (p || '未设置') }
 function formatDate(d: string): string { return d ? new Date(d).toLocaleDateString('zh-CN') : '' }
 
-onMounted(() => { authStore.fetchCurrentUser(); fetchAll() })
+// 每次进入个人中心都重新拉取数据
+authStore.fetchCurrentUser()
+fetchAll()
+watch(() => route.path, () => {
+  if (route.path === '/profile') {
+    authStore.fetchCurrentUser()
+    fetchAll()
+  }
+})
 </script>
 
 <style scoped>
