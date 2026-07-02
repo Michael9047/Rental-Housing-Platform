@@ -4,11 +4,25 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import get_current_user, get_db_session, require_landlord, require_tenant
 from app.models.booking import BookingStatus
 from app.models.user import User, UserRole
-from app.schemas.booking import BookingCreate, BookingRead, BookingUpdate
+from app.schemas.booking import BookingContractInfoUpdate, BookingCreate, BookingRead, BookingUpdate
 from app.services.booking_service import BookingService
+from app.services.contract_service import ContractService
 from app.services.property_service import PropertyService
 
 router = APIRouter()
+
+
+def _contract_info_complete(booking: object) -> bool:
+    return all(
+        getattr(booking, field, None)
+        for field in (
+            "contract_real_name",
+            "contract_id_card_no",
+            "contract_phone",
+            "lease_start_date",
+            "lease_end_date",
+        )
+    )
 
 
 @router.post("", response_model=BookingRead, status_code=status.HTTP_201_CREATED)
@@ -96,6 +110,56 @@ async def update_booking_status(
         )
 
     updated = await booking_service.update_status(booking_id, update_in.status)
+    return updated
+
+
+@router.patch("/{booking_id}/contract-info", response_model=BookingRead)
+async def update_contract_info(
+    booking_id: int,
+    info_in: BookingContractInfoUpdate,
+    session: AsyncSession = Depends(get_db_session),
+    current_user: User = Depends(require_tenant),
+) -> BookingRead:
+    booking_service = BookingService(session)
+    booking = await booking_service.get(booking_id)
+    if not booking:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Booking not found")
+
+    if current_user.id != booking.tenant_id and current_user.role != UserRole.admin:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only the tenant can submit contract info")
+
+    if booking.status in {BookingStatus.cancelled, BookingStatus.rejected}:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Cannot update contract info for inactive booking")
+
+    existing_contract = await ContractService(session).list_by_booking(booking_id)
+    if existing_contract:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Contract has already been generated")
+
+    updated = await booking_service.update_contract_info(booking_id, info_in)
+    return updated
+
+
+@router.patch("/{booking_id}/contract-info/confirm", response_model=BookingRead)
+async def confirm_contract_info(
+    booking_id: int,
+    session: AsyncSession = Depends(get_db_session),
+    current_user: User = Depends(require_landlord),
+) -> BookingRead:
+    booking_service = BookingService(session)
+    booking = await booking_service.get(booking_id)
+    if not booking:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Booking not found")
+
+    if current_user.id != booking.landlord_id and current_user.role != UserRole.admin:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only the landlord can confirm contract info")
+
+    if not _contract_info_complete(booking):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Contract info is incomplete")
+
+    if booking.contract_info_status != "pending_landlord":
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Contract info is not waiting for landlord confirmation")
+
+    updated = await booking_service.confirm_contract_info(booking_id)
     return updated
 
 

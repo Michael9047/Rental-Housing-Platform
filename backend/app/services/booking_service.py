@@ -1,10 +1,12 @@
+from datetime import datetime, timezone
+
 from sqlalchemy import select, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.booking import Booking, BookingStatus
 from app.models.notification import NotificationType
 from app.models.property import Property
-from app.schemas.booking import BookingCreate
+from app.schemas.booking import BookingContractInfoUpdate, BookingCreate
 from app.services.notification_service import NotificationService
 
 
@@ -141,6 +143,44 @@ class BookingService:
                     channels=["wechat", "email"],
                 )
 
+        return booking
+
+    async def update_contract_info(
+        self,
+        booking_id: int,
+        info_in: BookingContractInfoUpdate,
+    ) -> Booking | None:
+        booking = await self.session.get(Booking, booking_id)
+        if not booking:
+            return None
+
+        booking.contract_real_name = info_in.contract_real_name.strip()
+        booking.contract_id_card_no = info_in.contract_id_card_no.strip()
+        booking.contract_phone = info_in.contract_phone.strip()
+        booking.lease_start_date = info_in.lease_start_date.strip()
+        booking.lease_end_date = info_in.lease_end_date.strip()
+        booking.contract_extra_terms = (
+            info_in.contract_extra_terms.strip()
+            if info_in.contract_extra_terms
+            else None
+        )
+        booking.contract_info_status = "pending_landlord"
+        booking.contract_landlord_confirmed_at = None
+
+        await self.session.commit()
+        await self.session.refresh(booking)
+        return booking
+
+    async def confirm_contract_info(self, booking_id: int) -> Booking | None:
+        booking = await self.session.get(Booking, booking_id)
+        if not booking:
+            return None
+
+        booking.contract_info_status = "confirmed"
+        booking.contract_landlord_confirmed_at = datetime.now(timezone.utc)
+
+        await self.session.commit()
+        await self.session.refresh(booking)
         return booking
 
     async def list_by_tenant(self, tenant_id: int) -> list[Booking]:

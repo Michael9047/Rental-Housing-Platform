@@ -27,6 +27,12 @@ export const contractService = {
     return api.get(`/contracts/by-booking/${bookingId}`).then((r) => r.data)
   },
 
+  getByBookingOptional(bookingId: number): Promise<Contract | null> {
+    return api
+      .get(`/contracts/by-booking/${bookingId}`, { validateStatus: (status) => status === 200 || status === 404 })
+      .then((r) => (r.status === 404 ? null : r.data))
+  },
+
   sign(contractId: string): Promise<Contract> {
     return api.post(`/contracts/${contractId}/sign`).then((r) => r.data)
   },

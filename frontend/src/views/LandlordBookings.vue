@@ -13,14 +13,40 @@
           <p><strong>租客 ID：</strong>{{ booking.tenant_id }}</p>
           <p><strong>房源 ID：</strong>{{ booking.property_id }}</p>
           <p v-if="booking.scheduled_date"><strong>预约时间：</strong>{{ booking.scheduled_date }}</p>
+          <p><strong>签约信息：</strong>{{ contractInfoLabel(booking.contract_info_status) }}</p>
           <p v-if="booking.message"><strong>留言：</strong>{{ booking.message }}</p>
         </div>
-        <div class="booking-actions" v-if="booking.status === 'pending'">
-          <el-button type="success" size="small" @click="handleApprove(booking.id)">
+        <div class="booking-actions">
+          <el-button
+            v-if="booking.status === 'pending'"
+            type="success"
+            size="small"
+            @click="handleApprove(booking.id)"
+          >
             批准
           </el-button>
-          <el-button type="danger" size="small" @click="handleReject(booking.id)">
+          <el-button
+            v-if="booking.status === 'pending'"
+            type="danger"
+            size="small"
+            @click="handleReject(booking.id)"
+          >
             拒绝
+          </el-button>
+          <el-button
+            v-if="booking.contract_info_status === 'pending_landlord'"
+            type="primary"
+            size="small"
+            @click="router.push(`/contract/${booking.id}`)"
+          >
+            确认签约信息
+          </el-button>
+          <el-button
+            v-else-if="booking.contract_info_status === 'confirmed'"
+            size="small"
+            @click="router.push(`/contract/${booking.id}`)"
+          >
+            查看合同
           </el-button>
         </div>
       </div>
@@ -33,12 +59,14 @@
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { bookingService } from '@/services/booking'
 import type { Booking } from '@/types/booking'
 
 const bookings = ref<Booking[]>([])
 const loading = ref(false)
+const router = useRouter()
 
 const statusLabels: Record<string, string> = {
   pending: '待处理',
@@ -62,6 +90,12 @@ function statusLabel(status: string) {
 
 function statusTagType(status: string) {
   return statusTagMap[status] || 'info'
+}
+
+function contractInfoLabel(status: string) {
+  if (status === 'pending_landlord') return '待房东确认'
+  if (status === 'confirmed') return '已确认'
+  return '待租客填写'
 }
 
 function formatDate(dateStr: string) {

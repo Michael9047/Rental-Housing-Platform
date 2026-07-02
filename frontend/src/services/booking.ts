@@ -1,5 +1,5 @@
 ﻿import api from './api'
-import type { Booking, BookingCreate } from '@/types/booking'
+import type { Booking, BookingContractInfoUpdate, BookingCreate } from '@/types/booking'
 
 export const bookingService = {
   create(data: BookingCreate): Promise<Booking> {
@@ -16,6 +16,14 @@ export const bookingService = {
 
   updateStatus(id: number, status: 'approved' | 'rejected' | 'completed'): Promise<Booking> {
     return api.patch(`/bookings/${id}/status`, { status }).then((r) => r.data)
+  },
+
+  updateContractInfo(id: number, data: BookingContractInfoUpdate): Promise<Booking> {
+    return api.patch(`/bookings/${id}/contract-info`, data).then((r) => r.data)
+  },
+
+  confirmContractInfo(id: number): Promise<Booking> {
+    return api.patch(`/bookings/${id}/contract-info/confirm`).then((r) => r.data)
   },
 
   cancel(id: number): Promise<Booking> {

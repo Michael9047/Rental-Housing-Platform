@@ -1,5 +1,5 @@
 from app.schemas.auth import CurrentUserResponse, LoginRequest, RegisterRequest, TokenResponse
-from app.schemas.booking import BookingCreate, BookingRead, BookingUpdate
+from app.schemas.booking import BookingContractInfoUpdate, BookingCreate, BookingRead, BookingUpdate
 from app.schemas.contract import ContractCreate, ContractResponse
 from app.schemas.notification import NotificationRead, UnreadCount
 from app.schemas.payment import PaymentCreate, PaymentResponse
@@ -14,6 +14,7 @@ __all__ = [
     "RegisterRequest",
     "TokenResponse",
     "BookingCreate",
+    "BookingContractInfoUpdate",
     "BookingRead",
     "BookingUpdate",
     "ContractCreate",

@@ -78,11 +78,11 @@
       v-if="paySuccess"
       icon="success"
       title="支付成功！"
-      sub-title="押金已支付！电子合同已生成，可在个人中心「支付中心」查看"
+      sub-title="押金已支付！请继续填写签约信息，房东确认后会生成电子合同"
     >
       <template #extra>
-        <el-button v-if="contractId" type="primary" @click="$router.push(`/contract/${contractId}`)">
-          查看电子合同
+        <el-button v-if="booking" type="primary" @click="$router.push(`/contract/${booking.id}`)">
+          填写签约信息
         </el-button>
         <el-button type="primary" plain @click="$router.push('/profile?tab=contracts')">查看支付中心</el-button>
         <el-button @click="$router.push('/')">返回首页</el-button>
@@ -98,7 +98,6 @@ import { ArrowLeft } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { bookingService } from '@/services/booking'
 import { paymentService } from '@/services/payment'
-import { contractService } from '@/services/contract'
 import type { Booking } from '@/types/booking'
 
 const route = useRoute()
@@ -108,7 +107,6 @@ const loading = ref(false)
 const paying = ref(false)
 const paySuccess = ref(false)
 const payMethod = ref('wechat')
-const contractId = ref<string | null>(null)
 
 // Exchange rate: ~7.25 CNY per USD (approximate reference rate)
 const USD_RATE = 7.25
@@ -138,8 +136,6 @@ async function doPayment() {
       amount: depositAmount.value,
     })
     await paymentService.paymentCallback(payment.id)
-    const contract = await contractService.generate(booking.value.id)
-    contractId.value = contract.id
     paySuccess.value = true
     ElMessage.success('定金支付成功！')
   } catch {

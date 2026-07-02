@@ -119,11 +119,11 @@
             </el-table-column>
             <el-table-column label="月租金" width="100" prop="rent" />
             <el-table-column label="押金" width="90" prop="deposit" />
-            <el-table-column label="状态" width="90">
-              <template #default="{ row }">
-                <el-tag :type="row.status === '生效中' ? 'success' : 'warning'" size="small">{{ row.status }}</el-tag>
-              </template>
-            </el-table-column>
+	            <el-table-column label="状态" width="90">
+	              <template #default="{ row }">
+	                <el-tag :type="row.contractStatus === '已确认' ? 'success' : 'warning'" size="small">{{ row.contractStatus }}</el-tag>
+	              </template>
+	            </el-table-column>
             <el-table-column label="操作" width="160">
               <template #default="{ row }">
                 <el-button size="small" text type="primary" @click="router.push(`/contract/${row.bookingId}`)">查看合同</el-button>
@@ -390,11 +390,13 @@ const contracts = computed(() => {
   return bookings.value
     .filter(b => b.deposit_status === 'paid' || b.deposit_status === 'confirmed' || b.status === 'completed')
     .map(b => ({
-      bookingId: b.id, propertyId: b.property_id, propertyTitle: `房源 #${b.property_id}`,
-      startDate: b.scheduled_date || '—', endDate: b.status === 'completed' ? '已到期' : '续租中',
-      rent: `¥${b.deposit_amount || 0}`, deposit: `¥${b.deposit_amount || 0}`,
-      status: b.status === 'completed' ? '已结束' : '生效中',
-    }))
+	      bookingId: b.id, propertyId: b.property_id, propertyTitle: `房源 #${b.property_id}`,
+	      startDate: b.scheduled_date || '—', endDate: b.status === 'completed' ? '已到期' : '续租中',
+	      rent: `¥${b.deposit_amount || 0}`, deposit: `¥${b.deposit_amount || 0}`,
+	      contractInfoStatus: b.contract_info_status,
+	      contractStatus: b.contract_info_status === 'confirmed' ? '已确认' : b.contract_info_status === 'pending_landlord' ? '待房东确认' : '待填写',
+	      status: b.status === 'completed' ? '已结束' : '生效中',
+	    }))
 })
 const filteredContracts = computed(() => {
   if (contractFilter.value === 'active') return contracts.value.filter(c => c.status === '生效中')
@@ -441,6 +443,11 @@ async function cancelBooking(b: Booking) {
 function goPay(b: Booking) { router.push({ path: `/booking/payment/${b.id}` }) }
 async function downloadContract(row: any) {
   try {
+    if (row.contractInfoStatus !== 'confirmed') {
+      ElMessage.info('请先完成签约信息确认')
+      router.push(`/contract/${row.bookingId}`)
+      return
+    }
     const contract = await contractService.generate(row.bookingId)
     const content = await contractService.download(contract.id)
     const blob = new Blob([content], { type: 'text/plain;charset=utf-8' })

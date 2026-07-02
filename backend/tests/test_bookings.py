@@ -261,3 +261,93 @@ async def test_unauthenticated_cannot_book(
         json={"property_id": 1, "scheduled_date": "2026-07-01"},
     )
     assert response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_contract_info_must_be_confirmed_before_contract_generation(
+    client: AsyncClient,
+    landlord_register_payload: dict[str, str],
+    property_payload: dict[str, str | int],
+) -> None:
+    landlord_resp = await client.post("/api/v1/auth/register", json=landlord_register_payload)
+    landlord_id = landlord_resp.json()["id"]
+    landlord_login = await client.post(
+        "/api/v1/auth/login",
+        json={
+            "username_or_email": landlord_register_payload["username"],
+            "password": landlord_register_payload["password"],
+        },
+    )
+    landlord_token = landlord_login.json()["access_token"]
+
+    create_resp = await client.post(
+        "/api/v1/properties",
+        json={**property_payload, "landlord_id": landlord_id},
+        headers={"Authorization": f"Bearer {landlord_token}"},
+    )
+    property_id = create_resp.json()["id"]
+
+    tenant_payload = {
+        "username": "contract_info_tenant",
+        "email": "contract_info_tenant@example.com",
+        "password": "tenant-pass",
+        "role": "tenant",
+    }
+    await client.post("/api/v1/auth/register", json=tenant_payload)
+    tenant_login = await client.post(
+        "/api/v1/auth/login",
+        json={"username_or_email": "contract_info_tenant", "password": "tenant-pass"},
+    )
+    tenant_token = tenant_login.json()["access_token"]
+
+    booking_resp = await client.post(
+        "/api/v1/bookings",
+        json={"property_id": property_id, "scheduled_date": "2026-07-01"},
+        headers={"Authorization": f"Bearer {tenant_token}"},
+    )
+    booking_id = booking_resp.json()["id"]
+
+    early_contract = await client.post(
+        f"/api/v1/contracts/{booking_id}/generate",
+        headers={"Authorization": f"Bearer {tenant_token}"},
+    )
+    assert early_contract.status_code == 409
+
+    info_resp = await client.patch(
+        f"/api/v1/bookings/{booking_id}/contract-info",
+        json={
+            "contract_real_name": "张三",
+            "contract_id_card_no": "320102199901011234",
+            "contract_phone": "13800138000",
+            "lease_start_date": "2026-09-01",
+            "lease_end_date": "2027-08-31",
+            "contract_extra_terms": "不得转租。",
+        },
+        headers={"Authorization": f"Bearer {tenant_token}"},
+    )
+    assert info_resp.status_code == 200
+    assert info_resp.json()["contract_info_status"] == "pending_landlord"
+
+    unconfirmed_contract = await client.post(
+        f"/api/v1/contracts/{booking_id}/generate",
+        headers={"Authorization": f"Bearer {tenant_token}"},
+    )
+    assert unconfirmed_contract.status_code == 409
+
+    confirm_resp = await client.patch(
+        f"/api/v1/bookings/{booking_id}/contract-info/confirm",
+        headers={"Authorization": f"Bearer {landlord_token}"},
+    )
+    assert confirm_resp.status_code == 200
+    assert confirm_resp.json()["contract_info_status"] == "confirmed"
+
+    contract_resp = await client.post(
+        f"/api/v1/contracts/{booking_id}/generate",
+        headers={"Authorization": f"Bearer {tenant_token}"},
+    )
+    assert contract_resp.status_code == 201
+    content = contract_resp.json()["content"]
+    assert "乙方（承租方）：张三" in content
+    assert "身份证号：320102199901011234" in content
+    assert "租赁期限自2026年09月01日起至2027年08月31日止" in content
+    assert "不得转租。" in content
