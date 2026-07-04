@@ -1,0 +1,75 @@
+﻿# ============================================================
+# CODEOWNERS — 自动分配 Code Review 负责人
+# 最后匹配规则生效，* 应在文件最底部
+# 将 @username 替换为团队成员的 GitHub 用户名
+# ============================================================
+
+# ---- 全局（兜底）----
+* @team-lead
+
+# ---- 后端核心 ----
+/backend/app/core/            @backend-lead
+/backend/app/db/              @backend-lead
+/backend/app/models/          @backend-lead
+/backend/app/schemas/         @backend-lead
+/backend/alembic/             @backend-lead
+/backend/requirements.txt     @backend-lead
+/backend/requirements-dev.txt @backend-lead
+
+# ---- 各业务模块 ----
+/backend/app/api/v1/routes/properties*.py     @property-dev
+/backend/app/services/property*.py            @property-dev
+
+/backend/app/api/v1/routes/bookings*.py       @booking-dev
+/backend/app/services/booking*.py             @booking-dev
+
+/backend/app/api/v1/routes/payment*.py        @payment-dev
+/backend/app/services/payment*.py             @payment-dev
+
+/backend/app/api/v1/routes/contract*.py       @contract-dev
+/backend/app/services/contract*.py            @contract-dev
+
+/backend/app/api/v1/routes/auth*.py           @auth-dev
+/backend/app/services/auth*.py                @auth-dev
+
+/backend/app/api/v1/routes/chat*.py           @chat-dev
+/backend/app/services/chat*.py                @chat-dev
+
+/backend/app/api/v1/routes/geocoding*.py      @map-dev
+/backend/app/services/geocoding*.py           @map-dev
+
+/backend/app/api/v1/routes/poi*.py            @poi-dev
+/backend/app/services/poi*.py                 @poi-dev
+
+/backend/app/api/v1/routes/notifications*.py  @notification-dev
+/backend/app/services/notification*.py        @notification-dev
+/backend/app/tasks/                           @notification-dev
+
+/backend/app/api/v1/routes/images*.py         @images-dev
+/backend/app/services/image*.py               @images-dev
+
+/backend/app/api/v1/routes/search*.py         @search-dev
+/backend/app/services/search*.py              @search-dev
+
+/backend/app/api/v1/routes/admin*.py          @admin-dev
+/backend/app/services/admin*.py               @admin-dev
+
+/backend/app/api/v1/routes/wechat*.py         @wechat-dev
+/backend/app/services/wechat*.py              @wechat-dev
+
+# ---- 前端 ----
+/frontend/src/                @frontend-dev
+/frontend/package.json        @frontend-dev
+/frontend/vite.config.ts      @frontend-dev
+
+# ---- 微信小程序 ----
+/wechat-miniprogram/          @wechat-dev
+
+# ---- 文档 & 运维 ----
+/docs/                        @team-lead
+/docker/                      @team-lead
+/docker-compose.yml           @team-lead
+/docker-compose.prod.yml      @team-lead
+/nginx/                       @team-lead
+/.github/workflows/           @team-lead
+/AGENTS.md                    @team-lead

@@ -1,28 +1,139 @@
 ﻿{
-  "labels": [
-    {"name": "task", "color": "0e8a16", "description": "功能开发任务"},
-    {"name": "bug", "color": "d73a4a", "description": "Bug 报告"},
-    {"name": "enhancement", "color": "a2eeef", "description": "功能增强/改进"},
-    {"name": "question", "color": "d876e3", "description": "问题咨询"},
-    {"name": "documentation", "color": "0075ca", "description": "文档相关"},
-    {"name": "high", "color": "d93f0b", "description": "高优先级"},
-    {"name": "medium", "color": "fbca04", "description": "中等优先级"},
-    {"name": "low", "color": "0e8a16", "description": "低优先级"},
-    {"name": "frontend", "color": "1d76db", "description": "前端 (Vue 3)"},
-    {"name": "backend", "color": "b60205", "description": "后端 (FastAPI)"},
-    {"name": "wechat-miniprogram", "color": "07b804", "description": "微信小程序"},
-    {"name": "property", "color": "c5def5", "description": "房源管理模块"},
-    {"name": "booking", "color": "d4c5f9", "description": "预约看房模块"},
-    {"name": "payment", "color": "f9d0c4", "description": "支付系统模块"},
-    {"name": "contract", "color": "c2e0c6", "description": "电子合同模块"},
-    {"name": "auth", "color": "fef2c0", "description": "认证授权模块"},
-    {"name": "chat", "color": "c5def5", "description": "在线沟通模块"},
-    {"name": "map", "color": "bfdadc", "description": "地图服务模块"},
-    {"name": "poi", "color": "d4c5f9", "description": "周边设施模块"},
-    {"name": "notification", "color": "f9d0c4", "description": "消息通知模块"},
-    {"name": "images", "color": "c2e0c6", "description": "图片管理模块"},
-    {"name": "search", "color": "fef2c0", "description": "智能搜索模块"},
-    {"name": "admin", "color": "5319e7", "description": "后台管理模块"},
-    {"name": "wechat", "color": "07b804", "description": "微信集成模块"}
-  ]
+    "labels":  [
+                   {
+                       "name":  "task",
+                       "color":  "0e8a16",
+                       "description":  "功能开发任务"
+                   },
+                   {
+                       "name":  "bug",
+                       "color":  "d73a4a",
+                       "description":  "Bug 报告"
+                   },
+                   {
+                       "name":  "enhancement",
+                       "color":  "a2eeef",
+                       "description":  "功能增强/改进"
+                   },
+                   {
+                       "name":  "question",
+                       "color":  "d876e3",
+                       "description":  "问题咨询"
+                   },
+                   {
+                       "name":  "documentation",
+                       "color":  "0075ca",
+                       "description":  "文档相关"
+                   },
+                   {
+                       "name":  "high",
+                       "color":  "d93f0b",
+                       "description":  "高优先级"
+                   },
+                   {
+                       "name":  "medium",
+                       "color":  "fbca04",
+                       "description":  "中等优先级"
+                   },
+                   {
+                       "name":  "low",
+                       "color":  "0e8a16",
+                       "description":  "低优先级"
+                   },
+                   {
+                       "name":  "frontend",
+                       "color":  "1d76db",
+                       "description":  "前端 (Vue 3)"
+                   },
+                   {
+                       "name":  "backend",
+                       "color":  "b60205",
+                       "description":  "后端 (FastAPI)"
+                   },
+                   {
+                       "name":  "wechat-miniprogram",
+                       "color":  "07b804",
+                       "description":  "微信小程序"
+                   },
+                   {
+                       "name":  "property",
+                       "color":  "c5def5",
+                       "description":  "房源管理模块"
+                   },
+                   {
+                       "name":  "booking",
+                       "color":  "d4c5f9",
+                       "description":  "预约看房模块"
+                   },
+                   {
+                       "name":  "payment",
+                       "color":  "f9d0c4",
+                       "description":  "支付系统模块"
+                   },
+                   {
+                       "name":  "contract",
+                       "color":  "c2e0c6",
+                       "description":  "电子合同模块"
+                   },
+                   {
+                       "name":  "auth",
+                       "color":  "fef2c0",
+                       "description":  "认证授权模块"
+                   },
+                   {
+                       "name":  "chat",
+                       "color":  "c5def5",
+                       "description":  "在线沟通模块"
+                   },
+                   {
+                       "name":  "map",
+                       "color":  "bfdadc",
+                       "description":  "地图服务模块"
+                   },
+                   {
+                       "name":  "poi",
+                       "color":  "d4c5f9",
+                       "description":  "周边设施模块"
+                   },
+                   {
+                       "name":  "notification",
+                       "color":  "f9d0c4",
+                       "description":  "消息通知模块"
+                   },
+                   {
+                       "name":  "images",
+                       "color":  "c2e0c6",
+                       "description":  "图片管理模块"
+                   },
+                   {
+                       "name":  "search",
+                       "color":  "fef2c0",
+                       "description":  "智能搜索模块"
+                   },
+                   {
+                       "name":  "admin",
+                       "color":  "5319e7",
+                       "description":  "后台管理模块"
+                   },
+                   {
+                       "name":  "wechat",
+                       "color":  "07b804",
+                       "description":  "微信集成模块"
+                   },
+                   {
+                       "color":  "f9d0c4",
+                       "description":  "正在进行中",
+                       "name":  "in-progress"
+                   },
+                   {
+                       "color":  "d4c5f9",
+                       "description":  "Code Review 中",
+                       "name":  "in-review"
+                   },
+                   {
+                       "color":  "0e8a16",
+                       "description":  "已完成",
+                       "name":  "done"
+                   }
+               ]
 }
