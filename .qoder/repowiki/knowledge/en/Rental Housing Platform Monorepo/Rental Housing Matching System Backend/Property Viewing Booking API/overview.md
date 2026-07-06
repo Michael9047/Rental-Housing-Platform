@@ -1,0 +1,1 @@
+FastAPI endpoints and service layer that let tenants request property viewings, landlords approve/reject/cancel them, and notify both parties via WeChat/SMS/email.

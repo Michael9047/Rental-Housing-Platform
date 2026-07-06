@@ -1,0 +1,1 @@
+Vue 3 single-page application that wires tenant, landlord, and admin views through a shared router, Pinia stores, Element Plus UI, and an Axios API layer to the backend.

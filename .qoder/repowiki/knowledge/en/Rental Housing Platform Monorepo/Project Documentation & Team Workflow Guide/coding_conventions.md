@@ -1,0 +1,3 @@
+- Markdown files use UTF-8 without BOM and are written in Chinese prose while keeping technical terms (API endpoints, table/column names) in English.
+- Weekly reports follow a date-suffixed filename pattern `weekly-report-YYYYMMDD.md` and are updated every Friday before close of business.
+- Design documents carry a versioned header (e.g. v1/v2) and a last-updated date line so the README index can track freshness.

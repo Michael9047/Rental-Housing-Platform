@@ -1,0 +1,11 @@
+schema_version: 1
+module_path: frontend/landlord_dashboard
+title: Landlord Dashboard Views (Bookings, Properties, Images)
+scope:
+    - frontend/src/views/LandlordBookings.vue
+    - frontend/src/views/ManageProperties.vue
+    - frontend/src/views/CreateProperty.vue
+    - frontend/src/views/PropertyImages.vue
+source_files: []
+depends_on: []
+related_to: []

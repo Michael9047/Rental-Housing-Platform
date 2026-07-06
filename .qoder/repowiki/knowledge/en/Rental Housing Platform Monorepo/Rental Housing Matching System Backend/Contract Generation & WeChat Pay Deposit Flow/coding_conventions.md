@@ -1,0 +1,4 @@
+- Routes are thin: they accept `AsyncSession = Depends(get_db_session)` and `current_user = Depends(get_current_user|require_tenant)`, perform only authorization checks, then delegate all persistence to a service class instantiated with the session.
+- Models inherit `TimestampMixin` and use `Mapped[...] = mapped_column(...)` with UUID v4 string primary keys generated via `default=lambda: str(uuid.uuid4())`.
+- Pydantic response schemas set `model_config = ConfigDict(from_attributes=True)` so they serialize SQLAlchemy ORM objects directly without explicit `.model_validate()` calls.
+- Celery tasks create an isolated async engine/session per invocation via `create_async_engine(settings.database_url)` + `async_sessionmaker(..., expire_on_commit=False)` instead of sharing the app's global session.

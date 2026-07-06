@@ -1,0 +1,5 @@
+- Each view is a single-file component using `<script setup lang="ts">` with reactive refs/computed for local UI state and Pinia `storeToRefs` for cross-view data.
+- User-facing status/type enums are mapped to Element Plus tag labels and color types via local `Record<Enum, string>` maps defined inside the component.
+- Async mutations wrap calls in `try/catch` with empty catch bodies and rely on a global interceptor for error display; success is always followed by an `ElMessage.success(...)` call.
+- Destructive actions (approve/reject/delete) require confirmation via `ElMessageBox.confirm` or `el-popconfirm` before invoking the service/store method.
+- Data loading is triggered in `onMounted`, with a `loading` ref wired to Element Plus `v-loading` directives on the root container.

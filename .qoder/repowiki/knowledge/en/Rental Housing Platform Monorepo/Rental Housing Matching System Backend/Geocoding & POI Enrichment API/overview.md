@@ -1,0 +1,1 @@
+FastAPI routes and services that geocode property addresses via Amap, fetch nearby POIs by category, persist generated POI summaries to the database, and expose map viewport queries.

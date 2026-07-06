@@ -1,0 +1,16 @@
+schema_version: 1
+module_path: backend/contracts_payments
+title: Contract Generation & WeChat Pay Deposit Flow
+scope:
+    - backend/app/api/v1/routes/contracts.py
+    - backend/app/api/v1/routes/payments.py
+    - backend/app/services/contract_service.py
+    - backend/app/services/payment_service.py
+    - backend/app/models/contract.py
+    - backend/app/models/payment.py
+    - backend/app/schemas/contract.py
+    - backend/app/schemas/payment.py
+    - backend/app/tasks/payment_tasks.py
+source_files: []
+depends_on: []
+related_to: []

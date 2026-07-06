@@ -1,0 +1,6 @@
+Three-layer layout inside the module:
+- `routes/admin.py` + `routes/imports.py` — thin FastAPI routers that enforce `require_admin`, delegate all work to service classes, and call `AuditService.create_log` after every mutating endpoint.
+- `services/import_service.py` (`ImportService`) — pure business logic: task lifecycle (`create_import_task` → `parse_and_import` → `retry_failed`), row validation against `REQUIRED_FIELDS`/`OPTIONAL_FIELDS`, deduplication by title+address, and side-effect dispatch (Celery embedding via `threading.Thread` + `asyncio.run`; POI generation via a separate async engine).
+- `models/data_import.py` (`DataImport` ORM model with `ImportSourceType` / `ImportStatus` enums) plus `models/audit_log.py` + `services/audit_service.py` shared across admin routes.
+- `tasks/import_tasks.py` — Celery worker entry point (`batch_embedding_new_properties`) that queries properties without embeddings and enqueues per-property embedding jobs.
+Dependency direction is strictly routes → services → models; tasks are invoked asynchronously from services and never imported at module load time to avoid circular imports.

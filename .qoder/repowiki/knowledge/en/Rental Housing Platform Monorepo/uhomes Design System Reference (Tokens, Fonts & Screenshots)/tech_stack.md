@@ -1,0 +1,1 @@
+Design Tokens Community Group format (`design-tokens.github.io/community-group/format/`) for all `tokens/*.json`; fonts served from `img.uhzcdn.com` / `static.uhzcdn.com` CDN paths recorded in `typography.json`.

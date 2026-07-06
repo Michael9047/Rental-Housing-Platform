@@ -1,16 +1,19 @@
-from fastapi import APIRouter, HTTPException, status
+﻿from fastapi import APIRouter, HTTPException, status
 
 from app.schemas.geocoding import GeocodeRequest, GeocodeResponse
-from app.services.geocoding_service import AmapGeocodingService
+from app.services.geocoding_service import geocode_with_fallback
 
 router = APIRouter(prefix="/geo", tags=["geo"])
 
 
 @router.post("/geocode", response_model=GeocodeResponse)
 async def geocode_address(payload: GeocodeRequest) -> GeocodeResponse:
-    service = AmapGeocodingService()
     try:
-        result = await service.geocode(payload.address, payload.city)
+        result = await geocode_with_fallback(
+            payload.address,
+            payload.city,
+            payload.country,
+        )
     except RuntimeError as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,

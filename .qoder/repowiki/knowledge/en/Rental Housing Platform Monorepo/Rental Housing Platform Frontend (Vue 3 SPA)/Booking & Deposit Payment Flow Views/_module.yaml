@@ -1,0 +1,11 @@
+schema_version: 1
+module_path: frontend/booking_flow
+title: Booking & Deposit Payment Flow Views
+scope:
+    - frontend/src/views/BookingConfirm.vue
+    - frontend/src/views/PendingPayment.vue
+    - frontend/src/views/DepositPayment.vue
+    - frontend/src/views/ContractView.vue
+source_files: []
+depends_on: []
+related_to: []

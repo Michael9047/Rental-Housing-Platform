@@ -1,0 +1,8 @@
+Layered FastAPI feature split across four directories:
+- `routes/` — thin HTTP endpoints (`contracts.py`, `payments.py`) that only parse requests, enforce ownership via `get_current_user` / `require_tenant` deps, delegate to services, and raise `HTTPException`s.
+- `services/` — business logic. `contract_service.ContractService` builds a templated Chinese lease document from `Booking` + `Property` + `User` rows; `payment_service.WeChatPayService` is a self-contained WeChat Pay V3 client (RSA-SHA256 signing, AES-256-GCM callback decryption, JSAPI prepay order creation, query/close/refund) with no ORM dependency.
+- `models/` — SQLAlchemy 2.0 declarative models (`Contract`, `Payment`) inheriting `TimestampMixin`, keyed by UUID v4 strings, with `ondelete=CASCADE` FKs to `bookings` and `users`.
+- `schemas/` — Pydantic v2 request/response DTOs using `ConfigDict(from_attributes=True)` for ORM serialization.
+- `tasks/payment_tasks.py` — Celery workers (`sync_pending_payments`, `close_expired_payments`, `send_payment_result_message`) that spin up their own async engine/session per task invocation and call `WeChatPayService` to reconcile pending orders against WeChat's API.
+
+Dependency direction: routes → services ← models; tasks depend on services + models but never on routes. The contract route additionally reads `BookingService` to resolve landlord/tenant ownership when fetching or downloading a contract.

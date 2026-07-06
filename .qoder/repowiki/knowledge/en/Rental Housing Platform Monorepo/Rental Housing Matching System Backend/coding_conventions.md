@@ -1,0 +1,4 @@
+- Each domain exposes its own `routes/<feature>.py` FastAPI router, a matching `schemas/<feature>.py` Pydantic file, and an `services/<feature>_service.py` business layer — routes call services, services call models via `app.db.base.get_db()`, and routes never touch the DB directly.
+- All external configuration lives in `app.core.config.Settings` and is accessed through the cached `get_settings()` singleton; no hard-coded strings or env reads appear in route/service code.
+- Background work is dispatched as Celery tasks in `app/tasks/` (e.g. `embedding_tasks`, `notification_tasks`, `payment_tasks`, `import_tasks`) rather than executed inline in request handlers.
+- Database access uses the async session from `app.db.session.get_db()` dependency injected into route signatures; synchronous sessions are reserved for Alembic migrations only.

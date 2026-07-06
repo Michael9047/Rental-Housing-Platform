@@ -18,6 +18,7 @@ async def get_map_properties(
     sw_lng: float | None = Query(None, description="South-west longitude"),
     ne_lat: float | None = Query(None, description="North-east latitude"),
     ne_lng: float | None = Query(None, description="North-east longitude"),
+    country: str | None = Query(None, min_length=2, max_length=2, description="国家/地区代码"),
     limit: int = Query(default=500, le=1000),
 ):
     """根据视口框选返回轻量房源列表，用于地图展示"""
@@ -31,6 +32,9 @@ async def get_map_properties(
         )
     )
 
+    if country:
+        stmt = stmt.where(Property.country == country.upper())
+
     if sw_lat is not None and sw_lng is not None and ne_lat is not None and ne_lng is not None:
         stmt = stmt.where(
             Property.latitude.between(sw_lat, ne_lat),
@@ -43,7 +47,6 @@ async def get_map_properties(
 
     items = []
     for p in properties:
-        # 取主图 URL
         primary_url = None
         if p.images:
             primary = next((img for img in p.images if img.is_primary), None)
@@ -54,6 +57,7 @@ async def get_map_properties(
             "id": p.id,
             "title": p.title,
             "district": p.district,
+            "country": p.country,
             "address": p.address,
             "price_monthly": p.price_monthly,
             "bedrooms": p.bedrooms,
@@ -69,11 +73,27 @@ async def get_map_properties(
 
 
 @router.get("/config")
-async def get_map_config():
-    """返回地图配置（含高德 JS Key）"""
+async def get_map_config(country: str | None = Query(None, min_length=2, max_length=2)):
+    """返回地图配置，根据国家/地区返回对应地图引擎的 Key 和默认中心点"""
     settings = get_settings()
+    country_upper = country.upper() if country else "CN"
+
+    # 中国大陆默认中心（北京）
+    # 海外默认中心（新加坡）
+    if country_upper == "CN":
+        center = [39.9042, 116.4074]
+        zoom = 11
+        map_provider = "amap"
+        map_key = settings.amap_js_key or settings.amap_web_key or ""
+    else:
+        center = [1.3521, 103.8198]  # 新加坡
+        zoom = 12
+        map_provider = "google"
+        map_key = settings.gm_api_key or ""
+
     return {
-        "amap_js_key": settings.amap_js_key or settings.amap_api_key or settings.amap_web_key or "",
-        "center": [39.9042, 116.4074],  # 北京
-        "zoom": 11,
+        "map_provider": map_provider,
+        "map_key": map_key,
+        "center": center,
+        "zoom": zoom,
     }

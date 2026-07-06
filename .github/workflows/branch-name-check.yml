@@ -1,0 +1,50 @@
+﻿name: Branch Name Check
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  check-branch-name:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate branch name
+        run: |
+          BRANCH="${{ github.head_ref }}"
+          echo "Checking branch: $BRANCH"
+
+          # Allowed patterns:
+          #   feat/<desc>        feature development
+          #   fix/<desc>         bug fix
+          #   refactor/<module>  refactoring
+          #   docs/<desc>        documentation
+          #   chore/<desc>       maintenance/tooling
+          #   hotfix/<desc>      urgent fix
+          #   <user>/<type>/<desc>  personal branches
+
+          if echo "$BRANCH" | grep -qE "^(feat|fix|refactor|docs|chore|hotfix)/[a-z0-9-]+$"; then
+            echo "✅ Branch name is valid: $BRANCH"
+            exit 0
+          fi
+
+          if echo "$BRANCH" | grep -qE "^[a-z][a-z0-9]*/(feat|fix|refactor|docs|chore|hotfix)/[a-z0-9-]+$"; then
+            echo "✅ Personal branch name is valid: $BRANCH"
+            exit 0
+          fi
+
+          if echo "$BRANCH" | grep -qE "^(main|dev)$"; then
+            echo "⚠ Skipping check for protected branch: $BRANCH"
+            exit 0
+          fi
+
+          echo "❌ Invalid branch name: $BRANCH"
+          echo ""
+          echo "Branch names must follow one of these patterns:"
+          echo "  feat/<desc>       e.g. feat/amap-geocoding"
+          echo "  fix/<desc>        e.g. fix/login-crash"
+          echo "  refactor/<module> e.g. refactor/payment-service"
+          echo "  docs/<desc>       e.g. docs/api-guide"
+          echo "  chore/<desc>      e.g. chore/update-deps"
+          echo "  hotfix/<desc>     e.g. hotfix/payment-crash"
+          echo "  <user>/<type>/<desc>  e.g. michael/feat/ai-search"
+          exit 1

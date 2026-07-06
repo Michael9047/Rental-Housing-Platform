@@ -1,0 +1,1 @@
+Top-level monorepo that composes a FastAPI backend, Vue 3 SPA, WeChat miniprogram, design-system assets, and docs into a single Docker-orchestrated rental-housing matching platform.

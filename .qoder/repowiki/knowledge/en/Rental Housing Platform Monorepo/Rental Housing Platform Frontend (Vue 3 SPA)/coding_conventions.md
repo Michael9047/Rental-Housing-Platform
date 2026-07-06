@@ -1,0 +1,5 @@
+- Route access control is expressed declaratively via `meta.requiresAuth / requiresLandlord / requiresAdmin / guest` on route records rather than inside each view.
+- Domain logic is split into thin service modules under `src/services/` named after the feature area (auth, booking, property, admin, etc.), which views import instead of calling Axios directly.
+- Shared TypeScript interfaces for each domain live in parallel files under `src/types/` matching the service names.
+- Reusable UI fragments are extracted as Vue SFCs under `src/components/` (and `src/components/uhomes/`) and composed by views instead of being duplicated inline.
+- Global UI theming is centralized in `src/assets/uhomes-design-tokens.json` and `src/assets/uhomes-theme.css` consumed by Element Plus.

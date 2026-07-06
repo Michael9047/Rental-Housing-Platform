@@ -1,0 +1,4 @@
+- External LLM/OpenAI calls are wrapped in try/except blocks that translate `RuntimeError` to HTTP 503 and generic exceptions to 502, while falling back to static text when the LLM is unconfigured.
+- Celery tasks construct their own `create_async_engine` + `async_sessionmaker` scoped to the task body, open/close the engine around each operation, and never reuse the request's DB session.
+- Long-running jobs follow a strict state transition pattern: insert as `pending`, commit, refresh, update to `processing` with `started_at`, then either `completed` with `completed_at` or `failed` with a truncated `error_message` before committing again.
+- Pydantic response models use `Field(...)` with `description` metadata and resolve cross-package forward references via a trailing `model_rebuild()` call after import.

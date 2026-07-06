@@ -160,9 +160,12 @@ def send_sms_notification(user_id: int, content: str) -> dict:
 
         sms = SmsService()
         try:
+            # 号码认证模板 100001: "您的验证码为${code}。${min}分钟内有效"
+            import uuid
+            code = content[:20] if content else str(uuid.uuid4().hex[:6])
             result = await sms.send(
                 phone_number=phone,
-                template_param={"content": content[:100] if content else ""},
+                template_param={"code": code, "min": "5"},
             )
             logger.info("SMS sent to user %s: %s", user_id, result)
             return result

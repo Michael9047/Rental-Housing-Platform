@@ -1,0 +1,1 @@
+FastAPI monolith that wires together auth, property CRUD, bookings, contracts/payments, chat/RAG, AI search, geocoding/POI, and admin/import features behind a single /api/v1 router.

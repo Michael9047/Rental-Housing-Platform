@@ -1,0 +1,6 @@
+- Each view is a self-contained SFC using `<script setup lang="ts">` with all styles in a local `<style scoped>` block — no shared view-level CSS files.
+- Pinia store state is consumed via `storeToRefs(usePropertyStore())` so reactivity is preserved when destructuring fields like `properties`, `searchResults`, and `loading`.
+- Navigation between pages goes through `router.push({ name | path, query })` rather than string URLs, keeping route parameters typed and consistent across Home → Search → Detail flows.
+- Booking actions follow a uniform pattern: open a local `showBookingDialog` ref holding the selected `Property`, then emit a `confirm` event handled by pushing to `/booking/confirm` with `property_id`, `date`, and `slot` as query params.
+- Images are always served through the backend proxy URL `/api/v1/uploads/${filename}` instead of raw paths, applied uniformly in Home cards, PropertyDetail gallery, and Map drawer thumbnails.
+- Route-driven filtering mirrors query params into a reactive `filters` object on mount and watches `route.query` changes to re-run `doSearch()`, making the URL the source of truth for shareable search links.

@@ -1,0 +1,4 @@
+- Route handlers stay thin: dependency injection via `Depends(get_db_session, require_tenant|require_landlord, get_current_user)`, then instantiate `BookingService(session)` and call an async method, raising `HTTPException` only for validation/authorization failures.
+- Domain-level conflicts are raised as plain `ValueError` in the service layer and caught in the route handler to return HTTP 409 CONFLICT, keeping HTTP semantics out of the service.
+- Side-effectful operations (notifications, Celery tasks) are performed through dedicated service classes (`NotificationService`) or imported Celery tasks rather than inline calls, so the booking service remains testable.
+- Pydantic schemas use `from_attributes=True` on read models so ORM entities can be returned directly without manual mapping.

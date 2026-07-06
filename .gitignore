@@ -25,5 +25,17 @@ docker-compose.override.yml
 # ER diagrams and dev docs
 docs/er-diagrams/
 
+# Claude Code local settings
+.claude/settings.local.json
+
 # Office temp files
 ~$*
+# uhomes-design binaries (too large, not useful for AI agents)
+uhomes-design/*.skill
+uhomes-design/screens/
+uhomes-design/fonts/
+uhomes-design/screenshots/
+
+# Misc large binaries
+.mcp/*.png
+docs/*.png

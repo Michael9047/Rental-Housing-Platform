@@ -1,4 +1,4 @@
-// Matches backend: app/models/property.py
+﻿// Matches backend: app/models/property.py
 export type PropertyType = 'apartment' | 'house' | 'studio' | 'shared'
 export type PropertyStatus = 'available' | 'rented' | 'maintenance' | 'offline'
 
@@ -12,6 +12,7 @@ export interface Property {
   service_fee_rate?: number | null
   address: string
   district: string
+  country?: string
   price_monthly: number
   area_sqm: number | null
   bedrooms: number
@@ -33,6 +34,7 @@ export interface PropertyCreate {
   description?: string
   address: string
   district: string
+  country?: string
   price_monthly: number
   area_sqm?: number
   bedrooms?: number
@@ -44,12 +46,12 @@ export interface PropertyCreate {
   landlord_id: number
 }
 
-// Matches backend: app/schemas/property.py PropertyUpdate
 export interface PropertyUpdate {
   title?: string
   description?: string
   address?: string
   district?: string
+  country?: string
   price_monthly?: number
   area_sqm?: number
   bedrooms?: number
@@ -92,3 +94,4 @@ export interface PropertyImage {
   is_primary: boolean
   created_at: string
 }
+

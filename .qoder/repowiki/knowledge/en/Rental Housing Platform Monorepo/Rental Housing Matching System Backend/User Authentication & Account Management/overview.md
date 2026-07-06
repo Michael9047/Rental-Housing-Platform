@@ -1,0 +1,1 @@
+FastAPI routes, Pydantic schemas, SQLAlchemy model, and service layer that handle user registration, login (password + WeChat Mini Program), profile CRUD, and async notification dispatch via Celery.
