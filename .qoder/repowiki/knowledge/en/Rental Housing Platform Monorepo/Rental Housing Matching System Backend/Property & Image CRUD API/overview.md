@@ -1,0 +1,1 @@
+FastAPI routes, Pydantic schemas, SQLAlchemy models, and services for managing rental properties and their uploaded images with vector search and Redis caching.

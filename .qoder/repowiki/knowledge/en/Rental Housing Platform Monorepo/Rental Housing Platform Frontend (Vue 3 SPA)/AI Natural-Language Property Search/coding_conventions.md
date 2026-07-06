@@ -1,0 +1,3 @@
+- Each async action wraps its call in a try/catch that surfaces `e?.response?.data?.detail || e?.message` via `ElMessage.error`, then resets the loading flag in a `finally` block.
+- Optional search parameters are merged from the user-filled `formData` over the previously parsed `parsedParams` using the `??` / `||` fallback pattern before being sent to the API.
+- UI phases are toggled by assigning a string literal to the `phase` ref (`'input' | 'form' | 'results'`) and gating each template section with `v-if="phase === ..."`.

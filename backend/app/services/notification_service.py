@@ -28,6 +28,27 @@ _CHANNEL_META: dict[NotificationType, dict] = {
     NotificationType.payment_received: {
         "wechat_template": "status_update_template_id",
     },
+    NotificationType.payment_created: {
+        "wechat_template": "status_update_template_id",
+    },
+    NotificationType.payment_failed: {
+        "wechat_template": "status_update_template_id",
+    },
+    NotificationType.payment_expired: {
+        "wechat_template": "status_update_template_id",
+    },
+    NotificationType.contract_generated: {
+        "wechat_template": "status_update_template_id",
+    },
+    NotificationType.contract_signed: {
+        "wechat_template": "status_update_template_id",
+    },
+    NotificationType.auth_registration: {
+        "wechat_template": "status_update_template_id",
+    },
+    NotificationType.auth_password_reset: {
+        "wechat_template": "status_update_template_id",
+    },
     NotificationType.system: {
         "wechat_template": "status_update_template_id",
     },
@@ -115,7 +136,7 @@ class NotificationService:
     ) -> None:
         """Fire Celery tasks for each requested push channel."""
         if channels is None:
-            channels = ["wechat", "sms", "email"]
+            channels = ["email"]  # SMS 仅用于验证码场景，通知走邮件
 
         meta = _CHANNEL_META.get(ntype, {})
 
@@ -123,26 +144,11 @@ class NotificationService:
             from app.tasks.notification_tasks import (
                 send_sms_notification,
                 send_email_notification,
-                send_wechat_template_message,
             )
 
-            if "wechat" in channels:
-                try:
-                    template_id = meta.get("wechat_template", "status_update_template_id")
-                    wechat_data = {
-                        "first": {"value": title},
-                        "keyword1": {"value": content or ""},
-                        "keyword2": {"value": ""},
-                        "remark": {"value": "点击查看详情。"},
-                    }
-                    send_wechat_template_message.delay(
-                        user_id=user_id,
-                        template_id=template_id,
-                        data=wechat_data,
-                        page="pages/booking/detail",
-                    )
-                except Exception as exc:
-                    logger.warning("Failed to dispatch WeChat notification: %s", exc)
+            # # 微信暂不启用
+            # if "wechat" in channels:
+            #     ...
 
             if "sms" in channels:
                 try:

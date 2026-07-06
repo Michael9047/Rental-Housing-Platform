@@ -1,0 +1,5 @@
+- Token keys follow semantic roles (e.g. `text-primary`, `background`, `surface`, `danger`) rather than raw hex names, with legacy Element UI aliases preserved in a separate `name` field under `extended`.
+- Spacing values are always multiples of the declared 5px base unit, exposed both as a named scale (`xs`..`6xl`) and as integer multipliers (`1x`..`16x`) keyed by `raw` pixel counts.
+- Typography entries record their provenance via a `source: css` field so consumers can distinguish auto-extracted values from hand-edited ones.
+- Font-face declarations pair each family with multiple formats (woff2, woff, truetype) across two CDN origins (`img.uhzcdn.com` and `static.uhzcdn.com/pc2020/prod/fonts/...`) to ensure cross-browser fallback.
+- Screenshots are grouped by interaction category (`states`, `scroll`, `sections`, `pages`) and indexed through sibling Markdown files instead of being scattered at the root.

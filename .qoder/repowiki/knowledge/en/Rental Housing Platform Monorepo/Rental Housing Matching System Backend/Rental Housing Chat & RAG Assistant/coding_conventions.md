@@ -1,0 +1,4 @@
+- HTTP handlers never touch the DB directly — they instantiate `ChatService(session)` per request and delegate all persistence and LLM calls to it.
+- Pydantic response schemas use `model_config = {"from_attributes": True}` so ORM instances can be mapped without manual field-by-field construction.
+- Streaming responses are produced as SSE frames via `yield f"data: {json.dumps({...})}\n\n"` and terminated with `data: [DONE]\n\n`, with error paths yielding an `error` frame before `[DONE]`.
+- User-scoped queries always filter on both the target entity id and `current_user.id` to enforce ownership at the service layer.

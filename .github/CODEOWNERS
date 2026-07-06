@@ -1,0 +1,142 @@
+﻿# CODEOWNERS — 6 人团队
+
+# ============================================================
+# lu-sir1219：房源信息设计与展示
+# ============================================================
+/backend/app/services/property*.py              @lu-sir1219
+/backend/app/services/image*.py                 @lu-sir1219
+/backend/app/services/import*.py                @lu-sir1219
+/backend/app/api/v1/routes/properties.py        @lu-sir1219
+/backend/app/api/v1/routes/images.py            @lu-sir1219
+/backend/app/api/v1/routes/imports.py           @lu-sir1219
+/backend/app/models/property.py                 @lu-sir1219
+/backend/app/models/property_image.py           @lu-sir1219
+/backend/app/schemas/property.py                @lu-sir1219
+/backend/app/schemas/property_image.py          @lu-sir1219
+/frontend/src/views/Home.vue                    @lu-sir1219
+/frontend/src/views/CreateProperty.vue          @lu-sir1219
+/frontend/src/views/ManageProperties.vue        @lu-sir1219
+/frontend/src/views/PropertyDetail.vue          @lu-sir1219
+/frontend/src/views/Search.vue                  @lu-sir1219
+/frontend/src/components/PropertyCard.vue       @lu-sir1219
+/backend/uploads/                               @lu-sir1219
+
+# ============================================================
+# Michael9047：消息通知
+# ============================================================
+/backend/app/services/notification*.py          @Michael9047
+/backend/app/services/email*.py                 @Michael9047
+/backend/app/services/sms*.py                   @Michael9047
+/backend/app/api/v1/routes/notifications.py     @Michael9047
+/backend/app/tasks/notification_tasks.py        @Michael9047
+/backend/app/models/notification.py             @Michael9047
+/backend/app/schemas/notification.py            @Michael9047
+/frontend/src/views/Notifications.vue           @Michael9047
+
+# ============================================================
+# shen25308：主页搜索流设计（首页AI对话搜索 + 购物车对比流）
+# ============================================================
+/backend/app/services/llm*.py                   @shen25308
+/backend/app/services/embedding*.py             @shen25308
+/backend/app/services/geocoding*.py             @shen25308
+/backend/app/services/poi*.py                   @shen25308
+/backend/app/api/v1/routes/ai_search.py         @shen25308
+/backend/app/api/v1/routes/map_routes.py        @shen25308
+/backend/app/api/v1/routes/geocoding.py         @shen25308
+/backend/app/api/v1/routes/pois.py              @shen25308
+/backend/app/schemas/ai_search.py               @shen25308
+/backend/app/schemas/geocoding.py               @shen25308
+/frontend/src/views/AiSearch.vue                @shen25308
+/frontend/src/views/MapSearch.vue               @shen25308
+/frontend/src/components/AmapMap.vue            @shen25308
+/frontend/src/components/SearchBar.vue          @shen25308
+/frontend/src/services/aiSearch.ts              @shen25308
+/frontend/src/services/map.ts                   @shen25308
+
+# ============================================================
+# Riki-1124：维修实现
+# ============================================================
+/backend/app/services/maintenance*.py           @Riki-1124
+/backend/app/api/v1/routes/maintenance*.py      @Riki-1124
+/backend/app/models/maintenance*.py             @Riki-1124
+/backend/app/schemas/maintenance*.py            @Riki-1124
+/frontend/src/views/Maintenance*.vue            @Riki-1124
+/frontend/src/views/Repair*.vue                 @Riki-1124
+
+# ============================================================
+# renwc：系统管理员角色设计
+# ============================================================
+/backend/app/api/v1/routes/admin.py             @renwc
+/backend/app/api/v1/routes/users.py             @renwc
+/backend/app/services/user*.py                  @renwc
+/backend/app/services/audit*.py                 @renwc
+/backend/app/core/security*.py                  @renwc
+/backend/app/core/security_audit*.py            @renwc
+/backend/app/models/audit_log.py                @renwc
+/backend/app/models/user.py                     @renwc
+/backend/app/schemas/user.py                    @renwc
+/frontend/src/views/AdminWorkspace.vue          @renwc
+/frontend/src/views/admin/                      @renwc
+/frontend/src/views/Login.vue                   @renwc
+/frontend/src/views/Register.vue                @renwc
+/frontend/src/views/Profile.vue                 @renwc
+/frontend/src/views/ProfileEdit.vue             @renwc
+
+# ============================================================
+# JiaWu1211：支付流程完善
+# ============================================================
+/backend/app/services/payment*.py               @JiaWu1211
+/backend/app/services/booking*.py               @JiaWu1211
+/backend/app/services/contract*.py              @JiaWu1211
+/backend/app/api/v1/routes/payments.py          @JiaWu1211
+/backend/app/api/v1/routes/bookings.py          @JiaWu1211
+/backend/app/api/v1/routes/contracts.py         @JiaWu1211
+/backend/app/tasks/payment_tasks.py             @JiaWu1211
+/backend/app/models/payment.py                  @JiaWu1211
+/backend/app/models/booking.py                  @JiaWu1211
+/backend/app/models/contract.py                 @JiaWu1211
+/backend/app/schemas/payment.py                 @JiaWu1211
+/backend/app/schemas/booking.py                 @JiaWu1211
+/backend/app/schemas/contract.py                @JiaWu1211
+/frontend/src/views/BookingConfirm.vue          @JiaWu1211
+/frontend/src/views/LandlordBookings.vue        @JiaWu1211
+/frontend/src/views/TenantBookings.vue          @JiaWu1211
+/frontend/src/views/DepositPayment.vue          @JiaWu1211
+/frontend/src/views/PendingPayment.vue          @JiaWu1211
+/frontend/src/views/ContractView.vue            @JiaWu1211
+/frontend/src/services/payment.ts               @JiaWu1211
+/frontend/src/services/contract.ts              @JiaWu1211
+/frontend/src/types/booking.ts                  @JiaWu1211
+
+# ============================================================
+# 共享基础设施
+# ============================================================
+/backend/app/core/                              @lu-sir1219 @Michael9047 @shen25308 @Riki-1124 @renwc @JiaWu1211
+/backend/app/db/                                @lu-sir1219 @Michael9047 @shen25308 @Riki-1124 @renwc @JiaWu1211
+/backend/app/models/__init__.py                 @lu-sir1219 @Michael9047 @shen25308 @Riki-1124 @renwc @JiaWu1211
+/backend/alembic/                               @lu-sir1219 @Michael9047 @shen25308 @Riki-1124 @renwc @JiaWu1211
+/backend/app/celery_app.py                      @lu-sir1219 @Michael9047 @shen25308 @Riki-1124 @renwc @JiaWu1211
+/backend/app/main.py                            @lu-sir1219 @Michael9047 @shen25308 @Riki-1124 @renwc @JiaWu1211
+/backend/requirements.txt                       @lu-sir1219 @Michael9047 @shen25308 @Riki-1124 @renwc @JiaWu1211
+/backend/.env.example                           @lu-sir1219 @Michael9047 @shen25308 @Riki-1124 @renwc @JiaWu1211
+/frontend/src/router/                           @lu-sir1219 @Michael9047 @shen25308 @Riki-1124 @renwc @JiaWu1211
+/frontend/src/stores/                           @lu-sir1219 @Michael9047 @shen25308 @Riki-1124 @renwc @JiaWu1211
+/frontend/src/services/                         @lu-sir1219 @Michael9047 @shen25308 @Riki-1124 @renwc @JiaWu1211
+/frontend/src/types/                            @lu-sir1219 @Michael9047 @shen25308 @Riki-1124 @renwc @JiaWu1211
+/frontend/package.json                          @lu-sir1219 @Michael9047 @shen25308 @Riki-1124 @renwc @JiaWu1211
+/frontend/vite.config.ts                        @lu-sir1219 @Michael9047 @shen25308 @Riki-1124 @renwc @JiaWu1211
+/.github/workflows/                             @lu-sir1219 @Michael9047 @shen25308 @Riki-1124 @renwc @JiaWu1211
+/.github/ISSUE_TEMPLATE/                        @lu-sir1219 @Michael9047 @shen25308 @Riki-1124 @renwc @JiaWu1211
+/docker/                                        @lu-sir1219 @Michael9047 @shen25308 @Riki-1124 @renwc @JiaWu1211
+/docker-compose.yml                             @lu-sir1219 @Michael9047 @shen25308 @Riki-1124 @renwc @JiaWu1211
+/docker-compose.prod.yml                        @lu-sir1219 @Michael9047 @shen25308 @Riki-1124 @renwc @JiaWu1211
+/nginx/                                         @lu-sir1219 @Michael9047 @shen25308 @Riki-1124 @renwc @JiaWu1211
+/AGENTS.md                                      @lu-sir1219 @Michael9047 @shen25308 @Riki-1124 @renwc @JiaWu1211
+/docs/                                          @lu-sir1219 @Michael9047 @shen25308 @Riki-1124 @renwc @JiaWu1211
+/backend/tests/                                 @lu-sir1219 @Michael9047 @shen25308 @Riki-1124 @renwc @JiaWu1211
+/backend/scripts/                               @lu-sir1219 @Michael9047 @shen25308 @Riki-1124 @renwc @JiaWu1211
+
+# ---- 微信相关，暂不开发，共享维护 ----
+/backend/app/services/wechat*.py                @lu-sir1219 @Michael9047 @shen25308 @Riki-1124 @renwc @JiaWu1211
+/backend/app/api/v1/routes/wechat.py            @lu-sir1219 @Michael9047 @shen25308 @Riki-1124 @renwc @JiaWu1211
+/wechat-miniprogram/                            @lu-sir1219 @Michael9047 @shen25308 @Riki-1124 @renwc @JiaWu1211

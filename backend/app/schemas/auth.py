@@ -9,8 +9,31 @@ class RegisterRequest(BaseModel):
     username: str = Field(min_length=1, max_length=100)
     password: str = Field(min_length=8, max_length=128)
     phone: str | None = Field(default=None, max_length=32)
+    sms_code: str | None = Field(default=None, max_length=6)
     email: EmailStr | None = None
     role: UserRole = UserRole.tenant
+
+
+class SendSmsCodeRequest(BaseModel):
+    phone: str = Field(min_length=11, max_length=32)
+
+
+class VerifySmsCodeRequest(BaseModel):
+    phone: str = Field(min_length=11, max_length=32)
+    code: str = Field(min_length=6, max_length=6)
+
+
+class VerifySmsCodeResponse(BaseModel):
+    verified: bool
+
+
+class ForgotPasswordRequest(BaseModel):
+    email: EmailStr
+
+
+class ResetPasswordRequest(BaseModel):
+    token: str
+    new_password: str = Field(min_length=8, max_length=128)
 
 
 class LoginRequest(BaseModel):
@@ -45,6 +68,8 @@ class CurrentUserResponse(BaseModel):
     phone: str | None = None
     wechat_openid: str | None = None
     email: EmailStr | None = None
+    email_verified: bool = False
+    phone_verified: bool = False
     role: UserRole
     status: UserStatus
     created_at: datetime

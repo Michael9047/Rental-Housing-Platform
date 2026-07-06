@@ -1,0 +1,8 @@
+Three-layer request pipeline inside the module:
+- `routes/auth.py` and `routes/users.py` define FastAPI `APIRouter`s; they accept Pydantic request bodies, inject `AsyncSession` via `app.api.deps.get_db_session`, enforce access with `get_current_user` / `require_admin`, and delegate all business logic to services.
+- `services/auth_service.py` orchestrates authentication: it wraps `UserService` for persistence, hashes/verifies passwords through `app.core.security`, encodes/decodes JWTs, and implements WeChat mini-program code→openid flow (`wechat_login`).
+- `services/user_service.py` is a thin persistence wrapper around the `User` ORM model using plain `sqlalchemy.select` statements and `session.add/commit/refresh`.
+- `models/user.py` declares the `users` table with `UserRole` / `UserStatus` enums and inherits `TimestampMixin`; unique indexes on username/email/phone/wechat_openid drive conflict detection at the DB level.
+- `schemas/auth.py` and `schemas/user.py` separate input DTOs (`RegisterRequest`, `LoginRequest`, `UserCreate`, `UserUpdate`, `UserProfileUpdate`) from read models (`CurrentUserResponse`, `UserRead`) configured with `from_attributes=True`.
+- `tasks/notification_tasks.py` registers Celery tasks (`send_wechat_template_message`, `send_sms_notification`, `send_email_notification`) that spin up their own async DB session per task, look up the recipient, then call `WeChatService` / `SmsService` / `EmailService` — keeping the HTTP process free of blocking I/O.
+Dependency direction: routes → services → (model + external services); services never import routes. Auth depends on UserService, but not vice versa.

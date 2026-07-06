@@ -1,0 +1,6 @@
+Three-layer layout inside the module:
+- `routes/` — thin FastAPI `APIRouter`s (`geocoding.py`, `pois.py`, `map_routes.py`) that only parse request params, instantiate a service, and translate exceptions into HTTP status codes. `map_routes.py` additionally queries `Property` + `PropertyImage` directly for viewport listing.
+- `services/` — business orchestration. `AmapGeocodingService` is an async wrapper around Amap's geocode and around-search endpoints (via `httpx.AsyncClient`); `POIService` composes location resolution, multi-keyword nearby search per category, optional OpenAI summary generation, and fallback to the in-process `MOCK_POI` dictionary keyed by district.
+- `models/` + `schemas/` — SQLAlchemy `PropertyPOI` model persisted as JSON (`poi_data`) with a one-to-one relationship to `Property`; Pydantic v2 schemas (`GeocodeRequest/Response`, `POIResponse`) define the public contract.
+
+Dependency direction: routes → services → (external HTTP via httpx, or SQLAlchemy session). Services depend on `app.core.config.get_settings()` for Amap/OpenAI keys and timeouts; routes depend on shared `app.api.deps.get_db_session`. There is no ORM repository layer — services execute raw `select(...)` statements against the injected `AsyncSession`.

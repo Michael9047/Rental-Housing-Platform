@@ -1,0 +1,6 @@
+Four sibling `<script setup>` Vue SFCs under `frontend/src/views/` form the top-level presentation layer for identity and account management:
+- `Login.vue` / `Register.vue`: centered card forms backed by Element Plus `el-form` with `FormRules`, calling `useAuthStore().login()` / `.register()` from `@/stores/auth`; navigation uses `vue-router` (`router.push`) and reads a `redirect` query param on successful login.
+- `Profile.vue`: tabbed dashboard (bookings, contracts, favorites, bills, repairs, messages, settings) that composes `bookingService`, `contractService`, `propertyService` and reuses `PropertyCard` for favorite listings; data is loaded in `onMounted` via `authStore.fetchCurrentUser()` plus service calls, with computed filters driving each tab.
+- `ProfileEdit.vue`: dual-mode view (view vs. edit) toggled by an `editing` ref, validating through `editFormRef.validate()` before calling `userService.updateMyProfile()` and persisting the updated user into both the Pinia store and `localStorage('user')`.
+
+Dependency direction is one-way: views depend on `@/stores/auth` (Pinia), `@/services/*` modules, and shared components like `PropertyCard`; they never import each other. All state mutations flow through the auth store rather than direct API calls, keeping these views thin presenters.

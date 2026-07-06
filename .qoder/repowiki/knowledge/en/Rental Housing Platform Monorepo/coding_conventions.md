@@ -1,0 +1,2 @@
+- All environment variables are declared once in `.env.example` and mirrored into `.env.prod`; services consume them via `${VAR:-default}` interpolation rather than hard-coded values.
+- Each child directory is self-contained with its own build artifact (backend Dockerfile, frontend Dockerfile, miniprogram project config) and is referenced by name only from the root compose files.

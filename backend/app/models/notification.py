@@ -14,6 +14,13 @@ class NotificationType(str, enum.Enum):
     booking_cancelled = "booking_cancelled"
     booking_completed = "booking_completed"
     payment_received = "payment_received"
+    payment_created = "payment_created"
+    payment_failed = "payment_failed"
+    payment_expired = "payment_expired"
+    contract_generated = "contract_generated"
+    contract_signed = "contract_signed"
+    auth_registration = "auth_registration"
+    auth_password_reset = "auth_password_reset"
     system = "system"
 
 

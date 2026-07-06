@@ -1,0 +1,1 @@
+FastAPI + SQLAlchemy 2.0 async ORM (mapped_column) + Pydantic v2 for the contract flow; WeChat Pay V3 integration uses `httpx.AsyncClient` for HTTP, `cryptography` (RSA-SHA256 PKCS1v15 + AES-256-GCM) for signing/decryption, and Celery + `asyncio.run` for background polling of pending payments.

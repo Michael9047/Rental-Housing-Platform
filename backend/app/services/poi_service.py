@@ -1,4 +1,4 @@
-import json
+﻿import json
 import logging
 from datetime import datetime, timezone
 
@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import get_settings
 from app.models.poi import PropertyPOI
 from app.models.property import Property
-from app.services.geocoding_service import AmapGeocodingService
+from app.services.geocoding_service import (BaseGeocodingService, get_primary_service, search_nearby_with_fallback)
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -154,15 +154,15 @@ class POIService:
         district = property_obj.district or "工业园区"
 
         try:
-            amap = AmapGeocodingService()
-            location = await self._resolve_location(amap, property_obj)
+            geo_service = get_primary_service(property_obj.country)
+            location = await self._resolve_location(geo_service, property_obj)
             if location:
-                categories = await self._collect_nearby_categories(amap, location)
+                categories = await self._collect_nearby_categories(geo_service, location)
                 if categories:
                     summary = await self._compose_summary(property_obj, categories)
                     return summary, categories
         except Exception as exc:
-            logger.warning("AMap nearby generation failed, using fallback: %s", exc)
+            logger.warning("Primary geocoding nearby generation failed, using fallback: %s", exc)
 
         mock = MOCK_POI.get(district, MOCK_POI["工业园区"])
         summary = mock["summary"]
@@ -196,18 +196,18 @@ class POIService:
 
     async def _resolve_location(
         self,
-        amap: AmapGeocodingService,
+        geo_service: BaseGeocodingService,
         property_obj: Property,
     ) -> str | None:
         if property_obj.longitude is not None and property_obj.latitude is not None:
             return f"{property_obj.longitude},{property_obj.latitude}"
 
-        geocode = await amap.geocode(property_obj.address, property_obj.district)
+        geocode = await geo_service.geocode(property_obj.address, property_obj.district)
         return f"{geocode.longitude},{geocode.latitude}"
 
     async def _collect_nearby_categories(
         self,
-        amap: AmapGeocodingService,
+        geo_service: BaseGeocodingService,
         location: str,
     ) -> dict[str, list[dict[str, str]]]:
         categories: dict[str, list[dict[str, str]]] = {}
@@ -215,7 +215,7 @@ class POIService:
         for category, keywords in NEARBY_SEARCH_PLAN.items():
             merged: dict[str, dict[str, str]] = {}
             for keyword in keywords:
-                results = await amap.search_nearby(location, keyword, category=category)
+                results = await geo_service.search_nearby(location, keyword, category=category)
                 for item in results:
                     existing = merged.get(item.name)
                     current_distance = self._distance_to_int(item.distance)
@@ -308,3 +308,6 @@ class POIService:
             select(PropertyPOI).where(PropertyPOI.property_id == property_id)
         )
         return result.scalar_one_or_none()
+
+
+

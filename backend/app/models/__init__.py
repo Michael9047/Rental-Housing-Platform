@@ -19,7 +19,7 @@ from app.models.marketplace import (
 )
 from app.models.news import NewsArticle, NewsArticleStatus
 from app.models.notification import Notification, NotificationType
-from app.models.payment import Payment
+from app.models.payment import Payment, PaymentStatus
 from app.models.poi import PropertyPOI
 from app.models.property import Property, PropertyStatus, PropertyType
 from app.models.property_image import PropertyImage
@@ -61,6 +61,7 @@ __all__ = [
     "Notification",
     "NotificationType",
     "Payment",
+    "PaymentStatus",
     "Property",
     "PropertyImage",
     "PropertyPOI",

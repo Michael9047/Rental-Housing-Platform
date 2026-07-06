@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <div class="detail-page" v-loading="loading">
     <div v-if="property">
       <!-- Breadcrumb -->
@@ -270,6 +270,9 @@ import { favoriteService } from '@/services/favorite'
 import { storeToRefs } from 'pinia'
 import PropertyCard from '@/components/PropertyCard.vue'
 import BookingDateDialog from '@/components/BookingDateDialog.vue'
+import AmapMap from '@/components/AmapMap.vue'
+// GoogleMap ? GM Key ?????
+// import GoogleMap from '@/components/GoogleMap.vue'
 import type { Property, PropertyType, PropertyStatus } from '@/types/property'
 
 const route = useRoute()
@@ -948,3 +951,6 @@ onUnmounted(() => stopWatch())
   box-shadow: 0 -2px 12px rgba(0,0,0,0.04);
 }
 </style>
+
+
+

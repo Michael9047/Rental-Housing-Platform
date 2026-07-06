@@ -1,4 +1,4 @@
-import enum
+﻿import enum
 from decimal import Decimal
 
 from sqlalchemy import Boolean, CheckConstraint, Enum, Float, ForeignKey, Index, Integer, Numeric, String, Text as SAText
@@ -7,6 +7,25 @@ from sqlalchemy.types import TypeDecorator
 
 from app.models.mixins import TimestampMixin
 from app.db.session import Base
+
+
+class CountryCode(str, enum.Enum):
+    """房源所在国家/地区代码"""
+    CN = "CN"
+    HK = "HK"
+    MO = "MO"
+    TW = "TW"
+    SG = "SG"
+    GB = "GB"
+    US = "US"
+    AU = "AU"
+    DE = "DE"
+    FR = "FR"
+    NL = "NL"
+    CA = "CA"
+    JP = "JP"
+    KR = "KR"
+    OTHER = "OT"
 
 
 class VectorColumn(TypeDecorator):
@@ -47,6 +66,8 @@ class Property(TimestampMixin, Base):
 
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
     landlord_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+
+    country: Mapped[str] = mapped_column(String(2), default="CN", nullable=False, index=True)
 
     institute_id: Mapped[int | None] = mapped_column(ForeignKey("institutes.id", ondelete="SET NULL"), index=True, nullable=True)
 

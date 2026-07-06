@@ -66,6 +66,24 @@ async def _sync_single_payment(payment: Payment, session: AsyncSession) -> bool:
                 booking.deposit_status = "unpaid"
 
         await session.commit()
+
+        # 邮件通知租客
+        try:
+            from app.tasks.notification_tasks import send_email_notification
+            if payment.status == PaymentStatus.success:
+                subject = "支付完成"
+                content = f"您的支付 #{payment.id} 已成功处理，金额 ¥{payment.amount / 100:.2f}"
+            else:
+                subject = "支付失败"
+                content = f"您的支付 #{payment.id} 未成功，原因：{payment.trade_state_desc or '未知错误'}"
+            send_email_notification.delay(
+                user_id=payment.user_id,
+                subject=subject,
+                html_body=f"<h3>{subject}</h3><p>{content}</p>",
+            )
+        except Exception:
+            pass
+
         logger.info(
             "Payment %s synced: %s -> %s",
             payment.id,
@@ -161,6 +179,16 @@ def close_expired_payments() -> dict:
                         booking.deposit_status = "unpaid"
 
                     closed += 1
+                    # 邮件通知租客支付已过期
+                    try:
+                        from app.tasks.notification_tasks import send_email_notification
+                        send_email_notification.delay(
+                            user_id=payment.user_id,
+                            subject="支付已过期",
+                            html_body=f"<h3>支付已过期</h3><p>您的支付 #{payment.id} 已过期，系统已自动关闭。请重新发起支付。</p>",
+                        )
+                    except Exception:
+                        pass
                 except Exception:
                     logger.exception("Error closing payment %s", payment.id)
 

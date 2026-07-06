@@ -1,0 +1,1 @@
+FastAPI + Pydantic v2 + SQLAlchemy async + Alembic as the runtime stack; Celery + Redis for background jobs; PostgreSQL with pgvector extension for semantic search; OpenAI/DeepSeek for LLM calls; Amap for geocoding/POI; WeChat Mini Program SDK and WeChat Pay V3 for authentication and deposits.

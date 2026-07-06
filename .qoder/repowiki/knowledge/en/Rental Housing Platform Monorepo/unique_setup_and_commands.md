@@ -1,0 +1,1 @@
+Development: `docker compose up -d` (infra only), or `./run_dev.ps1` (infra + backend uvicorn + frontend Vite). Production: `docker compose -f docker-compose.prod.yml --env-file .env.prod up -d`.

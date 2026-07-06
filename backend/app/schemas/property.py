@@ -1,4 +1,4 @@
-from datetime import datetime
+﻿from datetime import datetime
 from decimal import Decimal
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -14,6 +14,7 @@ class PropertyBase(BaseModel):
     address: str = Field(min_length=1, max_length=300)
     district: str = Field(min_length=1, max_length=100)
     price_monthly: Decimal = Field(ge=0)
+    country: str = Field(default="CN", min_length=2, max_length=2)
     area_sqm: Decimal | None = Field(default=None, gt=0)
     bedrooms: int = Field(default=0, ge=0)
     bathrooms: int = Field(default=0, ge=0)
@@ -33,6 +34,7 @@ class PropertyUpdate(BaseModel):
     description: str | None = None
     address: str | None = Field(default=None, min_length=1, max_length=300)
     district: str | None = Field(default=None, min_length=1, max_length=100)
+    country: str | None = Field(default=None, min_length=2, max_length=2)
     price_monthly: Decimal | None = Field(default=None, ge=0)
     area_sqm: Decimal | None = Field(default=None, gt=0)
     bedrooms: int | None = Field(default=None, ge=0)

@@ -1,0 +1,8 @@
+schema_version: 1
+module_path: wechat_miniprogram
+title: WeChat Miniprogram Frontend (Rental Housing App)
+scope:
+    - wechat-miniprogram/
+source_files: []
+depends_on: []
+related_to: []

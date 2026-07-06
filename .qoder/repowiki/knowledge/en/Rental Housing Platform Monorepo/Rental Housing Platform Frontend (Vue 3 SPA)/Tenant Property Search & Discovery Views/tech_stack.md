@@ -1,0 +1,1 @@
+Vue 3 Composition API (`<script setup lang="ts">`) + TypeScript, Element Plus UI, Pinia for store state, vue-router for navigation, Leaflet (with custom marker assets) for the map view, and the Web Speech Recognition API for voice input on the home hero.

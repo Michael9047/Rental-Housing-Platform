@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <div class="map-page">
     <!-- 搜索栏 -->
     <div class="map-search-bar">
@@ -14,6 +14,13 @@
       </el-input>
       <el-button type="primary" size="large" @click="searchLocation">搜索</el-button>
       <el-button size="large" @click="resetMap">🌍 全国视图</el-button>
+      <el-select v-model="mapCountry" placeholder="选择国家" size="large" style="width: 150px" clearable @change="onCountryFilterChange">
+        <el-option label="🇨🇳 中国大陆" value="CN" />
+        <el-option label="🇸🇬 新加坡" value="SG" />
+        <el-option label="🇬🇧 英国" value="GB" />
+        <el-option label="🇺🇸 美国" value="US" />
+        <el-option label="🇦🇺 澳大利亚" value="AU" />
+      </el-select>
       <el-tag v-if="loading" type="warning" size="large" class="loading-tag">加载中...</el-tag>
     </div>
 
@@ -88,6 +95,7 @@ L.Icon.Default.mergeOptions({
 const searchText = ref('')
 const showList = ref(true)
 const loading = ref(false)
+const mapCountry = ref<string | undefined>(undefined)
 const viewportProperties = ref<MapProperty[]>([])
 
 let map: L.Map | null = null
@@ -126,7 +134,7 @@ async function loadPropertiesInViewport() {
   loading.value = true
   try {
     const bounds = getPaddedBounds()
-    const res = await mapService.getPropertiesInBounds(bounds)
+    const res = await mapService.getPropertiesInBounds(bounds, mapCountry.value)
     viewportProperties.value = res.items
   } catch {
     viewportProperties.value = []
@@ -276,6 +284,10 @@ function escapeHtml(str: string): string {
 }
 
 // ==================== 位置搜索 ====================
+async function onCountryFilterChange() {
+  loadPropertiesInViewport()
+}
+
 async function searchLocation() {
   const q = searchText.value.trim()
   if (!q) {
@@ -609,3 +621,8 @@ onUnmounted(() => {
   margin-top: 2px;
 }
 </style>
+
+
+
+
+

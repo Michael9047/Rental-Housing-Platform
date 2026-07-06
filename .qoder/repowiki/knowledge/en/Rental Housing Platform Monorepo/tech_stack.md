@@ -1,0 +1,1 @@
+Docker Compose (two profiles: dev + prod) is the universal orchestrator across every child; PostgreSQL 16/pgvector and Redis 7 form the shared data plane used by the backend and Celery workers.

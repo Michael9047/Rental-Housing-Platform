@@ -1,0 +1,7 @@
+Three-layer layout inside the module:
+- `models/booking.py` defines the SQLAlchemy ORM `Booking` entity (with `BookingStatus` enum) plus FKs to `users` (tenant_id, landlord_id) and `properties`, inherving `TimestampMixin` for created_at/updated_at.
+- `schemas/booking.py` provides Pydantic v2 DTOs (`BookingCreate`, `BookingUpdate`, `BookingRead`) used as FastAPI request/response models; `BookingRead` uses `ConfigDict(from_attributes=True)` to serialize ORM objects directly.
+- `api/v1/routes/bookings.py` exposes a single `APIRouter` with five endpoints (POST /, GET /, GET /{id}, PATCH /{id}/status, PATCH /{id}/cancel). Route handlers are thin: they validate role-based access via `Depends(require_tenant|require_landlord|get_current_user)`, delegate persistence to `BookingService`, and translate domain errors (`ValueError`) into HTTP 409.
+- `services/booking_service.py` owns all business logic — duplicate-pending-booking guard, deposit/service_fee derivation from the linked `Property`, status transitions, listing by tenant/landlord, and side effects. Side effects are delegated outward: `NotificationService` is called for DB+push notifications, and Celery task `send_booking_confirm_message` is invoked asynchronously for tenant confirmation.
+
+Dependency direction is strictly routes → service → models/schemas + cross-cutting services (`PropertyService`, `NotificationService`). The router never touches SQLAlchemy directly.
