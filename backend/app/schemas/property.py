@@ -24,9 +24,13 @@ class PropertyBase(BaseModel):
     longitude: Decimal | None = Field(default=None, ge=-180, le=180)
     deposit_amount: int | None = None
     service_fee_rate: float | None = None
+    room_number: str | None = Field(default=None, max_length=20)
+    floor: int | None = Field(default=None, ge=0)
 
 class PropertyCreate(PropertyBase):
     landlord_id: int
+    institute_id: int
+    image_urls: list[str] | None = None
 
 
 class PropertyUpdate(BaseModel):
@@ -43,6 +47,11 @@ class PropertyUpdate(BaseModel):
     status: PropertyStatus | None = None
     latitude: Decimal | None = Field(default=None, ge=-90, le=90)
     longitude: Decimal | None = Field(default=None, ge=-180, le=180)
+    deposit_amount: int | None = None
+    service_fee_rate: float | None = None
+    room_number: str | None = Field(default=None, max_length=20)
+    floor: int | None = Field(default=None, ge=0)
+    institute_id: int | None = None
 
 
 class PropertyRead(PropertyBase):
@@ -50,6 +59,8 @@ class PropertyRead(PropertyBase):
 
     id: int
     landlord_id: int
+    institute_id: int | None = None
+    institute_name: str | None = None
     created_at: datetime
     updated_at: datetime
     images: list[PropertyImageRead] = []
@@ -68,6 +79,8 @@ class PropertySearchResult(PropertyBase):
 
     id: int
     landlord_id: int
+    institute_id: int | None = None
+    institute_name: str | None = None
     created_at: datetime
     updated_at: datetime
     images: list[PropertyImageRead] = []

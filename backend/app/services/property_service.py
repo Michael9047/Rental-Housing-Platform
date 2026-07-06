@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import threading
+import uuid
 from decimal import Decimal
 from typing import Any
 
@@ -46,10 +47,38 @@ class PropertyService:
         self.session = session
 
     async def create(self, property_in: PropertyCreate) -> Property:
-        property_obj = Property(**property_in.model_dump())
+        dumped = property_in.model_dump()
+        image_urls = dumped.pop("image_urls", None) or []
+        logger.info("Creating property: institute_id=%s, keys=%s", dumped.get('institute_id'), list(dumped.keys()))
+
+        # AI风险评估
+        from app.services.risk_evaluator import RiskEvaluator
+        evaluator = RiskEvaluator()
+        risk = evaluator.evaluate_single(dumped)
+        if risk.should_set_pending:
+            dumped["status"] = "pending_review"
+            logger.info("Property flagged for review: %s", risk.warnings)
+
+        property_obj = Property(**dumped)
         self.session.add(property_obj)
         await self.session.commit()
         await self.session.refresh(property_obj)
+
+        # 绑定临时上传的图片到房源
+        if image_urls:
+            await self._attach_temp_images(property_obj.id, image_urls)
+            # 刷新对象以加载刚创建的 images 关系
+            await self.session.refresh(property_obj, attribute_names=['images'])
+
+        # Eager-load institute and set institute_name
+        if property_obj.institute_id:
+            from sqlalchemy.orm import selectinload
+            from app.models.institute import Institute
+            stmt = select(Property).where(Property.id == property_obj.id).options(selectinload(Property.institute))
+            result = await self.session.execute(stmt)
+            loaded = result.scalars().first()
+            if loaded and loaded.institute:
+                object.__setattr__(property_obj, 'institute_name', loaded.institute.name)
 
         try:
             await POIService(self.session).generate_poi_for_property(property_obj)
@@ -60,14 +89,18 @@ class PropertyService:
         return property_obj
 
     async def get(self, property_id: int) -> Property | None:
-        property_obj = await self.session.get(Property, property_id)
+        from sqlalchemy.orm import selectinload
+        from app.models.poi import PropertyPOI
+        stmt = select(Property).where(Property.id == property_id).options(selectinload(Property.institute))
+        result = await self.session.execute(stmt)
+        property_obj = result.scalars().first()
         if property_obj is not None:
-            # Preload POI data
-            from sqlalchemy import select as sa_select
-            from app.models.poi import PropertyPOI
-            stmt = sa_select(PropertyPOI).where(PropertyPOI.property_id == property_id)
-            result = await self.session.execute(stmt)
-            poi = result.scalars().first()
+            if property_obj.institute:
+                object.__setattr__(property_obj, 'institute_name', property_obj.institute.name)
+            poi_result = await self.session.execute(
+                select(PropertyPOI).where(PropertyPOI.property_id == property_id)
+            )
+            poi = poi_result.scalars().first()
             if poi:
                 property_obj.poi = poi
         return property_obj
@@ -79,14 +112,48 @@ class PropertyService:
         limit: int = 20,
         district: str | None = None,
         status: str | None = None,
+        landlord_id: int | None = None,
+        keyword: str | None = None,
+        property_type: str | None = None,
+        price_min: float | None = None,
+        price_max: float | None = None,
     ) -> list[Property]:
-        stmt = select(Property).order_by(Property.created_at.desc()).offset(skip).limit(limit)
+        from sqlalchemy.orm import selectinload
+        from sqlalchemy import or_
+
+        stmt = (select(Property)
+                .options(selectinload(Property.institute))
+                .order_by(Property.created_at.desc())
+                .offset(skip).limit(limit))
         if district:
             stmt = stmt.where(Property.district == district)
         if status:
             stmt = stmt.where(Property.status == status)
+        elif landlord_id is None:
+            stmt = stmt.where(Property.status == "available")
+        if landlord_id is not None:
+            stmt = stmt.where(Property.landlord_id == landlord_id)
+        # 关键词模糊搜索：房号/标题/地址
+        if keyword and keyword.strip():
+            kw = f"%{keyword.strip()}%"
+            stmt = stmt.where(or_(
+                Property.room_number.ilike(kw),
+                Property.title.ilike(kw),
+                Property.address.ilike(kw),
+            ))
+        if property_type:
+            stmt = stmt.where(Property.property_type == property_type)
+        if price_min is not None:
+            stmt = stmt.where(Property.price_monthly >= price_min)
+        if price_max is not None:
+            stmt = stmt.where(Property.price_monthly <= price_max)
+
         result = await self.session.scalars(stmt)
-        return list(result)
+        properties = list(result)
+        for p in properties:
+            if p.institute and p.institute.name:
+                object.__setattr__(p, 'institute_name', p.institute.name)
+        return properties
 
     async def search(
         self,
@@ -99,39 +166,9 @@ class PropertyService:
         property_type: str | None = None,
         limit: int = 20,
     ) -> list[tuple[Property, float | None]]:
-        # --- Cache check for non-vector searches (cacheable) ---
-        if not query:
-            cache_params = {
-                "district": district,
-                "price_min": str(price_min) if price_min else None,
-                "price_max": str(price_max) if price_max else None,
-                "bedrooms": bedrooms,
-                "property_type": property_type,
-                "limit": limit,
-            }
-            cache_key_str = _cache_key("filter", **cache_params)
-            redis = await _get_redis()
-            if redis is not None:
-                try:
-                    cached = await redis.get(cache_key_str)
-                    if cached:
-                        logger.debug("Search cache hit for key=%s", cache_key_str)
-                        rows_data = json.loads(cached)
-                        await redis.aclose()
-                        return [
-                            (Property(**row["property"]), row["similarity"])
-                            for row in rows_data
-                        ]
-                except Exception:
-                    logger.debug("Cache retrieval failed, proceeding without cache.")
-                finally:
-                    if redis is not None:
-                        try:
-                            await redis.aclose()
-                        except Exception:
-                            pass
-
         # --- Build query ---
+        from sqlalchemy.orm import selectinload
+
         if query:
             from app.services.embedding_service import EmbeddingService
             from pgvector.sqlalchemy import l2_distance
@@ -142,12 +179,14 @@ class PropertyService:
             similarity_expr = l2_distance(Property.embedding, query_vec).label("similarity")
             stmt = (
                 select(Property, similarity_expr)
+                .options(selectinload(Property.institute))
                 .where(Property.embedding.isnot(None))
             )
             stmt = stmt.order_by(similarity_expr)
         else:
             stmt = (
                 select(Property, text("NULL AS similarity"))
+                .options(selectinload(Property.institute))
             )
             stmt = stmt.order_by(Property.created_at.desc())
 
@@ -162,35 +201,18 @@ class PropertyService:
         if property_type:
             stmt = stmt.where(Property.property_type == property_type)
 
+        # 公开搜索：只展示可租房源
+        stmt = stmt.where(Property.status == "available")
+
         stmt = stmt.limit(limit)
         result = await self.session.execute(stmt)
         rows = result.all()
         results = [(row[0], row[1]) for row in rows]
 
-        # --- Cache non-vector results ---
-        if not query:
-            redis = await _get_redis()
-            if redis is not None:
-                try:
-                    rows_data = [
-                        {
-                            "property": {
-                                k: (str(v) if isinstance(v, Decimal) else v)
-                                for k, v in row[0].__dict__.items()
-                                if not k.startswith("_")
-                            },
-                            "similarity": row[1],
-                        }
-                        for row in rows
-                    ]
-                    await redis.setex(cache_key_str, CACHE_TTL_SECONDS, json.dumps(rows_data, default=str))
-                except Exception:
-                    logger.debug("Cache write failed, continuing.")
-                finally:
-                    try:
-                        await redis.aclose()
-                    except Exception:
-                        pass
+        # 注入 institute_name（与 list() 方法保持一致）
+        for prop, _sim in results:
+            if prop.institute and prop.institute.name:
+                object.__setattr__(prop, 'institute_name', prop.institute.name)
 
         return results
 
@@ -221,6 +243,43 @@ class PropertyService:
         await self.session.delete(property_obj)
         await self.session.commit()
         return True
+
+    async def _attach_temp_images(self, property_id: int, urls: list[str]) -> None:
+        """将临时上传的图片绑定到房源，移动文件并创建 PropertyImage 记录。"""
+        import shutil
+        from pathlib import Path
+
+        from app.core.config import get_settings
+        from app.models.property_image import PropertyImage
+
+        settings = get_settings()
+        upload_dir = Path(settings.upload_dir).resolve()
+        prop_dir = upload_dir / "properties" / str(property_id)
+        prop_dir.mkdir(parents=True, exist_ok=True)
+
+        for sort_order, url in enumerate(urls):
+            # URL 格式: /api/v1/uploads/temp/{user_id}/{filename} 或 /api/v1/uploads/temp/batch/{user_id}/{filename}
+            relative = url.replace("/api/v1/uploads/", "")
+            src = upload_dir / relative
+            if not src.exists():
+                continue
+
+            ext = src.suffix
+            new_name = f"{uuid.uuid4().hex}{ext}"
+            dst = prop_dir / new_name
+            shutil.move(str(src), str(dst))
+
+            img = PropertyImage(
+                property_id=property_id,
+                filename=f"properties/{property_id}/{new_name}",
+                original_name=src.name,
+                mime_type="image/" + ext.lstrip(".") if ext.lstrip(".") in ("jpeg", "jpg", "png", "webp") else "image/jpeg",
+                file_size=dst.stat().st_size,
+                sort_order=sort_order,
+                is_primary=(sort_order == 0),
+            )
+            self.session.add(img)
+        await self.session.commit()
 
     @staticmethod
     def _dispatch_embedding_task(property_id: int) -> None:

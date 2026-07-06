@@ -1,15 +1,19 @@
 ﻿// Matches backend: app/models/property.py
 export type PropertyType = 'apartment' | 'house' | 'studio' | 'shared'
-export type PropertyStatus = 'available' | 'rented' | 'maintenance' | 'offline'
+export type PropertyStatus = 'available' | 'pending_review' | 'rented' | 'maintenance' | 'offline'
 
 // Matches backend: app/schemas/property.py PropertyRead
 export interface Property {
   id: number
   landlord_id: number
+  institute_id?: number | null
+  institute_name?: string | null
   title: string
   description: string
   deposit_amount?: number
   service_fee_rate?: number | null
+  room_number?: string | null
+  floor?: number | null
   address: string
   district: string
   country?: string
@@ -44,6 +48,11 @@ export interface PropertyCreate {
   latitude?: number
   longitude?: number
   landlord_id: number
+  institute_id: number
+  deposit_amount?: number
+  service_fee_rate?: number
+  room_number?: string
+  floor?: number
 }
 
 export interface PropertyUpdate {
@@ -60,6 +69,11 @@ export interface PropertyUpdate {
   status?: PropertyStatus
   latitude?: number
   longitude?: number
+  deposit_amount?: number
+  service_fee_rate?: number
+  room_number?: string
+  floor?: number
+  institute_id?: number
 }
 
 // Matches backend: app/schemas/property.py PropertySearchResult

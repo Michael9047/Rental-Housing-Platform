@@ -26,12 +26,12 @@ export interface GeocodeResult {
 }
 
 export const propertyService = {
-  list(params?: { skip?: number; limit?: number; district?: string; status?: string }): Promise<Property[]> {
+  list(params?: { skip?: number; limit?: number; district?: string; status?: string; landlord_id?: number }): Promise<Property[]> {
     return api.get('/properties', { params }).then((r) => r.data)
   },
 
   search(params: PropertySearchParams): Promise<PropertySearchResult[]> {
-    return api.get('/properties/search', { params }).then((r) => r.data)
+    return api.get('/properties/search', { params: { ...params, _t: Date.now() } }).then((r) => r.data)
   },
 
   getById(id: number | string): Promise<Property> {
@@ -82,5 +82,24 @@ export const propertyService = {
   // POI
   getPropertyPOI(propertyId: number | string): Promise<PropertyPOI | null> {
     return api.get(`/pois/${propertyId}`).then((r) => r.data).catch(() => null)
+  },
+
+  // ---- ML ----
+  /** AI 深度解析房源描述 */
+  parseDescription(rawText: string): Promise<import('@/types/admin').ParsedProperty> {
+    return api.post('/ml/parse', { raw_text: rawText }).then((r) => r.data)
+  },
+
+  /** 智能租金预估 */
+  estimateRent(params: {
+    area_sqm?: number
+    bedrooms?: number
+    bathrooms?: number
+    district?: string
+    property_type?: string
+    deposit_amount?: number
+    service_fee_rate?: number
+  }): Promise<import('@/types/admin').RentEstimate> {
+    return api.get('/ml/rent-estimate', { params }).then((r) => r.data)
   },
 }

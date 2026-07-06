@@ -48,10 +48,11 @@ class PropertyType(str, enum.Enum):
 
 
 class PropertyStatus(str, enum.Enum):
-    available = "available"
-    rented = "rented"
-    maintenance = "maintenance"
-    offline = "offline"
+    available = "available"          # 正常上架（学生端可见）
+    pending_review = "pending_review"  # 待人工审核（AI标记异常，学生端不可见）
+    rented = "rented"               # 已出租
+    maintenance = "maintenance"      # 维护中
+    offline = "offline"             # 已下线
 
 
 class Property(TimestampMixin, Base):
@@ -67,9 +68,10 @@ class Property(TimestampMixin, Base):
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
     landlord_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
 
-    country: Mapped[str] = mapped_column(String(2), default="CN", nullable=False, index=True)
-
     institute_id: Mapped[int | None] = mapped_column(ForeignKey("institutes.id", ondelete="SET NULL"), index=True, nullable=True)
+
+    room_number: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    floor: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     title: Mapped[str] = mapped_column(String(200), nullable=False)
     description: Mapped[str | None] = mapped_column(SAText)

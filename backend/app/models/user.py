@@ -40,9 +40,6 @@ class User(TimestampMixin, Base):
         default=UserStatus.active,
         nullable=False,
     )
-    email_verified: Mapped[bool] = mapped_column(default=False, nullable=False)
-    phone_verified: Mapped[bool] = mapped_column(default=False, nullable=False)
-
     properties: Mapped[list["Property"]] = relationship(
         back_populates="landlord",
         cascade="all, delete-orphan",

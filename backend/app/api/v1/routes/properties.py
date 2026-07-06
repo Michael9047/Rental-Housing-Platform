@@ -85,6 +85,8 @@ async def search_properties(
                 )
                 for img in (prop.images or [])
             ],
+            institute_id=prop.institute_id,
+            institute_name=getattr(prop, 'institute_name', None),
             similarity=sim,
         )
         for prop, sim in results
@@ -95,15 +97,25 @@ async def search_properties(
 async def list_properties(
     session: AsyncSession = Depends(get_db_session),
     skip: int = Query(default=0, ge=0),
-    limit: int = Query(default=20, ge=1, le=100),
+    limit: int = Query(default=20, ge=1, le=500),
     district: str | None = Query(default=None),
     status_filter: str | None = Query(default=None, alias="status"),
+    landlord_id: int | None = Query(default=None),
+    keyword: str | None = Query(default=None, description="搜索房号/标题/地址"),
+    property_type: str | None = Query(default=None, description="户型筛选"),
+    price_min: float | None = Query(default=None, ge=0),
+    price_max: float | None = Query(default=None, ge=0),
 ) -> list[PropertyRead]:
     return await PropertyService(session).list(
         skip=skip,
         limit=limit,
         district=district,
         status=status_filter,
+        landlord_id=landlord_id,
+        keyword=keyword,
+        property_type=property_type,
+        price_min=price_min,
+        price_max=price_max,
     )
 
 

@@ -14,7 +14,7 @@ export const usePropertyStore = defineStore('property', () => {
   const propertyImages = ref<PropertyImage[]>([])
   const imagesLoading = ref(false)
 
-  async function fetchList(params?: { skip?: number; limit?: number; district?: string; status?: string }) {
+  async function fetchList(params?: { skip?: number; limit?: number; district?: string; status?: string; landlord_id?: number }) {
     loading.value = true
     try {
       properties.value = await propertyService.list(params)
@@ -78,6 +78,10 @@ export const usePropertyStore = defineStore('property', () => {
     }
   }
 
+  async function fetchImagesRef(propertyId: number): Promise<PropertyImage[]> {
+    return await propertyService.listImages(propertyId)
+  }
+
   async function uploadImages(propertyId: number, files: File[]): Promise<PropertyImage[]> {
     imagesLoading.value = true
     try {
@@ -128,6 +132,7 @@ export const usePropertyStore = defineStore('property', () => {
     update,
     remove,
     fetchImages,
+    fetchImagesRef,
     uploadImages,
     deleteImage,
     setPrimaryImage,

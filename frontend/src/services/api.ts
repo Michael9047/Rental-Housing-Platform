@@ -21,12 +21,28 @@ api.interceptors.request.use(
   (error) => Promise.reject(error),
 )
 
+// Helper: extract error message from backend's {error:{message:"..."}} format
+// or standard {detail:"..."} format (both are used in this project)
+export function extractErrorMessage(error: any): string | null {
+  // Backend format: { error: { message: "..." } }
+  const msg = error.response?.data?.error?.message
+  if (msg && typeof msg === 'string') return msg
+  // Standard FastAPI format: { detail: "..." }
+  const detail = error.response?.data?.detail
+  if (detail && typeof detail === 'string') return detail
+  // Array of validation errors
+  if (Array.isArray(detail)) {
+    return detail.map((d: any) => d.msg || '').filter(Boolean).join('; ')
+  }
+  return null
+}
+
 // Response interceptor: handle 401, show errors
 api.interceptors.response.use(
   (response) => response,
   (error) => {
     const isLoginPage = window.location.pathname === '/login'
-    
+
     if (error.response?.status === 401) {
       // Don't redirect during login attempt - just show the error
       if (!isLoginPage) {
@@ -34,21 +50,12 @@ api.interceptors.response.use(
         localStorage.removeItem('user')
         window.location.href = '/login'
       }
-      // Still show the error message
-      const detail = error.response?.data?.detail
-      if (detail && typeof detail === 'string') {
-        ElMessage.error(detail)
-      }
+      const message = extractErrorMessage(error)
+      if (message) ElMessage.error(message)
       return Promise.reject(error)
     }
-    const detail = error.response?.data?.detail
-    if (detail) {
-      if (Array.isArray(detail)) {
-        detail.forEach((d: { msg: string }) => ElMessage.error(d.msg))
-      } else if (typeof detail === 'string') {
-        ElMessage.error(detail)
-      }
-    }
+    const message = extractErrorMessage(error)
+    if (message) ElMessage.error(message)
     return Promise.reject(error)
   },
 )

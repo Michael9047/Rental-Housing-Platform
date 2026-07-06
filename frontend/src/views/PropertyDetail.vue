@@ -353,7 +353,7 @@ const loadingProperty = ref(false)
 const togglingFavorite = ref(false)
 
 const statusLabels: Record<PropertyStatus, string> = {
-  available: '可租', rented: '已租', maintenance: '维护中', offline: '已下架',
+  available: '可租', pending_review: '审核中', rented: '已租', maintenance: '维护中', offline: '已下架',
 }
 const typeLabels: Record<PropertyType, string> = {
   apartment: '公寓', house: '别墅', studio: '单间', shared: '合租',
@@ -362,7 +362,7 @@ const typeLabels: Record<PropertyType, string> = {
 const statusTagType = computed(() => {
   if (!property.value) return 'info'
   const map: Record<PropertyStatus, string> = {
-    available: 'success', rented: 'warning', maintenance: 'info', offline: 'danger',
+    available: 'success', pending_review: 'warning', rented: 'warning', maintenance: 'info', offline: 'danger',
   }
   return map[property.value.status]
 })

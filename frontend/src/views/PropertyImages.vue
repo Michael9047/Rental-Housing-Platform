@@ -61,9 +61,7 @@
       <div v-if="fileList.length > 0" class="upload-actions">
 
         <el-button type="primary" :loading="uploading" @click="handleUpload">
-
-          ?? {{ fileList.length }} ???
-
+          上传 {{ fileList.length }} 张图片
         </el-button>
 
         <el-button @click="fileList = []">清空</el-button>
@@ -302,7 +300,7 @@ async function handleDelete(imageId: number) {
 
     await propertyStore.deleteImage(propertyId, imageId)
 
-    ElMessage.success('设置成功')
+    ElMessage.success('删除成功')
 
   } catch {
 
