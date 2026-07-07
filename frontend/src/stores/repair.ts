@@ -2,7 +2,7 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { repairService, workerService } from '@/services/repair'
-import type { RepairRead, RepairWorker, RepairCreate } from '@/types/repair'
+import type { RepairRead, RepairWorker, RepairCreate, WorkerStatusUpdate } from '@/types/repair'
 
 export const useRepairStore = defineStore('repair', () => {
   // ── 报修工单 ──

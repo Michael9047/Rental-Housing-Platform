@@ -165,11 +165,30 @@ const routes: RouteRecordRaw[] = [
         component: () => import('@/views/repair/RepairDetail.vue'),
         meta: { requiresAuth: true },
       },
+      // ---- 房东报修管理 ----
+      {
+        path: 'workspace/repairs',
+        name: 'landlord-repairs',
+        component: () => import('@/views/landlord/LandlordRepairs.vue'),
+        meta: { requiresAuth: true, requiresLandlord: true },
+      },
+      {
+        path: 'workspace/workers',
+        name: 'landlord-workers',
+        component: () => import('@/views/landlord/WorkerManagement.vue'),
+        meta: { requiresAuth: true, requiresLandlord: true },
+      },
       // ---- 维修师傅 ----
       {
         path: 'worker/dashboard',
         name: 'worker-dashboard',
         component: () => import('@/views/maintenance/WorkerDashboard.vue'),
+        meta: { requiresAuth: true, requiresMaintenance: true },
+      },
+      {
+        path: 'worker/orders',
+        name: 'worker-orders',
+        component: () => import('@/views/maintenance/WorkerOrders.vue'),
         meta: { requiresAuth: true, requiresMaintenance: true },
       },
       // ---- BD经理 ----
