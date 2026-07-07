@@ -39,10 +39,12 @@ export const adminService = {
   },
 
   // ---- Import ----
-  uploadImport(file: File, instituteId?: number): Promise<ImportResult> {
+  uploadImport(file: File, instituteId?: number, mode?: string): Promise<ImportResult> {
     const formData = new FormData()
     formData.append('file', file)
-    const params = instituteId ? { institute_id: instituteId } : {}
+    const params: Record<string, any> = {}
+    if (instituteId) params.institute_id = instituteId
+    if (mode) params.mode = mode
     return api.post('/import/upload', formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
       params,

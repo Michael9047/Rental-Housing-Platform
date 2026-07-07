@@ -46,6 +46,7 @@ async def upload_import(
     session: AsyncSession = Depends(get_db_session),
     current_user: User = Depends(require_landlord),
     institute_id: int | None = Query(default=None, description="公寓ID，批量导入的所有房源归属此公寓"),
+    mode: str | None = Query(default="flexible", description="导入模式: flexible=跳过错误行, strict=有错全部回滚"),
 ) -> dict:
     ext = _validate_upload(file)
     content = await file.read()
@@ -74,6 +75,7 @@ async def upload_import(
         file_content=content,
         landlord_id=current_user.id,
         institute_id=institute_id,
+        mode=mode or "flexible",
     )
 
     await AuditService(session).create_log(

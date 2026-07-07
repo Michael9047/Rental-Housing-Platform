@@ -145,11 +145,12 @@
     </el-dialog>
 
     <!-- 提交成功弹窗 -->
-    <el-dialog v-model="showSuccessDialog" title="发布成功" width="400px" :close-on-click-modal="false">
-      <el-result icon="success" title="房源已成功发布！" :sub-title="createdStatus === 'pending_review' ? '状态：待人工审核，审核通过后学生端可见' : '状态：已上架，学生端可见'" />
+    <el-dialog v-model="showSuccessDialog" :title="isEdit ? '保存成功' : '发布成功'" width="420px" :close-on-click-modal="false">
+      <el-result icon="success" :title="isEdit ? '房源信息已更新！' : '房源已成功发布！'" :sub-title="createdStatus === 'pending_review' ? '状态：待人工审核，审核通过后学生端可见' : '状态：已上架，学生端可见'" />
       <template #footer>
+        <el-button type="primary" @click="goToManage">返回房源管理</el-button>
         <el-button @click="goToDetail" v-if="createdId">查看房源详情</el-button>
-        <el-button type="primary" @click="continueAdd">继续新增房间</el-button>
+        <el-button v-if="!isEdit" type="primary" @click="continueAdd">继续新增房间</el-button>
       </template>
     </el-dialog>
   </div>
@@ -301,6 +302,7 @@ async function handleSubmit(){
   }finally{submitting.value=false}
 }
 function goToDetail(){showSuccessDialog.value=false;if(createdId.value)router.push(`/property/${createdId.value}`)}
+function goToManage(){showSuccessDialog.value=false;router.push('/property/manage')}
 function continueAdd(){showSuccessDialog.value=false;Object.assign(f,{title:'',address:'',room_number:'',price_monthly:undefined,deposit_amount:undefined,area_sqm:undefined,bedrooms:0,bathrooms:1,description:'',latitude:'',longitude:''});selectedAmenities.value=[];parseResult.value=null;showRentEstimate.value=false;rawText.value='';formRef.value?.resetFields()}
 
 function toNum(v: any): number | undefined {

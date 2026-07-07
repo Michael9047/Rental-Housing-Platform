@@ -1,7 +1,9 @@
 ﻿import enum
+from datetime import date, datetime
 from decimal import Decimal
 
-from sqlalchemy import Boolean, CheckConstraint, Enum, Float, ForeignKey, Index, Integer, Numeric, String, Text as SAText
+from sqlalchemy import Boolean, CheckConstraint, Date, DateTime, Enum, Float, ForeignKey, Index, Integer, Numeric, String, Text as SAText
+from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.types import TypeDecorator
 
@@ -54,6 +56,25 @@ class PropertyStatus(str, enum.Enum):
     maintenance = "maintenance"      # 维护中
     offline = "offline"             # 已下线
 
+# 合法状态流转表
+VALID_STATUS_TRANSITIONS: dict[PropertyStatus, set[PropertyStatus]] = {
+    PropertyStatus.available: {PropertyStatus.offline, PropertyStatus.rented, PropertyStatus.maintenance},
+    PropertyStatus.pending_review: {PropertyStatus.available, PropertyStatus.offline},
+    PropertyStatus.rented: {PropertyStatus.maintenance, PropertyStatus.offline},
+    PropertyStatus.maintenance: {PropertyStatus.available, PropertyStatus.offline},
+    PropertyStatus.offline: {PropertyStatus.available, PropertyStatus.pending_review},
+}
+
+
+class DepositType(str, enum.Enum):
+    one_month = "one_month"       # 押一付一
+    one_three = "one_three"       # 押一付三
+    two_month = "two_month"       # 押二付一
+    three_month = "three_month"   # 押三付一
+    half_month = "half_month"     # 押半付一
+    free = "free"                 # 免押金
+    custom = "custom"             # 自定义
+
 
 class Property(TimestampMixin, Base):
     __tablename__ = "properties"
@@ -97,6 +118,16 @@ class Property(TimestampMixin, Base):
 
     deposit_amount: Mapped[int | None] = mapped_column(Integer, nullable=True, default=1000)
     service_fee_rate: Mapped[float | None] = mapped_column(Float, nullable=True, default=0.10)
+
+    # ── 新增字段 ──
+    amenities: Mapped[list[str] | None] = mapped_column(ARRAY(String(30)), nullable=True)
+    available_from: Mapped[date | None] = mapped_column(Date, nullable=True)
+    min_stay_months: Mapped[int] = mapped_column(Integer, default=3, nullable=False)
+    deposit_type: Mapped[DepositType | None] = mapped_column(
+        Enum(DepositType, name="deposit_type"), nullable=True, default=None
+    )
+    version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
 
     embedding: Mapped[list[float] | None] = mapped_column(VectorColumn)
 

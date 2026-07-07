@@ -1,8 +1,7 @@
-﻿// Matches backend: app/models/property.py
 export type PropertyType = 'apartment' | 'house' | 'studio' | 'shared'
 export type PropertyStatus = 'available' | 'pending_review' | 'rented' | 'maintenance' | 'offline'
+export type DepositType = 'one_month' | 'one_three' | 'two_month' | 'three_month' | 'half_month' | 'free' | 'custom'
 
-// Matches backend: app/schemas/property.py PropertyRead
 export interface Property {
   id: number
   landlord_id: number
@@ -25,6 +24,12 @@ export interface Property {
   status: PropertyStatus
   latitude: number | null
   longitude: number | null
+  amenities?: string[] | null
+  available_from?: string | null
+  min_stay_months?: number
+  deposit_type?: DepositType | null
+  version: number
+  deleted_at?: string | null
   created_at: string
   updated_at: string
   images?: PropertyImage[]
@@ -32,7 +37,6 @@ export interface Property {
   similarity?: number | null
 }
 
-// Matches backend: app/schemas/property.py PropertyCreate
 export interface PropertyCreate {
   title: string
   description?: string
@@ -53,6 +57,11 @@ export interface PropertyCreate {
   service_fee_rate?: number
   room_number?: string
   floor?: number
+  amenities?: string[]
+  available_from?: string
+  min_stay_months?: number
+  deposit_type?: DepositType
+  image_urls?: string[]
 }
 
 export interface PropertyUpdate {
@@ -74,29 +83,37 @@ export interface PropertyUpdate {
   room_number?: string
   floor?: number
   institute_id?: number
+  amenities?: string[]
+  available_from?: string
+  min_stay_months?: number
+  deposit_type?: DepositType
+  version?: number
 }
 
-// Matches backend: app/schemas/property.py PropertySearchResult
 export interface PropertySearchResult extends Property {
   similarity: number | null
 }
 
-// Search parameters matching backend query params (GET /properties/search)
-// Note: country/overseas_area are frontend-only filters; backend maps them to district
 export interface PropertySearchParams {
-  q?: string              // Natural language query → backend pgvector search
-  country?: string         // ⚠️ Frontend filter; mapped to district before sending
-  district?: string        // Backend-supported
-  overseas_area?: string   // ⚠️ Frontend filter; mapped to district before sending
-  price_min?: number       // Backend-supported
-  price_max?: number       // Backend-supported
-  bedrooms?: number        // Backend-supported
-  property_type?: PropertyType  // Backend-supported
-  limit?: number           // Backend-supported (1-100)
+  q?: string
+  country?: string
+  district?: string
+  overseas_area?: string
+  price_min?: number
+  price_max?: number
+  bedrooms?: number
+  property_type?: PropertyType
+  limit?: number
 }
 
+export interface PropertyListResponse {
+  items: Property[]
+  total: number
+  page: number
+  page_size: number
+  total_pages: number
+}
 
-// Property Image
 export interface PropertyImage {
   id: number
   property_id: number
@@ -108,4 +125,3 @@ export interface PropertyImage {
   is_primary: boolean
   created_at: string
 }
-

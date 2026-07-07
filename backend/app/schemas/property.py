@@ -1,11 +1,10 @@
-﻿from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.models.property import DepositType, PropertyStatus, PropertyType
 from app.schemas.property_image import PropertyImageRead
-
-from app.models.property import PropertyStatus, PropertyType
 
 
 class PropertyBase(BaseModel):
@@ -26,6 +25,12 @@ class PropertyBase(BaseModel):
     service_fee_rate: float | None = None
     room_number: str | None = Field(default=None, max_length=20)
     floor: int | None = Field(default=None, ge=0)
+    # ── 新增字段 ──
+    amenities: list[str] | None = None
+    available_from: date | None = None
+    min_stay_months: int = Field(default=3, ge=1)
+    deposit_type: DepositType | None = None
+
 
 class PropertyCreate(PropertyBase):
     landlord_id: int
@@ -52,6 +57,12 @@ class PropertyUpdate(BaseModel):
     room_number: str | None = Field(default=None, max_length=20)
     floor: int | None = Field(default=None, ge=0)
     institute_id: int | None = None
+    # ── 新增字段 ──
+    amenities: list[str] | None = None
+    available_from: date | None = None
+    min_stay_months: int | None = Field(default=None, ge=1)
+    deposit_type: DepositType | None = None
+    version: int | None = Field(default=None, ge=1)
 
 
 class PropertyRead(PropertyBase):
@@ -61,6 +72,8 @@ class PropertyRead(PropertyBase):
     landlord_id: int
     institute_id: int | None = None
     institute_name: str | None = None
+    version: int = 1
+    deleted_at: datetime | None = None
     created_at: datetime
     updated_at: datetime
     images: list[PropertyImageRead] = []
@@ -71,7 +84,6 @@ class PropertyRead(PropertyBase):
             if img.is_primary:
                 return f"/api/v1/uploads/{img.filename}"
         return None
-
 
 
 class PropertySearchResult(PropertyBase):
@@ -92,3 +104,12 @@ class PropertySearchResult(PropertyBase):
             if img.is_primary:
                 return f"/api/v1/uploads/{img.filename}"
         return None
+
+
+# ── 分页响应 ──
+class PropertyListResponse(BaseModel):
+    items: list[PropertyRead]
+    total: int
+    page: int
+    page_size: int
+    total_pages: int

@@ -87,7 +87,10 @@
       </div>
 
       <div style="margin-top:12px;display:flex;gap:12px">
-        <el-radio-group v-model="importMode"><el-radio value="flexible">柔性模式（合规行直接入库，错误行跳过）</el-radio><el-radio value="strict">严格模式（有错全部不入库）</el-radio></el-radio-group>
+        <el-radio-group v-model="importMode">
+          <el-radio label="flexible">柔性模式（合规行直接入库，错误行跳过）</el-radio>
+          <el-radio label="strict">严格模式（有错全部不入库）</el-radio>
+        </el-radio-group>
       </div>
       <div style="margin-top:16px;display:flex;gap:12px">
         <el-button size="large" @click="step=1">← 重新选择文件</el-button>
@@ -99,9 +102,9 @@
     <el-card v-if="step===3 && batchResult" shadow="never">
       <template #header><span>{{ importIsError?'❌ 导入失败':batchResult.failed_records>0?'⚠️ 部分成功':'✅ 导入全部成功' }}</span></template>
       <el-alert v-if="fileLevelError" :title="fileLevelError.error" type="error" :closable="false" show-icon style="margin-bottom:16px" />
-      <el-row v-if="!fileLevelError" :gutter="20"><el-col :span="6"><el-statistic title="总计" :value="batchResult.total_records" /></el-col><el-col :span="6"><el-statistic title="成功"><template #default><span style="color:#67c23a;font-size:28px;font-weight:700">{{ batchResult.success_records }}</span></template></el-statistic></el-col><el-col :span="6"><el-statistic title="失败"><template #default><span :style="{color:batchResult.failed_records>0?'#f56c6c':'#909399',fontSize:'28px',fontWeight:'700'}">{{ batchResult.failed_records }}</span></template></el-statistic></el-col><el-col :span="6"><el-statistic title="AI待复核"><template #default><span :style="{color:aiReviewCount>0?'#e6a23c':'#909399',fontSize:'28px',fontWeight:'700'}">{{ aiReviewCount }}</span></template></el-statistic></el-col></el-row>
+      <el-row v-if="batchResult.total_records>0" :gutter="20"><el-col :span="6"><el-statistic title="总计" :value="batchResult.total_records" /></el-col><el-col :span="6"><el-statistic title="成功"><template #default><span style="color:#67c23a;font-size:28px;font-weight:700">{{ batchResult.success_records }}</span></template></el-statistic></el-col><el-col :span="6"><el-statistic title="失败"><template #default><span :style="{color:batchResult.failed_records>0?'#f56c6c':'#909399',fontSize:'28px',fontWeight:'700'}">{{ batchResult.failed_records }}</span></template></el-statistic></el-col><el-col :span="6"><el-statistic title="AI待复核"><template #default><span :style="{color:aiReviewCount>0?'#e6a23c':'#909399',fontSize:'28px',fontWeight:'700'}">{{ aiReviewCount }}</span></template></el-statistic></el-col></el-row>
       <el-alert v-if="aiReviewCount>0" :title="'AI检测：'+aiReviewCount+' 条房源标记为「待人工审核」（租金/面积异常），已入库但学生端暂不展示，需管理员审核后上架'" type="warning" :closable="false" show-icon style="margin:12px 0" />
-      <div v-if="!fileLevelError&&rowErrors.length" class="error-section">
+      <div v-if="rowErrors.length" class="error-section">
         <h4>失败详情（{{ rowErrors.length }} 条）</h4>
         <el-table :data="rowErrors" border stripe size="small" max-height="400"><el-table-column prop="row" label="行号" width="70"/><el-table-column prop="error" label="错误原因" show-overflow-tooltip><template #default="{row}"><span :style="{color:row.type==='duplicate'?'#e6a23c':row.type==='missing_field'?'#f56c6c':row.type==='format_error'?'#409eff':'#909399'}">{{ row.error }}</span></template></el-table-column><el-table-column label="类型" width="90"><template #default="{row}"><el-tag :type="row.type==='duplicate'?'warning':row.type==='missing_field'?'danger':row.type==='format_error'?'':'info'" size="small">{{ row.type==='duplicate'?'重复':row.type==='missing_field'?'缺字段':row.type==='format_error'?'格式错':'其他' }}</el-tag></template></el-table-column></el-table>
         <div style="margin-top:12px;display:flex;gap:12px">
@@ -157,7 +160,8 @@ const REQUIRED = ['title','address','district','price_monthly']
 const missingRequired = computed(()=>{const m=new Set(Object.values(columnMapping.value.matched||{}));return REQUIRED.filter(f=>!m.has(f))})
 const missingRequiredLabel = computed(()=>missingRequired.value.map(f=>({title:'房源标题',address:'详细地址',district:'所在区域',price_monthly:'月租金'})[f]||f).join('、'))
 const importIsError = computed(()=>batchResult.value?.status==='failed'||(batchResult.value?.success_records===0&&batchResult.value?.failed_records===0))
-const fileLevelError = computed(()=>batchResult.value?.error_log?.find((e:any)=>e.row===0)||null)
+// fileLevelError: 文件级错误（整个文件解析失败），排除 AI 审核消息
+const fileLevelError = computed(()=>(batchResult.value?.error_log||[]).find((e:any)=>e.row===0&&e.type!=='ai_review')||null)
 const rowErrors = computed(()=>(batchResult.value?.error_log||[]).filter((e:any)=>e.row!==0&&e.type!=='ai_review'))
 const aiReviewCount = computed(()=>(batchResult.value?.error_log||[]).filter((e:any)=>e.type==='ai_review').reduce((s:number,e:any)=>s+(parseInt(e.error)||1),0)||0)
 
@@ -177,18 +181,53 @@ function parseFile(raw:File):Promise<{headers:string[];rows:Record<string,string
 async function processFile(raw:File){if(!raw?.name){ElMessage.error('无法读取文件');return};const ext=(raw.name.split('.').pop()||'').toLowerCase();if(!['csv','xlsx','xls'].includes(ext)){ElMessage.error('仅支持.csv/.xlsx/.xls');return};if(raw.size>10*1024*1024){ElMessage.error('文件不超过10MB');return};clearFile();batchFile.value=raw;try{const {headers,rows}=await parseFile(raw);if(!headers.length){ElMessage.error('文件无内容或格式无法识别');return};if(!rows.length){ElMessage.error('未检测到有效数据，仅有表头');batchFile.value=null;return};if(rows.length>500){ElMessage.error('最多500行，当前'+rows.length+'行');batchFile.value=null;return};batchHeaders.value=headers;batchPreviewRows.value=rows.slice(0,5);batchTotalRows.value=rows.length;const matched:Record<string,string>={};const unmatched:string[]=[];const cf:Record<string,string>={};for(const h of headers){if(!h){unmatched.push('(空)');continue};const k=h.toLowerCase().trim().replace(/\(.*?\)/g,'').replace(/\*$/,'');if(ALIAS[k]){matched[h]=ALIAS[k];cf[h]='exact'}else if(ALIAS[h.toLowerCase().trim()]){matched[h]=ALIAS[h.toLowerCase().trim()];cf[h]='exact'}else{unmatched.push(h)}};columnMapping.value={matched,unmatched,confidence:cf};const prices=rows.map(r=>parseFloat(r['price_monthly']||r['月租金']||r['price']||'0')).filter(p=>p>0);if(prices.length>=4){const s=[...prices].sort((a,b)=>a-b);const q1=s[Math.floor(s.length*.25)];const q3=s[Math.floor(s.length*.75)];const iqr=q3-q1;const up=q3+1.5*iqr;const lo=q1-1.5*iqr;const ol:number[]=[];rows.forEach((r,i)=>{const v=parseFloat(r['price_monthly']||r['月租金']||r['price']||'0');if(v>up||v<lo)ol.push(i+2)});batchOutlierRows.value=ol};step.value=2}catch(e:any){ElMessage.error(e.message||'文件解析失败');batchFile.value=null}}
 
 async function doImport(){
-  if(!batchFile.value)return
-  if(!batchHeaders.value.length){ElMessage.error('无法识别表头，请使用模板格式');return}
-  if(!batchTotalRows.value){ElMessage.error('未检测到有效数据');return}
-  if(missingRequired.value.length){ElMessage.error('缺少必填列：'+missingRequiredLabel.value);return}
-  batchImporting.value=true;batchResult.value=null
+  if(!batchFile.value){
+    ElMessage.error('文件已丢失，请返回上一步重新选择文件')
+    console.error('[BatchImport] batchFile is null, cannot import')
+    return
+  }
+  if(!batchHeaders.value.length){
+    ElMessage.error('无法识别表头，请使用模板格式')
+    return
+  }
+  if(!batchTotalRows.value){
+    ElMessage.error('未检测到有效数据')
+    return
+  }
+  if(missingRequired.value.length){
+    ElMessage.error('缺少必填列：'+missingRequiredLabel.value)
+    return
+  }
+  batchImporting.value=true
+  batchResult.value=null
   try{
-    const r=await adminService.uploadImport(batchFile.value,selectedBuilding.value?.id);batchResult.value=r;step.value=3
-    if(r.failed_records===0&&r.success_records>0){ElMessage.success(`全部导入成功！共${r.success_records}条，跳转至房源列表...`);setTimeout(()=>router.push('/property/manage'),1500)}
-    else if(r.success_records>0){ElMessage.warning(`成功${r.success_records}条，失败${r.failed_records}条`)}
-    else{ElMessage.error(`全部${r.failed_records}条未通过校验`)}
-  }catch(e:any){ElMessage.error(extractErrorMessage(e)||'导入失败');step.value=2}
-  finally{batchImporting.value=false}
+    console.log('[BatchImport] Starting import: file=%s, instituteId=%s, mode=%s, rows=%d', batchFile.value.name, selectedBuilding.value?.id, importMode.value, batchTotalRows.value)
+    const r=await adminService.uploadImport(batchFile.value, selectedBuilding.value?.id, importMode.value)
+    console.log('[BatchImport] Import result:', r)
+    batchResult.value=r
+    step.value=3
+    if(r.failed_records===0 && r.success_records>0){
+      ElMessage.success(`全部导入成功！共${r.success_records}条，跳转至房源列表...`)
+      setTimeout(()=>router.push('/property/manage'),1500)
+    } else if(r.success_records>0){
+      ElMessage.warning(`成功${r.success_records}条，失败${r.failed_records}条`)
+    } else {
+      ElMessage.error(`全部${r.failed_records}条未通过校验`)
+    }
+  } catch(e:any){
+    console.error('[BatchImport] Import failed:', e)
+    const msg = extractErrorMessage(e)
+    if(msg){
+      ElMessage.error(msg)
+    } else if(e?.message){
+      ElMessage.error('导入失败：' + e.message)
+    } else {
+      ElMessage.error('导入失败，请检查网络连接或联系管理员')
+    }
+    step.value=2
+  } finally {
+    batchImporting.value=false
+  }
 }
 async function retryBatchImport(){if(!batchResult.value?.id)return;try{const r=await adminService.retryImportTask(batchResult.value.id);batchResult.value=r;ElMessage.success('重试完成')}catch(e:any){ElMessage.error(extractErrorMessage(e)||'重试失败')}}
 function goToList(){router.push('/property/manage')}

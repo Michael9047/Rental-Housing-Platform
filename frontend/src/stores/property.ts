@@ -1,4 +1,4 @@
-﻿import { defineStore } from 'pinia'
+import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { propertyService } from '@/services/property'
 import type { Property, PropertyCreate, PropertyUpdate, PropertySearchResult, PropertySearchParams, PropertyImage } from '@/types/property'
@@ -9,15 +9,38 @@ export const usePropertyStore = defineStore('property', () => {
   const currentProperty = ref<Property | null>(null)
   const loading = ref(false)
 
+  // 分页状态
+  const total = ref(0)
+  const page = ref(1)
+  const pageSize = ref(20)
+  const totalPages = ref(1)
+
   // Cached search conditions
   const lastSearchParams = ref<PropertySearchParams>({})
   const propertyImages = ref<PropertyImage[]>([])
   const imagesLoading = ref(false)
 
-  async function fetchList(params?: { skip?: number; limit?: number; district?: string; status?: string; landlord_id?: number }) {
+  async function fetchList(params?: { page?: number; page_size?: number; district?: string; status?: string; landlord_id?: number; keyword?: string; property_type?: string; price_min?: number; price_max?: number }) {
     loading.value = true
     try {
-      properties.value = await propertyService.list(params)
+      const res = await propertyService.list(params)
+      properties.value = res.items
+      total.value = res.total
+      page.value = res.page
+      pageSize.value = res.page_size
+      totalPages.value = res.total_pages
+    } finally {
+      loading.value = false
+    }
+  }
+
+  async function fetchRecycleBin(params?: { page?: number; page_size?: number; landlord_id?: number }) {
+    loading.value = true
+    try {
+      const res = await propertyService.listRecycleBin(params)
+      properties.value = res.items
+      total.value = res.total
+      return res
     } finally {
       loading.value = false
     }
@@ -68,6 +91,60 @@ export const usePropertyStore = defineStore('property', () => {
     }
   }
 
+  async function restoreProperty(id: number): Promise<Property> {
+    loading.value = true
+    try {
+      return await propertyService.restore(id)
+    } finally {
+      loading.value = false
+    }
+  }
+
+  async function batchUpdateStatus(ids: number[], status: string) {
+    loading.value = true
+    try {
+      return await propertyService.batchUpdateStatus(ids, status)
+    } finally {
+      loading.value = false
+    }
+  }
+
+  async function batchDelete(ids: number[]) {
+    loading.value = true
+    try {
+      return await propertyService.batchDelete(ids)
+    } finally {
+      loading.value = false
+    }
+  }
+
+  async function hardDeleteProperty(id: number) {
+    loading.value = true
+    try {
+      await propertyService.hardDelete(id)
+      properties.value = properties.value.filter((p) => p.id !== id)
+    } finally {
+      loading.value = false
+    }
+  }
+
+  async function batchRestore(ids: number[]) {
+    loading.value = true
+    try {
+      return await propertyService.batchRestore(ids)
+    } finally {
+      loading.value = false
+    }
+  }
+
+  async function batchHardDelete(ids: number[]) {
+    loading.value = true
+    try {
+      return await propertyService.batchHardDelete(ids)
+    } finally {
+      loading.value = false
+    }
+  }
 
   async function fetchImages(propertyId: number) {
     imagesLoading.value = true
@@ -118,23 +195,14 @@ export const usePropertyStore = defineStore('property', () => {
   }
 
   return {
-    properties,
-    searchResults,
-    currentProperty,
-    loading,
-    lastSearchParams,
-    propertyImages,
-    imagesLoading,
-    fetchList,
-    fetchSearch,
-    fetchById,
-    create,
-    update,
+    properties, searchResults, currentProperty, loading,
+    total, page, pageSize, totalPages,
+    lastSearchParams, propertyImages, imagesLoading,
+    fetchList, fetchRecycleBin, fetchSearch, fetchById,
+    create, update, restoreProperty,
+    batchUpdateStatus, batchDelete,
+    hardDeleteProperty, batchRestore, batchHardDelete,
     remove,
-    fetchImages,
-    fetchImagesRef,
-    uploadImages,
-    deleteImage,
-    setPrimaryImage,
+    fetchImages, fetchImagesRef, uploadImages, deleteImage, setPrimaryImage,
   }
 })

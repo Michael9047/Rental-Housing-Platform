@@ -1,9 +1,12 @@
 <template>
   <div class="manage-page" v-loading="loading">
     <div class="page-header">
-      <h2>房源管理</h2>
+      <h2>{{ showRecycleBin ? '回收站' : '房源管理' }}</h2>
       <div class="header-actions">
         <el-button @click="router.push('/buildings')">🏢 管理公寓</el-button>
+        <el-button :type="showRecycleBin ? 'danger' : 'default'" @click="toggleRecycleBin">
+          {{ showRecycleBin ? '📋 返回房源列表' : '🗑 回收站' }}
+        </el-button>
         <el-button
           :type="batchMode ? 'warning' : 'default'"
           @click="toggleBatchMode"
@@ -94,15 +97,19 @@
 
     <!-- Empty: no buildings at all -->
     <el-empty
-      v-if="!loading && buildings.length === 0 && unlinkedProperties.length === 0"
+      v-if="!loading && !showRecycleBin && buildings.length === 0 && unlinkedProperties.length === 0"
       description="还没有创建任何公寓，请先创建公寓再发布房源"
     >
       <el-button type="primary" @click="router.push('/buildings')">前往创建公寓</el-button>
     </el-empty>
+    <el-empty
+      v-if="!loading && showRecycleBin && allProperties.length === 0"
+      description="回收站为空"
+    />
 
     <!-- Building groups -->
     <template v-for="building in buildings" :key="building.id">
-      <el-card shadow="never" class="building-card">
+      <el-card v-if="!showRecycleBin || getBuildingPropertyCount(building.id) > 0" shadow="never" class="building-card">
         <!-- Building header -->
         <div class="building-header" @click="toggleExpand(building.id)">
           <div class="building-info">
@@ -167,24 +174,38 @@
                 <template v-if="!batchMode">
                   <el-button size="small" text type="primary" @click="editProperty(row.id)">编辑</el-button>
                   <el-button size="small" text type="success" @click="manageImages(row.id)">图片</el-button>
-                  <el-button
-                    size="small"
-                    text
-                    :type="row.status === 'offline' ? 'success' : 'warning'"
-                    @click="toggleStatus(row, building.id)"
-                  >
-                    {{ row.status === 'offline' ? '上架' : '下架' }}
-                  </el-button>
-                  <el-popconfirm
-                    title="确定删除该房源吗？"
-                    confirm-button-text="删除"
-                    cancel-button-text="取消"
-                    @confirm="deleteProperty(row.id, building.id)"
-                  >
-                    <template #reference>
-                      <el-button size="small" text type="danger">删除</el-button>
-                    </template>
-                  </el-popconfirm>
+                  <template v-if="!showRecycleBin">
+                    <el-button
+                      size="small" text
+                      :type="row.status === 'offline' ? 'success' : 'warning'"
+                      @click="toggleStatus(row, building.id)"
+                    >
+                      {{ row.status === 'offline' ? '上架' : '下架' }}
+                    </el-button>
+                    <el-popconfirm
+                      title="确定删除该房源吗？"
+                      confirm-button-text="删除"
+                      cancel-button-text="取消"
+                      @confirm="deleteProperty(row.id, building.id)"
+                    >
+                      <template #reference>
+                        <el-button size="small" text type="danger">删除</el-button>
+                      </template>
+                    </el-popconfirm>
+                  </template>
+                  <template v-else>
+                    <el-button size="small" text type="success" @click="restoreProperty(row.id, building.id)">恢复</el-button>
+                    <el-popconfirm
+                      title="确定永久删除该房源吗？此操作不可恢复"
+                      confirm-button-text="永久删除"
+                      cancel-button-text="取消"
+                      @confirm="hardDeleteProperty(row.id, building.id)"
+                    >
+                      <template #reference>
+                        <el-button size="small" text type="danger">硬删除</el-button>
+                      </template>
+                    </el-popconfirm>
+                  </template>
                 </template>
               </template>
             </el-table-column>
@@ -198,7 +219,7 @@
     </template>
 
     <!-- Unlinked properties (no institute) -->
-    <el-card v-if="unlinkedProperties.length > 0" shadow="never" class="building-card unlinked-card">
+    <el-card v-if="!showRecycleBin && unlinkedProperties.length > 0" shadow="never" class="building-card unlinked-card">
       <div class="building-header" @click="toggleExpand(-1)">
         <div class="building-info">
           <span class="building-icon">⚠️</span>
@@ -253,31 +274,59 @@
               <template v-if="!batchMode">
                 <el-button size="small" text type="primary" @click="editProperty(row.id)">编辑</el-button>
                 <el-button size="small" text type="success" @click="manageImages(row.id)">图片</el-button>
-                <el-button size="small" text type="warning" @click="openBindDialog(row)">绑定</el-button>
-                <el-button
-                  size="small"
-                  text
-                  :type="row.status === 'offline' ? 'success' : 'warning'"
-                  @click="toggleStatus(row, -1)"
-                >
-                  {{ row.status === 'offline' ? '上架' : '下架' }}
-                </el-button>
-                <el-popconfirm
-                  title="确定删除该房源吗？"
-                  confirm-button-text="删除"
-                  cancel-button-text="取消"
-                  @confirm="deleteProperty(row.id, -1)"
-                >
-                  <template #reference>
-                    <el-button size="small" text type="danger">删除</el-button>
-                  </template>
-                </el-popconfirm>
+                <template v-if="!showRecycleBin">
+                  <el-button size="small" text type="warning" @click="openBindDialog(row)">绑定</el-button>
+                  <el-button
+                    size="small" text
+                    :type="row.status === 'offline' ? 'success' : 'warning'"
+                    @click="toggleStatus(row, -1)"
+                  >
+                    {{ row.status === 'offline' ? '上架' : '下架' }}
+                  </el-button>
+                  <el-popconfirm
+                    title="确定删除该房源吗？"
+                    confirm-button-text="删除"
+                    cancel-button-text="取消"
+                    @confirm="deleteProperty(row.id, -1)"
+                  >
+                    <template #reference>
+                      <el-button size="small" text type="danger">删除</el-button>
+                    </template>
+                  </el-popconfirm>
+                </template>
+                <template v-else>
+                  <el-button size="small" text type="success" @click="restoreProperty(row.id, -1)">恢复</el-button>
+                  <el-popconfirm
+                    title="确定永久删除该房源吗？此操作不可恢复"
+                    confirm-button-text="永久删除"
+                    cancel-button-text="取消"
+                    @confirm="hardDeleteProperty(row.id, -1)"
+                  >
+                    <template #reference>
+                      <el-button size="small" text type="danger">硬删除</el-button>
+                    </template>
+                  </el-popconfirm>
+                </template>
               </template>
             </template>
           </el-table-column>
         </el-table>
       </div>
     </el-card>
+
+    <!-- 分页（仅回收站模式显示） -->
+    <div v-if="showRecycleBin && totalPages > 1" style="display:flex;justify-content:center;margin:24px 0">
+      <el-pagination
+        v-model:current-page="page"
+        v-model:page-size="pageSize"
+        :page-sizes="[10, 20, 50]"
+        :total="total"
+        layout="total, sizes, prev, pager, next, jumper"
+        background
+        @current-change="onPageChange"
+        @size-change="onPageSizeChange"
+      />
+    </div>
 
     <!-- 绑定公寓弹窗 -->
     <el-dialog v-model="showBindDialog" title="绑定到公寓" width="420px" :close-on-click-modal="false">
@@ -301,7 +350,7 @@
 
     <!-- End of list -->
     <div
-      v-if="!loading && buildings.length > 0 && allProperties.length === 0"
+      v-if="!loading && !showRecycleBin && buildings.length > 0 && allProperties.length === 0"
       style="text-align: center; padding: 40px; color: #909399"
     >
       公寓已创建，但还没有发布房源 —
@@ -314,37 +363,54 @@
         <div class="batch-bar-inner">
           <span class="batch-count">已选择 <strong>{{ selectedIds.size }}</strong> 间房源</span>
           <div class="batch-actions">
-            <el-button type="success" :loading="batchOperating" @click="batchSetStatus('available')">
-              批量上架
-            </el-button>
-            <el-button type="warning" :loading="batchOperating" @click="batchSetStatus('offline')">
-              批量下架
-            </el-button>
-            <el-button :loading="batchOperating" @click="openBatchBindDialog">
-              📦 批量绑定公寓
-            </el-button>
-            <el-dropdown trigger="click" @command="handleBatchImageCmd">
-              <el-button type="primary" :loading="batchOperating">
-                🖼 批量图片操作 <el-icon><ArrowDown /></el-icon>
+            <template v-if="!showRecycleBin">
+              <el-button type="success" :loading="batchOperating" @click="batchSetStatus('available')">
+                批量上架
               </el-button>
-              <template #dropdown>
-                <el-dropdown-menu>
-                  <el-dropdown-item command="set">📤 批量设置图片</el-dropdown-item>
-                  <el-dropdown-item command="clearShared" divided>🧹 清空公共图片（保留封面）</el-dropdown-item>
-                  <el-dropdown-item command="clearAll">🗑 清空全部图片</el-dropdown-item>
-                </el-dropdown-menu>
-              </template>
-            </el-dropdown>
-            <el-popconfirm
-              title="确定批量删除已选房源吗？此操作不可恢复"
-              confirm-button-text="确认删除"
-              cancel-button-text="取消"
-              @confirm="batchDelete"
-            >
-              <template #reference>
-                <el-button type="danger" :loading="batchOperating">🗑 批量删除</el-button>
-              </template>
-            </el-popconfirm>
+              <el-button type="warning" :loading="batchOperating" @click="batchSetStatus('offline')">
+                批量下架
+              </el-button>
+              <el-button :loading="batchOperating" @click="openBatchBindDialog">
+                📦 批量绑定公寓
+              </el-button>
+              <el-dropdown trigger="click" @command="handleBatchImageCmd">
+                <el-button type="primary" :loading="batchOperating">
+                  🖼 批量图片操作 <el-icon><ArrowDown /></el-icon>
+                </el-button>
+                <template #dropdown>
+                  <el-dropdown-menu>
+                    <el-dropdown-item command="set">📤 批量设置图片</el-dropdown-item>
+                    <el-dropdown-item command="clearShared" divided>🧹 清空公共图片（保留封面）</el-dropdown-item>
+                    <el-dropdown-item command="clearAll">🗑 清空全部图片</el-dropdown-item>
+                  </el-dropdown-menu>
+                </template>
+              </el-dropdown>
+              <el-popconfirm
+                title="确定批量删除已选房源吗？此操作不可恢复"
+                confirm-button-text="确认删除"
+                cancel-button-text="取消"
+                @confirm="batchDelete"
+              >
+                <template #reference>
+                  <el-button type="danger" :loading="batchOperating">🗑 批量删除</el-button>
+                </template>
+              </el-popconfirm>
+            </template>
+            <template v-else>
+              <el-button type="success" :loading="batchOperating" @click="batchRestore">
+                批量恢复
+              </el-button>
+              <el-popconfirm
+                title="确定永久删除已选房源吗？此操作完全不可恢复"
+                confirm-button-text="永久删除"
+                cancel-button-text="取消"
+                @confirm="batchHardDelete"
+              >
+                <template #reference>
+                  <el-button type="danger" :loading="batchOperating">🗑 批量硬删除</el-button>
+                </template>
+              </el-popconfirm>
+            </template>
           </div>
           <el-button text @click="toggleBatchMode">取消</el-button>
         </div>
@@ -418,11 +484,12 @@ import { nextTick } from 'vue'
 const router = useRouter()
 const propertyStore = usePropertyStore()
 const authStore = useAuthStore()
-const { loading, properties: allProperties } = storeToRefs(propertyStore)
+const { loading, properties: allProperties, total, page, pageSize, totalPages } = storeToRefs(propertyStore)
 
 const buildings = ref<Building[]>([])
 const expandedIds = ref<Set<number>>(new Set())
 const loadingData = ref(false)
+const showRecycleBin = ref(false)
 
 // ── 检索筛选 ──
 const searchKeyword = ref('')
@@ -459,25 +526,21 @@ function applyFilters() {
   const user = authStore.user
   if (!user) { isSearching.value = false; return }
 
-  const params: any = { limit: 500, landlord_id: user.id }
+  page.value = 1  // reset to first page on new search
   const kw = searchKeyword.value.trim()
-  if (kw) params.keyword = kw
-  if (filterInstituteId.value) {
-    // 客户端按 institute_id 过滤（后端已按 landlord 过滤全量）
-  }
-  if (filterPropertyType.value) params.property_type = filterPropertyType.value
-  if (filterStatus.value) params.status = filterStatus.value
-  if (filterPriceMin.value !== undefined) params.price_min = filterPriceMin.value
-  if (filterPriceMax.value !== undefined) params.price_max = filterPriceMax.value
 
-  propertyStore.fetchList(params).then(() => {
-    // 客户端侧按公寓过滤
+  propertyStore.fetchList({
+    page: 1, page_size: 500, landlord_id: user.id,
+    keyword: kw || undefined,
+    property_type: filterPropertyType.value || undefined,
+    status: filterStatus.value || undefined,
+    price_min: filterPriceMin.value,
+    price_max: filterPriceMax.value,
+  }).then(() => {
     let filtered = [...propertyStore.properties]
     if (filterInstituteId.value) {
       filtered = filtered.filter(p => p.institute_id === filterInstituteId.value)
     }
-
-    // 标记匹配 ID（关键词匹配的房源高亮）
     const matches = new Set<number>()
     if (kw) {
       const lower = kw.toLowerCase()
@@ -486,40 +549,21 @@ function applyFilters() {
           (p.room_number && p.room_number.toLowerCase().includes(lower)) ||
           (p.title && p.title.toLowerCase().includes(lower)) ||
           (p.address && p.address.toLowerCase().includes(lower))
-        ) {
-          matches.add(p.id)
-        }
+        ) { matches.add(p.id) }
       }
     }
-
     if (filtered.length === 0) {
       searchNoResult.value = true
     } else {
       searchNoResult.value = false
-      // 高亮匹配行
-      if (kw || filterPropertyType.value || filterStatus.value || filterInstituteId.value) {
-        // 标记筛选命中的房源ID
-        const filteredIds = new Set(filtered.map(p => p.id))
-        highlightedIds.value = kw ? matches : filteredIds
-      } else {
-        highlightedIds.value = new Set()
-      }
-
-      // 滚动到第一个匹配行
-      if (highlightedIds.value.size > 0) {
-        scrollToFirstMatch(highlightedIds.value)
-      }
-
-      // 3秒后清除高亮
+      const filteredIds = new Set(filtered.map(p => p.id))
+      highlightedIds.value = kw ? matches : filteredIds
+      if (highlightedIds.value.size > 0) scrollToFirstMatch(highlightedIds.value)
       if (highlightTimer) clearTimeout(highlightTimer)
-      highlightTimer = setTimeout(() => {
-        highlightedIds.value = new Set()
-      }, 3000)
+      highlightTimer = setTimeout(() => { highlightedIds.value = new Set() }, 3000)
     }
     isSearching.value = false
-  }).catch(() => {
-    isSearching.value = false
-  })
+  }).catch(() => { isSearching.value = false })
 }
 
 function scrollToFirstMatch(_ids: Set<number>) {
@@ -569,17 +613,18 @@ function toggleSelect(id: number) {
 async function batchSetStatus(status: PropertyStatus) {
   if (selectedIds.value.size === 0) return
   batchOperating.value = true
-  let done = 0
   try {
-    for (const id of selectedIds.value) {
-      await propertyStore.update(id, { status })
-      done++
+    const result = await propertyStore.batchUpdateStatus(Array.from(selectedIds.value), status)
+    if (result.success > 0) {
+      ElMessage.success(`已批量${status === 'available' ? '上架' : '下架'} ${result.success} 间房源`)
     }
-    ElMessage.success(`已批量${status === 'available' ? '上架' : '下架'} ${done} 间房源`)
+    if (result.failed > 0) {
+      ElMessage.warning(`${result.failed} 间操作失败`)
+    }
     selectedIds.value = new Set()
     await loadData()
   } catch {
-    ElMessage.error(`完成 ${done}/${selectedIds.value.size} 间，部分失败`)
+    ElMessage.error('批量操作失败，请重试')
   } finally {
     batchOperating.value = false
   }
@@ -588,18 +633,43 @@ async function batchSetStatus(status: PropertyStatus) {
 async function batchDelete() {
   if (selectedIds.value.size === 0) return
   batchOperating.value = true
-  let done = 0
-  const total = selectedIds.value.size
   try {
-    for (const id of selectedIds.value) {
-      await propertyStore.remove(id)
-      done++
-    }
-    ElMessage.success(`已批量删除 ${done} 间房源`)
+    const result = await propertyStore.batchDelete(Array.from(selectedIds.value))
+    ElMessage.success(`已批量删除 ${result.success} 间房源`)
     selectedIds.value = new Set()
     await loadData()
   } catch {
-    ElMessage.error(`完成 ${done}/${total} 间，部分失败`)
+    ElMessage.error('批量删除失败，请重试')
+  } finally {
+    batchOperating.value = false
+  }
+}
+
+async function batchRestore() {
+  if (selectedIds.value.size === 0) return
+  batchOperating.value = true
+  try {
+    const result = await propertyStore.batchRestore(Array.from(selectedIds.value))
+    ElMessage.success(`已批量恢复 ${result.success} 间房源`)
+    selectedIds.value = new Set()
+    await loadData()
+  } catch {
+    ElMessage.error('批量恢复失败，请重试')
+  } finally {
+    batchOperating.value = false
+  }
+}
+
+async function batchHardDelete() {
+  if (selectedIds.value.size === 0) return
+  batchOperating.value = true
+  try {
+    const result = await propertyStore.batchHardDelete(Array.from(selectedIds.value))
+    ElMessage.success(`已永久删除 ${result.success} 间房源`)
+    selectedIds.value = new Set()
+    await loadData()
+  } catch {
+    ElMessage.error('批量硬删除失败，请重试')
   } finally {
     batchOperating.value = false
   }
@@ -640,7 +710,12 @@ function openBatchImageDialog() {
 async function batchClearAllImages() {
   if (selectedIds.value.size === 0) return
   try {
-    await ElMessageBox.confirm('确定删除已选房源的所有图片吗？此操作不可恢复', '清空全部图片', { type: 'warning', confirmButtonText: '确认清空' })
+    await ElMessageBox.prompt('请输入「确认清空图片」以确认操作', '清空全部图片', {
+      type: 'warning',
+      confirmButtonText: '确认清空',
+      inputPattern: /^确认清空图片$/,
+      inputErrorMessage: '请输入「确认清空图片」',
+    })
   } catch { return }
   batchOperating.value = true
   let done = 0; const total = selectedIds.value.size
@@ -667,7 +742,12 @@ async function batchClearAllImages() {
 async function batchClearSharedImages() {
   if (selectedIds.value.size === 0) return
   try {
-    await ElMessageBox.confirm('确定删除已选房源的非封面图片吗？封面图将保留', '清空公共图片', { type: 'warning', confirmButtonText: '确认清空' })
+    await ElMessageBox.prompt('请输入「确认清空图片」以确认操作', '清空公共图片', {
+      type: 'warning',
+      confirmButtonText: '确认清空',
+      inputPattern: /^确认清空图片$/,
+      inputErrorMessage: '请输入「确认清空图片」',
+    })
   } catch { return }
   batchOperating.value = true
   let done = 0; const total = selectedIds.value.size
@@ -864,16 +944,65 @@ async function deleteProperty(id: number, buildingId: number) {
   }
 }
 
+function toggleRecycleBin() {
+  showRecycleBin.value = !showRecycleBin.value
+  page.value = 1
+  loadData()
+}
+
+async function restoreProperty(id: number, buildingId: number) {
+  try {
+    await propertyStore.restoreProperty(id)
+    ElMessage.success('房源已恢复')
+    await loadData()
+    if (buildingId !== -1) expandedIds.value.add(buildingId)
+  } catch {
+    ElMessage.error('恢复失败，请重试')
+  }
+}
+
+async function hardDeleteProperty(id: number, buildingId: number) {
+  try {
+    await propertyStore.hardDeleteProperty(id)
+    ElMessage.success('房源已永久删除')
+    await loadData()
+    if (buildingId !== -1) expandedIds.value.add(buildingId)
+  } catch {
+    ElMessage.error('删除失败，请重试')
+  }
+}
+
+function onPageChange(p: number) {
+  page.value = p
+  loadData()
+}
+
+function onPageSizeChange(size: number) {
+  pageSize.value = size
+  page.value = 1
+  loadData()
+}
+
 async function loadData() {
   loadingData.value = true
   try {
     const user = authStore.user
     if (!user) return
 
-    const [blds] = await Promise.all([
-      buildingService.list({ limit: 200 }),
-      propertyStore.fetchList({ limit: 500, landlord_id: user.id }),
-    ])
+    if (showRecycleBin.value) {
+      await propertyStore.fetchRecycleBin({ page: page.value, page_size: pageSize.value, landlord_id: user.id })
+    } else {
+      // 管理页加载全部房源，客户端按楼栋分组后再分页
+      const params: any = { page: 1, page_size: 500, landlord_id: user.id }
+      if (searchKeyword.value.trim()) params.keyword = searchKeyword.value.trim()
+      if (filterPropertyType.value) params.property_type = filterPropertyType.value
+      if (filterStatus.value) params.status = filterStatus.value
+      if (filterPriceMin.value !== undefined) params.price_min = filterPriceMin.value
+      if (filterPriceMax.value !== undefined) params.price_max = filterPriceMax.value
+      await propertyStore.fetchList(params)
+    }
+
+    const blds = await buildingService.list({ limit: 200 })
     buildings.value = blds
   } finally {
     loadingData.value = false
@@ -882,7 +1011,7 @@ async function loadData() {
 
 onMounted(async () => {
   await loadData()
-  // Auto-expand all buildings on first load
+  // 首次加载展开所有楼栋
   const allIds = new Set<number>()
   for (const b of buildings.value) allIds.add(b.id)
   if (unlinkedProperties.value.length > 0) allIds.add(-1)

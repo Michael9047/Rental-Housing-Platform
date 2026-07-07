@@ -81,6 +81,7 @@ class ImportService:
         file_content: bytes,
         landlord_id: int,
         institute_id: int | None = None,
+        mode: str = "flexible",
     ) -> DataImport:
         self._created_property_ids = []
         import_task.status = ImportStatus.processing
@@ -176,6 +177,9 @@ class ImportService:
             failed = 0
             pending_review = 0
 
+            is_strict = (mode == "strict")
+            strict_errors: list[dict] = []
+
             for idx, row in enumerate(rows):
                 row_num = idx + 1
                 try:
@@ -212,6 +216,22 @@ class ImportService:
                     else:
                         err_type = "unknown"
                     errors.append({"row": row_num, "error": err_msg, "type": err_type})
+                    if is_strict:
+                        strict_errors.append(errors[-1])
+
+            # ── 严格模式：有错则全部回滚 ──
+            if is_strict and strict_errors:
+                # 回滚已插入的 property 记录（如果 flexible 模式先行插入了一些）
+                if success > 0:
+                    await self.session.rollback()
+                import_task.total_records = len(rows)
+                import_task.success_records = 0
+                import_task.failed_records = len(rows)
+                import_task.status = ImportStatus.failed
+                import_task.error_log = json.dumps(strict_errors, ensure_ascii=False)
+                import_task.updated_at = datetime.now(timezone.utc)
+                await self.session.commit()
+                return import_task
 
             import_task.success_records = success
             import_task.failed_records = failed
