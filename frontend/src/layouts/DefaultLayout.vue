@@ -78,6 +78,12 @@
                   <el-dropdown-item @click="router.push('/bd/dashboard')">
                     <el-icon><DataAnalysis /></el-icon> 数据台
                   </el-dropdown-item>
+                  <el-dropdown-item @click="router.push('/property/manage')">
+                    <el-icon><Setting /></el-icon> 房源管理
+                  </el-dropdown-item>
+                  <el-dropdown-item @click="router.push('/property/create')">
+                    <el-icon><Plus /></el-icon> 发布房源
+                  </el-dropdown-item>
                 </template>
                 <el-dropdown-item v-if="authStore.isAdmin" @click="router.push('/admin')">
                   <el-icon><DataAnalysis /></el-icon> 系统管理
@@ -147,6 +153,14 @@
             <el-menu-item index="/bd/dashboard">
               <el-icon><DataAnalysis /></el-icon>
               <span>数据台</span>
+            </el-menu-item>
+            <el-menu-item index="/property/manage">
+              <el-icon><OfficeBuilding /></el-icon>
+              <span>房源管理</span>
+            </el-menu-item>
+            <el-menu-item index="/property/create">
+              <el-icon><Plus /></el-icon>
+              <span>发布房源</span>
             </el-menu-item>
             <el-menu-item index="/notifications">
               <el-icon><Bell /></el-icon>

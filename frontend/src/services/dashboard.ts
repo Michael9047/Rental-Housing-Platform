@@ -8,6 +8,12 @@ interface LandlordDashboard {
   workers: { total: number; available: number }
 }
 
+interface BdDashboard {
+  institutes: number
+  total_properties: number
+  pending_bookings: number
+}
+
 interface MaintenanceDashboard {
   total_orders: number
   today_orders: number
@@ -18,9 +24,12 @@ interface MaintenanceDashboard {
 
 export const dashboardService = {
   getLandlord(): Promise<LandlordDashboard> {
-    return api.get('/landlord/dashboard')
+    return api.get('/landlord/dashboard').then((r) => r.data)
+  },
+  getBd(): Promise<BdDashboard> {
+    return api.get('/bd/dashboard').then((r) => r.data)
   },
   getMaintenance(): Promise<MaintenanceDashboard> {
-    return api.get('/maintenance/dashboard')
+    return api.get('/maintenance/dashboard').then((r) => r.data)
   },
 }

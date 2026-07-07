@@ -18,8 +18,15 @@ from app.services.repair_service import RepairService
 router = APIRouter()
 
 
-def _repair_to_read(repair) -> RepairRead:
-    """将 RepairRequest ORM 对象转为 Read 响应"""
+async def _repair_to_read(repair) -> RepairRead:
+    """将 RepairRequest ORM 对象转为 Read 响应（async-safe）"""
+    # 用 awaitable_attrs 安全获取关联对象
+    from sqlalchemy.ext.asyncio import AsyncAttrs
+    tenant = await repair.awaitable_attrs.tenant if hasattr(repair, 'awaitable_attrs') and repair.tenant_id else None
+    landlord = await repair.awaitable_attrs.landlord if hasattr(repair, 'awaitable_attrs') and repair.landlord_id else None
+    worker = await repair.awaitable_attrs.assigned_worker if hasattr(repair, 'awaitable_attrs') and repair.assigned_worker_id else None
+    prop = await repair.awaitable_attrs.property if hasattr(repair, 'awaitable_attrs') and repair.property_id else None
+
     return RepairRead(
         id=repair.id,
         property_id=repair.property_id,
@@ -36,10 +43,10 @@ def _repair_to_read(repair) -> RepairRead:
         work_images=repair.work_images,
         created_at=repair.created_at.isoformat(),
         updated_at=repair.updated_at.isoformat(),
-        tenant_name=getattr(repair.tenant, "username", None) if repair.tenant else None,
-        landlord_name=getattr(repair.landlord, "username", None) if repair.landlord else None,
-        worker_name=getattr(repair.assigned_worker, "username", None) if repair.assigned_worker else None,
-        property_title=getattr(repair.property, "title", None) if repair.property else None,
+        tenant_name=tenant.username if tenant else None,
+        landlord_name=landlord.username if landlord else None,
+        worker_name=worker.username if worker else None,
+        property_title=prop.title if prop else None,
     )
 
 
@@ -55,7 +62,7 @@ async def create_repair(
         repair = await svc.create_repair(current_user.id, repair_in)
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
-    return _repair_to_read(repair)
+    return await _repair_to_read(repair)
 
 
 @router.get("/repairs")
@@ -91,7 +98,7 @@ async def list_repairs(
         skip=skip,
         limit=limit,
     )
-    return [_repair_to_read(r) for r in repairs]
+    return [await _repair_to_read(r) for r in repairs]
 
 
 @router.get("/repairs/{repair_id}", response_model=RepairRead)
@@ -115,7 +122,7 @@ async def get_repair(
     if role == UserRole.maintenance_worker and repair.assigned_worker_id != current_user.id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
 
-    return _repair_to_read(repair)
+    return await _repair_to_read(repair)
 
 
 @router.patch("/repairs/{repair_id}/status", response_model=RepairRead)
@@ -142,7 +149,7 @@ async def update_repair_status(
 
     status_enum = RepairStatus.approved if new_status == "approved" else RepairStatus.rejected
     repair = await svc.update_status(repair_id, status_enum, current_user.id)
-    return _repair_to_read(repair)
+    return await _repair_to_read(repair)
 
 
 @router.patch("/repairs/{repair_id}/assign", response_model=RepairRead)
@@ -164,7 +171,7 @@ async def assign_worker(
         repair = await svc.assign_worker(repair_id, worker_id)
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
-    return _repair_to_read(repair)
+    return await _repair_to_read(repair)
 
 
 @router.patch("/repairs/{repair_id}/start", response_model=RepairRead)
@@ -182,7 +189,7 @@ async def start_repair(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
 
     repair = await svc.start_work(repair_id)
-    return _repair_to_read(repair)
+    return await _repair_to_read(repair)
 
 
 @router.patch("/repairs/{repair_id}/complete", response_model=RepairRead)
@@ -201,7 +208,7 @@ async def complete_repair(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
 
     repair = await svc.complete_work(repair_id, work_record)
-    return _repair_to_read(repair)
+    return await _repair_to_read(repair)
 
 
 @router.patch("/repairs/{repair_id}/cancel", response_model=RepairRead)
@@ -219,4 +226,4 @@ async def cancel_repair(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
 
     repair = await svc.cancel_repair(repair_id)
-    return _repair_to_read(repair)
+    return await _repair_to_read(repair)

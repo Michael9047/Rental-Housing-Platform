@@ -37,7 +37,6 @@ class RepairService:
         )
         self.session.add(repair)
         await self.session.commit()
-        await self.session.refresh(repair)
 
         # 通知房东
         notif_svc = NotificationService(self.session)
@@ -48,7 +47,8 @@ class RepairService:
             content=f"租客对房源「{property_obj.title}」提交了报修：{repair_in.description[:50]}",
         )
 
-        return repair
+        # Reload with relationships
+        return await self.get_repair(repair.id)
 
     async def list_repairs(
         self,
@@ -127,8 +127,7 @@ class RepairService:
             )
 
         await self.session.commit()
-        await self.session.refresh(repair)
-        return repair
+        return await self.get_repair(repair.id)
 
     async def assign_worker(
         self, repair_id: int, worker_id: int
@@ -154,7 +153,6 @@ class RepairService:
         worker.status = WorkerStatus.working
 
         await self.session.commit()
-        await self.session.refresh(repair)
 
         # 通知维修师傅
         notif_svc = NotificationService(self.session)
@@ -165,7 +163,7 @@ class RepairService:
             content=f"您有一个新的维修工单：{repair.description[:50]}",
         )
 
-        return repair
+        return await self.get_repair(repair.id)
 
     async def start_work(self, repair_id: int) -> RepairRequest | None:
         """维修师傅开始工作"""
@@ -174,8 +172,7 @@ class RepairService:
             return None
         repair.status = RepairStatus.in_progress
         await self.session.commit()
-        await self.session.refresh(repair)
-        return repair
+        return await self.get_repair(repair.id)
 
     async def complete_work(
         self,
@@ -209,7 +206,6 @@ class RepairService:
         repair.completed_at = datetime.now(timezone.utc).isoformat()
 
         await self.session.commit()
-        await self.session.refresh(repair)
 
         # 通知租客
         notif_svc = NotificationService(self.session)
@@ -220,7 +216,7 @@ class RepairService:
             content=f"维修师傅已完成工单，维修记录：{work_record[:100]}",
         )
 
-        return repair
+        return await self.get_repair(repair.id)
 
     async def cancel_repair(self, repair_id: int) -> RepairRequest | None:
         """租客取消报修"""
@@ -229,5 +225,4 @@ class RepairService:
             return None
         repair.status = RepairStatus.cancelled
         await self.session.commit()
-        await self.session.refresh(repair)
-        return repair
+        return await self.get_repair(repair.id)

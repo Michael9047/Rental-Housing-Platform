@@ -12,7 +12,7 @@
     </div>
 
     <el-table :data="filteredOrders" stripe>
-      <el-table-column label="工单号" width="80">#{{ }}<template #default="{ row }">#{{ row.id }}</template></el-table-column>
+      <el-table-column label="工单号" width="80"><template #default="{ row }">#{{ row.id }}</template></el-table-column>
       <el-table-column label="房源" min-width="140"><template #default="{ row }">{{ row.property_title || `#${row.property_id}` }}</template></el-table-column>
       <el-table-column label="租客" width="90"><template #default="{ row }">{{ row.tenant_name || '-' }}</template></el-table-column>
       <el-table-column label="问题描述" min-width="150">

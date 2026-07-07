@@ -237,7 +237,7 @@ router.beforeEach((to, _from, next) => {
     return next({ name: 'home' })
   }
 
-  if (to.meta.requiresLandlord && user && user.role !== 'landlord' && user.role !== 'admin') {
+  if (to.meta.requiresLandlord && user && user.role !== 'landlord' && user.role !== 'admin' && user.role !== 'bd_manager') {
     return next({ name: 'home' })
   }
 

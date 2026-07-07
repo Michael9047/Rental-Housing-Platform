@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, get_db_session, require_landlord, require_bd_manager, require_maintenance
 from app.models.booking import Booking, BookingStatus
+from app.models.institute import Institute
 from app.models.property import Property, PropertyStatus
 from app.models.repair import RepairRequest, RepairStatus, RepairWorker, WorkerStatus
 from app.models.user import User, UserRole
@@ -87,6 +88,25 @@ async def landlord_dashboard(
             "total": total_workers or 0,
             "available": available_workers or 0,
         },
+    }
+
+
+@router.get("/bd/dashboard")
+async def bd_dashboard(
+    session: AsyncSession = Depends(get_db_session),
+    current_user: User = Depends(require_bd_manager),
+):
+    """BD经理数据台"""
+    total_institutes = await session.scalar(select(func.count(Institute.id)))
+    total_properties = await session.scalar(select(func.count(Property.id)))
+    pending_bookings = await session.scalar(
+        select(func.count(Booking.id)).where(Booking.status == BookingStatus.pending)
+    )
+
+    return {
+        "institutes": total_institutes or 0,
+        "total_properties": total_properties or 0,
+        "pending_bookings": pending_bookings or 0,
     }
 
 
