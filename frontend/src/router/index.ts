@@ -158,6 +158,13 @@ const routes: RouteRecordRaw[] = [
         component: () => import('@/views/admin/AdminImport.vue'),
         meta: { requiresAuth: true, requiresAdmin: true },
       },
+      // ---- 报修详情（通用）----
+      {
+        path: 'repairs/:id',
+        name: 'repair-detail',
+        component: () => import('@/views/repair/RepairDetail.vue'),
+        meta: { requiresAuth: true },
+      },
       // ---- 维修师傅 ----
       {
         path: 'worker/dashboard',
