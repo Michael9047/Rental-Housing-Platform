@@ -125,7 +125,7 @@ const routes: RouteRecordRaw[] = [
       {
         path: 'workspace',
         name: 'landlord-workspace',
-        component: () => import('@/views/AdminWorkspace.vue'),
+        component: () => import('@/views/landlord/LandlordDashboard.vue'),
         meta: { requiresAuth: true, requiresLandlord: true },
       },
       {
@@ -157,6 +157,20 @@ const routes: RouteRecordRaw[] = [
         name: 'admin-import',
         component: () => import('@/views/admin/AdminImport.vue'),
         meta: { requiresAuth: true, requiresAdmin: true },
+      },
+      // ---- 维修师傅 ----
+      {
+        path: 'worker/dashboard',
+        name: 'worker-dashboard',
+        component: () => import('@/views/maintenance/WorkerDashboard.vue'),
+        meta: { requiresAuth: true, requiresMaintenance: true },
+      },
+      // ---- BD经理 ----
+      {
+        path: 'bd/dashboard',
+        name: 'bd-dashboard',
+        component: () => import('@/views/bd-manager/BdDashboard.vue'),
+        meta: { requiresAuth: true, requiresBdManager: true },
       },
     ],
   },
@@ -202,6 +216,14 @@ router.beforeEach((to, _from, next) => {
   }
 
   if (to.meta.requiresAdmin && user && user.role !== 'admin') {
+    return next({ name: 'home' })
+  }
+
+  if (to.meta.requiresMaintenance && user && user.role !== 'maintenance_worker' && user.role !== 'admin') {
+    return next({ name: 'home' })
+  }
+
+  if (to.meta.requiresBdManager && user && user.role !== 'bd_manager' && user.role !== 'admin') {
     return next({ name: 'home' })
   }
 
