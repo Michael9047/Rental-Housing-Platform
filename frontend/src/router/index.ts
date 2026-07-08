@@ -28,6 +28,18 @@ const routes: RouteRecordRaw[] = [
         component: () => import('@/views/MapSearch.vue'),
       },
       {
+        path: 'agent',
+        name: 'agent',
+        component: () => import('@/views/AgentView.vue'),
+        meta: { requiresAuth: true },
+      },
+      {
+        path: 'cart',
+        name: 'cart',
+        component: () => import('@/views/CartView.vue'),
+        meta: { requiresAuth: true },
+      },
+      {
         path: 'property/:id',
         name: 'property-detail',
         component: () => import('@/views/PropertyDetail.vue'),
