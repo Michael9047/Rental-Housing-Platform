@@ -87,10 +87,10 @@ async def update_user_role(
     session: AsyncSession = Depends(get_db_session),
     current_user: User = Depends(require_admin),
 ) -> UserRead:
-    if new_role not in {"tenant", "landlord", "admin"}:
+    if new_role not in {"tenant", "landlord", "admin", "bd_manager", "maintenance_worker"}:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid role. Must be: tenant, landlord, or admin",
+            detail="Invalid role. Must be: tenant, landlord, bd_manager, maintenance_worker, or admin",
         )
 
     from app.schemas.user import UserUpdate

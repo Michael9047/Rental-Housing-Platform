@@ -23,6 +23,13 @@ from app.models.payment import Payment, PaymentStatus
 from app.models.poi import PropertyPOI
 from app.models.property import Property, PropertyStatus, PropertyType
 from app.models.property_image import PropertyImage
+from app.models.repair import (
+    RepairIssueType,
+    RepairRequest,
+    RepairStatus,
+    RepairWorker,
+    WorkerStatus,
+)
 from app.models.review import Review, ReviewStatus
 from app.models.saved_search import SavedSearch
 from app.models.user import User, UserRole, UserStatus
@@ -67,6 +74,10 @@ __all__ = [
     "PropertyPOI",
     "PropertyStatus",
     "PropertyType",
+    "RepairIssueType",
+    "RepairRequest",
+    "RepairStatus",
+    "RepairWorker",
     "Review",
     "ReviewStatus",
     "SavedSearch",
@@ -74,4 +85,5 @@ __all__ = [
     "UserFavorite",
     "UserRole",
     "UserStatus",
+    "WorkerStatus",
 ]

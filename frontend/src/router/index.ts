@@ -152,7 +152,7 @@ const routes: RouteRecordRaw[] = [
       {
         path: 'workspace',
         name: 'landlord-workspace',
-        component: () => import('@/views/AdminWorkspace.vue'),
+        component: () => import('@/views/landlord/LandlordDashboard.vue'),
         meta: { requiresAuth: true, requiresLandlord: true },
       },
       {
@@ -184,6 +184,46 @@ const routes: RouteRecordRaw[] = [
         name: 'admin-import',
         component: () => import('@/views/admin/AdminImport.vue'),
         meta: { requiresAuth: true, requiresAdmin: true },
+      },
+      // ---- 报修详情（通用）----
+      {
+        path: 'repairs/:id',
+        name: 'repair-detail',
+        component: () => import('@/views/repair/RepairDetail.vue'),
+        meta: { requiresAuth: true },
+      },
+      // ---- 房东报修管理 ----
+      {
+        path: 'workspace/repairs',
+        name: 'landlord-repairs',
+        component: () => import('@/views/landlord/LandlordRepairs.vue'),
+        meta: { requiresAuth: true, requiresLandlord: true },
+      },
+      {
+        path: 'workspace/workers',
+        name: 'landlord-workers',
+        component: () => import('@/views/landlord/WorkerManagement.vue'),
+        meta: { requiresAuth: true, requiresLandlord: true },
+      },
+      // ---- 维修师傅 ----
+      {
+        path: 'worker/dashboard',
+        name: 'worker-dashboard',
+        component: () => import('@/views/maintenance/WorkerDashboard.vue'),
+        meta: { requiresAuth: true, requiresMaintenance: true },
+      },
+      {
+        path: 'worker/orders',
+        name: 'worker-orders',
+        component: () => import('@/views/maintenance/WorkerOrders.vue'),
+        meta: { requiresAuth: true, requiresMaintenance: true },
+      },
+      // ---- BD经理 ----
+      {
+        path: 'bd/dashboard',
+        name: 'bd-dashboard',
+        component: () => import('@/views/bd-manager/BdDashboard.vue'),
+        meta: { requiresAuth: true, requiresBdManager: true },
       },
     ],
   },
@@ -224,11 +264,19 @@ router.beforeEach((to, _from, next) => {
     return next({ name: 'home' })
   }
 
-  if (to.meta.requiresLandlord && user && user.role !== 'landlord' && user.role !== 'admin') {
+  if (to.meta.requiresLandlord && user && user.role !== 'landlord' && user.role !== 'admin' && user.role !== 'bd_manager') {
     return next({ name: 'home' })
   }
 
   if (to.meta.requiresAdmin && user && user.role !== 'admin') {
+    return next({ name: 'home' })
+  }
+
+  if (to.meta.requiresMaintenance && user && user.role !== 'maintenance_worker' && user.role !== 'admin') {
+    return next({ name: 'home' })
+  }
+
+  if (to.meta.requiresBdManager && user && user.role !== 'bd_manager' && user.role !== 'admin') {
     return next({ name: 'home' })
   }
 
