@@ -92,11 +92,13 @@ const editFormRef = ref<FormInstance>()
 const editForm = reactive({ username: '', email: '', phone: '' })
 const notifSettings = reactive({ booking: true, contract: true, newListing: true })
 
-const roleLabels: Record<UserRole, string> = { tenant: '租客', landlord: '房东', admin: '管理员' }
+const roleLabels: Record<UserRole, string> = { tenant: '租客', landlord: '房东', bd_manager: 'BD经理', maintenance_worker: '维修师傅', admin: '管理员' }
 const roleLabel = computed(() => roleLabels[user.value?.role || 'tenant'])
 const roleTagType = computed(() => {
   if (user.value?.role === 'admin') return 'danger'
   if (user.value?.role === 'landlord') return 'warning'
+  if (user.value?.role === 'maintenance_worker') return 'success'
+  if (user.value?.role === 'bd_manager') return ''
   return 'info'
 })
 

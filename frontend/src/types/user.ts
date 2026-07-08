@@ -1,5 +1,5 @@
 ﻿// Matches backend: app/models/user.py
-export type UserRole = 'tenant' | 'landlord' | 'admin'
+export type UserRole = 'tenant' | 'landlord' | 'bd_manager' | 'maintenance_worker' | 'admin'
 export type UserStatus = 'active' | 'disabled' | 'deleted'
 
 // Matches backend: app/schemas/user.py UserRead
