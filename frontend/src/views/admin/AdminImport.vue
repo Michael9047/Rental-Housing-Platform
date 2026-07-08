@@ -257,6 +257,7 @@ import {
 import type { UploadFile, UploadInstance } from 'element-plus'
 import { ElMessage } from 'element-plus'
 import { adminService } from '@/services/admin'
+import { extractErrorMessage } from '@/services/api'
 import type { ImportResult, ImportTask, ImportTaskDetail } from '@/types/admin'
 
 const REQUIRED_FIELDS = ['title', 'address', 'district', 'price_monthly']
@@ -358,7 +359,7 @@ async function startImport() {
     ElMessage.success(`导入完成：成功 ${result.success_records} 条，失败 ${result.failed_records} 条`)
     fetchHistory()
   } catch (err: any) {
-    ElMessage.error(err?.response?.data?.detail || '导入失败')
+    ElMessage.error(extractErrorMessage(err) || '导入失败')
   } finally {
     importing.value = false
   }
@@ -372,7 +373,7 @@ async function retryImport() {
     ElMessage.success(`重试完成：成功补充 ${result.success_records} 条`)
     fetchHistory()
   } catch (err: any) {
-    ElMessage.error(err?.response?.data?.detail || '重试失败')
+    ElMessage.error(extractErrorMessage(err) || '重试失败')
   }
 }
 
@@ -382,7 +383,7 @@ async function retryTask(taskId: number) {
     ElMessage.success('重试完成')
     fetchHistory()
   } catch (err: any) {
-    ElMessage.error(err?.response?.data?.detail || '重试失败')
+    ElMessage.error(extractErrorMessage(err) || '重试失败')
   }
 }
 

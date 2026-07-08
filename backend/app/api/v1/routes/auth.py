@@ -58,9 +58,8 @@ async def register(
 
     try:
         user = await AuthService(session).register_user(register_in)
-        # 标记手机号已验证
+        # phone_verified pending future DB migration
         if register_in.phone and register_in.sms_code:
-            user.phone_verified = True
             await session.commit()
             await session.refresh(user)
 

@@ -213,6 +213,9 @@
 
       <!-- Main Content -->
       <el-main class="layout-main">
+        <div class="back-bar" v-if="route.path !== '/'">
+          <el-button text :icon="ArrowLeft" @click="router.back()">返回上一页</el-button>
+        </div>
         <router-view />
         <GlobalFooter />
       </el-main>
@@ -224,7 +227,7 @@
 import { ref, computed, watch, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import {
-  MagicStick, Search, HomeFilled, User, UserFilled, ArrowDown, Setting, SwitchButton,
+  MagicStick, Search, HomeFilled, User, UserFilled, ArrowDown, ArrowLeft, Setting, SwitchButton,
   Plus, List, Bell, DataAnalysis, Tickets, OfficeBuilding, Location,
 } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
@@ -419,5 +422,18 @@ watch(() => route.path, () => {
   padding: 24px;
   display: flex;
   flex-direction: column;
+}
+
+.back-bar {
+  margin-bottom: 12px;
+}
+
+.back-bar .el-button {
+  font-size: 13px;
+  color: var(--text-secondary, #606266);
+}
+
+.back-bar .el-button:hover {
+  color: var(--primary);
 }
 </style>

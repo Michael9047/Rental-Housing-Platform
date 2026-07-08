@@ -63,15 +63,21 @@ const routes: RouteRecordRaw[] = [
         meta: { requiresAuth: true, requiresLandlord: true },
       },
       {
-        path: 'property/manage',
-        name: 'manage-properties',
-        component: () => import('@/views/ManageProperties.vue'),
+        path: 'property/import',
+        name: 'batch-import',
+        component: () => import('@/views/publish/BatchImport.vue'),
         meta: { requiresAuth: true, requiresLandlord: true },
       },
       {
-        path: 'property/:id/edit',
-        name: 'edit-property',
-        component: () => import('@/views/CreateProperty.vue'),
+        path: 'property/publish',
+        name: 'publish-home',
+        component: () => import('@/views/publish/PublishHome.vue'),
+        meta: { requiresAuth: true, requiresLandlord: true },
+      },
+      {
+        path: 'property/manage',
+        name: 'manage-properties',
+        component: () => import('@/views/ManageProperties.vue'),
         meta: { requiresAuth: true, requiresLandlord: true },
       },
       {
@@ -108,6 +114,12 @@ const routes: RouteRecordRaw[] = [
         path: 'bookings/landlord',
         name: 'landlord-bookings',
         component: () => import('@/views/LandlordBookings.vue'),
+        meta: { requiresAuth: true, requiresLandlord: true },
+      },
+      {
+        path: 'buildings',
+        name: 'buildings',
+        component: () => import('@/views/BuildingList.vue'),
         meta: { requiresAuth: true, requiresLandlord: true },
       },
       {

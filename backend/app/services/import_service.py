@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.data_import import DataImport, ImportSourceType, ImportStatus
 from app.models.property import Property, PropertyStatus, PropertyType
+from app.services.column_mapper import ColumnMapper
 
 logger = logging.getLogger(__name__)
 
@@ -79,6 +80,8 @@ class ImportService:
         import_task: DataImport,
         file_content: bytes,
         landlord_id: int,
+        institute_id: int | None = None,
+        mode: str = "flexible",
     ) -> DataImport:
         self._created_property_ids = []
         import_task.status = ImportStatus.processing
@@ -86,32 +89,160 @@ class ImportService:
 
         errors: list[dict] = []
         try:
-            rows = self._parse_file(file_content, import_task.source_type)
-            if not rows:
+            # ── Step 1: 解析文件 ───────────────────────
+            raw_rows, raw_headers = self._parse_file_with_headers(file_content, import_task.source_type)
+
+            # 检查空文件
+            if not raw_headers:
                 import_task.status = ImportStatus.failed
+                import_task.failed_records = 1
                 import_task.error_log = json.dumps(
-                    [{"row": 0, "error": "No data rows found in file"}],
+                    [{"row": 0, "error": "文件无内容，未检测到表头行。请使用模板填写数据后重新上传", "type": "missing_field"}],
                     ensure_ascii=False,
                 )
                 await self.session.commit()
                 return import_task
 
+            # 检查只有表头无数据
+            if not raw_rows:
+                import_task.status = ImportStatus.failed
+                import_task.failed_records = 1
+                import_task.error_log = json.dumps(
+                    [{"row": 0, "error": "未检测到有效房源信息，仅有表头无数据行。请在表头下方填写房源信息", "type": "missing_field"}],
+                    ensure_ascii=False,
+                )
+                await self.session.commit()
+                return import_task
+
+            # ── Step 2: 列名映射 ────────────────────────
+            mapper = ColumnMapper()
+            mapping_result = mapper.match(raw_headers)
+
+            # 检查必填列是否全部缺失
+            mapped_fields = set(mapping_result.matched.values())
+            missing_required = REQUIRED_FIELDS - mapped_fields
+            if missing_required == REQUIRED_FIELDS:
+                # 所有必填列都没匹配上 → 文件格式完全不对
+                import_task.status = ImportStatus.failed
+                import_task.failed_records = 1
+                import_task.error_log = json.dumps(
+                    [{"row": 0, "error": f"无法识别任何必填列（需要：房源标题/详细地址/所在区域/月租金）。检测到的列：{'、'.join(raw_headers[:8])}。请使用下载的模板格式", "type": "missing_field"}],
+                    ensure_ascii=False,
+                )
+                await self.session.commit()
+                return import_task
+
+            if missing_required:
+                cn_missing = [self.FIELD_CN.get(f, f) for f in missing_required]
+                # 作为 warning 继续，但有行级校验兜底
+                logger.warning("Missing required columns: %s", cn_missing)
+            if mapping_result.unmatched:
+                logger.info("Unmatched columns: %s", mapping_result.unmatched)
+
+            # 应用映射
+            rows = []
+            for raw_row in raw_rows:
+                mapped_row = {}
+                for original_header, value in raw_row.items():
+                    field = mapping_result.matched.get(original_header)
+                    if field:
+                        mapped_row[field] = value
+                    elif original_header in mapping_result.unmatched:
+                        mapped_row[original_header.lower().strip()] = value
+                # 跳过全空行
+                if any(v for v in mapped_row.values() if v):
+                    rows.append(mapped_row)
+
+            # 过滤后无有效行
+            if not rows:
+                import_task.status = ImportStatus.failed
+                import_task.failed_records = 1
+                import_task.error_log = json.dumps(
+                    [{"row": 0, "error": "未检测到有效房源信息，所有数据行均为空。请填写至少一条房源信息后重新上传", "type": "missing_field"}],
+                    ensure_ascii=False,
+                )
+                await self.session.commit()
+                return import_task
+
+            # ── Step 3: AI风险预评估（IQR + 孤立森林 + XGBoost）───
+            from app.services.risk_evaluator import RiskEvaluator, RiskLevel
+            evaluator = RiskEvaluator()
+            risk_results = evaluator.evaluate_batch(rows, rent_predictor=None)
+            # 建立行号→风险结果的索引
+            risk_map = {i + 1: risk_results[i] for i in range(len(rows))}
+
+            # ── Step 4: 逐行校验 & 分级入库 ───────────────
             import_task.total_records = len(rows)
             success = 0
             failed = 0
+            pending_review = 0
+
+            is_strict = (mode == "strict")
+            strict_errors: list[dict] = []
 
             for idx, row in enumerate(rows):
+                row_num = idx + 1
                 try:
-                    validated = self._validate_row(row, idx + 1)
+                    # 基础校验
+                    validated = self._validate_row(row, row_num)
+                    if institute_id:
+                        validated["institute_id"] = institute_id
+
+                    # 风险判定
+                    risk = risk_map.get(row_num)
+                    if risk and risk.level == RiskLevel.BLOCK:
+                        # 阻断性错误 → 拒绝入库
+                        raise ValueError(risk.reason)
+
+                    # 根据风险等级决定入库状态
+                    if risk and risk.should_set_pending:
+                        validated["status"] = "pending_review"
+                        pending_review += 1
+
                     await self._insert_property(validated, landlord_id)
                     success += 1
+
                 except ValueError as exc:
                     failed += 1
-                    errors.append({"row": idx + 1, "error": str(exc)})
+                    err_msg = str(exc)
+                    if "此房源已存在" in err_msg or "重复" in err_msg:
+                        err_type = "duplicate"
+                    elif "缺少必填" in err_msg or "不能为空" in err_msg:
+                        err_type = "missing_field"
+                    elif "疑似" in err_msg or "低于" in err_msg or "高于" in err_msg or "过小" in err_msg or "过大" in err_msg:
+                        err_type = "blocked_risk"  # AI 风险阻断
+                    elif "格式错误" in err_msg or "无效" in err_msg or "超出范围" in err_msg:
+                        err_type = "format_error"
+                    else:
+                        err_type = "unknown"
+                    errors.append({"row": row_num, "error": err_msg, "type": err_type})
+                    if is_strict:
+                        strict_errors.append(errors[-1])
+
+            # ── 严格模式：有错则全部回滚 ──
+            if is_strict and strict_errors:
+                # 回滚已插入的 property 记录（如果 flexible 模式先行插入了一些）
+                if success > 0:
+                    await self.session.rollback()
+                import_task.total_records = len(rows)
+                import_task.success_records = 0
+                import_task.failed_records = len(rows)
+                import_task.status = ImportStatus.failed
+                import_task.error_log = json.dumps(strict_errors, ensure_ascii=False)
+                import_task.updated_at = datetime.now(timezone.utc)
+                await self.session.commit()
+                return import_task
 
             import_task.success_records = success
             import_task.failed_records = failed
-            import_task.status = ImportStatus.completed if failed == 0 else ImportStatus.completed
+            # 在 error_log 中附加 pending_review 数量
+            if pending_review > 0:
+                errors.insert(0, {
+                    "row": 0,
+                    "error": f"AI检测：{pending_review} 条房源标记为「待人工审核」（租金/面积异常），已入库但学生端暂不展示",
+                    "type": "ai_review",
+                })
+            import_task.status = ImportStatus.completed
 
             if errors:
                 import_task.error_log = json.dumps(errors, ensure_ascii=False)
@@ -135,7 +266,7 @@ class ImportService:
             logger.exception("Import task %s failed", import_task.id)
             return import_task
 
-    async def retry_failed(self, import_task: DataImport, landlord_id: int) -> DataImport:
+    async def retry_failed(self, import_task: DataImport, landlord_id: int, institute_id: int | None = None) -> DataImport:
         self._created_property_ids = []
         if not import_task.error_log:
             return import_task
@@ -163,6 +294,8 @@ class ImportService:
                 continue
             try:
                 validated = self._validate_row(row_data, entry.get("row", 0))
+                if institute_id:
+                    validated["institute_id"] = institute_id
                 await self._insert_property(validated, landlord_id)
                 success_count += 1
             except ValueError as exc:
@@ -184,24 +317,48 @@ class ImportService:
 
     # ---- private helpers ----
 
-    def _parse_file(self, content: bytes, source_type: ImportSourceType) -> list[dict]:
+    def _parse_file_with_headers(self, content: bytes, source_type: ImportSourceType) -> tuple[list[dict], list[str]]:
+        """Parse file and return (rows, original_headers)"""
         if source_type == ImportSourceType.csv:
-            return self._parse_csv(content)
+            return self._parse_csv_with_headers(content)
         elif source_type == ImportSourceType.excel:
-            return self._parse_excel(content)
+            return self._parse_excel_with_headers(content)
         else:
             raise ValueError(f"Unsupported source type: {source_type}")
 
-    def _parse_csv(self, content: bytes) -> list[dict]:
-        text = content.decode("utf-8-sig")
+    def _detect_encoding(self, content: bytes) -> str:
+        """编码自动识别"""
+        try:
+            import chardet
+            detected = chardet.detect(content)
+            enc = detected.get('encoding') or 'utf-8'
+            logger.info("Detected encoding: %s (confidence: %s)", enc, detected.get('confidence'))
+            return enc
+        except ImportError:
+            # chardet not available, try common encodings
+            for enc in ['utf-8-sig', 'utf-8', 'gbk', 'gb2312', 'iso-8859-1']:
+                try:
+                    content.decode(enc)
+                    return enc
+                except (UnicodeDecodeError, LookupError):
+                    continue
+            return 'utf-8-sig'
+
+    def _parse_csv_with_headers(self, content: bytes) -> tuple[list[dict], list[str]]:
+        encoding = self._detect_encoding(content)
+        text = content.decode(encoding)
         reader = csv.DictReader(io.StringIO(text))
         rows = []
+        headers = []
         for row in reader:
-            cleaned = {k.strip().lower(): v.strip() if v else "" for k, v in row.items()}
+            # Keep original header names for column mapping
+            cleaned = {k.strip(): v.strip() if v else "" for k, v in row.items() if k}
+            if not headers:
+                headers = list(cleaned.keys())
             rows.append(cleaned)
-        return rows
+        return rows, headers
 
-    def _parse_excel(self, content: bytes) -> list[dict]:
+    def _parse_excel_with_headers(self, content: bytes) -> tuple[list[dict], list[str]]:
         try:
             import openpyxl
         except ImportError:
@@ -215,9 +372,9 @@ class ImportService:
         rows_iter = ws.iter_rows(values_only=True)
         headers_raw = next(rows_iter, None)
         if not headers_raw:
-            return []
+            return [], []
 
-        headers = [str(h).strip().lower() if h else "" for h in headers_raw]
+        headers = [str(h).strip() if h else "" for h in headers_raw]
         rows = []
         for row in rows_iter:
             if not any(row):
@@ -228,37 +385,53 @@ class ImportService:
                     cleaned[headers[i]] = str(value).strip() if value is not None else ""
             rows.append(cleaned)
         wb.close()
-        return rows
+        return rows, headers
+
+    # 中文字段名映射
+    FIELD_CN = {
+        "title": "房源标题",
+        "address": "详细地址",
+        "district": "所在区域",
+        "price_monthly": "月租金",
+        "area_sqm": "面积",
+        "bedrooms": "卧室数",
+        "bathrooms": "卫生间数",
+        "property_type": "房源类型",
+        "description": "房源描述",
+        "latitude": "纬度",
+        "longitude": "经度",
+    }
 
     def _validate_row(self, row: dict, row_num: int) -> dict:
         missing = REQUIRED_FIELDS - set(row.keys())
         if missing:
-            raise ValueError(f"Missing required fields: {missing}")
+            cn_missing = [self.FIELD_CN.get(f, f) for f in missing]
+            raise ValueError(f"缺少必填字段：{'、'.join(cn_missing)}")
 
         validated: dict = {}
 
         title = str(row.get("title", "")).strip()
         if not title:
-            raise ValueError("title is empty")
+            raise ValueError("房源标题不能为空")
         validated["title"] = title
 
         address = str(row.get("address", "")).strip()
         if not address:
-            raise ValueError("address is empty")
+            raise ValueError("详细地址不能为空")
         validated["address"] = address
 
         district = str(row.get("district", "")).strip()
         if not district:
-            raise ValueError("district is empty")
+            raise ValueError("所在区域不能为空")
         validated["district"] = district
 
         try:
             price = Decimal(str(row.get("price_monthly", "0")).strip())
             if price < 0:
-                raise ValueError(f"price_monthly must be non-negative, got {price}")
+                raise ValueError(f"月租金不能为负数，当前值: {price}")
             validated["price_monthly"] = price
         except (InvalidOperation, ValueError) as exc:
-            raise ValueError(f"Invalid price_monthly: {exc}") from exc
+            raise ValueError(f"月租金格式错误，请输入数字。当前值: {row.get('price_monthly', '')}") from exc
 
         # Optional fields
         if row.get("description"):
@@ -268,7 +441,7 @@ class ImportService:
             try:
                 area = Decimal(str(row["area_sqm"]).strip())
                 if area <= 0:
-                    raise ValueError(f"area_sqm must be positive, got {area}")
+                    raise ValueError(f"面积必须大于0，当前值: {area}")
                 validated["area_sqm"] = area
             except (InvalidOperation, ValueError):
                 pass
@@ -277,7 +450,7 @@ class ImportService:
             try:
                 bedrooms = int(row["bedrooms"])
                 if bedrooms < 0:
-                    raise ValueError(f"bedrooms must be non-negative, got {bedrooms}")
+                    raise ValueError(f"卧室数不能为负，当前值: {bedrooms}")
                 validated["bedrooms"] = bedrooms
             except ValueError:
                 pass
@@ -286,7 +459,7 @@ class ImportService:
             try:
                 bathrooms = int(row["bathrooms"])
                 if bathrooms < 0:
-                    raise ValueError(f"bathrooms must be non-negative, got {bathrooms}")
+                    raise ValueError(f"卫生间数不能为负，当前值: {bathrooms}")
                 validated["bathrooms"] = bathrooms
             except ValueError:
                 pass
@@ -295,7 +468,7 @@ class ImportService:
             ptype = str(row["property_type"]).strip().lower()
             if ptype not in VALID_PROPERTY_TYPES:
                 raise ValueError(
-                    f"Invalid property_type '{ptype}'. Must be one of: {VALID_PROPERTY_TYPES}"
+                    f"房源类型 '{ptype}' 无效，可选: apartment(公寓) / house(别墅) / studio(单间) / shared(合租)"
                 )
             validated["property_type"] = ptype
 
@@ -303,7 +476,7 @@ class ImportService:
             pstatus = str(row["status"]).strip().lower()
             if pstatus not in VALID_STATUSES:
                 raise ValueError(
-                    f"Invalid status '{pstatus}'. Must be one of: {VALID_STATUSES}"
+                    f"房源状态 '{pstatus}' 无效，可选: available(可租) / rented(已租) / maintenance(维护) / offline(下线)"
                 )
             validated["status"] = pstatus
 
@@ -312,9 +485,9 @@ class ImportService:
                 lat = Decimal(str(row["latitude"]).strip())
                 lng = Decimal(str(row["longitude"]).strip())
                 if not (-90 <= float(lat) <= 90):
-                    raise ValueError(f"latitude out of range: {lat}")
+                    raise ValueError(f"纬度超出范围(-90~90): {lat}")
                 if not (-180 <= float(lng) <= 180):
-                    raise ValueError(f"longitude out of range: {lng}")
+                    raise ValueError(f"经度超出范围(-180~180): {lng}")
                 validated["latitude"] = lat
                 validated["longitude"] = lng
             except (InvalidOperation, ValueError):
@@ -333,10 +506,11 @@ class ImportService:
             )
         )
         if existing:
-            raise ValueError(f"Duplicate: property with title '{data['title']}' and address '{data['address']}' already exists")
+            raise ValueError(f"此房源已存在：标题「{data['title']}」+ 地址「{data['address']}」已有相同房源，请勿重复导入")
 
         property_obj = Property(
             landlord_id=landlord_id,
+            institute_id=data.get("institute_id"),
             title=data["title"],
             address=data["address"],
             district=data["district"],
