@@ -69,7 +69,24 @@ class Settings(BaseSettings):
         validation_alias="DEEPSEEK_BASE_URL",
     )
 
-
+    # 智谱 AI（Embedding，OpenAI 兼容接口）—— 优先于 OpenAI 使用
+    zhipu_api_key: str = Field(
+        default="",
+        validation_alias="ZHIPU_API_KEY",
+    )
+    zhipu_embedding_model: str = Field(
+        default="embedding-3",
+        validation_alias="ZHIPU_EMBEDDING_MODEL",
+    )
+    zhipu_base_url: str = Field(
+        default="https://open.bigmodel.cn/api/paas/v4",
+        validation_alias="ZHIPU_BASE_URL",
+    )
+    # 与 pgvector 列维度（Property.embedding，1536）对齐，embedding-3 支持自定义输出维度
+    embedding_dimensions: int = Field(
+        default=1536,
+        validation_alias="EMBEDDING_DIMENSIONS",
+    )
 
     amap_web_key: str = Field(
         default="",

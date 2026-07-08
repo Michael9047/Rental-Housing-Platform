@@ -20,12 +20,18 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 CACHE_TTL_SECONDS = 300  # 5 minutes for search results
+SEARCH_CACHE_VERSION_KEY = "search:cache_version"
 
 
-def _cache_key(prefix: str, **kwargs: Any) -> str:
-    """Build a deterministic cache key from search parameters."""
+def _cache_key(prefix: str, version: str, **kwargs: Any) -> str:
+    """Build a deterministic, version-scoped cache key from search parameters.
+
+    The version prefix lets us invalidate the whole search cache namespace in
+    one atomic INCR (see ``_bump_search_cache_version``) whenever a property is
+    created/updated/deleted, instead of scanning and deleting individual keys.
+    """
     raw = json.dumps(kwargs, sort_keys=True, default=str)
-    return f"search:{prefix}:{raw}"
+    return f"search:{prefix}:v{version}:{raw}"
 
 
 async def _get_redis() -> "Redis | None":  # noqa: F821
@@ -39,6 +45,34 @@ async def _get_redis() -> "Redis | None":  # noqa: F821
     except Exception:
         logger.debug("Redis not available; search caching disabled.")
         return None
+
+
+async def _get_cache_version(redis) -> str:
+    """Read the current search cache version (defaults to "0")."""
+    value = await redis.get(SEARCH_CACHE_VERSION_KEY)
+    if value is None:
+        return "0"
+    return value.decode() if isinstance(value, (bytes, bytearray)) else str(value)
+
+
+async def _bump_search_cache_version() -> None:
+    """Invalidate all cached search results by bumping the namespace version.
+
+    Old keys become unreachable immediately and expire on their own via TTL.
+    No-op when Redis is unavailable.
+    """
+    redis = await _get_redis()
+    if redis is None:
+        return
+    try:
+        await redis.incr(SEARCH_CACHE_VERSION_KEY)
+    except Exception:
+        logger.debug("Failed to bump search cache version.")
+    finally:
+        try:
+            await redis.aclose()
+        except Exception:
+            pass
 
 
 class PropertyService:
@@ -56,7 +90,8 @@ class PropertyService:
         except Exception:
             logger.exception("Failed to generate POI for property %s", property_obj.id)
 
-        self._dispatch_embedding_task(property_obj.id)
+        await self._ensure_embedding(property_obj)
+        await _bump_search_cache_version()
         return property_obj
 
     async def get(self, property_id: int) -> Property | None:
@@ -97,6 +132,7 @@ class PropertyService:
         price_max: Decimal | None = None,
         bedrooms: int | None = None,
         property_type: str | None = None,
+        status: str | None = None,
         limit: int = 20,
     ) -> list[tuple[Property, float | None]]:
         # --- Cache check for non-vector searches (cacheable) ---
@@ -107,17 +143,18 @@ class PropertyService:
                 "price_max": str(price_max) if price_max else None,
                 "bedrooms": bedrooms,
                 "property_type": property_type,
+                "status": status,
                 "limit": limit,
             }
-            cache_key_str = _cache_key("filter", **cache_params)
             redis = await _get_redis()
             if redis is not None:
                 try:
+                    version = await _get_cache_version(redis)
+                    cache_key_str = _cache_key("filter", version, **cache_params)
                     cached = await redis.get(cache_key_str)
                     if cached:
                         logger.debug("Search cache hit for key=%s", cache_key_str)
                         rows_data = json.loads(cached)
-                        await redis.aclose()
                         return [
                             (Property(**row["property"]), row["similarity"])
                             for row in rows_data
@@ -125,21 +162,24 @@ class PropertyService:
                 except Exception:
                     logger.debug("Cache retrieval failed, proceeding without cache.")
                 finally:
-                    if redis is not None:
-                        try:
-                            await redis.aclose()
-                        except Exception:
-                            pass
+                    try:
+                        await redis.aclose()
+                    except Exception:
+                        pass
 
         # --- Build query ---
         if query:
+            from sqlalchemy import Float
+
             from app.services.embedding_service import EmbeddingService
-            from pgvector.sqlalchemy import l2_distance
 
             embedding_service = EmbeddingService()
             query_vec = await embedding_service.generate_embedding(query)
 
-            similarity_expr = l2_distance(Property.embedding, query_vec).label("similarity")
+            # pgvector 的 L2 距离操作符（新版 pgvector 不再导出 l2_distance 函数）
+            similarity_expr = (
+                Property.embedding.op("<->", return_type=Float)(query_vec).label("similarity")
+            )
             stmt = (
                 select(Property, similarity_expr)
                 .where(Property.embedding.isnot(None))
@@ -161,6 +201,8 @@ class PropertyService:
             stmt = stmt.where(Property.bedrooms == bedrooms)
         if property_type:
             stmt = stmt.where(Property.property_type == property_type)
+        if status:
+            stmt = stmt.where(Property.status == status)
 
         stmt = stmt.limit(limit)
         result = await self.session.execute(stmt)
@@ -172,6 +214,8 @@ class PropertyService:
             redis = await _get_redis()
             if redis is not None:
                 try:
+                    version = await _get_cache_version(redis)
+                    cache_key_str = _cache_key("filter", version, **cache_params)
                     rows_data = [
                         {
                             "property": {
@@ -210,7 +254,8 @@ class PropertyService:
         except Exception:
             logger.exception("Failed to refresh POI for property %s", property_obj.id)
 
-        self._dispatch_embedding_task(property_obj.id)
+        await self._ensure_embedding(property_obj)
+        await _bump_search_cache_version()
         return property_obj
 
     async def delete(self, property_id: int) -> bool:
@@ -220,7 +265,52 @@ class PropertyService:
 
         await self.session.delete(property_obj)
         await self.session.commit()
+        await _bump_search_cache_version()
         return True
+
+    async def _ensure_embedding(self, property_obj: Property) -> None:
+        """Make the property searchable via semantic search.
+
+        Sync-first: when an embedding provider (Zhipu or OpenAI) is configured,
+        generate the embedding inline and commit it *before returning*, so the
+        property is immediately found by AI/semantic search (which filters on
+        ``embedding IS NOT NULL``). On any failure — or when no key is
+        configured — fall back to the async Celery task so the upload itself
+        is never blocked or coupled to the embedding API's availability.
+        """
+        from app.services.embedding_service import EmbeddingService
+
+        embedding_service = EmbeddingService()
+        if embedding_service.is_available:
+            try:
+                property_type = (
+                    property_obj.property_type.value
+                    if hasattr(property_obj.property_type, "value")
+                    else str(property_obj.property_type)
+                )
+                embedding = await embedding_service.generate_property_embedding(
+                    {
+                        "title": property_obj.title,
+                        "description": property_obj.description,
+                        "address": property_obj.address,
+                        "district": property_obj.district,
+                        "property_type": property_type,
+                    }
+                )
+                property_obj.embedding = embedding
+                await self.session.commit()
+                # commit 使 ORM 属性过期；刷新后再交给响应序列化，
+                # 否则访问 updated_at 等字段会在异步上下文外触发懒加载报错
+                await self.session.refresh(property_obj)
+                return
+            except Exception:
+                logger.exception(
+                    "Sync embedding failed for property %s, falling back to async task",
+                    property_obj.id,
+                )
+
+        # Fallback (also the default path when no provider is configured)
+        self._dispatch_embedding_task(property_obj.id)
 
     @staticmethod
     def _dispatch_embedding_task(property_id: int) -> None:

@@ -1,5 +1,6 @@
 ﻿from app.db.session import Base
 from app.models.advertisement import AdImpression, Advertisement, AdvertisementStatus
+from app.models.agent_cart import AgentCart, AgentCartItem
 from app.models.audit_log import AuditLog
 from app.models.booking import Booking, BookingStatus
 from app.models.chat import ChatMessage, ChatMessageRole, ChatSession, ChatSessionStatus
@@ -31,6 +32,8 @@ __all__ = [
     "AdImpression",
     "Advertisement",
     "AdvertisementStatus",
+    "AgentCart",
+    "AgentCartItem",
     "AuditLog",
     "Base",
     "Booking",

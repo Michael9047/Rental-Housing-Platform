@@ -98,6 +98,20 @@
               <el-icon><MagicStick /></el-icon>
               <span>AI 找房</span>
             </el-menu-item>
+            <el-menu-item v-if="authStore.isLoggedIn" index="/agent">
+              <el-icon><ChatDotRound /></el-icon>
+              <span>推荐管家</span>
+            </el-menu-item>
+            <el-menu-item v-if="authStore.isLoggedIn" index="/cart">
+              <el-icon><ShoppingCart /></el-icon>
+              <span>候选清单</span>
+              <el-badge
+                v-if="cartStore.count > 0"
+                :value="cartStore.count"
+                :max="99"
+                class="cart-menu-badge"
+              />
+            </el-menu-item>
             <el-menu-item index="/search">
               <el-icon><Search /></el-icon>
               <span>搜索房源</span>
@@ -165,6 +179,9 @@
         <GlobalFooter />
       </el-main>
     </el-container>
+
+    <!-- 浮动 AI 管家（登录可见，/agent 页不显示） -->
+    <AssistantBubble />
   </el-container>
 </template>
 
@@ -173,15 +190,21 @@ import { ref, computed, watch, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import {
   MagicStick, Search, HomeFilled, User, UserFilled, ArrowDown, Setting, SwitchButton,
-  Plus, List, Bell, DataAnalysis, Tickets, OfficeBuilding, Location,
+  Plus, List, Bell, DataAnalysis, Tickets, OfficeBuilding, Location, ChatDotRound,
+  ShoppingCart,
 } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
+import { useAgentChatStore } from '@/stores/agentChat'
+import { useCartStore } from '@/stores/cart'
 import { notificationService } from '@/services/notification'
 import GlobalFooter from '@/components/GlobalFooter.vue'
+import AssistantBubble from '@/components/AssistantBubble.vue'
 
 const router = useRouter()
 const route = useRoute()
 const authStore = useAuthStore()
+const cartStore = useCartStore()
+const agentChatStore = useAgentChatStore()
 
 const searchQuery = ref('')
 const unreadCount = ref(0)
@@ -216,12 +239,28 @@ async function fetchUnreadCount() {
   }
 }
 
-onMounted(fetchUnreadCount)
+onMounted(() => {
+  fetchUnreadCount()
+  if (authStore.isLoggedIn) cartStore.fetch()
+})
 
 // 每次路由变化刷新未读数（从通知页回来时数字更新）
 watch(() => route.path, () => {
   fetchUnreadCount()
 })
+
+// 登录状态变化时同步候选清单与管家会话（登录后拉取、登出清空）
+watch(
+  () => authStore.isLoggedIn,
+  (loggedIn) => {
+    if (loggedIn) {
+      cartStore.fetch()
+    } else {
+      cartStore.clear()
+      agentChatStore.reset()
+    }
+  },
+)
 </script>
 
 <style scoped>
@@ -359,6 +398,15 @@ watch(() => route.path, () => {
   border-right: none !important;
   height: 100%;
   padding-top: 8px;
+}
+
+.cart-menu-badge {
+  margin-left: 8px;
+}
+
+.cart-menu-badge :deep(.el-badge__content) {
+  position: static;
+  transform: none;
 }
 
 .layout-main {
