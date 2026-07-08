@@ -1,5 +1,7 @@
+// Matches backend: app/models/property.py
 export type PropertyType = 'apartment' | 'house' | 'studio' | 'shared'
 export type PropertyStatus = 'available' | 'pending_review' | 'rented' | 'maintenance' | 'offline'
+export type RentType = 'monthly' | 'quarterly' | 'yearly'
 export type DepositType = 'one_month' | 'one_three' | 'two_month' | 'three_month' | 'half_month' | 'free' | 'custom'
 
 export interface Property {
@@ -11,6 +13,9 @@ export interface Property {
   description: string
   deposit_amount?: number
   service_fee_rate?: number | null
+  min_lease_months: number
+  max_lease_months?: number | null
+  rent_type: RentType
   room_number?: string | null
   floor?: number | null
   address: string

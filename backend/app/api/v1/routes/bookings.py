@@ -1,4 +1,4 @@
-﻿from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, get_db_session, require_landlord, require_tenant
@@ -17,12 +17,6 @@ async def create_booking(
     session: AsyncSession = Depends(get_db_session),
     current_user: User = Depends(require_tenant),
 ) -> BookingRead:
-    if booking_in.message is None and booking_in.scheduled_date is None:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="At least one of message or scheduled_date is required",
-        )
-
     property_obj = await PropertyService(session).get(booking_in.property_id)
     if not property_obj:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Property not found")
