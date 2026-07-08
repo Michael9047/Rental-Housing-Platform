@@ -1,6 +1,7 @@
-﻿// Matches backend: app/models/property.py
+// Matches backend: app/models/property.py
 export type PropertyType = 'apartment' | 'house' | 'studio' | 'shared'
 export type PropertyStatus = 'available' | 'rented' | 'maintenance' | 'offline'
+export type RentType = 'monthly' | 'quarterly' | 'yearly'
 
 // Matches backend: app/schemas/property.py PropertyRead
 export interface Property {
@@ -10,6 +11,9 @@ export interface Property {
   description: string
   deposit_amount?: number
   service_fee_rate?: number | null
+  min_lease_months: number
+  max_lease_months?: number | null
+  rent_type: RentType
   address: string
   district: string
   country?: string

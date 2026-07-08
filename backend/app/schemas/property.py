@@ -1,11 +1,11 @@
-﻿from datetime import datetime
+from datetime import datetime
 from decimal import Decimal
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.schemas.property_image import PropertyImageRead
 
-from app.models.property import PropertyStatus, PropertyType
+from app.models.property import PropertyStatus, PropertyType, RentType
 
 
 class PropertyBase(BaseModel):
@@ -24,6 +24,9 @@ class PropertyBase(BaseModel):
     longitude: Decimal | None = Field(default=None, ge=-180, le=180)
     deposit_amount: int | None = None
     service_fee_rate: float | None = None
+    min_lease_months: int = 12
+    max_lease_months: int | None = 60
+    rent_type: RentType = RentType.monthly
 
 class PropertyCreate(PropertyBase):
     landlord_id: int

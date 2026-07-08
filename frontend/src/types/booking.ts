@@ -1,4 +1,4 @@
-﻿export type BookingStatus = 'pending' | 'approved' | 'rejected' | 'cancelled' | 'completed'
+export type BookingStatus = 'pending' | 'approved' | 'rejected' | 'cancelled' | 'completed'
 
 // Matches backend: app/schemas/booking.py BookingRead
 export interface Booking {
@@ -13,6 +13,9 @@ export interface Booking {
   service_fee: number | null
   deposit_status: string | null
   payment_transaction_id: string | null
+  lease_months: number | null
+  total_rent: number | null
+  application_data: any | null
   created_at: string
   updated_at: string
 }
@@ -21,6 +24,11 @@ export interface BookingCreate {
   property_id: number
   message?: string
   scheduled_date?: string
+  deposit_amount?: number
+  service_fee?: number
+  lease_months?: number
+  total_rent?: number
+  application_data?: any
 }
 
 export type NotificationType = 'booking_created' | 'booking_approved' | 'booking_rejected' | 'booking_cancelled'

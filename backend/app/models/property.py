@@ -1,4 +1,4 @@
-﻿import enum
+import enum
 from decimal import Decimal
 
 from sqlalchemy import Boolean, CheckConstraint, Enum, Float, ForeignKey, Index, Integer, Numeric, String, Text as SAText
@@ -45,6 +45,12 @@ class PropertyType(str, enum.Enum):
     house = "house"
     studio = "studio"
     shared = "shared"
+
+
+class RentType(str, enum.Enum):
+    monthly = "monthly"
+    quarterly = "quarterly"
+    yearly = "yearly"
 
 
 class PropertyStatus(str, enum.Enum):
@@ -95,6 +101,13 @@ class Property(TimestampMixin, Base):
 
     deposit_amount: Mapped[int | None] = mapped_column(Integer, nullable=True, default=1000)
     service_fee_rate: Mapped[float | None] = mapped_column(Float, nullable=True, default=0.10)
+    min_lease_months: Mapped[int] = mapped_column(Integer, nullable=False, default=12)
+    max_lease_months: Mapped[int | None] = mapped_column(Integer, nullable=True, default=60)
+    rent_type: Mapped[RentType] = mapped_column(
+        Enum(RentType, name="rent_type"),
+        default=RentType.monthly,
+        nullable=False,
+    )
 
     embedding: Mapped[list[float] | None] = mapped_column(VectorColumn)
 

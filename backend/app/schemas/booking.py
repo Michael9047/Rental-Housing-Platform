@@ -9,6 +9,11 @@ class BookingCreate(BaseModel):
     property_id: int
     message: str | None = Field(default=None, max_length=2000)
     scheduled_date: str | None = Field(default=None, max_length=32)
+    deposit_amount: int | None = None
+    service_fee: int | None = None
+    lease_months: int | None = None
+    total_rent: int | None = None
+    application_data: dict | None = None
 
 
 class BookingUpdate(BaseModel):
@@ -31,5 +36,8 @@ class BookingRead(BaseModel):
     service_fee: int | None = None
     deposit_status: str | None = None
     payment_transaction_id: str | None = None
+    lease_months: int | None = None
+    total_rent: int | None = None
+    application_data: dict | None = None
     created_at: datetime
     updated_at: datetime
