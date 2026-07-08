@@ -1,0 +1,1 @@
+Vue 3 + vue-router 4 + Pinia 2 as the core stack; Element Plus (zh-cn) for UI components; Leaflet for map views; Axios for HTTP calls; Vite + vue-tsc for build; Vitest for tests.

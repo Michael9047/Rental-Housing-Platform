@@ -1,0 +1,1 @@
+FastAPI + Pydantic v2 response models, SQLAlchemy 2.0 async ORM with PostgreSQL JSON columns, `openai.AsyncOpenAI` for non-blocking chat completions, and `pgvector.sqlalchemy.l2_distance` for vector similarity search over `Property.embedding`.

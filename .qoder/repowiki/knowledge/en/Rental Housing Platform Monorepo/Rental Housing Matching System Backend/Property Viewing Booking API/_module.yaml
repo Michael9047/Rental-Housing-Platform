@@ -1,0 +1,11 @@
+schema_version: 1
+module_path: backend/bookings
+title: Property Viewing Booking API
+scope:
+    - backend/app/api/v1/routes/bookings.py
+    - backend/app/services/booking_service.py
+    - backend/app/models/booking.py
+    - backend/app/schemas/booking.py
+source_files: []
+depends_on: []
+related_to: []

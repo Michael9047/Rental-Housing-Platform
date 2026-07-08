@@ -1,0 +1,13 @@
+schema_version: 1
+module_path: backend/ai_services
+title: AI-Powered Property Search & Embedding Pipeline
+scope:
+    - backend/app/api/v1/routes/ai_search.py
+    - backend/app/services/embedding_service.py
+    - backend/app/models/embedding_job.py
+    - backend/app/services/embedding_job_service.py
+    - backend/app/tasks/embedding_tasks.py
+    - backend/app/schemas/ai_search.py
+source_files: []
+depends_on: []
+related_to: []

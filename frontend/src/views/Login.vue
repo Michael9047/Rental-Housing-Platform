@@ -14,7 +14,6 @@
         :model="form"
         :rules="rules"
         label-position="top"
-        @submit.prevent="handleLogin"
       >
         <el-form-item label="用户名或邮箱" prop="username_or_email">
           <el-input
@@ -22,6 +21,7 @@
             placeholder="请输入用户名或邮箱"
             :prefix-icon="User"
             size="large"
+            @keyup.enter="handleLogin"
           />
         </el-form-item>
 
@@ -33,22 +33,21 @@
             :prefix-icon="Lock"
             show-password
             size="large"
+            @keyup.enter="handleLogin"
           />
         </el-form-item>
-
-        <el-form-item>
-          <el-button
-            type="primary"
-            native-type="submit"
-            :loading="authStore.loading"
-            size="large"
-            class="submit-btn"
-            round
-          >
-            登录
-          </el-button>
-        </el-form-item>
       </el-form>
+
+      <el-button
+        type="primary"
+        :loading="loading"
+        size="large"
+        class="submit-btn"
+        round
+        @click="handleLogin"
+      >
+        登录
+      </el-button>
 
       <el-divider>其他登录方式</el-divider>
       <el-button class="wechat-btn" @click="handleWechatLogin" :loading="wechatLoading" size="large" round>
@@ -73,6 +72,7 @@ const router = useRouter()
 const route = useRoute()
 const authStore = useAuthStore()
 const formRef = ref<FormInstance>()
+const loading = ref(false)
 const wechatLoading = ref(false)
 
 const form = reactive({
@@ -90,6 +90,7 @@ async function handleLogin() {
   const valid = await formRef.value.validate().catch(() => false)
   if (!valid) return
 
+  loading.value = true
   try {
     await authStore.login({
       username_or_email: form.username_or_email,
@@ -99,7 +100,9 @@ async function handleLogin() {
     const redirect = (route.query.redirect as string) || '/'
     router.push(redirect)
   } catch {
-    // handled by interceptor
+    // error message handled by axios interceptor
+  } finally {
+    loading.value = false
   }
 }
 

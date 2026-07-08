@@ -1,0 +1,5 @@
+- Forms use Element Plus `el-form` with a typed `FormInstance` ref (`formRef` / `editFormRef`) and call `validate()` before submitting, falling back gracefully when the ref is unset.
+- User state is read via `const { user } = storeToRefs(authStore)` from `@/stores/auth` rather than imported directly, keeping the store as the single source of truth.
+- Navigation is performed through `router.push(...)` or `$router.push(...)` with route strings and optional `query` objects instead of `<router-link>` for programmatic flows.
+- User-facing feedback goes through `ElMessage.success/error/info` and confirmation dialogs through `ElMessageBox.confirm`, never raw `alert`/`console`.
+- Optional fields are normalized to `undefined` before being sent to services (e.g. `email || undefined`, `phone || undefined`) so the backend receives a clean payload.

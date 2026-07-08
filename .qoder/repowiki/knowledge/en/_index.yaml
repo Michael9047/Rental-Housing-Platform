@@ -1,0 +1,264 @@
+# 知识卡导出索引文件
+schema_version: 1
+locale: en-US
+branch: main
+nodes_managed: true
+exported_at: "2026-07-05T09:26:55Z"
+modules:
+    "":
+        dir_name: Rental Housing Platform Monorepo
+        title: Rental Housing Platform Monorepo
+        scope:
+            - README.md
+            - AGENTS.md
+            - CLAUDE.md
+            - DEPLOYMENT.md
+            - .gitignore
+            - docker-compose.yml
+            - docker-compose.prod.yml
+            - run_dev.ps1
+            - .env.example
+            - .env.prod
+        source_files: []
+        children:
+            - backend
+            - design_system
+            - docs
+            - frontend
+            - wechat_miniprogram
+        depends_on: []
+        related_to: []
+    backend:
+        dir_name: Rental Housing Matching System Backend
+        title: Rental Housing Matching System Backend
+        scope:
+            - backend/
+        source_files: []
+        children:
+            - backend/admin_imports
+            - backend/ai_services
+            - backend/auth_users
+            - backend/bookings
+            - backend/chat
+            - backend/contracts_payments
+            - backend/geo_poi
+            - backend/properties
+        depends_on: []
+        related_to: []
+    backend/admin_imports:
+        dir_name: Admin Import & Audit Management
+        title: Admin Import & Audit Management
+        scope:
+            - backend/app/api/v1/routes/admin.py
+            - backend/app/api/v1/routes/imports.py
+            - backend/app/services/import_service.py
+            - backend/app/models/data_import.py
+            - backend/app/models/audit_log.py
+            - backend/app/services/audit_service.py
+            - backend/app/tasks/import_tasks.py
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    backend/ai_services:
+        dir_name: AI-Powered Property Search & Embedding Pipeline
+        title: AI-Powered Property Search & Embedding Pipeline
+        scope:
+            - backend/app/api/v1/routes/ai_search.py
+            - backend/app/services/embedding_service.py
+            - backend/app/models/embedding_job.py
+            - backend/app/services/embedding_job_service.py
+            - backend/app/tasks/embedding_tasks.py
+            - backend/app/schemas/ai_search.py
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    backend/auth_users:
+        dir_name: User Authentication & Account Management
+        title: User Authentication & Account Management
+        scope:
+            - backend/app/api/v1/routes/auth.py
+            - backend/app/api/v1/routes/users.py
+            - backend/app/services/auth_service.py
+            - backend/app/services/user_service.py
+            - backend/app/models/user.py
+            - backend/app/schemas/auth.py
+            - backend/app/schemas/user.py
+            - backend/app/tasks/notification_tasks.py
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    backend/bookings:
+        dir_name: Property Viewing Booking API
+        title: Property Viewing Booking API
+        scope:
+            - backend/app/api/v1/routes/bookings.py
+            - backend/app/services/booking_service.py
+            - backend/app/models/booking.py
+            - backend/app/schemas/booking.py
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    backend/chat:
+        dir_name: Rental Housing Chat & RAG Assistant
+        title: Rental Housing Chat & RAG Assistant
+        scope:
+            - backend/app/api/v1/routes/chat.py
+            - backend/app/services/chat_service.py
+            - backend/app/models/chat.py
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    backend/contracts_payments:
+        dir_name: Contract Generation & WeChat Pay Deposit Flow
+        title: Contract Generation & WeChat Pay Deposit Flow
+        scope:
+            - backend/app/api/v1/routes/contracts.py
+            - backend/app/api/v1/routes/payments.py
+            - backend/app/services/contract_service.py
+            - backend/app/services/payment_service.py
+            - backend/app/models/contract.py
+            - backend/app/models/payment.py
+            - backend/app/schemas/contract.py
+            - backend/app/schemas/payment.py
+            - backend/app/tasks/payment_tasks.py
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    backend/geo_poi:
+        dir_name: Geocoding & POI Enrichment API
+        title: Geocoding & POI Enrichment API
+        scope:
+            - backend/app/api/v1/routes/geocoding.py
+            - backend/app/api/v1/routes/pois.py
+            - backend/app/api/v1/routes/map_routes.py
+            - backend/app/services/geocoding_service.py
+            - backend/app/services/poi_service.py
+            - backend/app/models/poi.py
+            - backend/app/schemas/geocoding.py
+            - backend/app/schemas/poi.py
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    backend/properties:
+        dir_name: Property & Image CRUD API
+        title: Property & Image CRUD API
+        scope:
+            - backend/app/api/v1/routes/properties.py
+            - backend/app/api/v1/routes/images.py
+            - backend/app/services/property_service.py
+            - backend/app/services/image_service.py
+            - backend/app/models/property.py
+            - backend/app/models/property_image.py
+            - backend/app/schemas/property.py
+            - backend/app/schemas/property_image.py
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    design_system:
+        dir_name: uhomes Design System Reference (Tokens, Fonts & Screenshots)
+        title: uhomes Design System Reference (Tokens, Fonts & Screenshots)
+        scope:
+            - uhomes-design/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    docs:
+        dir_name: Project Documentation & Team Workflow Guide
+        title: Project Documentation & Team Workflow Guide
+        scope:
+            - docs/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    frontend:
+        dir_name: Rental Housing Platform Frontend (Vue 3 SPA)
+        title: Rental Housing Platform Frontend (Vue 3 SPA)
+        scope:
+            - frontend/
+        source_files: []
+        children:
+            - frontend/ai_search
+            - frontend/auth_profile
+            - frontend/booking_flow
+            - frontend/landlord_dashboard
+            - frontend/tenant_property_search
+        depends_on: []
+        related_to: []
+    frontend/ai_search:
+        dir_name: AI Natural-Language Property Search
+        title: AI Natural-Language Property Search
+        scope:
+            - frontend/src/views/AiSearch.vue
+            - frontend/src/services/aiSearch.ts
+            - frontend/src/types/chat.ts
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    frontend/auth_profile:
+        dir_name: User Authentication & Profile Management Views
+        title: User Authentication & Profile Management Views
+        scope:
+            - frontend/src/views/Login.vue
+            - frontend/src/views/Register.vue
+            - frontend/src/views/Profile.vue
+            - frontend/src/views/ProfileEdit.vue
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    frontend/booking_flow:
+        dir_name: Booking & Deposit Payment Flow Views
+        title: Booking & Deposit Payment Flow Views
+        scope:
+            - frontend/src/views/BookingConfirm.vue
+            - frontend/src/views/PendingPayment.vue
+            - frontend/src/views/DepositPayment.vue
+            - frontend/src/views/ContractView.vue
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    frontend/landlord_dashboard:
+        dir_name: Landlord Dashboard Views (Bookings, Properties, Images)
+        title: Landlord Dashboard Views (Bookings, Properties, Images)
+        scope:
+            - frontend/src/views/LandlordBookings.vue
+            - frontend/src/views/ManageProperties.vue
+            - frontend/src/views/CreateProperty.vue
+            - frontend/src/views/PropertyImages.vue
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    frontend/tenant_property_search:
+        dir_name: Tenant Property Search & Discovery Views
+        title: Tenant Property Search & Discovery Views
+        scope:
+            - frontend/src/views/Home.vue
+            - frontend/src/views/Search.vue
+            - frontend/src/views/PropertyDetail.vue
+            - frontend/src/views/MapSearch.vue
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    wechat_miniprogram:
+        dir_name: WeChat Miniprogram Frontend (Rental Housing App)
+        title: WeChat Miniprogram Frontend (Rental Housing App)
+        scope:
+            - wechat-miniprogram/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []

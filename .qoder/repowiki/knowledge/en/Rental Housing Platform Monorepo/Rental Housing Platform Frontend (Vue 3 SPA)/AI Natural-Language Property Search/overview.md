@@ -1,0 +1,1 @@
+Vue view that turns a user's natural-language housing query into parsed search parameters, optionally prompts for missing fields, and renders AI-generated summaries with matched property cards.

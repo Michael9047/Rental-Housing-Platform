@@ -1,0 +1,17 @@
+schema_version: 1
+module_path: ""
+title: Rental Housing Platform Monorepo
+scope:
+    - README.md
+    - AGENTS.md
+    - CLAUDE.md
+    - DEPLOYMENT.md
+    - .gitignore
+    - docker-compose.yml
+    - docker-compose.prod.yml
+    - run_dev.ps1
+    - .env.example
+    - .env.prod
+source_files: []
+depends_on: []
+related_to: []

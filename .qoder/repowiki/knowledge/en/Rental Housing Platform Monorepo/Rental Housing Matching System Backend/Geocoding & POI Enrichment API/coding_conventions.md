@@ -1,0 +1,4 @@
+- Route handlers are stateless wrappers that construct a service instance per request, call one async method, and convert `RuntimeError` / `ValueError` from the service into 503 / 400 HTTP responses.
+- External dependencies (Amap, OpenAI) are gated behind `get_settings()` checks and wrapped in try/except blocks that fall back to deterministic defaults rather than propagating failures.
+- Database access uses raw `select(...)` with `session.execute().scalar_one_or_none()` instead of ORM query helpers, and mutations go through `session.add` + `session.commit` + `session.refresh`.
+- Optional third-party clients (e.g. `AsyncOpenAI`) are lazily imported inside `__init__` and stored as attributes so the feature can be disabled at runtime without import errors.

@@ -1,0 +1,1 @@
+WeChat Miniprogram framework (native WXML/WXSS/JS) with v2 style API; communicates with a FastAPI backend over HTTP using `wx.request`.

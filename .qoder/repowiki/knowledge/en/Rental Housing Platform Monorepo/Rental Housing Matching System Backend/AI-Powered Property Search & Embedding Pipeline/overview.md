@@ -1,0 +1,1 @@
+FastAPI endpoints that parse natural-language queries via an LLM, perform hybrid property search with semantic embeddings, and asynchronously generate vector embeddings for properties through Celery tasks.

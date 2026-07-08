@@ -1,0 +1,1 @@
+Vue 3 `<script setup lang="ts">` + TypeScript, Element Plus (`el-form` validation, `el-tabs`, `el-dialog`, `el-upload`, icons from `@element-plus/icons-vue`), Pinia (`storeToRefs`) for cross-view user state, and vue-router for navigation.

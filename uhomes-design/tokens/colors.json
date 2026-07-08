@@ -1,0 +1,107 @@
+{
+  "$schema": "https://design-tokens.github.io/community-group/format/",
+  "core": {
+    "text-primary": {
+      "value": "#222222",
+      "role": "text-primary"
+    },
+    "background": {
+      "value": "#ffffff",
+      "role": "background",
+      "name": "el-color-white"
+    },
+    "text-muted": {
+      "value": "#555555",
+      "role": "text-muted"
+    },
+    "border": {
+      "value": "#303133",
+      "role": "border",
+      "name": "el-text-color-primary"
+    },
+    "surface": {
+      "value": "#fef0f0",
+      "role": "surface",
+      "name": "el-color-danger-light-9"
+    }
+  },
+  "status": {
+    "danger": {
+      "value": "#ff5a5f",
+      "role": "danger"
+    },
+    "warning": {
+      "value": "#faecd8",
+      "role": "warning",
+      "name": "el-color-warning-light-8"
+    },
+    "success": {
+      "value": "#67c23a",
+      "role": "success",
+      "name": "el-color-success"
+    }
+  },
+  "extended": {
+    "el-color-primary-light-9": {
+      "value": "#e7f2f5",
+      "role": "info",
+      "name": "el-color-primary-light-9"
+    },
+    "el-text-color-regular": {
+      "value": "#666666",
+      "role": "unknown",
+      "name": "el-text-color-regular"
+    },
+    "color-0c7094": {
+      "value": "#0c7094",
+      "role": "unknown"
+    },
+    "el-color-info": {
+      "value": "#999999",
+      "role": "unknown",
+      "name": "el-color-info"
+    },
+    "el-color-info-light-5": {
+      "value": "#cccccc",
+      "role": "unknown",
+      "name": "el-color-info-light-5"
+    },
+    "el-color-black": {
+      "value": "#000000",
+      "role": "unknown",
+      "name": "el-color-black"
+    },
+    "el-color-info-light-7": {
+      "value": "#dedfe0",
+      "role": "unknown",
+      "name": "el-color-info-light-7"
+    },
+    "el-color-danger": {
+      "value": "#f56c6c",
+      "role": "unknown",
+      "name": "el-color-danger"
+    },
+    "color-fad7b7": {
+      "value": "#fad7b7",
+      "role": "unknown"
+    },
+    "el-color-warning": {
+      "value": "#e6a23c",
+      "role": "unknown",
+      "name": "el-color-warning"
+    },
+    "el-color-success-light-9": {
+      "value": "#f0f9eb",
+      "role": "unknown",
+      "name": "el-color-success-light-9"
+    },
+    "color-963434": {
+      "value": "#963434",
+      "role": "unknown"
+    }
+  },
+  "meta": {
+    "theme": "light",
+    "extracted": "2026-07-05"
+  }
+}

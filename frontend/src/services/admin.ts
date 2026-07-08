@@ -39,12 +39,26 @@ export const adminService = {
   },
 
   // ---- Import ----
-  uploadImport(file: File): Promise<ImportResult> {
+  uploadImport(file: File, instituteId?: number, mode?: string): Promise<ImportResult> {
     const formData = new FormData()
     formData.append('file', file)
+    const params: Record<string, any> = {}
+    if (instituteId) params.institute_id = instituteId
+    if (mode) params.mode = mode
     return api.post('/import/upload', formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
+      params,
     }).then((r) => r.data)
+  },
+
+  /** 下载 Excel 导入模板 */
+  downloadTemplate(): Promise<Blob> {
+    return api.get('/import/template', { responseType: 'blob' }).then((r) => r.data)
+  },
+
+  /** 下载错误行 Excel */
+  downloadErrorTable(taskId: number): Promise<Blob> {
+    return api.get(`/import/tasks/${taskId}/errors/download`, { responseType: 'blob' }).then((r) => r.data)
   },
 
   getImportTasks(params?: {

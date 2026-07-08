@@ -1,0 +1,1 @@
+Vue 3 Composition API (`<script setup lang="ts">`) with Element Plus (`el-form`, `el-date-picker`, `el-descriptions`, `el-result`, `el-tag`) and vue-router for navigation; Axios-style error responses accessed via `err.response.status`.

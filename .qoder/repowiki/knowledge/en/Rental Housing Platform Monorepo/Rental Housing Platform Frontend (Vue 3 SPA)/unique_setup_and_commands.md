@@ -1,0 +1,1 @@
+`npm run dev` starts the Vite dev server; `npm run build` runs `vue-tsc` then `vite build` into `dist/`; `npm test` / `npm run test:watch` / `npm run test:coverage` drive Vitest against `src/__tests__/`.

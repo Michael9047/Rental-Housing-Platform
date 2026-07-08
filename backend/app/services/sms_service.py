@@ -13,23 +13,23 @@ logger = logging.getLogger(__name__)
 
 
 class SmsService:
-    """Alibaba Cloud SMS service for sending SMS notifications."""
+    """Alibaba Cloud 号码认证 SMS service (dypnsapi)."""
 
-    ENDPOINT = "dysmsapi.aliyuncs.com"
+    ENDPOINT = "dypnsapi.aliyuncs.com"
     API_VERSION = "2017-05-25"
-    ACTION = "SendSms"
+    ACTION = "SendSmsVerifyCode"
 
     def __init__(self) -> None:
         self.settings = get_settings()
 
     def _sign(self, params: dict, secret: str) -> str:
-        """Generate Alibaba Cloud API v1 HMAC-SHA1 signature."""
+        """Generate Alibaba Cloud API v1 HMAC-SHA1 signature (POST)."""
         sorted_keys = sorted(params.keys())
         canonical = "&".join(
             f"{quote(k, safe='')}={quote(str(params[k]), safe='')}"
             for k in sorted_keys
         )
-        string_to_sign = f"GET&{quote('/', safe='')}&{quote(canonical, safe='')}"
+        string_to_sign = f"POST&{quote('/', safe='')}&{quote(canonical, safe='')}"
         signature = hmac.new(
             (secret + "&").encode("utf-8"),
             string_to_sign.encode("utf-8"),
@@ -39,7 +39,7 @@ class SmsService:
         return base64.b64encode(signature).decode("utf-8")
 
     async def send(self, phone_number: str, template_param: dict | None = None) -> dict:
-        """Send an SMS via Alibaba Cloud SMS API.
+        """Send an SMS via Alibaba Cloud 号码认证 API (SendSmsVerifyCode).
 
         Returns dict with status and optional error info.
         Silently skips if SMS is not configured or phone is empty.
@@ -51,6 +51,7 @@ class SmsService:
         access_key_secret = self.settings.sms_access_key_secret
         sign_name = self.settings.sms_sign_name
         template_code = self.settings.sms_template_code
+        scheme_name = self.settings.sms_scheme_name
 
         if not access_key_id or not access_key_secret:
             logger.warning("SMS not configured, skipping send to %s", phone_number)
@@ -64,13 +65,14 @@ class SmsService:
             "AccessKeyId": access_key_id,
             "Action": self.ACTION,
             "Format": "JSON",
-            "PhoneNumbers": phone_number,
+            "PhoneNumber": phone_number,
             "SignName": sign_name,
             "SignatureMethod": "HMAC-SHA1",
             "SignatureNonce": nonce,
             "SignatureVersion": "1.0",
+            "SchemeName": scheme_name,
             "TemplateCode": template_code,
-            "TemplateParam": json.dumps(template_param or {}),
+            "TemplateParam": json.dumps(template_param or {}, ensure_ascii=False),
             "Timestamp": timestamp,
             "Version": self.API_VERSION,
         }
@@ -81,7 +83,7 @@ class SmsService:
 
         try:
             async with httpx.AsyncClient() as client:
-                resp = await client.get(url, params=params, timeout=10.0)
+                resp = await client.post(url, data=params, timeout=10.0)
                 resp.raise_for_status()
                 result = resp.json()
             if result.get("Code") == "OK":

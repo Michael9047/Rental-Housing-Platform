@@ -27,6 +27,8 @@
         <template v-if="authStore.isLoggedIn">
           <el-tag v-if="authStore.isAdmin" type="danger" size="small" effect="dark">管理员</el-tag>
           <el-tag v-else-if="authStore.isLandlord" type="warning" size="small" effect="dark">公寓运营商</el-tag>
+          <el-tag v-else-if="authStore.isMaintenance" type="success" size="small" effect="dark">维修师傅</el-tag>
+          <el-tag v-else-if="authStore.isBdManager" type="" size="small" effect="dark" style="background-color: #8b5cf6; border-color: #8b5cf6; color: #fff;">商务拓展</el-tag>
           <el-tag v-else type="info" size="small" effect="plain">租客</el-tag>
 
           <el-badge :value="unreadCount" :hidden="unreadCount === 0" :max="99">
@@ -42,7 +44,7 @@
             <template #dropdown>
               <el-dropdown-menu>
                 <!-- 租客菜单 -->
-                <template v-if="!authStore.isLandlord && !authStore.isAdmin">
+                <template v-if="!authStore.isLandlord && !authStore.isAdmin && !authStore.isMaintenance && !authStore.isBdManager">
                   <el-dropdown-item @click="router.push('/profile')">
                     <el-icon><User /></el-icon> 个人中心
                   </el-dropdown-item>
@@ -57,6 +59,24 @@
                   </el-dropdown-item>
                   <el-dropdown-item @click="router.push('/bookings/landlord')">
                     <el-icon><Tickets /></el-icon> 预约管理
+                  </el-dropdown-item>
+                  <el-dropdown-item @click="router.push('/property/manage')">
+                    <el-icon><Setting /></el-icon> 房源管理
+                  </el-dropdown-item>
+                  <el-dropdown-item @click="router.push('/property/create')">
+                    <el-icon><Plus /></el-icon> 发布房源
+                  </el-dropdown-item>
+                </template>
+                <!-- 维修师傅菜单 -->
+                <template v-if="authStore.isMaintenance">
+                  <el-dropdown-item @click="router.push('/worker/dashboard')">
+                    <el-icon><DataAnalysis /></el-icon> 工单中心
+                  </el-dropdown-item>
+                </template>
+                <!-- BD经理菜单 -->
+                <template v-if="authStore.isBdManager">
+                  <el-dropdown-item @click="router.push('/bd/dashboard')">
+                    <el-icon><DataAnalysis /></el-icon> 数据台
                   </el-dropdown-item>
                   <el-dropdown-item @click="router.push('/property/manage')">
                     <el-icon><Setting /></el-icon> 房源管理
@@ -93,7 +113,7 @@
           </el-menu-item>
 
           <!-- ====== 租客侧边栏 ====== -->
-          <template v-if="!authStore.isLandlord && !authStore.isAdmin">
+          <template v-if="!authStore.isLandlord && !authStore.isAdmin && !authStore.isMaintenance && !authStore.isBdManager">
             <el-menu-item index="/ai-search">
               <el-icon><MagicStick /></el-icon>
               <span>AI 找房</span>
@@ -127,6 +147,38 @@
             <el-menu-item v-if="authStore.isLoggedIn" index="/profile">
               <el-icon><User /></el-icon>
               <span>个人中心</span>
+            </el-menu-item>
+          </template>
+
+          <!-- ====== 维修师傅侧边栏 ====== -->
+          <template v-if="authStore.isMaintenance">
+            <el-menu-item index="/worker/dashboard">
+              <el-icon><DataAnalysis /></el-icon>
+              <span>工单中心</span>
+            </el-menu-item>
+            <el-menu-item index="/notifications">
+              <el-icon><Bell /></el-icon>
+              <span>消息通知</span>
+            </el-menu-item>
+          </template>
+
+          <!-- ====== BD经理侧边栏 ====== -->
+          <template v-if="authStore.isBdManager">
+            <el-menu-item index="/bd/dashboard">
+              <el-icon><DataAnalysis /></el-icon>
+              <span>数据台</span>
+            </el-menu-item>
+            <el-menu-item index="/property/manage">
+              <el-icon><OfficeBuilding /></el-icon>
+              <span>房源管理</span>
+            </el-menu-item>
+            <el-menu-item index="/property/create">
+              <el-icon><Plus /></el-icon>
+              <span>发布房源</span>
+            </el-menu-item>
+            <el-menu-item index="/notifications">
+              <el-icon><Bell /></el-icon>
+              <span>消息通知</span>
             </el-menu-item>
           </template>
 
@@ -175,6 +227,9 @@
 
       <!-- Main Content -->
       <el-main class="layout-main">
+        <div class="back-bar" v-if="route.path !== '/'">
+          <el-button text :icon="ArrowLeft" @click="router.back()">返回上一页</el-button>
+        </div>
         <router-view />
         <GlobalFooter />
       </el-main>
@@ -189,7 +244,7 @@
 import { ref, computed, watch, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import {
-  MagicStick, Search, HomeFilled, User, UserFilled, ArrowDown, Setting, SwitchButton,
+  MagicStick, Search, HomeFilled, User, UserFilled, ArrowDown, ArrowLeft, Setting, SwitchButton,
   Plus, List, Bell, DataAnalysis, Tickets, OfficeBuilding, Location, ChatDotRound,
   ShoppingCart,
 } from '@element-plus/icons-vue'
@@ -415,5 +470,18 @@ watch(
   padding: 24px;
   display: flex;
   flex-direction: column;
+}
+
+.back-bar {
+  margin-bottom: 12px;
+}
+
+.back-bar .el-button {
+  font-size: 13px;
+  color: var(--text-secondary, #606266);
+}
+
+.back-bar .el-button:hover {
+  color: var(--primary);
 }
 </style>

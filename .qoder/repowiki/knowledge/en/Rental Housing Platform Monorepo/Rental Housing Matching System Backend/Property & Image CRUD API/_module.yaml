@@ -1,0 +1,15 @@
+schema_version: 1
+module_path: backend/properties
+title: Property & Image CRUD API
+scope:
+    - backend/app/api/v1/routes/properties.py
+    - backend/app/api/v1/routes/images.py
+    - backend/app/services/property_service.py
+    - backend/app/services/image_service.py
+    - backend/app/models/property.py
+    - backend/app/models/property_image.py
+    - backend/app/schemas/property.py
+    - backend/app/schemas/property_image.py
+source_files: []
+depends_on: []
+related_to: []

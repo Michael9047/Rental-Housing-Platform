@@ -1,0 +1,1 @@
+FastAPI chat endpoints that persist user–assistant conversations and drive OpenAI streaming replies augmented by pgvector-based property retrieval.

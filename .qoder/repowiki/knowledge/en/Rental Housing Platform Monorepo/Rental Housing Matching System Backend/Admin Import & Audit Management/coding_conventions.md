@@ -1,0 +1,6 @@
+- Every mutating admin route calls `AuditService(session).create_log(...)` with `action`, `resource_type`, `resource_id`, and a JSON-serializable `details` dict before returning.
+- Routes depend on `get_db_session` and `require_admin` via `Depends(...)` and never instantiate `AsyncSession` directly.
+- Service methods accept an `AsyncSession` in `__init__` and keep it as `self.session`, avoiding per-call parameters.
+- Validation helpers raise `ValueError` with human-readable messages; callers catch `ValueError` and record `{row, error}` entries into `error_log` rather than failing the whole batch.
+- Optional numeric/geospatial fields are parsed defensively with try/except blocks that silently skip invalid values instead of aborting the row.
+- Long-running side effects (Celery enqueue, POI generation) are dispatched from background threads using `threading.Thread(target=..., daemon=True)` so they do not block the HTTP response.

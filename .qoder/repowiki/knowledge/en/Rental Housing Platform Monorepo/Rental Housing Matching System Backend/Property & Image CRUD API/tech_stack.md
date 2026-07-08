@@ -1,0 +1,1 @@
+FastAPI + SQLAlchemy 2.0 async ORM over PostgreSQL with pgvector (1536-dim vectors stored via a custom `TypeDecorator`); optional async Redis for search-result caching; Celery tasks dispatched from a daemon thread for embedding generation; file uploads persisted to a configurable local directory.

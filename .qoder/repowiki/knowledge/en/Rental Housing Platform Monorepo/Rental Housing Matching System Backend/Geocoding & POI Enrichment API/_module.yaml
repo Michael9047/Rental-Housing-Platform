@@ -1,0 +1,15 @@
+schema_version: 1
+module_path: backend/geo_poi
+title: Geocoding & POI Enrichment API
+scope:
+    - backend/app/api/v1/routes/geocoding.py
+    - backend/app/api/v1/routes/pois.py
+    - backend/app/api/v1/routes/map_routes.py
+    - backend/app/services/geocoding_service.py
+    - backend/app/services/poi_service.py
+    - backend/app/models/poi.py
+    - backend/app/schemas/geocoding.py
+    - backend/app/schemas/poi.py
+source_files: []
+depends_on: []
+related_to: []

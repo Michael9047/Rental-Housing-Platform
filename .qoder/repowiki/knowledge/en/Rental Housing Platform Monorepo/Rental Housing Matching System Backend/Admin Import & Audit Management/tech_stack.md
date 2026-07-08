@@ -1,0 +1,1 @@
+FastAPI routers + SQLAlchemy async ORM on top of Celery workers; CSV parsing via stdlib `csv.DictReader`, Excel via optional `openpyxl` (lazy-imported with a user-friendly error); Decimal used for monetary/area fields.

@@ -1,0 +1,11 @@
+schema_version: 1
+module_path: frontend/auth_profile
+title: User Authentication & Profile Management Views
+scope:
+    - frontend/src/views/Login.vue
+    - frontend/src/views/Register.vue
+    - frontend/src/views/Profile.vue
+    - frontend/src/views/ProfileEdit.vue
+source_files: []
+depends_on: []
+related_to: []

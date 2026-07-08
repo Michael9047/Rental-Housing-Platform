@@ -1,0 +1,1 @@
+FastAPI routes + Pydantic v2 schemas; SQLAlchemy 2.x async ORM mapped columns; OpenAI Python SDK (`AsyncOpenAI`) for text embeddings against a configurable `openai_embedding_model`; Celery worker tasks with `autoretry_for=(Exception,)` and exponential backoff.
