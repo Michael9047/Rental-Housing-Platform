@@ -1,0 +1,15 @@
+schema_version: 1
+module_path: backend/auth_users
+title: User Authentication & Account Management
+scope:
+    - backend/app/api/v1/routes/auth.py
+    - backend/app/api/v1/routes/users.py
+    - backend/app/services/auth_service.py
+    - backend/app/services/user_service.py
+    - backend/app/models/user.py
+    - backend/app/schemas/auth.py
+    - backend/app/schemas/user.py
+    - backend/app/tasks/notification_tasks.py
+source_files: []
+depends_on: []
+related_to: []

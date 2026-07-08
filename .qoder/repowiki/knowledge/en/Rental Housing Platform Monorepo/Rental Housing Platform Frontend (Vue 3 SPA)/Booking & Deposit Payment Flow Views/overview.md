@@ -1,0 +1,1 @@
+Vue single-file views that drive the tenant-facing booking confirmation, pending-payment detail, deposit payment, and electronic-contract pages of the rental housing platform.

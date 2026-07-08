@@ -10,6 +10,8 @@ class UserBase(BaseModel):
     phone: str | None = Field(default=None, max_length=32)
     wechat_openid: str | None = Field(default=None, max_length=128)
     email: EmailStr | None = None
+    email_verified: bool = False
+    phone_verified: bool = False
     role: UserRole = UserRole.tenant
     status: UserStatus = UserStatus.active
 

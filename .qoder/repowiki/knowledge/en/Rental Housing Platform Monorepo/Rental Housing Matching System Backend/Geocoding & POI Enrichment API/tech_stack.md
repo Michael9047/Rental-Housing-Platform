@@ -1,0 +1,1 @@
+FastAPI routers + Pydantic v2 models; async HTTP via `httpx` to Amap Web API (geocode + around-search); optional `openai.AsyncOpenAI` client for AI-generated summaries (lazy-imported when `settings.openai_api_key` is set); PostgreSQL `JSON` column for `poi_data` via `sqlalchemy.dialects.postgresql.JSON`.

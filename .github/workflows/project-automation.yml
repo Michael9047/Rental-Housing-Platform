@@ -1,0 +1,186 @@
+# ============================================================
+# Project Automation — 看板自动管理
+# 功能：
+#   1. 新 Issue → 自动加入看板
+#   2. 新 PR → 自动加入看板
+#   3. PR 合并 → 关联的 Issue 自动移到 Done
+#
+# 使用前需要配置：
+#   GitHub 仓库 → Settings → Secrets and variables → Actions
+#   添加 Repository variable: PROJECT_NUMBER = 你的看板编号
+#   （看板 URL 中可以看到，如 .../projects/3 → PROJECT_NUMBER = 3）
+# ============================================================
+
+name: Project Automation
+
+on:
+  issues:
+    types: [opened]
+  pull_request:
+    types: [opened, closed]
+
+env:
+  PROJECT_NUMBER: ${{ vars.PROJECT_NUMBER }}
+  DONE_COLUMN: Done
+
+jobs:
+  add-issue-to-project:
+    name: Add Issue to Project
+    if: github.event_name == 'issues' && github.event.action == 'opened'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/add-to-project@v1.0.2
+        with:
+          project-url: https://github.com/users/${{ github.repository_owner }}/projects/${{ env.PROJECT_NUMBER }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+  add-pr-to-project:
+    name: Add PR to Project
+    if: github.event_name == 'pull_request' && github.event.action == 'opened'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/add-to-project@v1.0.2
+        with:
+          project-url: https://github.com/users/${{ github.repository_owner }}/projects/${{ env.PROJECT_NUMBER }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+  move-linked-issues-to-done:
+    name: Move Linked Issues to Done
+    if: github.event_name == 'pull_request' && github.event.pull_request.merged == true
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Move linked issues to Done
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const prBody = context.payload.pull_request.body || "";
+            const linkedPattern = /(?:close|closes|closed|fix|fixes|fixed|resolve|resolves|resolved)\s+#(\d+)/gi;
+            const issueNumbers = [...prBody.matchAll(linkedPattern)].map(m => parseInt(m[1]));
+
+            if (issueNumbers.length === 0) {
+              console.log("No linked issues found, skipping.");
+              return;
+            }
+            console.log("Found " + issueNumbers.length + " linked issues: #" + issueNumbers.join(", #"));
+
+            const projectNumber = parseInt(process.env.PROJECT_NUMBER);
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+
+            let projectData = null;
+            try {
+              const orgResult = await github.graphql(`
+                query($owner: String!, $projectNumber: Int!) {
+                  organization(login: $owner) {
+                    projectV2(number: $projectNumber) {
+                      id
+                      fields(first: 50) {
+                        nodes {
+                          ... on ProjectV2SingleSelectField { id name options { id name } }
+                        }
+                      }
+                    }
+                  }
+                }
+              `, { owner, projectNumber });
+              projectData = orgResult.organization?.projectV2;
+            } catch (e) {
+              console.log("Not an org project, trying user project...");
+            }
+
+            if (!projectData) {
+              const userResult = await github.graphql(`
+                query($owner: String!, $projectNumber: Int!) {
+                  user(login: $owner) {
+                    projectV2(number: $projectNumber) {
+                      id
+                      fields(first: 50) {
+                        nodes {
+                          ... on ProjectV2SingleSelectField { id name options { id name } }
+                        }
+                      }
+                    }
+                  }
+                }
+              `, { owner, projectNumber });
+              projectData = userResult.user?.projectV2;
+            }
+
+            if (!projectData) {
+              console.log("Project #" + projectNumber + " not found, skipping.");
+              return;
+            }
+
+            const projectId = projectData.id;
+            const statusField = projectData.fields.nodes.find(f => f.name === "Status");
+            if (!statusField) {
+              console.log("Status field not found, skipping.");
+              return;
+            }
+
+            const doneOption = statusField.options.find(o => o.name === process.env.DONE_COLUMN);
+            if (!doneOption) {
+              console.log("Done column not found, skipping.");
+              return;
+            }
+
+            for (const issueNumber of issueNumbers) {
+              try {
+                const { repository } = await github.graphql(`
+                  query($owner: String!, $repo: String!, $issueNumber: Int!) {
+                    repository(owner: $owner, name: $repo) {
+                      issue(number: $issueNumber) { id }
+                    }
+                  }
+                `, { owner, repo, issueNumber });
+
+                const issueNodeId = repository?.issue?.id;
+                if (!issueNodeId) {
+                  console.log("  #" + issueNumber + ": Issue not found, skipping.");
+                  continue;
+                }
+
+                const { node } = await github.graphql(`
+                  query($projectId: ID!, $issueNodeId: ID!) {
+                    node(id: $projectId) {
+                      ... on ProjectV2 {
+                        items(first: 10) {
+                          nodes { id content { ... on Issue { id } } }
+                        }
+                      }
+                    }
+                  }
+                `, { projectId, issueNodeId });
+
+                const items = node?.items?.nodes || [];
+                const projectItem = items.find(item => item.content?.id === issueNodeId);
+
+                if (!projectItem) {
+                  console.log("  #" + issueNumber + ": Not on project board, skipping.");
+                  continue;
+                }
+
+                await github.graphql(`
+                  mutation($projectId: ID!, $itemId: ID!, $fieldId: ID!, $optionId: ID!) {
+                    updateProjectV2ItemFieldValue(input: {
+                      projectId: $projectId
+                      itemId: $itemId
+                      fieldId: $fieldId
+                      value: { singleSelectOptionId: $optionId }
+                    }) {
+                      projectV2Item { id }
+                    }
+                  }
+                `, {
+                  projectId,
+                  itemId: projectItem.id,
+                  fieldId: statusField.id,
+                  optionId: doneOption.id
+                });
+
+                console.log("DONE: #" + issueNumber + " moved to Done");
+              } catch (err) {
+                console.error("FAIL: #" + issueNumber + ": " + err.message);
+              }
+            }

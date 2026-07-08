@@ -69,8 +69,7 @@ class Settings(BaseSettings):
         validation_alias="DEEPSEEK_BASE_URL",
     )
 
-
-
+    # ========== 高德地图（中国大陆主引擎） ==========
     amap_web_key: str = Field(
         default="",
         validation_alias="AMAP_WEB_KEY",
@@ -95,6 +94,42 @@ class Settings(BaseSettings):
         default=5,
         validation_alias="AMAP_NEARBY_PAGE_SIZE",
     )
+    amap_js_key: str = Field(
+        default="",
+        validation_alias="AMAP_JS_KEY",
+    )
+
+    # ========== Google Maps（海外主引擎） ==========
+    gm_api_key: str = Field(
+        default="",
+        validation_alias="GM_API_KEY",
+    )
+    gm_geocode_url: str = Field(
+        default="https://maps.googleapis.com/maps/api/geocode/json",
+        validation_alias="GM_GEOCODE_URL",
+    )
+    gm_nearby_url: str = Field(
+        default="https://maps.googleapis.com/maps/api/place/nearbysearch/json",
+        validation_alias="GM_NEARBY_URL",
+    )
+    gm_geocode_timeout_seconds: float = Field(
+        default=10.0,
+        validation_alias="GM_GEOCODE_TIMEOUT_SECONDS",
+    )
+    gm_nearby_radius_meters: int = Field(
+        default=2000,
+        validation_alias="GM_NEARBY_RADIUS_METERS",
+    )
+
+    # ========== OSM / Nominatim（全球备用引擎） ==========
+    nominatim_url: str = Field(
+        default="https://nominatim.openstreetmap.org",
+        validation_alias="NOMINATIM_URL",
+    )
+    nominatim_timeout_seconds: float = Field(
+        default=15.0,
+        validation_alias="NOMINATIM_TIMEOUT_SECONDS",
+    )
 
     upload_dir: str = Field(default="./uploads", validation_alias="UPLOAD_DIR")
     max_upload_size: int = Field(default=5 * 1024 * 1024, validation_alias="MAX_UPLOAD_SIZE")
@@ -118,14 +153,15 @@ class Settings(BaseSettings):
         validation_alias="WECHAT_TOKEN_URL",
     )
 
-    # SMS (Alibaba Cloud SMS)
+    # SMS (Alibaba Cloud 号码认证 dypnsapi)
     sms_provider: str = Field(default="aliyun", validation_alias="SMS_PROVIDER")
     sms_access_key_id: str = Field(default="", validation_alias="SMS_ACCESS_KEY_ID")
     sms_access_key_secret: str = Field(default="", validation_alias="SMS_ACCESS_KEY_SECRET")
     sms_sign_name: str = Field(default="", validation_alias="SMS_SIGN_NAME")
     sms_template_code: str = Field(default="", validation_alias="SMS_TEMPLATE_CODE")
+    sms_scheme_name: str = Field(default="", validation_alias="SMS_SCHEME_NAME")
     sms_endpoint: str = Field(
-        default="dysmsapi.aliyuncs.com",
+        default="dypnsapi.aliyuncs.com",
         validation_alias="SMS_ENDPOINT",
     )
 
@@ -144,12 +180,6 @@ class Settings(BaseSettings):
         validation_alias="SMTP_USE_TLS",
     )
 
-    # AMap (????) JS? key
-    amap_js_key: str = Field(
-        default="",
-        validation_alias="AMAP_JS_KEY",
-    )
-
     # Rate limiting
     rate_limit_requests: int = Field(
         default=100,
@@ -158,6 +188,12 @@ class Settings(BaseSettings):
     rate_limit_window_seconds: int = Field(
         default=60,
         validation_alias="RATE_LIMIT_WINDOW_SECONDS",
+    )
+
+    # Frontend
+    frontend_url: str = Field(
+        default="http://localhost:5173",
+        validation_alias="FRONTEND_URL",
     )
 
 

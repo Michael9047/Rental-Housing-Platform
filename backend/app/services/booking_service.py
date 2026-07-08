@@ -59,7 +59,7 @@ class BookingService:
             type=NotificationType.booking_created,
             title="New booking request",
             content=f"A tenant has requested to view your property #{property_id}",
-            channels=["wechat", "sms", "email"],
+            channels=["email"],
         )
 
         # Booking confirmation for tenant via WeChat template message (existing flow)
@@ -94,28 +94,28 @@ class BookingService:
                 "Booking approved",
                 "Your booking has been approved",
                 booking.tenant_id,
-                ["wechat", "sms", "email"],
+                ["email"],
             ),
             BookingStatus.rejected: (
                 NotificationType.booking_rejected,
                 "Booking rejected",
                 "Your booking has been rejected",
                 booking.tenant_id,
-                ["wechat", "sms", "email"],
+                ["email"],
             ),
             BookingStatus.cancelled: (
                 NotificationType.booking_cancelled,
                 "Booking cancelled",
                 "A booking has been cancelled",
                 booking.landlord_id,
-                ["wechat", "sms", "email"],
+                ["email"],
             ),
             BookingStatus.completed: (
                 NotificationType.booking_completed,
                 "Booking completed",
                 "The booking process has been completed",
                 booking.tenant_id,
-                ["wechat", "email"],
+                ["email"],
             ),
         }
         if status in nt_map:
@@ -136,7 +136,7 @@ class BookingService:
                     type=NotificationType.booking_completed,
                     title="Booking completed",
                     content=f"Booking #{booking.id} has been completed",
-                    channels=["wechat", "email"],
+                    channels=["email"],
                 )
 
         return booking

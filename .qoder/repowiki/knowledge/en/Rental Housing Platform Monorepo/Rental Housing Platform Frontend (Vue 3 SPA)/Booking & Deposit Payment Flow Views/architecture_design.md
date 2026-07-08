@@ -1,0 +1,7 @@
+Four sibling Vue 3 `<script setup lang="ts">` components under `src/views/`, each a self-contained page driven by route params/query and Element Plus layout primitives (`el-card`, `el-descriptions`, `el-result`).
+
+- Data ownership: all state is local to the component (no shared Pinia store for booking data). Booking records are fetched via `bookingService.getById` from `@/services/booking`; property details are pulled separately through `propertyStore.fetchById` or `propertyService.getById`. The only cross-component dependency is `useAuthStore` in ContractView to read the current username.
+- Navigation contract: entry points use query params (`?property_id&date&slot`) for BookingConfirm and path params (`/booking/payment/:id/deposit`, `/contract/:id`) for the other three; back navigation goes via `$router.back()`.
+- Error handling pattern: HTTP errors are caught per-call and surfaced through `ElMessage` with status-code-specific messages (409 duplicate, 403 tenant-only, 401 unauthenticated, 404 not found).
+- UI scaffolding convention: every page starts with an `el-button` + `h2` header row, wraps content in `el-card shadow="never"` sections, and uses a fixed bottom action bar (`pay-action-bar` / `pay-footer`) for primary actions.
+- Dependency direction: view → service layer (`@/services/*`) and stores (`@/stores/*`); no inter-view imports, keeping each file independently mountable.

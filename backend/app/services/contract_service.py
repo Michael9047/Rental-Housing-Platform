@@ -6,8 +6,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.booking import Booking
 from app.models.contract import Contract
+from app.models.notification import NotificationType
 from app.models.property import Property
 from app.models.user import User
+from app.services.notification_service import NotificationService
 
 logger = logging.getLogger(__name__)
 
@@ -75,6 +77,25 @@ class ContractService:
         self.session.add(contract)
         await self.session.commit()
         await self.session.refresh(contract)
+
+        # 通知租客和房东
+        notification_service = NotificationService(self.session)
+        await notification_service.create_notification(
+            user_id=contract.tenant_id,
+            type=NotificationType.contract_generated,
+            title="合同已生成",
+            content=f"您对 {property_title} 的租赁合同已生成，请前往签署",
+            channels=["email"],
+        )
+        if booking.landlord_id:
+            await notification_service.create_notification(
+                user_id=booking.landlord_id,
+                type=NotificationType.contract_generated,
+                title="合同已生成",
+                content=f"预约 #{booking.id} 的租赁合同已生成，等待租客签署",
+                channels=["email"],
+            )
+
         return contract
 
     async def get_contract(self, contract_id: str) -> Contract | None:
@@ -93,4 +114,24 @@ class ContractService:
         contract.signed_at = datetime.utcnow()
         await self.session.commit()
         await self.session.refresh(contract)
+
+        # 通知租客和房东
+        booking = await self.session.get(Booking, contract.booking_id)
+        notification_service = NotificationService(self.session)
+        await notification_service.create_notification(
+            user_id=contract.tenant_id,
+            type=NotificationType.contract_signed,
+            title="合同已签署",
+            content=f"您已成功签署预约 #{contract.booking_id} 的租赁合同",
+            channels=["email"],
+        )
+        if booking and booking.landlord_id:
+            await notification_service.create_notification(
+                user_id=booking.landlord_id,
+                type=NotificationType.contract_signed,
+                title="合同已被签署",
+                content=f"租客已签署预约 #{contract.booking_id} 的租赁合同",
+                channels=["email"],
+            )
+
         return contract

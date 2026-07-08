@@ -1,0 +1,1 @@
+WeChat miniprogram frontend for a rental housing matching app, providing property browsing, map-based search, AI chat, booking management, and user profile screens.

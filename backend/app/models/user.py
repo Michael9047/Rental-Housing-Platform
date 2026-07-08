@@ -12,6 +12,7 @@ class UserRole(str, enum.Enum):
     tenant = "tenant"
     landlord = "landlord"
     bd_manager = "bd_manager"
+    maintenance_worker = "maintenance_worker"
     admin = "admin"
 
 
@@ -40,6 +41,8 @@ class User(TimestampMixin, Base):
         default=UserStatus.active,
         nullable=False,
     )
+    email_verified: Mapped[bool] = mapped_column(default=False, nullable=False)
+    phone_verified: Mapped[bool] = mapped_column(default=False, nullable=False)
 
     properties: Mapped[list["Property"]] = relationship(
         back_populates="landlord",

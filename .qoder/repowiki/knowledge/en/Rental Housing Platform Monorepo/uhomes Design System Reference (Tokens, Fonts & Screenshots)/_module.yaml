@@ -1,0 +1,8 @@
+schema_version: 1
+module_path: design_system
+title: uhomes Design System Reference (Tokens, Fonts & Screenshots)
+scope:
+    - uhomes-design/
+source_files: []
+depends_on: []
+related_to: []

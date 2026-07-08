@@ -1,11 +1,20 @@
+import enum
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String
+from sqlalchemy import DateTime, Enum, ForeignKey, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.mixins import TimestampMixin
 from app.db.session import Base
+
+
+class PaymentStatus(str, enum.Enum):
+    pending = "pending"
+    processing = "processing"
+    success = "success"
+    failed = "failed"
+    closed = "closed"
 
 
 class Payment(TimestampMixin, Base):
@@ -21,9 +30,14 @@ class Payment(TimestampMixin, Base):
         ForeignKey("users.id", ondelete="CASCADE"), index=True
     )
     amount: Mapped[int] = mapped_column(Integer, nullable=False)
+    out_trade_no: Mapped[str | None] = mapped_column(String(255), nullable=True)
     transaction_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    status: Mapped[str] = mapped_column(
-        String(20), default="pending", nullable=False
+    trade_state: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    trade_state_desc: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    status: Mapped[PaymentStatus] = mapped_column(
+        Enum(PaymentStatus, name="payment_status"),
+        default=PaymentStatus.pending,
+        nullable=False,
     )
     payment_method: Mapped[str] = mapped_column(
         String(50), default="wechat_pay"

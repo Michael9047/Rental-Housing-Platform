@@ -1,0 +1,11 @@
+schema_version: 1
+module_path: frontend/tenant_property_search
+title: Tenant Property Search & Discovery Views
+scope:
+    - frontend/src/views/Home.vue
+    - frontend/src/views/Search.vue
+    - frontend/src/views/PropertyDetail.vue
+    - frontend/src/views/MapSearch.vue
+source_files: []
+depends_on: []
+related_to: []

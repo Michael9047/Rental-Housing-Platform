@@ -1,0 +1,6 @@
+- Routes are thin controllers that validate inputs via Pydantic schemas, enforce ownership through `require_landlord` + `current_user.role.value != 'admin'` checks, then delegate all persistence to a `Service(session)` instance.
+- Each route raises explicit `HTTPException`s with named status codes (404/403/400/422) and human-readable `detail` strings instead of returning None or letting exceptions bubble.
+- Services accept an `AsyncSession` in `__init__` and own no global state; every DB mutation calls `session.commit()` followed by `session.refresh(obj)` before returning.
+- Optional external dependencies (Redis client, EmbeddingService, Celery task module) are imported lazily inside methods so the module loads even when those subsystems are unavailable.
+- Pydantic response schemas derive from shared `PropertyBase` and use `ConfigDict(from_attributes=True)` to serialize SQLAlchemy model instances directly.
+- Model fields are declared with SQLAlchemy 2.0 `Mapped[...] = mapped_column(...)` syntax and constrained via `CheckConstraint` / `Field(...)` validators rather than ad-hoc assertions.

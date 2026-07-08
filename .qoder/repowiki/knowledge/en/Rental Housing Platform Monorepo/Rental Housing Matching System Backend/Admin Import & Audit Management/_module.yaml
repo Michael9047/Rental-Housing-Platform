@@ -1,0 +1,14 @@
+schema_version: 1
+module_path: backend/admin_imports
+title: Admin Import & Audit Management
+scope:
+    - backend/app/api/v1/routes/admin.py
+    - backend/app/api/v1/routes/imports.py
+    - backend/app/services/import_service.py
+    - backend/app/models/data_import.py
+    - backend/app/models/audit_log.py
+    - backend/app/services/audit_service.py
+    - backend/app/tasks/import_tasks.py
+source_files: []
+depends_on: []
+related_to: []

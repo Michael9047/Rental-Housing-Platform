@@ -1,0 +1,1 @@
+FastAPI routes, SQLAlchemy models, Pydantic schemas, and Celery tasks that generate Chinese rental contracts and process deposit payments via WeChat Pay V3.

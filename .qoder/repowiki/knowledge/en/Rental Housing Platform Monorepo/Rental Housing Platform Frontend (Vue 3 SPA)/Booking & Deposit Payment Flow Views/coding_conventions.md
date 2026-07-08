@@ -1,0 +1,6 @@
+- Each page follows a fixed skeleton: top `page-header` with a back button and h2 title, followed by one or more `el-card shadow="never"` sections, then a fixed-bottom action bar styled as `.pay-action-bar` / `.pay-footer`.
+- Async data loading uses `onMounted` reading `route.params.id` or `route.query.*`, wrapping the call in a try/catch/finally that toggles a local `loading` ref and falls back to `el-empty` when data is absent.
+- HTTP error branches on `err.response.status` (409/403/401/404) and maps each to a user-facing `ElMessage.warning|error(...)`, with a final fallback message for unexpected errors.
+- Computed label/tag maps (`statusLabels`, `statusTags`, `typeLabels`, `slotLabels`) are defined as plain `Record<string, string>` objects and resolved via computed getters so templates stay declarative.
+- Property images are resolved uniformly by picking the first image where `is_primary` is true (falling back to `images[0]`) and constructing the URL as `/api/v1/uploads/${p.filename}`.
+- Chinese locale formatting is centralized in small helpers like `formatDate(d)` returning `new Date(d).toLocaleDateString('zh-CN')`, reused across PendingPayment and ContractView.

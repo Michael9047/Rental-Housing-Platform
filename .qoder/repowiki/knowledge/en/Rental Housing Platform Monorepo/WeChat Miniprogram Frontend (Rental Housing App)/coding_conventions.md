@@ -1,0 +1,5 @@
+- Each page/component ships as a sibling quartet of `.js`, `.json`, `.wxml`, `.wxss` files sharing the same base name.
+- Cross-cutting modules are loaded via CommonJS `require()` and exported through `module.exports = { ... }` rather than ES modules.
+- All network calls go through `utils/api.js`, which auto-attaches an `Authorization: Bearer <token>` header read from `wx.getStorageSync('access_token')`.
+- Global mutable state (login flag, user object, backend base URL) lives on `App().globalData` and is accessed via `getApp()` instead of being passed down as props.
+- Login flow is centralized in `utils/auth.js` — pages invoke `auth.checkLogin()` / `auth.login()` rather than calling `wx.login` directly.

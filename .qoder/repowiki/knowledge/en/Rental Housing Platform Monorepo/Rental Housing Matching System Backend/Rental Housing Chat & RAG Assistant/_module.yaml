@@ -1,0 +1,10 @@
+schema_version: 1
+module_path: backend/chat
+title: Rental Housing Chat & RAG Assistant
+scope:
+    - backend/app/api/v1/routes/chat.py
+    - backend/app/services/chat_service.py
+    - backend/app/models/chat.py
+source_files: []
+depends_on: []
+related_to: []

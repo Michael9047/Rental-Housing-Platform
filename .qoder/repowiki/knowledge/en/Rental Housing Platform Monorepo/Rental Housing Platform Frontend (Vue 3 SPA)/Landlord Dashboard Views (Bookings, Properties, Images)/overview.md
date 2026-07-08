@@ -1,0 +1,1 @@
+Vue 3 single-file views that let landlords manage their rental listings, approve or reject tenant booking requests, and upload/manage property images.

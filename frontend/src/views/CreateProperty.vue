@@ -165,12 +165,36 @@ const rawText = ref('')
 const parsing = ref(false)
 const parseResult = ref<{ unrecognized: string[] } | null>(null)
 
-const districts = ['工业园区', '姑苏区', '高新区', '吴中区', '相城区', '吴江区']
+// ??/????????????
+const countries = [
+  { value: 'CN', label: '???? ?????????' },
+  { value: 'OT', label: '?? ???????? + ???' },
+]
+
+const districtsCN = ['????', '???', '???', '???', '???', '???']
+const districts = ref<string[]>([...districtsCN])
+
+// ????
+const currencyLabel = computed(() => form.country === 'CN' ? '?' : '????')
+
+// ????
+function onCountryChange() {
+  if (form.country === 'CN') {
+    districts.value = [...districtsCN]
+    if (!districtsCN.includes(form.district)) {
+      form.district = ''
+    }
+  } else {
+    districts.value = []
+    form.district = ''
+  }
+}
 
 const form = reactive({
   title: '',
   address: '',
   district: '',
+  country: 'CN',
   price_monthly: 0 as number | undefined,
   deposit_amount: undefined as number | undefined,
   bedrooms: 0,
@@ -270,7 +294,7 @@ function smartParse() {
 
   // 7. 区域
   let district = ''
-  for (const d of districts) {
+  for (const d of districts.value) {
     if (text.includes(d)) { district = d; break }
   }
 
@@ -379,6 +403,8 @@ onMounted(async () => {
       form.title = p.title
       form.address = p.address
       form.district = p.district
+      form.country = (p as any).country || 'CN'
+      if (form.country !== 'CN') districts.value = []
       form.price_monthly = p.price_monthly
       form.deposit_amount = p.deposit_amount
       form.bedrooms = p.bedrooms

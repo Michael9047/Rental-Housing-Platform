@@ -1,0 +1,1 @@
+Vue single-file views for user login, registration, profile dashboard, and profile editing, wired to the Pinia auth store and Element Plus UI.

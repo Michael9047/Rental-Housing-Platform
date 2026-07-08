@@ -1,0 +1,10 @@
+schema_version: 1
+module_path: frontend/ai_search
+title: AI Natural-Language Property Search
+scope:
+    - frontend/src/views/AiSearch.vue
+    - frontend/src/services/aiSearch.ts
+    - frontend/src/types/chat.ts
+source_files: []
+depends_on: []
+related_to: []

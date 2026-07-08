@@ -24,7 +24,7 @@ def create_app() -> FastAPI:
         version="0.1.0",
     )
 
-    # CORS �� relaxed in dev, tighten in prod via env
+    # CORS — relaxed in dev, tighten in prod via env
     cors_origins: list[str] = (
         settings.cors_origins
         if settings.environment == "production"
@@ -74,6 +74,17 @@ def create_app() -> FastAPI:
     upload_dir = Path(settings.upload_dir).resolve()
     upload_dir.mkdir(parents=True, exist_ok=True)
     app.mount("/api/v1/uploads", StaticFiles(directory=str(upload_dir)), name="uploads")
+
+    # 根路由 — 返回 API 基本信息（避免浏览器访问时 404 白屏）
+    @app.get("/")
+    async def root():
+        return {
+            "app": "Rental Housing Matching System",
+            "version": "0.1.0",
+            "docs": "/docs",
+            "api_prefix": "/api/v1",
+            "frontend": "http://localhost:5173",
+        }
 
     return app
 

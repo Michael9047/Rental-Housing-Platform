@@ -1,0 +1,1 @@
+Vue 3 single-file views that let tenants discover, filter, and book rental properties via AI search, a grid list, and an interactive Leaflet map.

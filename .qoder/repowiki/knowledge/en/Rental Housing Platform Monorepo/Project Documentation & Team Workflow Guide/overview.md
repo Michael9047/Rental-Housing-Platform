@@ -1,0 +1,1 @@
+Centralized documentation for the Rental Housing Platform covering design specs, weekly reports, team workflow, and GitHub Projects setup instructions.

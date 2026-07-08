@@ -1,0 +1,1 @@
+Static design-system manifest for the uhomes project: extracted color/spacing/typography tokens, bundled web fonts, screenshot references, and auto-generated DESIGN.md consumed by code generators.
