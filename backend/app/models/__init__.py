@@ -33,6 +33,7 @@ from app.models.repair import (
 from app.models.review import Review, ReviewStatus
 from app.models.saved_search import SavedSearch
 from app.models.user import User, UserRole, UserStatus
+from app.models.user_favorite import UserFavorite
 
 __all__ = [
     "AdImpression",
@@ -81,6 +82,7 @@ __all__ = [
     "ReviewStatus",
     "SavedSearch",
     "User",
+    "UserFavorite",
     "UserRole",
     "UserStatus",
     "WorkerStatus",
