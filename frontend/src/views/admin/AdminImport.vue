@@ -1,534 +1,349 @@
-﻿<template>
+<template>
   <div class="admin-import">
     <h2>数据导入</h2>
 
-    <!-- Upload Area -->
+    <!-- Upload -->
     <el-card shadow="never" class="section-card">
-      <template #header>
-        <span class="card-title">上传文件</span>
-      </template>
-      <el-upload
-        ref="uploadRef"
-        class="upload-area"
-        drag
-        :auto-upload="false"
-        :limit="1"
-        :on-change="handleFileChange"
-        :on-remove="handleFileRemove"
-        :accept="'.csv,.xlsx,.xls'"
-      >
+      <template #header><span class="card-title">上传文件</span></template>
+      <el-upload ref="uploadRef" class="upload-area" drag :auto-upload="false" :limit="1"
+                 :on-change="handleFileChange" :on-remove="handleFileRemove"
+                 :accept="'.csv,.xlsx,.xls'">
         <el-icon class="upload-icon"><UploadFilled /></el-icon>
         <div class="upload-text">
           <p>将 CSV 或 Excel 文件拖放到此处</p>
-          <p class="upload-hint">支持 .csv / .xlsx / .xls 格式，最大 10 MB</p>
+          <p class="upload-hint">支持 .csv / .xlsx / .xls，最大 10 MB</p>
         </div>
       </el-upload>
     </el-card>
 
-    <!-- File Preview -->
-    <el-card v-if="selectedFile" shadow="never" class="section-card">
-      <template #header>
-        <span class="card-title">文件预览</span>
-      </template>
-      <p class="file-info">
-        文件名：<strong>{{ selectedFile.name }}</strong>（{{ formatSize(selectedFile.size) }}）
-      </p>
-      <p v-if="previewHeaders.length" class="field-info">
-        识别字段：<el-tag
-          v-for="h in previewHeaders"
-          :key="h"
-          :type="requiredFields.includes(h) ? 'danger' : 'info'"
-          size="small"
-          class="field-tag"
-        >{{ h }}<span v-if="requiredFields.includes(h)">*</span></el-tag>
-      </p>
-      <el-table v-if="previewRows.length" :data="previewRows" border stripe size="small" max-height="240">
-        <el-table-column
-          v-for="h in previewHeaders"
-          :key="h"
-          :prop="h"
-          :label="h"
-          min-width="120"
-          show-overflow-tooltip
-        />
-      </el-table>
-      <el-alert
-        v-if="missingRequired.length"
-        :title="`缺少必填字段：${missingRequired.join('、')}`"
-        type="error"
-        :closable="false"
-        show-icon
-        class="field-alert"
-      />
-      <el-alert
-        v-if="previewHeaders.length && !missingRequired.length"
-        title="字段校验通过，可以开始导入"
-        type="success"
-        :closable="false"
-        show-icon
-        class="field-alert"
-      />
-
-      <el-button
-        type="primary"
-        :icon="Upload"
-        :loading="importing"
-        :disabled="missingRequired.length > 0"
-        class="import-btn"
-        @click="startImport"
-      >
-        {{ importing ? '导入中...' : '开始导入' }}
-      </el-button>
-    </el-card>
-
-    <!-- Import Progress -->
-    <el-card v-if="importing" shadow="never" class="section-card">
-      <template #header>
-        <span class="card-title">导入进度</span>
-      </template>
-      <el-progress
-        :percentage="100"
-        :status="importResult ? 'success' : undefined"
-        :indeterminate="!importResult"
-      />
-      <p class="progress-text">
-        {{ importResult ? '导入完成' : '正在处理数据...' }}
-      </p>
-    </el-card>
-
-    <!-- Import Result -->
-    <el-card v-if="importResult" shadow="never" class="section-card">
-      <template #header>
-        <span class="card-title">导入结果</span>
-      </template>
-      <el-row :gutter="20" class="result-row">
-        <el-col :span="8">
-          <el-statistic title="总计" :value="importResult.total_records" />
-        </el-col>
-        <el-col :span="8">
-          <el-statistic title="成功" :value="importResult.success_records">
-            <template #suffix>
-              <el-icon style="color: #67c23a"><CircleCheckFilled /></el-icon>
-            </template>
-          </el-statistic>
-        </el-col>
-        <el-col :span="8">
-          <el-statistic title="失败" :value="importResult.failed_records">
-            <template #suffix>
-              <el-icon v-if="importResult.failed_records > 0" style="color: #f56c6c"><CircleCloseFilled /></el-icon>
-            </template>
-          </el-statistic>
-        </el-col>
-      </el-row>
-
-      <!-- Error Details -->
-      <div v-if="importResult.error_log && importResult.error_log.length" class="error-section">
-        <h4>错误详情</h4>
-        <el-table :data="importResult.error_log" border stripe size="small" max-height="300">
-          <el-table-column prop="row" label="行号" width="80" />
-          <el-table-column prop="error" label="错误信息" show-overflow-tooltip />
-        </el-table>
-        <el-button
-          v-if="importResult.id"
-          type="warning"
-          size="small"
-          class="retry-btn"
-          @click="retryImport"
-        >
-          重试失败记录
-        </el-button>
+    <!-- Loading -->
+    <el-card v-if="previewLoading" shadow="never" class="section-card">
+      <div style="text-align:center;padding:40px;color:#909399">
+        <el-icon class="is-loading" :size="32"><Loading /></el-icon>
+        <p style="margin-top:12px">正在解析文件并运行 IQR + 孤立森林检测...</p>
       </div>
     </el-card>
 
-    <!-- History -->
-    <el-card shadow="never" class="section-card">
+    <!-- ====== PREVIEW TABLE ====== -->
+    <el-card v-if="previewRows.length && !previewLoading" shadow="never" class="section-card">
       <template #header>
-        <div class="history-header">
-          <span class="card-title">导入历史</span>
-          <el-select
-            v-model="historyFilter"
-            placeholder="状态筛选"
-            clearable
-            size="small"
-            style="width: 140px"
-            @change="fetchHistory"
-          >
-            <el-option label="全部" value="" />
-            <el-option label="待处理" value="pending" />
-            <el-option label="处理中" value="processing" />
-            <el-option label="已完成" value="completed" />
-            <el-option label="失败" value="failed" />
-          </el-select>
+        <div class="preview-header">
+          <span class="card-title">预览检测 — {{ previewRows.length }} 行</span>
+          <div>
+            <el-button size="small" @click="forceAllAI">全部忽略AI警告</el-button>
+            <el-button size="small" @click="resetAllForce">重置</el-button>
+          </div>
         </div>
       </template>
-      <el-table :data="history" v-loading="historyLoading" border stripe>
-        <el-table-column prop="id" label="ID" width="60" />
-        <el-table-column prop="source_name" label="文件名" min-width="180" show-overflow-tooltip />
-        <el-table-column prop="source_type" label="类型" width="80">
-          <template #default="{ row }">
-            <el-tag size="small">{{ row.source_type.toUpperCase() }}</el-tag>
+
+      <!-- Legend -->
+      <div class="legend">
+        <span class="badge badge-err">🔴 验证错误（不录入）</span>
+        <span class="badge badge-iqr">🟠 IQR异常</span>
+        <span class="badge badge-if">🟣 孤立森林</span>
+        <span class="badge badge-ok">✅ 清洁行（自动录入）</span>
+        <span class="badge badge-force">✅ 已忽略AI（将录入）</span>
+      </div>
+
+      <el-table :data="previewRows" border stripe size="small" max-height="500"
+                :row-class-name="previewRowClass">
+        <el-table-column prop="row" label="行号" width="55" align="center" />
+        <el-table-column label="标题" min-width="140" show-overflow-tooltip>
+          <template #default="{ row: r }">
+            {{ getTitle(r) }}
           </template>
         </el-table-column>
-        <el-table-column prop="status" label="状态" width="100">
-          <template #default="{ row }">
-            <el-tag :type="statusTagType(row.status)" size="small">
-              {{ statusLabel(row.status) }}
-            </el-tag>
+        <el-table-column label="地址" min-width="170" show-overflow-tooltip>
+          <template #default="{ row: r }">
+            <span style="font-size:12px;color:#909399">{{ getAddr(r) }}</span>
           </template>
         </el-table-column>
-        <el-table-column prop="total_records" label="总计" width="70" />
-        <el-table-column prop="success_records" label="成功" width="70">
-          <template #default="{ row }">
-            <span style="color: #67c23a">{{ row.success_records }}</span>
+        <el-table-column label="区域" width="80">
+          <template #default="{ row: r }">{{ getDist(r) }}</template>
+        </el-table-column>
+        <el-table-column label="月租" width="80" align="right">
+          <template #default="{ row: r }">{{ getPrice(r) }}</template>
+        </el-table-column>
+        <el-table-column label="检测结果" min-width="280">
+          <template #default="{ row: r }">
+            <div class="issue-list">
+              <template v-if="r.errors?.length">
+                <el-tag v-for="(e,i) in r.errors" :key="'e'+i" type="danger" size="small" effect="dark"
+                        class="issue-tag" disable-transitions>❌ {{ e.error }}</el-tag>
+              </template>
+              <template v-if="r.iqr_flagged">
+                <el-tag v-for="(w,i) in getAIWarnings(r,'iqr_outlier')" :key="'iqr'+i"
+                        type="warning" size="small" effect="dark" class="issue-tag" disable-transitions>
+                  🔶 {{ w.error }}</el-tag>
+              </template>
+              <template v-if="r.iforest_flagged">
+                <el-tag v-for="(w,i) in getAIWarnings(r,'iforest_outlier')" :key="'if'+i"
+                        size="small" effect="dark" class="issue-tag if-tag" disable-transitions>
+                  🔷 {{ w.error }}</el-tag>
+              </template>
+              <template v-if="isClean(r)">
+                <span style="color:#67c23a;font-size:13px">✅ 清洁行，自动录入</span>
+              </template>
+            </div>
           </template>
         </el-table-column>
-        <el-table-column prop="failed_records" label="失败" width="70">
-          <template #default="{ row }">
-            <span :style="{ color: row.failed_records > 0 ? '#f56c6c' : '#909399' }">
-              {{ row.failed_records }}
-            </span>
-          </template>
-        </el-table-column>
-        <el-table-column prop="created_at" label="时间" width="170">
-          <template #default="{ row }">
-            {{ new Date(row.created_at).toLocaleString() }}
-          </template>
-        </el-table-column>
-        <el-table-column label="操作" width="180" fixed="right">
-          <template #default="{ row }">
-            <el-button size="small" @click="viewDetail(row)">详情</el-button>
-            <el-button
-              v-if="row.failed_records > 0 && (row.status === 'completed' || row.status === 'failed')"
-              size="small"
-              type="warning"
-              @click="retryTask(row.id)"
-            >重试</el-button>
+        <el-table-column label="忽略AI警告" width="120" align="center">
+          <template #default="{ row: r }">
+            <template v-if="hasErrors(r)">
+              <span style="color:#f56c6c;font-size:12px;font-weight:600">❌ 无法录入</span>
+            </template>
+            <template v-else-if="hasAIWarnings(r)">
+              <el-button :type="ignoreMap[r.row] ? 'success' : 'warning'" size="small"
+                         @click="toggleForce(r.row)" plain>
+                {{ ignoreMap[r.row] ? '✅ 已忽略AI' : '忽略AI警告' }}
+              </el-button>
+            </template>
+            <template v-else>
+              <span style="color:#67c23a;font-size:12px">✅ 自动录入</span>
+            </template>
           </template>
         </el-table-column>
       </el-table>
 
-      <el-pagination
-        v-model:current-page="historyPage"
-        :page-size="historyPageSize"
-        :total="historyTotal"
-        layout="total, prev, pager, next"
-        class="pagination"
-        @current-change="fetchHistory"
-      />
+      <!-- Alert -->
+      <el-alert type="warning" :closable="false" show-icon class="preview-alert">
+        <template #title>
+          🔴 <b>验证错误行永远不录入</b>（缺字段/格式错无法修复）。
+          🟠🟣 <b>IQR/孤立森林警告行</b>默认不录入，点击「忽略AI警告」可忽略AI检测、正常录入该行。
+          ✅ 清洁行自动录入。
+        </template>
+      </el-alert>
+
+      <!-- Confirm -->
+      <div class="actions">
+        <el-button type="primary" size="large" :loading="confirming"
+                   @click="doConfirm" :disabled="!hasImportable">
+          确认导入（{{ importableCount }} 行）
+        </el-button>
+        <el-button size="large" @click="doReset">取消重新上传</el-button>
+      </div>
     </el-card>
 
-    <!-- Detail Dialog -->
-    <el-dialog v-model="detailVisible" title="导入详情" width="640px">
-      <template v-if="detailTask">
-        <el-descriptions :column="2" border>
-          <el-descriptions-item label="ID">{{ detailTask.id }}</el-descriptions-item>
-          <el-descriptions-item label="文件名">{{ detailTask.source_name }}</el-descriptions-item>
-          <el-descriptions-item label="类型">{{ detailTask.source_type }}</el-descriptions-item>
-          <el-descriptions-item label="状态">
-            <el-tag :type="statusTagType(detailTask.status)" size="small">
-              {{ statusLabel(detailTask.status) }}
-            </el-tag>
-          </el-descriptions-item>
-          <el-descriptions-item label="总计">{{ detailTask.total_records }}</el-descriptions-item>
-          <el-descriptions-item label="成功">{{ detailTask.success_records }}</el-descriptions-item>
-          <el-descriptions-item label="失败">{{ detailTask.failed_records }}</el-descriptions-item>
-          <el-descriptions-item label="创建时间">{{ new Date(detailTask.created_at).toLocaleString() }}</el-descriptions-item>
-        </el-descriptions>
-        <div v-if="detailTask.error_log && detailTask.error_log.length" class="detail-errors">
-          <h4>错误记录</h4>
-          <el-table :data="detailTask.error_log" border stripe size="small" max-height="240">
-            <el-table-column prop="row" label="行号" width="80" />
-            <el-table-column prop="error" label="错误信息" show-overflow-tooltip />
-          </el-table>
-        </div>
-      </template>
-    </el-dialog>
+    <!-- ====== IMPORT RESULT ====== -->
+    <el-card v-if="importResult" shadow="never" class="section-card">
+      <template #header><span class="card-title">导入结果</span></template>
+      <el-row :gutter="16" class="result-row">
+        <el-col :span="6"><el-statistic title="总计" :value="importResult.total_records" /></el-col>
+        <el-col :span="6"><el-statistic title="成功" :value="importResult.success_records">
+          <template #suffix><el-icon style="color:#67c23a"><CircleCheckFilled /></el-icon></template>
+        </el-statistic></el-col>
+        <el-col :span="6"><el-statistic title="失败" :value="importResult.failed_records">
+          <template #suffix><el-icon v-if="importResult.failed_records>0" style="color:#f56c6c"><CircleCloseFilled /></el-icon></template>
+        </el-statistic></el-col>
+        <el-col :span="6"><el-statistic v-if="(importResult as any).skipped_records>0" title="跳过" :value="(importResult as any).skipped_records">
+          <template #suffix><el-icon style="color:#909399"><RemoveFilled /></el-icon></template>
+        </el-statistic></el-col>
+      </el-row>
+
+      <div v-if="importResult.rows?.length" class="results-table">
+        <h4>逐行详情</h4>
+        <el-table :data="importResult.rows" border stripe size="small" max-height="360" :row-class-name="resultRowClass">
+          <el-table-column prop="row" label="行号" width="60" align="center" />
+          <el-table-column label="标题" min-width="140" show-overflow-tooltip>
+            <template #default="{ row: r }">{{ (r.data || {}).title || '—' }}</template>
+          </el-table-column>
+          <el-table-column label="状态" width="80" align="center">
+            <template #default="{ row: r }">
+              <span v-if="r.status==='success'" style="font-size:18px">✅</span>
+              <span v-else-if="r.status==='skipped'" style="font-size:18px">⏭️</span>
+              <span v-else style="font-size:18px">❌</span>
+            </template>
+          </el-table-column>
+          <el-table-column label="详情" min-width="220">
+            <template #default="{ row: r }">
+              <el-tag v-for="(e,i) in (r.errors||[])" :key="'e'+i" type="danger" size="small" effect="plain" class="err-tag">{{ e.error }}</el-tag>
+              <span v-if="r.status==='skipped'" style="color:#909399;font-size:12px">未忽略AI警告，已跳过</span>
+            </template>
+          </el-table-column>
+        </el-table>
+      </div>
+    </el-card>
+
+    <!-- History (simplified) -->
+    <el-card shadow="never" class="section-card" v-if="history.length">
+      <template #header><span class="card-title">导入历史</span></template>
+      <el-table :data="history" v-loading="historyLoading" border stripe>
+        <el-table-column prop="id" label="ID" width="60" />
+        <el-table-column prop="source_name" label="文件名" min-width="180" show-overflow-tooltip />
+        <el-table-column prop="status" label="状态" width="90">
+          <template #default="{ row: r }"><el-tag :type="r.status==='completed'?'success':'danger'" size="small">{{ r.status }}</el-tag></template>
+        </el-table-column>
+        <el-table-column prop="total_records" label="总计" width="60" />
+        <el-table-column prop="success_records" label="成功" width="60" />
+        <el-table-column prop="failed_records" label="失败" width="60" />
+        <el-table-column prop="created_at" label="时间" width="160">
+          <template #default="{ row: r }">{{ new Date(r.created_at).toLocaleString() }}</template>
+        </el-table-column>
+      </el-table>
+    </el-card>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
-import {
-  UploadFilled,
-  Upload,
-  CircleCheckFilled,
-  CircleCloseFilled,
-} from '@element-plus/icons-vue'
-import type { UploadFile, UploadInstance } from 'element-plus'
+import { ref, reactive, computed, onMounted } from 'vue'
+import { UploadFilled, CircleCheckFilled, CircleCloseFilled, Loading, RemoveFilled } from '@element-plus/icons-vue'
+import type { UploadFile } from 'element-plus'
 import { ElMessage } from 'element-plus'
 import { adminService } from '@/services/admin'
-import type { ImportResult, ImportTask, ImportTaskDetail } from '@/types/admin'
+import { extractErrorMessage } from '@/services/api'
+import type { ImportResult, ImportTask, RowResult } from '@/types/admin'
 
-const REQUIRED_FIELDS = ['title', 'address', 'district', 'price_monthly']
-
-const uploadRef = ref<UploadInstance>()
 const selectedFile = ref<File | null>(null)
-const previewHeaders = ref<string[]>([])
-const previewRows = ref<Record<string, string>[]>([])
-const importing = ref(false)
+const previewLoading = ref(false)
+const previewRows = ref<RowResult[]>([])
+const previewId = ref(0)
+const ignoreMap = reactive<Record<number, boolean>>({})
+const confirming = ref(false)
 const importResult = ref<ImportResult | null>(null)
 const history = ref<ImportTask[]>([])
 const historyLoading = ref(false)
-const historyFilter = ref('')
-const historyPage = ref(1)
-const historyPageSize = ref(20)
-const historyTotal = ref(0)
-const detailVisible = ref(false)
-const detailTask = ref<ImportTaskDetail | null>(null)
 
-const requiredFields = REQUIRED_FIELDS
-
-const missingRequired = computed(() => {
-  return REQUIRED_FIELDS.filter((f) => !previewHeaders.value.includes(f))
-})
-
-function formatSize(bytes: number): string {
-  if (bytes < 1024) return bytes + ' B'
-  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB'
-  return (bytes / (1024 * 1024)).toFixed(2) + ' MB'
+// ---- helpers ----
+function hasErrors(r: any): boolean { return !!(r.errors && r.errors.length) }
+function hasAIWarnings(r: any): boolean { return !!(r.iqr_flagged || r.iforest_flagged) }
+function isClean(r: any): boolean { return !hasErrors(r) && !hasAIWarnings(r) }
+function getTitle(r: any): string { return (r.data || r.data_preview || {}).title || '—' }
+function getAddr(r: any): string { return (r.data || r.data_preview || {}).address || '' }
+function getDist(r: any): string { return (r.data || r.data_preview || {}).district || '—' }
+function getPrice(r: any): string { return (r.data || r.data_preview || {}).price_monthly || '—' }
+function getAIWarnings(r: any, type: string): any[] {
+  return (r.warnings || []).filter((w: any) => w.type === type)
 }
 
-function statusTagType(status: string) {
-  const map: Record<string, string> = {
-    pending: 'info',
-    processing: 'warning',
-    completed: 'success',
-    failed: 'danger',
-  }
-  return map[status] || 'info'
-}
+const hasImportable = computed(() => previewRows.value.some(r => !hasErrors(r) && (!hasAIWarnings(r) || ignoreMap[r.row])))
+const importableCount = computed(() => previewRows.value.filter(r => !hasErrors(r) && (!hasAIWarnings(r) || ignoreMap[r.row])).length)
 
-function statusLabel(status: string) {
-  const map: Record<string, string> = {
-    pending: '待处理',
-    processing: '处理中',
-    completed: '已完成',
-    failed: '失败',
-  }
-  return map[status] || status
-}
+// ---- file handling ----
+function handleFileRemove() { doReset() }
 
 async function handleFileChange(file: UploadFile) {
   const raw = file.raw
   if (!raw) return
+  console.log('[AdminImport] file changed:', raw.name, raw.size)
   selectedFile.value = raw
   importResult.value = null
-
-  // Generate preview
-  const ext = raw.name.split('.').pop()?.toLowerCase()
-  try {
-    if (ext === 'csv') {
-      const text = await raw.text()
-      const lines = text.trim().split('\n')
-      if (lines.length > 0) {
-        previewHeaders.value = lines[0].split(',').map((h) => h.trim().toLowerCase())
-        previewRows.value = lines.slice(1, Math.min(lines.length, 6)).map((line) => {
-          const values = line.split(',')
-          const row: Record<string, string> = {}
-          previewHeaders.value.forEach((h, i) => {
-            row[h] = (values[i] || '').trim()
-          })
-          return row
-        })
-      }
-    } else {
-      // Show preview from raw data for Excel (limited client-side)
-      previewHeaders.value = [] // Excel preview requires server-side; just show filename
-      previewRows.value = []
-    }
-  } catch {
-    ElMessage.error('无法解析文件预览')
-  }
-}
-
-function handleFileRemove() {
-  selectedFile.value = null
-  previewHeaders.value = []
   previewRows.value = []
-  importResult.value = null
+
+  previewLoading.value = true
+  try {
+    const data: any = await adminService.previewImport(raw)
+    console.log('[AdminImport] preview result:', data)
+    previewId.value = data.preview_id
+    previewRows.value = data.rows
+    for (const r of data.rows) ignoreMap[r.row] = false
+    ElMessage.success(`预览完成：${data.total_records} 行已解析`)
+  } catch (err: any) {
+    ElMessage.error(extractErrorMessage(err) || '预览失败')
+    selectedFile.value = null
+  } finally { previewLoading.value = false }
 }
 
-async function startImport() {
-  if (!selectedFile.value) return
-  importing.value = true
-  importResult.value = null
+// ---- toggle ----
+function toggleForce(rowNum: number) {
+  const r: any = previewRows.value.find((x: any) => x.row === rowNum)
+  if (!r || hasErrors(r)) return
+  ignoreMap[rowNum] = !ignoreMap[rowNum]
+}
+
+function forceAllAI() {
+  for (const r of previewRows.value) {
+    if (hasAIWarnings(r)) ignoreMap[r.row] = true
+  }
+}
+
+function resetAllForce() {
+  for (const r of previewRows.value) {
+    if (hasAIWarnings(r)) ignoreMap[r.row] = false
+  }
+}
+
+// ---- confirm ----
+async function doConfirm() {
+  if (!previewId.value) return
+  const skipRows: number[] = []
+  for (const r of previewRows.value) {
+    if (hasErrors(r)) { skipRows.push(r.row); continue }
+    if (hasAIWarnings(r) && !ignoreMap[r.row]) skipRows.push(r.row)
+  }
+
+  confirming.value = true
   try {
-    const result = await adminService.uploadImport(selectedFile.value)
+    const result: any = await adminService.confirmImport(previewId.value, skipRows)
     importResult.value = result
-    ElMessage.success(`导入完成：成功 ${result.success_records} 条，失败 ${result.failed_records} 条`)
+    ElMessage.success(`导入完成：成功 ${result.success_records} 条，跳过 ${skipRows.length} 条`)
     fetchHistory()
   } catch (err: any) {
-    ElMessage.error(err?.response?.data?.detail || '导入失败')
-  } finally {
-    importing.value = false
-  }
+    ElMessage.error(extractErrorMessage(err) || '导入失败')
+  } finally { confirming.value = false }
 }
 
-async function retryImport() {
-  if (!importResult.value?.id) return
-  try {
-    const result = await adminService.retryImportTask(importResult.value.id)
-    importResult.value = result
-    ElMessage.success(`重试完成：成功补充 ${result.success_records} 条`)
-    fetchHistory()
-  } catch (err: any) {
-    ElMessage.error(err?.response?.data?.detail || '重试失败')
-  }
+function doReset() {
+  selectedFile.value = null; previewRows.value = []; importResult.value = null; previewId.value = 0
 }
 
-async function retryTask(taskId: number) {
-  try {
-    await adminService.retryImportTask(taskId)
-    ElMessage.success('重试完成')
-    fetchHistory()
-  } catch (err: any) {
-    ElMessage.error(err?.response?.data?.detail || '重试失败')
-  }
+// ---- row classes ----
+function previewRowClass({ row }: { row: any }) {
+  if (hasErrors(row)) return 'row-err'
+  if (hasAIWarnings(row) && ignoreMap[row.row]) return 'row-force'
+  if (hasAIWarnings(row)) return 'row-ai'
+  return ''
+}
+function resultRowClass({ row }: { row: any }) {
+  if (row.status === 'failed') return 'row-err'
+  if (row.status === 'skipped') return 'row-force'
+  return ''
 }
 
+// ---- history ----
 async function fetchHistory() {
   historyLoading.value = true
-  try {
-    const data = await adminService.getImportTasks({
-      skip: (historyPage.value - 1) * historyPageSize.value,
-      limit: historyPageSize.value,
-      status: historyFilter.value || undefined,
-    })
-    history.value = data
-    // Estimate total - we don't have a count endpoint but it's fine for now
-    if (data.length < historyPageSize.value) {
-      historyTotal.value = (historyPage.value - 1) * historyPageSize.value + data.length
-    } else {
-      historyTotal.value = historyPage.value * historyPageSize.value + 1
-    }
-  } catch {
-    ElMessage.error('加载导入历史失败')
-  } finally {
-    historyLoading.value = false
-  }
+  try { history.value = await adminService.getImportTasks({ skip: 0, limit: 30 }) }
+  catch { /* ignore */ } finally { historyLoading.value = false }
 }
-
-async function viewDetail(task: ImportTask) {
-  try {
-    detailTask.value = await adminService.getImportTaskDetail(task.id)
-    detailVisible.value = true
-  } catch {
-    ElMessage.error('加载详情失败')
-  }
-}
-
-// Auto-fetch on mount
-import { onMounted } from 'vue'
 onMounted(fetchHistory)
 </script>
 
 <style scoped>
-.admin-import {
-  max-width: 960px;
-  margin: 0 auto;
-}
+.admin-import { max-width: 1100px; margin: 0 auto; }
+.admin-import h2 { font-size: 22px; color: #303133; margin-bottom: 24px; }
+.section-card { margin-bottom: 20px; }
+.card-title { font-weight: 600; font-size: 15px; }
 
-.admin-import h2 {
-  font-size: 22px;
-  color: #303133;
-  margin-bottom: 24px;
-}
+.upload-area { width: 100%; }
+.upload-icon { font-size: 48px; color: #c0c4cc; margin-bottom: 12px; }
+.upload-text p { margin: 4px 0; color: #606266; }
+.upload-hint { font-size: 13px; color: #909399; }
 
-.section-card {
-  margin-bottom: 20px;
-}
+.preview-header { display: flex; justify-content: space-between; align-items: center; }
 
-.card-title {
-  font-weight: 600;
-  font-size: 15px;
-}
+.legend { display: flex; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; }
+.badge { display: inline-block; padding: 2px 10px; border-radius: 12px; font-size: 12px; font-weight: 600; }
+.badge-err { background: #fef0f0; color: #f56c6c; border: 1px solid #fbc4c4; }
+.badge-iqr { background: #fdf6ec; color: #e6a23c; border: 1px solid #f5dab1; }
+.badge-if { background: #f0e6ff; color: #7c3aed; border: 1px solid #d4bfff; }
+.badge-ok { background: #f0f9eb; color: #67c23a; border: 1px solid #c2e7b0; }
+.badge-force { background: #ecfdf5; color: #10b981; border: 1px solid #a7f3d0; }
 
-.upload-area {
-  width: 100%;
-}
+.issue-list { display: flex; flex-wrap: wrap; gap: 3px; align-items: center; }
+.issue-tag { white-space: normal; word-break: break-all; line-height: 1.3; height: auto; padding: 2px 6px; max-width: 280px; }
+.if-tag { background: #f0e6ff !important; border-color: #d4bfff !important; color: #7c3aed !important; }
 
-.upload-icon {
-  font-size: 48px;
-  color: #c0c4cc;
-  margin-bottom: 12px;
-}
+.preview-alert { margin-top: 14px; }
+.actions { margin-top: 14px; display: flex; gap: 12px; }
 
-.upload-text p {
-  margin: 4px 0;
-  color: #606266;
-}
+.result-row { margin-bottom: 8px; }
+.results-table { margin-top: 16px; }
+.results-table h4 { font-size: 14px; color: #303133; margin-bottom: 8px; }
+.err-tag { white-space: normal; line-height: 1.3; height: auto; padding: 2px 6px; }
+</style>
 
-.upload-hint {
-  font-size: 13px;
-  color: #909399;
-}
-
-.file-info {
-  margin-bottom: 12px;
-  color: #606266;
-}
-
-.field-info {
-  margin-bottom: 12px;
-  line-height: 2;
-}
-
-.field-tag {
-  margin-right: 6px;
-  margin-bottom: 4px;
-}
-
-.field-alert {
-  margin-top: 12px;
-}
-
-.import-btn {
-  margin-top: 16px;
-}
-
-.progress-text {
-  margin-top: 12px;
-  text-align: center;
-  color: #909399;
-  font-size: 14px;
-}
-
-.result-row {
-  margin-bottom: 8px;
-}
-
-.error-section {
-  margin-top: 20px;
-}
-
-.error-section h4 {
-  font-size: 14px;
-  color: #f56c6c;
-  margin-bottom: 10px;
-}
-
-.retry-btn {
-  margin-top: 12px;
-}
-
-.history-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.pagination {
-  margin-top: 16px;
-  justify-content: center;
-}
-
-.detail-errors {
-  margin-top: 20px;
-}
-
-.detail-errors h4 {
-  font-size: 14px;
-  color: #f56c6c;
-  margin-bottom: 10px;
-}
+<style>
+.el-table .row-err { background-color: #fef0f0 !important; }
+.el-table .row-ai { background-color: #fdf6ec !important; }
+.el-table .row-force { background-color: #ecfdf5 !important; }
 </style>
