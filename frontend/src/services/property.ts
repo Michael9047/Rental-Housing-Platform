@@ -126,4 +126,45 @@ export const propertyService = {
   }): Promise<import('@/types/admin').RentEstimate> {
     return api.get('/ml/rent-estimate', { params }).then((r) => r.data)
   },
+
+  // ---- 修改历史 ----
+  /** 获取房源操作审计日志（修改历史） */
+  getHistory(propertyId: number | string, params?: { skip?: number; limit?: number }): Promise<PropertyHistoryItem[]> {
+    return api.get(`/properties/${propertyId}/history`, { params }).then((r) => r.data)
+  },
+
+  /** 获取当前房东所有房源的最新操作记录（按时间倒序） */
+  getRecentAudit(limit = 20): Promise<PropertyHistoryItem[]> {
+    return api.get('/properties/audit/recent', { params: { limit } }).then((r) => r.data)
+  },
+
+  /** 撤销某条审计日志对应的房源操作 */
+  revertAudit(propertyId: number, auditLogId: number): Promise<{ message: string; property_id: number; reverted_action: string }> {
+    return api.post(`/properties/${propertyId}/revert/${auditLogId}`).then((r) => r.data)
+  },
+
+  /** 删除单条审计日志 */
+  deleteAuditLog(auditLogId: number): Promise<void> {
+    return api.delete(`/properties/audit/${auditLogId}`)
+  },
+
+  /** 批量删除审计日志 */
+  batchDeleteAuditLogs(ids: number[]): Promise<{ deleted: number }> {
+    return api.post('/properties/audit/batch-delete', { ids }).then((r) => r.data)
+  },
+
+  /** 一键清空当前用户所有房源审计日志 */
+  clearAuditLogs(): Promise<{ deleted: number }> {
+    return api.post('/properties/audit/clear').then((r) => r.data)
+  },
+}
+
+export interface PropertyHistoryItem {
+  id: number
+  user_id: number | null
+  action: string
+  resource_id: number | null
+  details: Record<string, any> | null
+  ip_address: string | null
+  created_at: string
 }

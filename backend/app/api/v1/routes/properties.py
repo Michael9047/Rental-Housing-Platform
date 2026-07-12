@@ -5,10 +5,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_db_session, require_landlord
 from app.models.user import User
-from app.schemas.property import PropertyCreate, PropertyRead, PropertySearchResult, PropertyUpdate
+from app.schemas.property import PropertyCreate, PropertyListResponse, PropertyRead, PropertySearchResult, PropertyUpdate
 from app.schemas.property_image import PropertyImageRead
 from app.services.property_service import PropertyService
 from app.services.user_service import UserService
+from app.models.property import Property
 
 router = APIRouter()
 
@@ -21,21 +22,17 @@ async def create_property(
 ) -> PropertyRead:
     landlord = await UserService(session).get(property_in.landlord_id)
     if not landlord:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="landlord_id does not reference an existing user",
-        )
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                           detail="landlord_id does not reference an existing user")
     if current_user.role.value != "admin" and property_in.landlord_id != current_user.id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Landlords can only create properties for themselves",
-        )
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
+                           detail="Landlords can only create properties for themselves")
     return await PropertyService(session).create(property_in)
 
 
 @router.get("/search", response_model=list[PropertySearchResult])
 async def search_properties(
-    q: str | None = Query(default=None, description="Natural language search query"),
+    q: str | None = Query(default=None),
     district: str | None = Query(default=None),
     price_min: Decimal | None = Query(default=None, ge=0),
     price_max: Decimal | None = Query(default=None, ge=0),
@@ -45,77 +42,295 @@ async def search_properties(
     session: AsyncSession = Depends(get_db_session),
 ) -> list[PropertySearchResult]:
     results = await PropertyService(session).search(
-        query=q,
-        district=district,
-        price_min=price_min,
-        price_max=price_max,
-        bedrooms=bedrooms,
-        property_type=property_type,
-        limit=limit,
+        query=q, district=district, price_min=price_min,
+        price_max=price_max, bedrooms=bedrooms,
+        property_type=property_type, limit=limit,
     )
     return [
         PropertySearchResult(
-            id=prop.id,
-            landlord_id=prop.landlord_id,
-            title=prop.title,
-            description=prop.description,
-            address=prop.address,
-            district=prop.district,
+            id=prop.id, landlord_id=prop.landlord_id,
+            title=prop.title, description=prop.description,
+            address=prop.address, district=prop.district,
             price_monthly=prop.price_monthly,
-            area_sqm=prop.area_sqm,
-            bedrooms=prop.bedrooms,
-            bathrooms=prop.bathrooms,
-            property_type=prop.property_type,
-            status=prop.status,
-            latitude=prop.latitude,
-            longitude=prop.longitude,
-            created_at=prop.created_at,
-            updated_at=prop.updated_at,
-            images=[
-                PropertyImageRead(
-                    id=img.id,
-                    property_id=img.property_id,
-                    filename=img.filename,
-                    original_name=img.original_name,
-                    mime_type=img.mime_type,
-                    file_size=img.file_size,
-                    sort_order=img.sort_order,
-                    is_primary=img.is_primary,
-                    created_at=img.created_at,
-                )
-                for img in (prop.images or [])
-            ],
+            area_sqm=prop.area_sqm, bedrooms=prop.bedrooms, bathrooms=prop.bathrooms,
+            property_type=prop.property_type, status=prop.status,
+            latitude=prop.latitude, longitude=prop.longitude,
+            created_at=prop.created_at, updated_at=prop.updated_at,
+            images=[PropertyImageRead(id=img.id, property_id=img.property_id,
+                     filename=img.filename, original_name=img.original_name,
+                     mime_type=img.mime_type, file_size=img.file_size,
+                     sort_order=img.sort_order, is_primary=img.is_primary,
+                     created_at=img.created_at) for img in (prop.images or [])],
+            institute_id=prop.institute_id,
+            institute_name=getattr(prop, 'institute_name', None),
             similarity=sim,
         )
         for prop, sim in results
     ]
 
 
-@router.get("", response_model=list[PropertyRead])
+@router.get("", response_model=PropertyListResponse)
 async def list_properties(
     session: AsyncSession = Depends(get_db_session),
-    skip: int = Query(default=0, ge=0),
-    limit: int = Query(default=20, ge=1, le=100),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=20, ge=1, le=500),
     district: str | None = Query(default=None),
     status_filter: str | None = Query(default=None, alias="status"),
-) -> list[PropertyRead]:
-    return await PropertyService(session).list(
-        skip=skip,
-        limit=limit,
-        district=district,
-        status=status_filter,
+    landlord_id: int | None = Query(default=None),
+    keyword: str | None = Query(default=None),
+    property_type: str | None = Query(default=None),
+    price_min: float | None = Query(default=None, ge=0),
+    price_max: float | None = Query(default=None, ge=0),
+    institute_id: int | None = Query(default=None),
+) -> PropertyListResponse:
+    skip = (page - 1) * page_size
+    result = await PropertyService(session).list(
+        skip=skip, limit=page_size,
+        district=district, status=status_filter,
+        landlord_id=landlord_id, keyword=keyword,
+        property_type=property_type,
+        price_min=price_min, price_max=price_max,
+        institute_id=institute_id,
+    )
+    return PropertyListResponse(**result)
+
+
+# ── 回收站 ──
+@router.get("/recycle-bin", response_model=PropertyListResponse)
+async def list_deleted_properties(
+    session: AsyncSession = Depends(get_db_session),
+    current_user: User = Depends(require_landlord),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=20, ge=1, le=500),
+    landlord_id: int | None = Query(default=None),
+) -> PropertyListResponse:
+    skip = (page - 1) * page_size
+    result = await PropertyService(session).list(
+        skip=skip, limit=page_size,
+        landlord_id=landlord_id or current_user.id,
+        include_deleted=True,
+    )
+    # 只返回已删除的
+    deleted_items = [p for p in result["items"] if p.deleted_at is not None]
+    total = len(deleted_items)
+    return PropertyListResponse(
+        items=deleted_items,
+        total=total,
+        page=page,
+        page_size=page_size,
+        total_pages=max(1, (total + page_size - 1) // page_size),
     )
 
 
-@router.get("/{property_id}", response_model=PropertyRead)
-async def get_property(
+@router.get("/audit/recent")
+async def list_recent_property_audit(
+    session: AsyncSession = Depends(get_db_session),
+    current_user: User = Depends(require_landlord),
+    limit: int = Query(default=20, ge=1, le=100),
+) -> list[dict]:
+    """获取当前房东所有房源的最新操作记录（按时间倒序）
+
+    用于发布房源首页下方的修改记录展示。
+    管理员可看全部；普通房东仅看自己的房源记录。
+    """
+    from sqlalchemy import select
+    from app.models.audit_log import AuditLog
+
+    if current_user.role.value == "admin":
+        stmt = (
+            select(AuditLog)
+            .where(AuditLog.resource_type == "property")
+            .order_by(AuditLog.created_at.desc())
+            .limit(limit)
+        )
+    else:
+        prop_ids_stmt = select(Property.id).where(Property.landlord_id == current_user.id)
+        stmt = (
+            select(AuditLog)
+            .where(
+                AuditLog.resource_type == "property",
+                AuditLog.resource_id.in_(prop_ids_stmt),
+            )
+            .order_by(AuditLog.created_at.desc())
+            .limit(limit)
+        )
+
+    result = await session.scalars(stmt)
+    logs = list(result)
+    return [
+        {
+            "id": log.id,
+            "user_id": log.user_id,
+            "action": log.action,
+            "resource_id": log.resource_id,
+            "details": log.details,
+            "ip_address": log.ip_address,
+            "created_at": log.created_at.isoformat(),
+        }
+        for log in logs
+    ]
+
+
+@router.post("/{property_id}/restore", response_model=PropertyRead)
+async def restore_property(
     property_id: int,
     session: AsyncSession = Depends(get_db_session),
+    current_user: User = Depends(require_landlord),
 ) -> PropertyRead:
-    property_obj = await PropertyService(session).get(property_id)
-    if not property_obj:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Property not found")
-    return property_obj
+    prop = await PropertyService(session).restore(property_id)
+    if not prop:
+        raise HTTPException(status_code=404, detail="Property not found in recycle bin")
+    return prop
+
+
+@router.post("/{property_id}/revert/{audit_log_id}")
+async def revert_property_audit(
+    property_id: int,
+    audit_log_id: int,
+    session: AsyncSession = Depends(get_db_session),
+    current_user: User = Depends(require_landlord),
+) -> dict:
+    """撤销某条审计日志对应的房源操作
+
+    支持撤销: property_create, property_update, property_delete, property_restore
+    不支持: property_hard_delete, property_batch_*
+    """
+    ps = PropertyService(session)
+    try:
+        result = await ps.revert_audit(property_id, audit_log_id, current_user.id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return result
+
+
+@router.delete("/audit/{audit_log_id}", status_code=204)
+async def delete_audit_log(
+    audit_log_id: int,
+    session: AsyncSession = Depends(get_db_session),
+    current_user: User = Depends(require_landlord),
+) -> None:
+    """删除单条审计日志（仅限自己的房源）"""
+    from app.services.audit_service import AuditService
+    audit_svc = AuditService(session)
+    log = await audit_svc.get_log(audit_log_id)
+    if not log:
+        raise HTTPException(status_code=404, detail="审计记录不存在")
+    # 校验归属：只有日志所属房源的房东或 admin 可以删除
+    if current_user.role.value != "admin":
+        from app.services.property_service import PropertyService as _PS
+        prop = await _PS(session)._get_property_any(log.resource_id)
+        if not prop or prop.landlord_id != current_user.id:
+            raise HTTPException(status_code=403, detail="无权删除此记录")
+    await audit_svc.delete_log(audit_log_id)
+
+
+@router.post("/audit/batch-delete")
+async def batch_delete_audit_logs(
+    body: dict,
+    session: AsyncSession = Depends(get_db_session),
+    current_user: User = Depends(require_landlord),
+) -> dict:
+    """批量删除审计日志"""
+    from app.services.audit_service import AuditService
+    ids = body.get("ids", [])
+    if not ids:
+        raise HTTPException(status_code=400, detail="ids is required")
+    deleted = await AuditService(session).batch_delete_logs(ids)
+    return {"deleted": deleted}
+
+
+@router.post("/audit/clear")
+async def clear_audit_logs(
+    session: AsyncSession = Depends(get_db_session),
+    current_user: User = Depends(require_landlord),
+) -> dict:
+    """一键清空当前房东所有房源的审计日志"""
+    from app.services.audit_service import AuditService
+    deleted = await AuditService(session).clear_logs(current_user.id)
+    return {"deleted": deleted}
+
+
+# ── 批量操作 ──
+@router.post("/batch/status")
+async def batch_update_status(
+    body: dict,
+    session: AsyncSession = Depends(get_db_session),
+    current_user: User = Depends(require_landlord),
+) -> dict:
+    ids = body.get("ids", [])
+    new_status = body.get("status", "offline")
+    if not ids:
+        raise HTTPException(status_code=400, detail="ids is required")
+    return await PropertyService(session).batch_update_status(ids, new_status, current_user.id)
+
+
+@router.post("/batch/delete")
+async def batch_delete_properties(
+    body: dict,
+    session: AsyncSession = Depends(get_db_session),
+    current_user: User = Depends(require_landlord),
+) -> dict:
+    ids = body.get("ids", [])
+    if not ids:
+        raise HTTPException(status_code=400, detail="ids is required")
+    return await PropertyService(session).batch_delete(ids, current_user.id)
+
+
+# ── 回收站操作 ──
+@router.delete("/{property_id}/hard", status_code=204)
+async def hard_delete_property(
+    property_id: int,
+    session: AsyncSession = Depends(get_db_session),
+    current_user: User = Depends(require_landlord),
+) -> None:
+    ps = PropertyService(session)
+    deleted = await ps.hard_delete(property_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Property not found in recycle bin")
+
+@router.post("/batch/restore")
+async def batch_restore_properties(
+    body: dict,
+    session: AsyncSession = Depends(get_db_session),
+    current_user: User = Depends(require_landlord),
+) -> dict:
+    ids = body.get('ids', [])
+    if not ids:
+        raise HTTPException(status_code=400, detail='ids is required')
+    return await PropertyService(session).batch_restore(ids, current_user.id)
+
+@router.post("/batch/hard-delete")
+async def batch_hard_delete_properties(
+    body: dict,
+    session: AsyncSession = Depends(get_db_session),
+    current_user: User = Depends(require_landlord),
+) -> dict:
+    ids = body.get('ids', [])
+    if not ids:
+        raise HTTPException(status_code=400, detail='ids is required')
+    return await PropertyService(session).batch_hard_delete(ids, current_user.id)
+
+# ── 修改记录（全局）──
+@router.get("/audit/recent")
+async def get_recent_audit(
+    limit: int = Query(default=20, ge=1, le=200),
+    session: AsyncSession = Depends(get_db_session),
+    current_user: User = Depends(require_landlord),
+) -> list[dict]:
+    """获取当前房东所有房源的最近操作审计日志"""
+    return await PropertyService(session).get_recent_audit(
+        landlord_id=current_user.id,
+        limit=limit,
+    )
+
+
+# ── CRUD ──
+@router.get("/{property_id}", response_model=PropertyRead)
+async def get_property(property_id: int, session: AsyncSession = Depends(get_db_session)) -> PropertyRead:
+    prop = await PropertyService(session).get(property_id)
+    if not prop:
+        raise HTTPException(status_code=404, detail="Property not found")
+    return prop
 
 
 @router.patch("/{property_id}", response_model=PropertyRead)
@@ -125,20 +340,19 @@ async def update_property(
     session: AsyncSession = Depends(get_db_session),
     current_user: User = Depends(require_landlord),
 ) -> PropertyRead:
-    property_service = PropertyService(session)
-    existing_property = await property_service.get(property_id)
-    if not existing_property:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Property not found")
-    if current_user.role.value != "admin" and existing_property.landlord_id != current_user.id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Landlords can only update their own properties",
-        )
-
-    property_obj = await property_service.update(property_id, property_in)
-    if not property_obj:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Property not found")
-    return property_obj
+    ps = PropertyService(session)
+    existing = await ps.get(property_id)
+    if not existing:
+        raise HTTPException(status_code=404, detail="Property not found")
+    if current_user.role.value != "admin" and existing.landlord_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Landlords can only update their own properties")
+    try:
+        prop = await ps.update(property_id, property_in)
+    except ValueError as e:
+        raise HTTPException(status_code=409, detail=str(e))
+    if not prop:
+        raise HTTPException(status_code=404, detail="Property not found")
+    return prop
 
 
 @router.delete("/{property_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -147,16 +361,52 @@ async def delete_property(
     session: AsyncSession = Depends(get_db_session),
     current_user: User = Depends(require_landlord),
 ) -> None:
-    property_service = PropertyService(session)
-    existing_property = await property_service.get(property_id)
-    if not existing_property:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Property not found")
-    if current_user.role.value != "admin" and existing_property.landlord_id != current_user.id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Landlords can only delete their own properties",
-        )
-
-    deleted = await property_service.delete(property_id)
+    ps = PropertyService(session)
+    existing = await ps.get(property_id)
+    if not existing:
+        raise HTTPException(status_code=404, detail="Property not found")
+    if current_user.role.value != "admin" and existing.landlord_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Landlords can only delete their own properties")
+    deleted = await ps.delete(property_id)
     if not deleted:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Property not found")
+        raise HTTPException(status_code=404, detail="Property not found")
+
+
+@router.get("/{property_id}/history")
+async def get_property_history(
+    property_id: int,
+    session: AsyncSession = Depends(get_db_session),
+    current_user: User = Depends(require_landlord),
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=100, ge=1, le=500),
+) -> list[dict]:
+    """获取某房源的修改历史（操作审计日志）
+
+    仅返回 resource_type='property' AND resource_id=property_id 的记录。
+    房东只能查看自己房源的历史；管理员可查看全部。
+    """
+    from app.services.audit_service import AuditService
+    from app.services.property_service import PropertyService as _PS
+
+    # 校验房源存在 + 归属
+    prop = await _PS(session).get(property_id)
+    if not prop:
+        raise HTTPException(status_code=404, detail="Property not found")
+    if current_user.role.value != "admin" and prop.landlord_id != current_user.id:
+        raise HTTPException(status_code=403, detail="无权限查看此房源的修改历史")
+
+    logs = await AuditService(session).list_logs(
+        skip=skip, limit=limit,
+        resource_type="property", resource_id=property_id,
+    )
+    return [
+        {
+            "id": log.id,
+            "user_id": log.user_id,
+            "action": log.action,
+            "details": log.details,
+            "ip_address": log.ip_address,
+            "created_at": log.created_at.isoformat(),
+        }
+        for log in logs
+    ]
