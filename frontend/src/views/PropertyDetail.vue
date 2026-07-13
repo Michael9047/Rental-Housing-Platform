@@ -170,6 +170,19 @@
         </div>
       </el-card>
 
+      <!-- 🚌 通勤路线（仅从搜索页学校模式进入时显示） -->
+      <CommuteRoute
+        v-if="schoolInfo"
+        :origin-lat="schoolInfo.lat"
+        :origin-lng="schoolInfo.lng"
+        :origin-name="schoolInfo.name"
+        :dest-lat="Number(property.latitude)"
+        :dest-lng="Number(property.longitude)"
+        :dest-title="property.title"
+        :country="schoolInfo.country"
+        :city="schoolInfo.city"
+      />
+
       <!-- AI POI Analysis -->
       <el-card v-if="poiData" shadow="never" class="info-card">
         <template #header><span class="card-header-text">🤖 AI 智能周边分析</span></template>
@@ -269,6 +282,7 @@ import { propertyService, type PropertyPOI } from '@/services/property'
 import { favoriteService } from '@/services/favorite'
 import { storeToRefs } from 'pinia'
 import PropertyCard from '@/components/PropertyCard.vue'
+import CommuteRoute from '@/components/CommuteRoute.vue'
 import BookingDateDialog from '@/components/BookingDateDialog.vue'
 import AmapMap from '@/components/AmapMap.vue'
 // GoogleMap ? GM Key ?????
@@ -282,6 +296,19 @@ const authStore = useAuthStore()
 const { currentProperty: property, loading } = storeToRefs(propertyStore)
 
 const currentSlide = ref(0)
+
+// ── 学校通勤上下文（从 Search 页学校模式跳转时携带）──
+const schoolInfo = computed(() => {
+  const q = route.query
+  if (!q.school_lat || !q.school_lng) return null
+  return {
+    lat: Number(q.school_lat),
+    lng: Number(q.school_lng),
+    name: (q.school_name as string) || '学校',
+    country: (q.school_country as string) || undefined,
+    city: (q.school_city as string) || undefined,
+  }
+})
 
 // Map
 const mapSrc = computed(() => {

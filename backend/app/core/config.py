@@ -55,6 +55,10 @@ class Settings(BaseSettings):
         default="gpt-4o",
         validation_alias="OPENAI_CHAT_MODEL",
     )
+    openai_base_url: str = Field(
+        default="",
+        validation_alias="OPENAI_BASE_URL",
+    )
     # DeepSeek LLM（用于 AI 搜房：自然语言解析 + 房源摘要生成）
     deepseek_api_key: str = Field(
         default="",
@@ -117,6 +121,27 @@ class Settings(BaseSettings):
         default="",
         validation_alias="AMAP_JS_KEY",
     )
+    # 高德路线规划 API（步行/骑行/驾车/公交，四种通勤模式）
+    amap_direction_walking_url: str = Field(
+        default="https://restapi.amap.com/v3/direction/walking",
+        validation_alias="AMAP_DIRECTION_WALKING_URL",
+    )
+    amap_direction_bicycling_url: str = Field(
+        default="https://restapi.amap.com/v4/direction/bicycling",
+        validation_alias="AMAP_DIRECTION_BICYCLING_URL",
+    )
+    amap_direction_driving_url: str = Field(
+        default="https://restapi.amap.com/v3/direction/driving",
+        validation_alias="AMAP_DIRECTION_DRIVING_URL",
+    )
+    amap_direction_transit_url: str = Field(
+        default="https://restapi.amap.com/v4/direction/transit/integrated",
+        validation_alias="AMAP_DIRECTION_TRANSIT_URL",
+    )
+    amap_direction_timeout_seconds: float = Field(
+        default=8.0,
+        validation_alias="AMAP_DIRECTION_TIMEOUT_SECONDS",
+    )
 
     # ========== Google Maps（海外主引擎） ==========
     gm_api_key: str = Field(
@@ -138,6 +163,20 @@ class Settings(BaseSettings):
     gm_nearby_radius_meters: int = Field(
         default=2000,
         validation_alias="GM_NEARBY_RADIUS_METERS",
+    )
+    # Google Distance Matrix API（批量通勤时间计算）
+    gm_distance_matrix_url: str = Field(
+        default="https://maps.googleapis.com/maps/api/distancematrix/json",
+        validation_alias="GM_DISTANCE_MATRIX_URL",
+    )
+    gm_direction_timeout_seconds: float = Field(
+        default=8.0,
+        validation_alias="GM_DIRECTION_TIMEOUT_SECONDS",
+    )
+    # Google Directions API（获取路线 polyline + steps，Distance Matrix 不返回这些）
+    gm_directions_url: str = Field(
+        default="https://maps.googleapis.com/maps/api/directions/json",
+        validation_alias="GM_DIRECTIONS_URL",
     )
 
     # ========== OSM / Nominatim（全球备用引擎） ==========
