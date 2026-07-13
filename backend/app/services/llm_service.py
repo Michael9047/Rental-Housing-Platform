@@ -72,11 +72,14 @@ class LLMService:
         settings = get_settings()
 
         # DeepSeek client（默认用于 LLM 调用）
+        # timeout：避免上游偶发挂起时用户长时间"没反应"，超时走各调用方的降级路径
         self._deepseek_client: AsyncOpenAI | None = None
         if settings.deepseek_api_key:
             self._deepseek_client = AsyncOpenAI(
                 api_key=settings.deepseek_api_key,
                 base_url=settings.deepseek_base_url,
+                timeout=30.0,
+                max_retries=1,
             )
         self._deepseek_model = settings.deepseek_chat_model
 
@@ -85,6 +88,8 @@ class LLMService:
         if settings.openai_api_key:
             self._openai_client = AsyncOpenAI(
                 api_key=settings.openai_api_key,
+                timeout=30.0,
+                max_retries=1,
             )
         self._openai_model = settings.openai_chat_model
 
@@ -103,6 +108,62 @@ class LLMService:
             return self._deepseek_model
         return self._openai_model
 
+    @property
+    def is_available(self) -> bool:
+        """是否配置了任一 LLM API Key"""
+        return self._deepseek_client is not None or self._openai_client is not None
+
+    @staticmethod
+    def _strip_code_fence(raw: str) -> str:
+        """清理可能的 markdown 代码块包裹"""
+        raw = raw.strip()
+        if raw.startswith("```"):
+            lines = raw.split("\n")
+            raw = "\n".join(lines[1:-1] if lines[-1].strip() == "```" else lines[1:])
+        return raw
+
+    async def complete_json(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        *,
+        temperature: float = 0.2,
+        max_tokens: int = 1500,
+    ) -> dict[str, Any]:
+        """通用 JSON 补全：返回解析后的 dict，解析失败返回空 dict"""
+        response = await self._client.chat.completions.create(
+            model=self._model,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            temperature=temperature,
+            max_tokens=max_tokens,
+        )
+        raw = self._strip_code_fence(response.choices[0].message.content or "{}")
+        try:
+            result = json.loads(raw)
+        except json.JSONDecodeError:
+            logger.warning("LLM 返回了非 JSON 内容: %s", raw[:200])
+            return {}
+        return result if isinstance(result, dict) else {}
+
+    async def complete_text(
+        self,
+        messages: list[dict[str, str]],
+        *,
+        temperature: float = 0.5,
+        max_tokens: int = 800,
+    ) -> str:
+        """通用文本补全"""
+        response = await self._client.chat.completions.create(
+            model=self._model,
+            messages=messages,
+            temperature=temperature,
+            max_tokens=max_tokens,
+        )
+        return response.choices[0].message.content or ""
+
     async def parse_search_query(self, user_input: str) -> dict[str, Any]:
         """解析用户的自然语言搜房需求，返回结构化参数 + 完整性报告"""
         response = await self._client.chat.completions.create(
@@ -115,12 +176,7 @@ class LLMService:
             max_tokens=800,
         )
 
-        raw = response.choices[0].message.content or "{}"
-        # 清理可能的 markdown 代码块包裹
-        raw = raw.strip()
-        if raw.startswith("```"):
-            lines = raw.split("\n")
-            raw = "\n".join(lines[1:-1] if lines[-1].strip() == "```" else lines[1:])
+        raw = self._strip_code_fence(response.choices[0].message.content or "{}")
 
         try:
             result = json.loads(raw)

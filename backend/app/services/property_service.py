@@ -770,6 +770,7 @@ class PropertyService:
     ) -> list[dict]:
         """获取当前房东所有房源最近的操作审计日志"""
         from app.models.audit_log import AuditLog
+        from sqlalchemy import or_
 
         # 先获取该房东的所有房源 ID
         prop_ids_stmt = select(Property.id).where(
@@ -778,14 +779,14 @@ class PropertyService:
         prop_ids_result = await self.session.scalars(prop_ids_stmt)
         prop_ids = set(prop_ids_result.all())
 
-        if not prop_ids:
-            return []
-
         stmt = (
             select(AuditLog)
             .where(
                 AuditLog.resource_type == "property",
-                AuditLog.resource_id.in_(prop_ids),
+                or_(
+                    AuditLog.resource_id.in_(prop_ids),
+                    AuditLog.user_id == landlord_id,
+                ),
             )
             .order_by(AuditLog.created_at.desc())
             .limit(limit)
@@ -951,7 +952,8 @@ class PropertyService:
             return list(value) if isinstance(value, list) else value
         return value
 
-    async def _audit(self, user_id: int, action: str, resource_id: int, details: dict) -> None:
+    async def _audit(self, user_id: int, action: str, resource_id: int, details: dict) -> bool:
+        """写入审计日志，返回是否成功。失败不阻塞主流程但会输出可见警告。"""
         try:
             from app.services.audit_service import AuditService
             await AuditService(self.session).create_log(
@@ -961,5 +963,12 @@ class PropertyService:
                 resource_id=resource_id,
                 details=details,
             )
+            return True
         except Exception:
             logger.exception("Failed to write audit log for action=%s", action)
+            import sys
+            print(
+                f"\n[!] ⚠️ 审计日志写入失败！操作={action}, 房源ID={resource_id}, 用户ID={user_id}",
+                file=sys.stderr,
+            )
+            return False

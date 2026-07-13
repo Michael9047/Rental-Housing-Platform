@@ -144,12 +144,16 @@ async def list_recent_property_audit(
             .limit(limit)
         )
     else:
+        from sqlalchemy import or_
         prop_ids_stmt = select(Property.id).where(Property.landlord_id == current_user.id)
         stmt = (
             select(AuditLog)
             .where(
                 AuditLog.resource_type == "property",
-                AuditLog.resource_id.in_(prop_ids_stmt),
+                or_(
+                    AuditLog.resource_id.in_(prop_ids_stmt),
+                    AuditLog.user_id == current_user.id,
+                ),
             )
             .order_by(AuditLog.created_at.desc())
             .limit(limit)
@@ -169,6 +173,68 @@ async def list_recent_property_audit(
         }
         for log in logs
     ]
+
+
+# ── 批量操作（必须在 /{property_id} 路由之前注册，否则会被拦截）──
+@router.post("/batch/status")
+async def batch_update_status(
+    body: dict,
+    session: AsyncSession = Depends(get_db_session),
+    current_user: User = Depends(require_landlord),
+) -> dict:
+    ids = body.get("ids", [])
+    new_status = body.get("status", "offline")
+    if not ids:
+        raise HTTPException(status_code=400, detail="ids is required")
+    return await PropertyService(session).batch_update_status(ids, new_status, current_user.id)
+
+
+@router.post("/batch/delete")
+async def batch_delete_properties(
+    body: dict,
+    session: AsyncSession = Depends(get_db_session),
+    current_user: User = Depends(require_landlord),
+) -> dict:
+    ids = body.get("ids", [])
+    if not ids:
+        raise HTTPException(status_code=400, detail="ids is required")
+    return await PropertyService(session).batch_delete(ids, current_user.id)
+
+
+@router.post("/batch/restore")
+async def batch_restore_properties(
+    body: dict,
+    session: AsyncSession = Depends(get_db_session),
+    current_user: User = Depends(require_landlord),
+) -> dict:
+    ids = body.get('ids', [])
+    if not ids:
+        raise HTTPException(status_code=400, detail='ids is required')
+    return await PropertyService(session).batch_restore(ids, current_user.id)
+
+@router.post("/batch/hard-delete")
+async def batch_hard_delete_properties(
+    body: dict,
+    session: AsyncSession = Depends(get_db_session),
+    current_user: User = Depends(require_landlord),
+) -> dict:
+    ids = body.get('ids', [])
+    if not ids:
+        raise HTTPException(status_code=400, detail='ids is required')
+    return await PropertyService(session).batch_hard_delete(ids, current_user.id)
+
+
+# ── 回收站操作 ──
+@router.delete("/{property_id}/hard", status_code=204)
+async def hard_delete_property(
+    property_id: int,
+    session: AsyncSession = Depends(get_db_session),
+    current_user: User = Depends(require_landlord),
+) -> None:
+    ps = PropertyService(session)
+    deleted = await ps.hard_delete(property_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Property not found in recycle bin")
 
 
 @router.post("/{property_id}/restore", response_model=PropertyRead)
@@ -250,78 +316,6 @@ async def clear_audit_logs(
     return {"deleted": deleted}
 
 
-# ── 批量操作 ──
-@router.post("/batch/status")
-async def batch_update_status(
-    body: dict,
-    session: AsyncSession = Depends(get_db_session),
-    current_user: User = Depends(require_landlord),
-) -> dict:
-    ids = body.get("ids", [])
-    new_status = body.get("status", "offline")
-    if not ids:
-        raise HTTPException(status_code=400, detail="ids is required")
-    return await PropertyService(session).batch_update_status(ids, new_status, current_user.id)
-
-
-@router.post("/batch/delete")
-async def batch_delete_properties(
-    body: dict,
-    session: AsyncSession = Depends(get_db_session),
-    current_user: User = Depends(require_landlord),
-) -> dict:
-    ids = body.get("ids", [])
-    if not ids:
-        raise HTTPException(status_code=400, detail="ids is required")
-    return await PropertyService(session).batch_delete(ids, current_user.id)
-
-
-# ── 回收站操作 ──
-@router.delete("/{property_id}/hard", status_code=204)
-async def hard_delete_property(
-    property_id: int,
-    session: AsyncSession = Depends(get_db_session),
-    current_user: User = Depends(require_landlord),
-) -> None:
-    ps = PropertyService(session)
-    deleted = await ps.hard_delete(property_id)
-    if not deleted:
-        raise HTTPException(status_code=404, detail="Property not found in recycle bin")
-
-@router.post("/batch/restore")
-async def batch_restore_properties(
-    body: dict,
-    session: AsyncSession = Depends(get_db_session),
-    current_user: User = Depends(require_landlord),
-) -> dict:
-    ids = body.get('ids', [])
-    if not ids:
-        raise HTTPException(status_code=400, detail='ids is required')
-    return await PropertyService(session).batch_restore(ids, current_user.id)
-
-@router.post("/batch/hard-delete")
-async def batch_hard_delete_properties(
-    body: dict,
-    session: AsyncSession = Depends(get_db_session),
-    current_user: User = Depends(require_landlord),
-) -> dict:
-    ids = body.get('ids', [])
-    if not ids:
-        raise HTTPException(status_code=400, detail='ids is required')
-    return await PropertyService(session).batch_hard_delete(ids, current_user.id)
-
-# ── 修改记录（全局）──
-@router.get("/audit/recent")
-async def get_recent_audit(
-    limit: int = Query(default=20, ge=1, le=200),
-    session: AsyncSession = Depends(get_db_session),
-    current_user: User = Depends(require_landlord),
-) -> list[dict]:
-    """获取当前房东所有房源的最近操作审计日志"""
-    return await PropertyService(session).get_recent_audit(
-        landlord_id=current_user.id,
-        limit=limit,
-    )
 
 
 # ── CRUD ──

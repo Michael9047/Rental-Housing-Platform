@@ -1,4 +1,4 @@
-﻿from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
@@ -53,5 +53,23 @@ async def require_admin(current_user: User = Depends(get_current_user)) -> User:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Admin role required",
+        )
+    return current_user
+
+
+async def require_maintenance(current_user: User = Depends(get_current_user)) -> User:
+    if current_user.role not in {UserRole.maintenance_worker, UserRole.admin}:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Maintenance worker or admin role required",
+        )
+    return current_user
+
+
+async def require_bd_manager(current_user: User = Depends(get_current_user)) -> User:
+    if current_user.role not in {UserRole.bd_manager, UserRole.admin}:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="BD manager or admin role required",
         )
     return current_user

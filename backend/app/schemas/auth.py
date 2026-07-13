@@ -1,4 +1,4 @@
-﻿from datetime import datetime
+from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, model_validator
 
@@ -68,8 +68,7 @@ class CurrentUserResponse(BaseModel):
     phone: str | None = None
     wechat_openid: str | None = None
     email: EmailStr | None = None
-    email_verified: bool = False
-    phone_verified: bool = False
+    # email_verified/phone_verified pending future DB migration
     role: UserRole
     status: UserStatus
     created_at: datetime

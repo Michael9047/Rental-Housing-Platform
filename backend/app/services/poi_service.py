@@ -1,4 +1,4 @@
-﻿import json
+import json
 import logging
 from datetime import datetime, timezone
 
@@ -154,7 +154,7 @@ class POIService:
         district = property_obj.district or "工业园区"
 
         try:
-            geo_service = get_primary_service(property_obj.country)
+            geo_service = get_primary_service(getattr(property_obj, 'country', None))
             location = await self._resolve_location(geo_service, property_obj)
             if location:
                 categories = await self._collect_nearby_categories(geo_service, location)

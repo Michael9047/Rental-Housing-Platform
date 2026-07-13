@@ -21,6 +21,10 @@ class NotificationType(str, enum.Enum):
     contract_signed = "contract_signed"
     auth_registration = "auth_registration"
     auth_password_reset = "auth_password_reset"
+    repair_created = "repair_created"
+    repair_assigned = "repair_assigned"
+    repair_completed = "repair_completed"
+    repair_status_change = "repair_status_change"
     system = "system"
 
 

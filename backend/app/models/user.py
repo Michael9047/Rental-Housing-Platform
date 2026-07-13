@@ -1,4 +1,4 @@
-﻿"""用户模型 - 租客、房东、BD经理、系统管理员"""
+"""用户模型 - 租客、房东、BD经理、系统管理员"""
 import enum
 
 from sqlalchemy import Enum, String
@@ -12,6 +12,7 @@ class UserRole(str, enum.Enum):
     tenant = "tenant"
     landlord = "landlord"
     bd_manager = "bd_manager"
+    maintenance_worker = "maintenance_worker"
     admin = "admin"
 
 
@@ -40,9 +41,6 @@ class User(TimestampMixin, Base):
         default=UserStatus.active,
         nullable=False,
     )
-    email_verified: Mapped[bool] = mapped_column(default=False, nullable=False)
-    phone_verified: Mapped[bool] = mapped_column(default=False, nullable=False)
-
     properties: Mapped[list["Property"]] = relationship(
         back_populates="landlord",
         cascade="all, delete-orphan",

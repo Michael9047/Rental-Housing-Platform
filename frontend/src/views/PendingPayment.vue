@@ -5,11 +5,11 @@
       <h2>待支付订单详情</h2>
     </div>
 
-    <el-empty v-if="!loading && !booking" description="订单未找到" />
+    <el-empty v-if="!loading && !booking && !propertyInfo" description="订单未找到" />
 
-    <template v-if="booking">
+    <template v-if="booking || propertyInfo">
       <!-- Booking Info Card -->
-      <el-card shadow="never" class="info-card">
+      <el-card shadow="never" class="info-card" v-if="booking">
         <template #header>
           <div class="card-header-row">
             <span class="card-title">📋 预约信息</span>
@@ -39,7 +39,7 @@
       </el-card>
 
       <!-- Tenant Info Card -->
-      <el-card shadow="never" class="info-card">
+      <el-card shadow="never" class="info-card" v-if="booking">
         <template #header><span class="card-title">👤 租客信息</span></template>
         <el-descriptions :column="2" border>
           <el-descriptions-item label="租客ID">#{{ booking.tenant_id }}</el-descriptions-item>
@@ -55,7 +55,9 @@
             <img :src="primaryImage" :alt="propertyInfo.title" />
           </div>
           <div class="preview-body">
-            <h3 class="preview-title">{{ propertyInfo.title }}</h3>
+            <a class="preview-title" @click="goPropertyDetail(propertyInfo.id || (booking && booking.property_id))">
+              {{ propertyInfo.title }}
+            </a>
             <p class="preview-addr">{{ propertyInfo.address }}</p>
             <div class="preview-tags">
               <el-tag size="small">{{ propertyInfo.bedrooms }}室{{ propertyInfo.bathrooms }}卫</el-tag>
@@ -71,7 +73,7 @@
       </el-card>
 
       <!-- Bottom: Pay Button -->
-      <div class="pay-action-bar">
+      <div class="pay-action-bar" v-if="booking">
         <el-button type="primary" size="large" round @click="goDepositPay">
           支付押金
         </el-button>
@@ -86,6 +88,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { ArrowLeft } from '@element-plus/icons-vue'
 import { bookingService } from '@/services/booking'
 import { propertyService } from '@/services/property'
+import { billService } from '@/services/bill'
 import type { Booking } from '@/types/booking'
 
 const route = useRoute()
@@ -129,18 +132,52 @@ function goDepositPay() {
   }
 }
 
+/** 点击房源标题 → 纯客户端路由跳转至房源详情页，不发起任何后端请求 */
+function goPropertyDetail(propertyId: number | string | undefined) {
+  if (!propertyId) return
+  router.push({ name: 'property-detail', params: { id: String(propertyId) } })
+}
+
+/** 优先走 bills 接口获取 property_id（需求指定路径 GET /api/v1/bills/{bill_id}） */
+async function fetchBillProperty(billId: number): Promise<boolean> {
+  try {
+    const bill = await billService.getById(billId)
+    if (bill?.property_id) {
+      propertyInfo.value = await propertyService.getById(bill.property_id)
+      // 如有 booking_id，补拉 booking 数据用于展示预约信息
+      if (bill.booking_id) {
+        try {
+          booking.value = await bookingService.getById(bill.booking_id)
+        } catch { /* booking fetch failed, property still shown */ }
+      }
+      return true
+    }
+  } catch { /* bills 接口暂未就绪，降级到 booking 链路 */ }
+  return false
+}
+
+/** 降级：走原有 booking 链路 */
+async function fetchViaBooking(bookingId: number): Promise<void> {
+  booking.value = await bookingService.getById(bookingId)
+  if (booking.value) {
+    try {
+      propertyInfo.value = await propertyService.getById(booking.value.property_id)
+    } catch { /* property fetch failed */ }
+  }
+}
+
 onMounted(async () => {
   const id = Number(route.params.id)
   if (!id) return
   loading.value = true
   try {
-    booking.value = await bookingService.getById(id)
-    if (booking.value) {
-      try {
-        propertyInfo.value = await propertyService.getById(booking.value.property_id)
-      } catch { /* property fetch failed */ }
+    // 优先走 bills 接口获取 property_id（需求指定路径）
+    const billOk = await fetchBillProperty(id)
+    if (!billOk) {
+      // 降级：走原有 booking 链路
+      await fetchViaBooking(id)
     }
-  } catch { /* booking fetch failed */ }
+  } catch { /* 两种链路均失败 */ }
   finally { loading.value = false }
 })
 </script>
@@ -207,8 +244,17 @@ onMounted(async () => {
 .preview-title {
   font-size: 17px;
   font-weight: 600;
-  color: var(--text-primary);
+  color: var(--primary);
   margin-bottom: 4px;
+  cursor: pointer;
+  text-decoration: none;
+  transition: opacity 0.2s;
+  display: inline-block;
+}
+
+.preview-title:hover {
+  opacity: 0.75;
+  text-decoration: underline;
 }
 
 .preview-addr {

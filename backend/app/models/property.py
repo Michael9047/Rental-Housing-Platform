@@ -1,4 +1,4 @@
-﻿import enum
+import enum
 from datetime import date, datetime
 from decimal import Decimal
 

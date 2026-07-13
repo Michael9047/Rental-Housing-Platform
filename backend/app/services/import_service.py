@@ -1,4 +1,4 @@
-﻿import asyncio
+import asyncio
 import csv
 import io
 import json

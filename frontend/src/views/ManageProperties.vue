@@ -4,16 +4,6 @@
       <h2>{{ showRecycleBin ? '回收站' : '房源管理' }}</h2>
       <div class="header-actions">
         <el-button @click="router.push('/buildings')">🏢 管理公寓</el-button>
-        <el-dropdown trigger="click" @command="toggleColumn">
-          <el-button>⚙️ 列设置</el-button>
-          <template #dropdown>
-            <el-dropdown-menu>
-              <el-dropdown-item v-for="col in columnOptions" :key="col.key" :command="col.key">
-                <el-checkbox :model-value="visibleColumns[col.key]" @change="toggleColumn(col.key)">{{ col.label }}</el-checkbox>
-              </el-dropdown-item>
-            </el-dropdown-menu>
-          </template>
-        </el-dropdown>
         <el-button :type="showRecycleBin ? 'danger' : 'default'" @click="toggleRecycleBin">
           {{ showRecycleBin ? '📋 返回房源列表' : '🗑 回收站' }}
         </el-button>
@@ -123,6 +113,14 @@
         <!-- Building header -->
         <div class="building-header" @click="toggleExpand(building.id)">
           <div class="building-info">
+            <el-checkbox
+              v-if="batchMode"
+              :model-value="isBuildingAllSelected(building.id)"
+              :indeterminate="isBuildingPartialSelected(building.id)"
+              @click.stop
+              @change="toggleBuildingSelect(building.id)"
+              style="margin-right:4px"
+            />
             <span class="building-icon">🏢</span>
             <span class="building-name">{{ building.name }}</span>
             <el-tag size="small" type="info" class="building-count">
@@ -150,38 +148,38 @@
             @sort-change="onSortChange"
           >
             <el-table-column v-if="batchMode" width="40"><template #default="{ row }"><el-checkbox :model-value="selectedIds.has(row.id)" @change="toggleSelect(row.id)" /></template></el-table-column>
-            <el-table-column v-if="visibleColumns.id" prop="id" label="ID" width="55" sortable="custom" />
-            <el-table-column v-if="visibleColumns.room_number" label="房号" width="90" show-overflow-tooltip sortable="custom" prop="room_number">
+            <el-table-column prop="id" label="ID" width="55" sortable="custom" />
+            <el-table-column label="房号" width="90" show-overflow-tooltip sortable="custom" prop="room_number">
               <template #default="{ row }">
                 <span :style="{ color: row.room_number ? '#303133' : '#c0c4cc' }">
                   {{ row.room_number || '-' }}
                 </span>
               </template>
             </el-table-column>
-            <el-table-column v-if="visibleColumns.title" prop="title" label="标题" min-width="160" show-overflow-tooltip sortable="custom" />
-            <el-table-column v-if="visibleColumns.layout" label="户型" width="100" sortable="custom" prop="bedrooms">
+            <el-table-column prop="title" label="标题" min-width="160" show-overflow-tooltip sortable="custom" />
+            <el-table-column label="户型" width="100" sortable="custom" prop="bedrooms">
               <template #default="{ row }">
                 {{ row.bedrooms }}室{{ row.bathrooms }}卫
               </template>
             </el-table-column>
-            <el-table-column v-if="visibleColumns.price" label="月租" width="110" sortable="custom" prop="price_monthly">
+            <el-table-column label="月租" width="110" sortable="custom" prop="price_monthly">
               <template #default="{ row }">
                 <span class="price-cell">¥{{ row.price_monthly?.toLocaleString() }}</span>
               </template>
             </el-table-column>
-            <el-table-column v-if="visibleColumns.property_type" prop="property_type" label="类型" width="70" sortable="custom">
+            <el-table-column prop="property_type" label="类型" width="70" sortable="custom">
               <template #default="{ row }">
                 <el-tag size="small" type="info">{{ typeLabels[row.property_type as PropertyType] }}</el-tag>
               </template>
             </el-table-column>
-            <el-table-column v-if="visibleColumns.status" prop="status" label="状态" width="85" sortable="custom">
+            <el-table-column prop="status" label="状态" width="85" sortable="custom">
               <template #default="{ row }">
                 <el-tag size="small" :type="statusTagType(row.status)">
                   {{ statusLabels[row.status as PropertyStatus] }}
                 </el-tag>
               </template>
             </el-table-column>
-            <el-table-column v-if="visibleColumns.area" label="面积(㎡)" width="90" sortable="custom" prop="area_sqm">
+            <el-table-column label="面积(㎡)" width="90" sortable="custom" prop="area_sqm">
               <template #default="{ row }">{{ row.area_sqm ?? '-' }}</template>
             </el-table-column>
             <el-table-column label="操作" width="260" fixed="right">
@@ -253,38 +251,38 @@
       <div v-show="expandedIds.has(-1)" class="building-properties">
         <el-table :data="unlinkedProperties" :row-class-name="getRowClass" stripe size="small" style="width: 100%" :default-sort="defaultSort" @sort-change="onSortChange">
           <el-table-column v-if="batchMode" width="40"><template #default="{ row }"><el-checkbox :model-value="selectedIds.has(row.id)" @change="toggleSelect(row.id)" /></template></el-table-column>
-          <el-table-column v-if="visibleColumns.id" prop="id" label="ID" width="55" sortable="custom" />
-          <el-table-column v-if="visibleColumns.room_number" label="房号" width="90" show-overflow-tooltip sortable="custom" prop="room_number">
+          <el-table-column prop="id" label="ID" width="55" sortable="custom" />
+          <el-table-column label="房号" width="90" show-overflow-tooltip sortable="custom" prop="room_number">
             <template #default="{ row }">
               <span :style="{ color: row.room_number ? '#303133' : '#c0c4cc' }">
                 {{ row.room_number || '-' }}
               </span>
             </template>
           </el-table-column>
-          <el-table-column v-if="visibleColumns.title" prop="title" label="标题" min-width="160" show-overflow-tooltip sortable="custom" />
-          <el-table-column v-if="visibleColumns.layout" label="户型" width="100" sortable="custom" prop="bedrooms">
+          <el-table-column prop="title" label="标题" min-width="160" show-overflow-tooltip sortable="custom" />
+          <el-table-column label="户型" width="100" sortable="custom" prop="bedrooms">
             <template #default="{ row }">
               {{ row.bedrooms }}室{{ row.bathrooms }}卫
             </template>
           </el-table-column>
-          <el-table-column v-if="visibleColumns.price" label="月租" width="110" sortable="custom" prop="price_monthly">
+          <el-table-column label="月租" width="110" sortable="custom" prop="price_monthly">
             <template #default="{ row }">
               <span class="price-cell">¥{{ row.price_monthly?.toLocaleString() }}</span>
             </template>
           </el-table-column>
-          <el-table-column v-if="visibleColumns.property_type" prop="property_type" label="类型" width="70" sortable="custom">
+          <el-table-column prop="property_type" label="类型" width="70" sortable="custom">
             <template #default="{ row }">
               <el-tag size="small" type="info">{{ typeLabels[row.property_type as PropertyType] }}</el-tag>
             </template>
           </el-table-column>
-          <el-table-column v-if="visibleColumns.status" prop="status" label="状态" width="85" sortable="custom">
+          <el-table-column prop="status" label="状态" width="85" sortable="custom">
             <template #default="{ row }">
               <el-tag size="small" :type="statusTagType(row.status)">
                 {{ statusLabels[row.status as PropertyStatus] }}
               </el-tag>
             </template>
           </el-table-column>
-          <el-table-column v-if="visibleColumns.area" label="面积(㎡)" width="90" sortable="custom" prop="area_sqm">
+          <el-table-column label="面积(㎡)" width="90" sortable="custom" prop="area_sqm">
             <template #default="{ row }">{{ row.area_sqm ?? '-' }}</template>
           </el-table-column>
           <el-table-column label="操作" width="350" fixed="right">
@@ -615,6 +613,37 @@ function toggleSelect(id: number) {
   selectedIds.value = new Set(selectedIds.value)
 }
 
+// ── 按公寓全选 ──
+function getBuildingPropertyIds(buildingId: number): number[] {
+  return getBuildingProperties(buildingId).map(p => p.id)
+}
+
+function isBuildingAllSelected(buildingId: number): boolean {
+  const ids = getBuildingPropertyIds(buildingId)
+  if (ids.length === 0) return false
+  return ids.every(id => selectedIds.value.has(id))
+}
+
+function isBuildingPartialSelected(buildingId: number): boolean {
+  const ids = getBuildingPropertyIds(buildingId)
+  if (ids.length === 0) return false
+  const some = ids.some(id => selectedIds.value.has(id))
+  const all = ids.every(id => selectedIds.value.has(id))
+  return some && !all
+}
+
+function toggleBuildingSelect(buildingId: number) {
+  const ids = getBuildingPropertyIds(buildingId)
+  if (isBuildingAllSelected(buildingId)) {
+    // 全部取消
+    for (const id of ids) selectedIds.value.delete(id)
+  } else {
+    // 全部勾选
+    for (const id of ids) selectedIds.value.add(id)
+  }
+  selectedIds.value = new Set(selectedIds.value)
+}
+
 async function batchSetStatus(status: PropertyStatus) {
   if (selectedIds.value.size === 0) return
   batchOperating.value = true
@@ -871,32 +900,6 @@ function statusTagType(status: PropertyStatus): string {
     offline: 'danger',
   }
   return map[status]
-}
-
-// ── 列配置 + 排序 ──
-interface ColumnKey { key: keyof typeof visibleColumns.value; label: string }
-const visibleColumns = ref({
-  id: true,
-  room_number: true,
-  title: true,
-  layout: true,
-  price: true,
-  property_type: true,
-  status: true,
-  area: false,
-})
-const columnOptions: ColumnKey[] = [
-  { key: 'id', label: 'ID' },
-  { key: 'room_number', label: '房号' },
-  { key: 'title', label: '标题' },
-  { key: 'layout', label: '户型' },
-  { key: 'price', label: '月租' },
-  { key: 'property_type', label: '类型' },
-  { key: 'status', label: '状态' },
-  { key: 'area', label: '面积' },
-]
-function toggleColumn(key: string) {
-  visibleColumns.value[key as keyof typeof visibleColumns.value] = !visibleColumns.value[key as keyof typeof visibleColumns.value]
 }
 
 const defaultSort = ref<{ prop: string; order: 'ascending' | 'descending' }>({ prop: 'created_at', order: 'descending' })

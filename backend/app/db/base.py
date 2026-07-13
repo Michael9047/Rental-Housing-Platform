@@ -1,4 +1,4 @@
-﻿from app.db.session import Base
+from app.db.session import Base
 from app.models.advertisement import AdImpression, Advertisement
 from app.models.audit_log import AuditLog
 from app.models.booking import Booking
@@ -23,6 +23,7 @@ from app.models.property_image import PropertyImage
 from app.models.review import Review
 from app.models.saved_search import SavedSearch
 from app.models.user import User
+from app.models.user_favorite import UserFavorite
 
 __all__ = [
     "AdImpression", "Advertisement", "AuditLog", "Base", "Booking",
@@ -30,5 +31,5 @@ __all__ = [
     "Institute", "MarketplaceComment", "MarketplaceItem", "MarketplaceItemImage",
     "MarketplaceMessage", "MarketplaceReport", "NewsArticle", "Notification",
     "Payment", "Property", "PropertyImage", "PropertyPOI", "Review",
-    "SavedSearch", "User",
+    "SavedSearch", "User", "UserFavorite",
 ]

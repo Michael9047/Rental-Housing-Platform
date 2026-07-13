@@ -1,4 +1,4 @@
-﻿import io
+import io
 import os
 
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, status
