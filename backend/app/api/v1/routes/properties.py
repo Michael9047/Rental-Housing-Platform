@@ -133,21 +133,35 @@ async def list_recent_property_audit(
     用于发布房源首页下方的修改记录展示。
     管理员可看全部；普通房东仅看自己的房源记录。
     """
-    from sqlalchemy import select
+    from sqlalchemy import select, or_
     from app.models.audit_log import AuditLog
+    from app.models.institute import Institute
+    from app.models.user import User as UserModel
+
+    base_select = (
+        select(
+            AuditLog,
+            Property.title.label("property_title"),
+            Property.address.label("property_address"),
+            Institute.name.label("institute_name"),
+            UserModel.username.label("username"),
+        )
+        .outerjoin(Property, AuditLog.resource_id == Property.id)
+        .outerjoin(Institute, Property.institute_id == Institute.id)
+        .outerjoin(UserModel, AuditLog.user_id == UserModel.id)
+    )
 
     if current_user.role.value == "admin":
         stmt = (
-            select(AuditLog)
+            base_select
             .where(AuditLog.resource_type == "property")
             .order_by(AuditLog.created_at.desc())
             .limit(limit)
         )
     else:
-        from sqlalchemy import or_
         prop_ids_stmt = select(Property.id).where(Property.landlord_id == current_user.id)
         stmt = (
-            select(AuditLog)
+            base_select
             .where(
                 AuditLog.resource_type == "property",
                 or_(
@@ -159,19 +173,24 @@ async def list_recent_property_audit(
             .limit(limit)
         )
 
-    result = await session.scalars(stmt)
-    logs = list(result)
+    result = await session.execute(stmt)
+    rows = result.all()
     return [
         {
             "id": log.id,
             "user_id": log.user_id,
+            "username": username,
             "action": log.action,
             "resource_id": log.resource_id,
             "details": log.details,
             "ip_address": log.ip_address,
             "created_at": log.created_at.isoformat(),
+            # 优先取 JOIN 的实时数据；若房源已删除则回退到审计日志 details 中的快照
+            "property_title": property_title or (log.details or {}).get("property_title") or (log.details or {}).get("title"),
+            "property_address": property_address or (log.details or {}).get("property_address"),
+            "institute_name": institute_name or (log.details or {}).get("institute_name"),
         }
-        for log in logs
+        for log, property_title, property_address, institute_name, username in rows
     ]
 
 

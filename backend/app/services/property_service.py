@@ -121,7 +121,10 @@ class PropertyService:
 
         # 审计日志
         await self._audit(property_obj.landlord_id, "property_create", property_obj.id,
-                          {"title": property_obj.title, "district": property_obj.district})
+                          {"title": property_obj.title, "district": property_obj.district,
+                           "property_title": property_obj.title,
+                           "property_address": property_obj.address,
+                           "institute_name": getattr(property_obj, "institute_name", None)})
 
         return property_obj
 
@@ -434,7 +437,10 @@ class PropertyService:
         await self._audit(property_obj.landlord_id, "property_update", property_obj.id,
                           {"title": property_obj.title, "changed_fields": list(update_data.keys()),
                            "old_values": old_values,
-                           "new_values": {k: (str(v) if isinstance(v, Decimal) else v) for k, v in update_data.items()}})
+                           "new_values": {k: (str(v) if isinstance(v, Decimal) else v) for k, v in update_data.items()},
+                           "property_title": property_obj.title,
+                           "property_address": property_obj.address,
+                           "institute_name": getattr(property_obj, "institute_name", None)})
         return property_obj
 
     async def delete(self, property_id: int) -> bool:
@@ -445,7 +451,10 @@ class PropertyService:
         self._apply_delete(property_obj)
         await self.session.commit()
         await self._audit(property_obj.landlord_id, "property_delete", property_obj.id,
-                          {"title": property_obj.title})
+                          {"title": property_obj.title,
+                           "property_title": property_obj.title,
+                           "property_address": property_obj.address,
+                           "institute_name": getattr(property_obj, "institute_name", None)})
         return True
 
     @staticmethod
@@ -468,7 +477,10 @@ class PropertyService:
         await self.session.commit()
         await self.session.refresh(property_obj)
         await self._audit(property_obj.landlord_id, "property_restore", property_obj.id,
-                          {"title": property_obj.title})
+                          {"title": property_obj.title,
+                           "property_title": property_obj.title,
+                           "property_address": property_obj.address,
+                           "institute_name": getattr(property_obj, "institute_name", None)})
         return property_obj
 
     async def batch_update_status(self, ids: list[int], new_status: str, landlord_id: int) -> dict:
@@ -517,12 +529,18 @@ class PropertyService:
         now = datetime.now(timezone.utc)
         deleted = 0
         errors: list[dict] = []
+        property_snapshots: list[dict] = []
 
         # 阶段 1：内存中逐条标记软删除（不提交）
         for pid in ids:
             try:
                 prop = await self.get(pid)
                 if prop:
+                    property_snapshots.append({
+                        "id": prop.id, "title": prop.title,
+                        "address": prop.address,
+                        "institute_name": getattr(prop, "institute_name", None),
+                    })
                     prop.deleted_at = now
                     prop.status = PropertyStatus.offline
                     deleted += 1
@@ -552,7 +570,7 @@ class PropertyService:
         if commit_error is None:
             try:
                 await self._audit(landlord_id, "property_batch_delete", 0,
-                                  {"ids": ids, "deleted": deleted})
+                                  {"ids": ids, "deleted": deleted, "properties": property_snapshots})
             except Exception:
                 logger.exception("Audit log write failed for batch_delete")
 
@@ -561,16 +579,20 @@ class PropertyService:
     async def hard_delete(self, property_id: int) -> bool:
         """物理删除：从数据库彻底移除（回收站专用）"""
         from sqlalchemy.orm import selectinload
-        stmt = select(Property).where(Property.id == property_id, Property.deleted_at.isnot(None))
+        stmt = select(Property).where(Property.id == property_id, Property.deleted_at.isnot(None)).options(selectinload(Property.institute))
         result = await self.session.execute(stmt)
         property_obj = result.scalars().first()
         if not property_obj:
             return False
+        institute_name = property_obj.institute.name if property_obj.institute else None
         await self.session.delete(property_obj)
         await self.session.commit()
         await _bump_search_cache_version()
         await self._audit(property_obj.landlord_id, 'property_hard_delete', property_obj.id,
-                          {'title': property_obj.title})
+                          {'title': property_obj.title,
+                           'property_title': property_obj.title,
+                           'property_address': property_obj.address,
+                           'institute_name': institute_name})
         return True
 
     async def _ensure_embedding(self, property_obj: Property) -> None:
@@ -627,15 +649,21 @@ class PropertyService:
         """
         restored = 0
         errors: list[dict] = []
+        property_snapshots: list[dict] = []
 
         # 阶段 1：内存中逐条恢复（不提交）
         for pid in ids:
             try:
                 from sqlalchemy.orm import selectinload
-                stmt = select(Property).where(Property.id == pid, Property.deleted_at.isnot(None))
+                stmt = select(Property).where(Property.id == pid, Property.deleted_at.isnot(None)).options(selectinload(Property.institute))
                 result = await self.session.execute(stmt)
                 prop = result.scalars().first()
                 if prop:
+                    property_snapshots.append({
+                        "id": prop.id, "title": prop.title,
+                        "address": prop.address,
+                        "institute_name": prop.institute.name if prop.institute else None,
+                    })
                     prop.deleted_at = None
                     prop.status = PropertyStatus.available
                     restored += 1
@@ -662,7 +690,7 @@ class PropertyService:
         if commit_error is None:
             try:
                 await self._audit(landlord_id, 'property_batch_restore', 0,
-                                  {'ids': ids, 'restored': restored})
+                                  {'ids': ids, 'restored': restored, 'properties': property_snapshots})
             except Exception:
                 logger.exception("Audit log write failed for batch_restore")
 
@@ -676,16 +704,23 @@ class PropertyService:
         - 提交阶段异常被捕获，回滚后将失败信息追加到 errors
         - 审计日志写入失败不影响主体业务结果
         """
+        from sqlalchemy.orm import selectinload
         deleted = 0
         errors: list[dict] = []
+        property_snapshots: list[dict] = []
 
         # 阶段 1：内存中逐条标记删除（不提交）
         for pid in ids:
             try:
-                stmt = select(Property).where(Property.id == pid, Property.deleted_at.isnot(None))
+                stmt = select(Property).where(Property.id == pid, Property.deleted_at.isnot(None)).options(selectinload(Property.institute))
                 result = await self.session.execute(stmt)
                 prop = result.scalars().first()
                 if prop:
+                    property_snapshots.append({
+                        "id": prop.id, "title": prop.title,
+                        "address": prop.address,
+                        "institute_name": prop.institute.name if prop.institute else None,
+                    })
                     await self.session.delete(prop)
                     deleted += 1
                 else:
@@ -712,7 +747,7 @@ class PropertyService:
             await _bump_search_cache_version()
             try:
                 await self._audit(landlord_id, 'property_batch_hard_delete', 0,
-                                  {'ids': ids, 'deleted': deleted})
+                                  {'ids': ids, 'deleted': deleted, 'properties': property_snapshots})
             except Exception:
                 logger.exception("Audit log write failed for batch_hard_delete")
 
@@ -911,6 +946,9 @@ class PropertyService:
                 "reverted_action": action,
                 "reverted_audit_log_id": audit_log_id,
                 "message": message,
+                "property_title": property_obj.title,
+                "property_address": property_obj.address,
+                "institute_name": getattr(property_obj, "institute_name", None),
             },
         )
 

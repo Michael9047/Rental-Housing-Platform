@@ -162,9 +162,13 @@ export const propertyService = {
 export interface PropertyHistoryItem {
   id: number
   user_id: number | null
+  username?: string | null
   action: string
   resource_id: number | null
   details: Record<string, any> | null
   ip_address: string | null
   created_at: string
+  property_title?: string | null
+  property_address?: string | null
+  institute_name?: string | null
 }

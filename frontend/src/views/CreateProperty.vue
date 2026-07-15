@@ -76,8 +76,7 @@
             <el-col :span="12"><el-form-item label="房源标题" prop="title"><el-input v-model="f.title" placeholder="如：翰林缘精装单间" maxlength="50" /></el-form-item></el-col>
           </el-row>
 
-          <el-form-item label="详细地址" prop="address"><el-input v-model="f.address" placeholder="含路名+小区+门牌号" /></el-form-item>
-          <el-form-item label="所在区域" prop="district"><el-select v-model="f.district" @change="triggerRentEstimate"><el-option v-for="d in districts" :key="d" :label="d" :value="d" /></el-select></el-form-item>
+          <el-form-item label="详细地址" prop="address"><el-input v-model="f.address" placeholder="含路名+小区+门牌号" @change="onAddressChange" /></el-form-item>
 
           <el-row :gutter="16">
             <el-col :span="8"><el-form-item label="户型" prop="property_type"><el-select v-model="f.property_type"><el-option label="Studio/单间" value="studio" /><el-option label="Ensuite/套间" value="apartment" /><el-option label="Twin/双人间" value="shared" /><el-option label="Double/大床房" value="house" /></el-select></el-form-item></el-col>
@@ -200,7 +199,6 @@ const rules: FormRules = {
   institute_id:[{required:true,message:'请选择公寓',trigger:'change'}],
   title:[{required:true,message:'请输入房源标题',trigger:'blur'}],
   address:[{required:true,message:'请输入详细地址',trigger:'blur'}],
-  district:[{required:true,message:'请选择区域',trigger:'change'}],
   price_monthly:[{required:true,message:'请输入月租金',trigger:'blur'}],
   area_sqm:[{required:true,message:'请输入面积',trigger:'blur'}],
   property_type:[{required:true,message:'请选择户型',trigger:'change'}],
@@ -213,7 +211,12 @@ const newBuilding = reactive({name:'',address:'',contact_phone:'',description:''
 async function loadBuildings() {
   try { buildings.value = await buildingService.list({limit:200}) } catch {}
 }
-function onBuildingChange() { if (f.institute_id && !f.address) { const b = buildings.value.find(x => x.id===f.institute_id); if (b?.address) f.address = b.address } }
+function onBuildingChange() { if (f.institute_id && !f.address) { const b = buildings.value.find(x => x.id===f.institute_id); if (b?.address) f.address = b.address }; if (f.address) autoDetectDistrict() }
+function autoDetectDistrict() {
+  if (!f.address) return
+  for (const d of districts) { if (f.address.includes(d)) { f.district = d; return } }
+}
+function onAddressChange() { autoDetectDistrict(); triggerRentEstimate() }
 async function createBuilding() {
   if (!newBuilding.name.trim()) { ElMessage.error('请输入公寓名称'); return }
   creatingBuilding.value = true
