@@ -751,20 +751,31 @@ const showStreetScore = computed(() => {
   return false
 })
 
-// 判断是否显示 CrystalRoof 徽章：仅 UK 房源
+// 判断是否显示 CrystalRoof 徽章：仅含邮编的房源
 const showCrystalRoof = computed(() => {
   if (!property.value) return false
   const country = (property.value.country || '').toUpperCase()
-  if (country === 'GB' || country === 'UK') return true
-  // 通过地址/区域关键词判断
-  const combined = `${property.value.address || ''} ${property.value.district || ''}`.toLowerCase()
-  const ukHints = [
-    'london', 'uk', 'united kingdom', 'england', 'scotland', 'wales',
-    'britain', ' n1', ' n2', ' nw1', ' e1', ' w1', ' sw1', ' ec1', ' wc1',
-    ' road', ' street', ' avenue', ' lane', ' crescent',
-    '伦敦', '英国', '英格兰', '苏格兰', '威尔士',
-  ]
-  return ukHints.some((k) => combined.includes(k))
+  const address = property.value.address || ''
+  const district = property.value.district || ''
+  const combined = `${address} ${district}`
+  
+  if (country === 'GB' || country === 'UK') {
+    return extractUKPostcode(combined) !== null
+  }
+  
+  if (extractUKPostcode(combined) !== null) {
+    const ukKeywords = [
+      'london', 'uk', 'united kingdom', 'england', 'scotland', 'wales',
+      'britain', 'manchester', 'birmingham', 'edinburgh', 'liverpool',
+      'leeds', 'sheffield', 'newcastle', 'bristol', 'cardiff', 'glasgow',
+      '伦敦', '英国', '英格兰', '苏格兰', '威尔士', '曼彻斯特', '伯明翰',
+      '爱丁堡', '利物浦', '利兹', '谢菲尔德', '布里斯托尔', '加的夫', '格拉斯哥',
+    ]
+    const lower = combined.toLowerCase()
+    return ukKeywords.some((k) => lower.includes(k))
+  }
+  
+  return false
 })
 
 // CrystalRoof 跳转 URL（指向中间页面）

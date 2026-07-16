@@ -59,7 +59,7 @@
             type="primary"
             @click="handleBook"
           >
-            一键预订
+            预约看房
           </el-button>
           <el-tooltip
             v-if="authStore.isLoggedIn"
