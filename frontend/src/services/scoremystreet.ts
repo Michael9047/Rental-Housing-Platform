@@ -1,5 +1,3 @@
-import api from './api'
-
 /** ScoreMyStreet 评分响应 */
 export interface ScoreMyStreetScore {
   postcode: string | null
@@ -40,8 +38,22 @@ export const scoreMyStreetService = {
    * @param country 国家代码（可选，例如 'GB'）
    */
   async getScore(address: string, country?: string): Promise<ScoreMyStreetScore> {
-    return api
-      .get('/scoremystreet/score', { params: { address, country } })
-      .then((r) => r.data)
+    const params = new URLSearchParams({ address })
+    if (country) params.set('country', country)
+    const token = localStorage.getItem('access_token')
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+    if (token) headers['Authorization'] = `Bearer ${token}`
+    
+    const response = await fetch(`/api/v1/scoremystreet/score?${params.toString()}`, {
+      method: 'GET',
+      headers,
+      signal: AbortSignal.timeout(30000),
+    })
+    
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`)
+    }
+    
+    return response.json()
   },
 }

@@ -366,7 +366,7 @@
 
         <el-divider />
 
-        <div v-if="streetScore.fetched" class="street-subscores">
+        <div class="street-subscores">
           <h4>维度评分</h4>
           <div class="subscore-grid">
             <div class="subscore-item">
@@ -380,9 +380,16 @@
                 :percentage="safetyScorePercent"
                 :color="subscoreColor(safetyScorePercent)"
                 :stroke-width="10"
+                :show-text="safetyScorePercent > 0"
               />
               <div class="subscore-value">
-                近6月 {{ streetScore.crime_count ?? '—' }} 起案件
+                <template v-if="streetScore.crime_count != null">
+                  近6月 {{ streetScore.crime_count }} 起案件
+                </template>
+                <template v-else-if="streetScore.safety_score != null">
+                  安全评分 {{ streetScore.safety_score }}/5
+                </template>
+                <template v-else>暂无数据</template>
                 <el-tag v-if="streetScore.crime_rate" :type="crimeRateTagType" size="small" style="margin-left: 8px">
                   {{ crimeRateLabel }}
                 </el-tag>
@@ -394,7 +401,7 @@
               </div>
             </div>
 
-            <div v-if="streetScore.schools_score != null || streetScore.schools_count != null || streetScore.schools_info" class="subscore-item">
+            <div class="subscore-item">
               <div class="subscore-label">
                 🏫 学校
                 <span v-if="streetScore.schools_score != null" class="subscore-badge">
@@ -405,17 +412,21 @@
                 :percentage="streetScore.schools_score ?? 0"
                 :color="subscoreColor(streetScore.schools_score ?? 0)"
                 :stroke-width="10"
+                :show-text="(streetScore.schools_score ?? 0) > 0"
               />
               <div class="subscore-value">
                 <template v-if="streetScore.schools_count != null">
                   {{ streetScore.schools_count }} 所学校
                 </template>
-                <template v-else>{{ streetScore.schools_score ?? '—' }}/100</template>
+                <template v-else-if="streetScore.schools_score != null">
+                  评分 {{ streetScore.schools_score }}/100
+                </template>
+                <template v-else>暂无数据</template>
                 <span v-if="streetScore.schools_info" class="subscore-detail">{{ streetScore.schools_info }}</span>
               </div>
             </div>
 
-            <div v-if="streetScore.amenities_score != null || streetScore.supermarkets_count != null || streetScore.parks_count != null || streetScore.gyms_count != null || streetScore.ev_charging_count != null" class="subscore-item">
+            <div class="subscore-item">
               <div class="subscore-label">
                 🏪 设施
                 <span v-if="streetScore.amenities_score != null" class="subscore-badge">
@@ -426,6 +437,7 @@
                 :percentage="streetScore.amenities_score ?? 0"
                 :color="subscoreColor(streetScore.amenities_score ?? 0)"
                 :stroke-width="10"
+                :show-text="(streetScore.amenities_score ?? 0) > 0"
               />
               <div class="subscore-value">
                 <template v-if="streetScore.supermarkets_count != null || streetScore.parks_count != null || streetScore.gyms_count != null || streetScore.ev_charging_count != null">
@@ -434,11 +446,14 @@
                   <span v-if="streetScore.gyms_count"> 💪 {{ streetScore.gyms_count }}健身房</span>
                   <span v-if="streetScore.ev_charging_count"> ⚡ {{ streetScore.ev_charging_count }}充电点</span>
                 </template>
-                <template v-else>{{ streetScore.amenities_score ?? '—' }}/100</template>
+                <template v-else-if="streetScore.amenities_score != null">
+                  评分 {{ streetScore.amenities_score }}/100
+                </template>
+                <template v-else>暂无数据</template>
               </div>
             </div>
 
-            <div v-if="streetScore.transport_score != null || streetScore.nearest_station != null || streetScore.stations_count != null" class="subscore-item">
+            <div class="subscore-item">
               <div class="subscore-label">
                 🚇 交通
                 <span v-if="streetScore.transport_score != null" class="subscore-badge">
@@ -449,6 +464,7 @@
                 :percentage="streetScore.transport_score ?? 0"
                 :color="subscoreColor(streetScore.transport_score ?? 0)"
                 :stroke-width="10"
+                :show-text="(streetScore.transport_score ?? 0) > 0"
               />
               <div class="subscore-value">
                 <template v-if="streetScore.nearest_station">
@@ -456,11 +472,14 @@
                   <span v-if="streetScore.nearest_station_distance">({{ streetScore.nearest_station_distance }}英里)</span>
                   <span v-if="streetScore.stations_count">，共{{ streetScore.stations_count }}个车站</span>
                 </template>
-                <template v-else>{{ streetScore.transport_score ?? '—' }}/100</template>
+                <template v-else-if="streetScore.transport_score != null">
+                  评分 {{ streetScore.transport_score }}/100
+                </template>
+                <template v-else>暂无数据</template>
               </div>
             </div>
 
-            <div v-if="streetScore.connectivity_score != null || streetScore.full_fibre_coverage != null || streetScore.ultrafast_coverage != null || streetScore.superfast_coverage != null" class="subscore-item">
+            <div class="subscore-item">
               <div class="subscore-label">
                 🌐 网络
                 <span v-if="streetScore.connectivity_score != null" class="subscore-badge">
@@ -471,6 +490,7 @@
                 :percentage="streetScore.connectivity_score ?? 0"
                 :color="subscoreColor(streetScore.connectivity_score ?? 0)"
                 :stroke-width="10"
+                :show-text="(streetScore.connectivity_score ?? 0) > 0"
               />
               <div class="subscore-value">
                 <template v-if="streetScore.full_fibre_coverage != null || streetScore.ultrafast_coverage != null || streetScore.superfast_coverage != null">
@@ -478,7 +498,10 @@
                   <span v-if="streetScore.ultrafast_coverage">，超高速 {{ streetScore.ultrafast_coverage }}</span>
                   <span v-if="streetScore.superfast_coverage">，高速 {{ streetScore.superfast_coverage }}</span>
                 </template>
-                <template v-else>{{ streetScore.connectivity_score ?? '—' }}/100</template>
+                <template v-else-if="streetScore.connectivity_score != null">
+                  评分 {{ streetScore.connectivity_score }}/100
+                </template>
+                <template v-else>暂无数据</template>
               </div>
             </div>
           </div>
@@ -690,21 +713,38 @@ const streetScore = ref<ScoreMyStreetScore | null>(null)
 const streetScoreLoading = ref(false)
 const showStreetScoreDialog = ref(false)
 
+const ukPostcodeRegex = /\b([A-Z]{1,2}\d{1,2}[A-Z]?\s*\d[A-Z]{2})\b/i
+
+function extractUKPostcode(text: string): string | null {
+  const match = ukPostcodeRegex.exec(text)
+  return match ? match[1].toUpperCase() : null
+}
+
 // 判断是否显示街区评分徽章：仅 UK 房源且有邮编
 const showStreetScore = computed(() => {
   if (!property.value) return false
   const country = (property.value.country || '').toUpperCase()
-  if (country === 'GB' || country === 'UK') return true
   const address = property.value.address || ''
-  const postcodeRegex = /\b([A-Z]{1,2}\d{1,2}[A-Z]?\s*\d[A-Z]{2})\b/i
-  if (postcodeRegex.test(address)) return true
-  const combined = `${address} ${property.value.district || ''}`.toLowerCase()
-  const ukHints = [
-    'london', 'uk', 'united kingdom', 'england', 'scotland', 'wales',
-    'britain',
-    '伦敦', '英国', '英格兰', '苏格兰', '威尔士',
-  ]
-  return ukHints.some((k) => combined.includes(k))
+  const district = property.value.district || ''
+  const combined = `${address} ${district}`
+  
+  if (country === 'GB' || country === 'UK') {
+    return extractUKPostcode(combined) !== null
+  }
+  
+  if (extractUKPostcode(combined) !== null) {
+    const ukKeywords = [
+      'london', 'uk', 'united kingdom', 'england', 'scotland', 'wales',
+      'britain', 'manchester', 'birmingham', 'edinburgh', 'liverpool',
+      'leeds', 'sheffield', 'newcastle', 'bristol', 'cardiff', 'glasgow',
+      '伦敦', '英国', '英格兰', '苏格兰', '威尔士', '曼彻斯特', '伯明翰',
+      '爱丁堡', '利物浦', '利兹', '谢菲尔德', '布里斯托尔', '加的夫', '格拉斯哥',
+    ]
+    const lower = combined.toLowerCase()
+    return ukKeywords.some((k) => lower.includes(k))
+  }
+  
+  return false
 })
 
 // 判断是否显示 CrystalRoof 徽章：仅 UK 房源
