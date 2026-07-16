@@ -5,8 +5,10 @@
       <div class="detail-topbar">
         <el-button text :icon="ArrowLeft" @click="$router.back()">返回</el-button>
         <div class="topbar-actions">
-          <el-button text :icon="Star">收藏</el-button>
-          <el-button text :icon="Share">分享</el-button>
+          <el-button text :icon="Star" :type="isFavorited ? 'warning' : 'default'" @click="toggleFavorite">
+            {{ isFavorited ? '已收藏' : '收藏' }}
+          </el-button>
+          <el-button text :icon="Share" @click="shareProperty">分享</el-button>
         </div>
       </div>
 
@@ -621,14 +623,16 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import { ref, computed, onUnmounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ArrowLeft, Star, Share } from '@element-plus/icons-vue'
+import { ElMessage } from 'element-plus'
 import { usePropertyStore } from '@/stores/property'
 import { useAuthStore } from '@/stores/auth'
 import { propertyService, type PropertyPOI } from '@/services/property'
 import { crystalRoofService, type CrystalRoofScore } from '@/services/crystalroof'
 import { scoreMyStreetService, type ScoreMyStreetScore } from '@/services/scoremystreet'
+import { favoriteService } from '@/services/favorite'
 import { storeToRefs } from 'pinia'
 import PropertyCard from '@/components/PropertyCard.vue'
 import BookingDateDialog from '@/components/BookingDateDialog.vue'
@@ -890,8 +894,13 @@ const similarProperties = ref<Property[]>([])
 // Booking dialog
 const showBookingDialog = ref(false)
 
+// Favorites
+const isFavorited = ref(false)
+const loadingProperty = ref(false)
+const togglingFavorite = ref(false)
+
 const statusLabels: Record<PropertyStatus, string> = {
-  available: '可租', rented: '已租', maintenance: '维护中', offline: '已下架',
+  available: '可租', pending_review: '审核中', rented: '已租', maintenance: '维护中', offline: '已下架',
 }
 const typeLabels: Record<PropertyType, string> = {
   apartment: '公寓', house: '别墅', studio: '单间', shared: '合租',
@@ -900,7 +909,7 @@ const typeLabels: Record<PropertyType, string> = {
 const statusTagType = computed(() => {
   if (!property.value) return 'info'
   const map: Record<PropertyStatus, string> = {
-    available: 'success', rented: 'warning', maintenance: 'info', offline: 'danger',
+    available: 'success', pending_review: 'warning', rented: 'warning', maintenance: 'info', offline: 'danger',
   }
   return map[property.value.status]
 })
@@ -944,8 +953,62 @@ function handleBookingConfirm(data: { propertyId: number; date: string; slot: st
   })
 }
 
+async function checkFavoriteStatus() {
+  if (!property.value || !authStore.isLoggedIn) {
+    isFavorited.value = false
+    return
+  }
+  try {
+    isFavorited.value = await favoriteService.isFavorited(property.value.id)
+  } catch {
+    isFavorited.value = false
+  }
+}
+
+async function toggleFavorite() {
+  if (!property.value) return
+  if (!authStore.isLoggedIn) {
+    ElMessage.warning('请先登录后再收藏')
+    return
+  }
+  if (togglingFavorite.value) return  // 防止连击
+  togglingFavorite.value = true
+  try {
+    if (isFavorited.value) {
+      await favoriteService.remove(property.value.id)
+      isFavorited.value = false
+      ElMessage.success('已取消收藏')
+    } else {
+      await favoriteService.add(property.value.id)
+      isFavorited.value = true
+      ElMessage.success('已添加收藏')
+    }
+  } catch {
+    ElMessage.error('操作失败，请稍后重试')
+  } finally {
+    togglingFavorite.value = false
+  }
+}
+
+function shareProperty() {
+  if (!property.value) return
+  const url = window.location.href
+  if (navigator.clipboard) {
+    navigator.clipboard.writeText(url).then(() => {
+      ElMessage.success('链接已复制到剪贴板，可分享给好友')
+    }).catch(() => {
+      ElMessage.info(`分享链接：${url}`)
+    })
+  } else {
+    ElMessage.info(`分享链接：${url}`)
+  }
+}
+
 async function loadProperty(id: number) {
   if (isNaN(id) || id <= 0) return
+  if (loadingProperty.value) return
+  loadingProperty.value = true
+  isFavorited.value = false
   try {
     await propertyStore.fetchById(id)
     crystalRoofScore.value = null
@@ -955,8 +1018,10 @@ async function loadProperty(id: number) {
       loadSimilar()
       loadCrystalRoof()
       loadStreetScore()
+      await checkFavoriteStatus()
     }
   } catch { /* handled */ }
+  finally { loadingProperty.value = false }
 }
 
 async function loadPOI(pid: number) {
@@ -978,13 +1043,12 @@ async function loadSimilar() {
   } catch { similarProperties.value = [] }
 }
 
-// Watch route param changes
+// Watch route param changes (with immediate to cover onMounted)
 const stopWatch = watch(() => route.params.id, (newId) => {
   poiData.value = null
   loadProperty(Number(newId))
-})
+}, { immediate: true })
 
-onMounted(() => loadProperty(Number(route.params.id)))
 onUnmounted(() => stopWatch())
 </script>
 

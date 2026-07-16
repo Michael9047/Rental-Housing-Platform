@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 
-from app.api.v1.routes import admin, ai_search, auth, bookings, chat, contracts, crystalroof, geocoding, health, images, imports, map_routes, notifications, payments, pois, properties, scoremystreet, users, wechat
+from app.api.v1.routes import admin, agent, ai_search, auth, bookings, buildings, chat, contracts, crystalroof, dashboard, favorites, geocoding, health, images, imports, map_routes, ml, notifications, payments, pois, properties, repair_workers, repairs, scoremystreet, upload, users, wechat
 
 api_router = APIRouter()
 api_router.include_router(health.router, tags=["health"])
@@ -22,3 +22,11 @@ api_router.include_router(pois.router, prefix="/pois", tags=["pois"])
 api_router.include_router(map_routes.router, prefix="/map", tags=["map"])
 api_router.include_router(crystalroof.router, prefix="/crystalroof", tags=["crystalroof"])
 api_router.include_router(scoremystreet.router, prefix="/scoremystreet", tags=["scoremystreet"])
+api_router.include_router(agent.router, prefix="/agent", tags=["agent"])
+api_router.include_router(buildings.router, tags=["buildings"])
+api_router.include_router(dashboard.router, tags=["dashboard"])
+api_router.include_router(favorites.router, prefix="/favorites", tags=["favorites"])
+api_router.include_router(ml.router, tags=["ml"])
+api_router.include_router(repairs.router, tags=["repairs"])
+api_router.include_router(repair_workers.router, tags=["repair-workers"])
+api_router.include_router(upload.router, tags=["upload"])

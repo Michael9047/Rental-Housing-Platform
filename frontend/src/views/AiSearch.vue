@@ -220,7 +220,14 @@ const rawQuery = ref('')
 const parsing = ref(false)
 const searching = ref(false)
 
-const parsedParams = ref<ParsedSearchParams>({})
+const parsedParams = ref<ParsedSearchParams>({
+  district: null,
+  price_min: null,
+  price_max: null,
+  bedrooms: null,
+  property_type: null,
+  keywords: null,
+})
 const completeness = ref<CompletenessReport>({
   is_complete: false,
   missing_fields: [],

@@ -16,6 +16,8 @@
           >
             <el-option label="租客" value="tenant" />
             <el-option label="房东" value="landlord" />
+            <el-option label="BD经理" value="bd_manager" />
+            <el-option label="维修师傅" value="maintenance_worker" />
             <el-option label="管理员" value="admin" />
           </el-select>
         </template>

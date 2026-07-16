@@ -61,6 +61,20 @@
           >
             一键预订
           </el-button>
+          <el-tooltip
+            v-if="authStore.isLoggedIn"
+            :content="inCart ? '点击移出候选清单' : '加入候选清单'"
+            placement="top"
+          >
+            <button
+              class="add-cart-btn"
+              :class="{ 'is-added': inCart }"
+              :disabled="busy"
+              @click="handleToggleCart"
+            >
+              <el-icon><Check v-if="inCart" /><Plus v-else /></el-icon>
+            </button>
+          </el-tooltip>
         </div>
       </div>
     </div>
@@ -68,10 +82,13 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { PictureFilled, LocationFilled } from '@element-plus/icons-vue'
+import { PictureFilled, LocationFilled, Plus, Check } from '@element-plus/icons-vue'
+import { ElMessage } from 'element-plus'
 import type { Property, PropertySearchResult, PropertyType } from '@/types/property'
+import { useAuthStore } from '@/stores/auth'
+import { useCartStore } from '@/stores/cart'
 
 const props = defineProps<{
   property: Property | PropertySearchResult
@@ -84,6 +101,29 @@ const emit = defineEmits<{
 }>()
 
 const router = useRouter()
+const authStore = useAuthStore()
+const cartStore = useCartStore()
+
+const busy = ref(false)
+const inCart = computed(() => cartStore.has(props.property.id))
+
+async function handleToggleCart() {
+  if (busy.value) return
+  busy.value = true
+  try {
+    if (inCart.value) {
+      await cartStore.remove(props.property.id)
+      ElMessage.info(`已从候选清单移出「${props.property.title}」`)
+    } else {
+      await cartStore.add(props.property.id)
+      ElMessage.success(`已将「${props.property.title}」加入候选清单`)
+    }
+  } catch {
+    // 错误提示由 api 拦截器统一处理
+  } finally {
+    busy.value = false
+  }
+}
 
 const typeLabels: Record<PropertyType, string> = {
   apartment: '公寓',
@@ -312,6 +352,39 @@ function handleBook() {
 
 .card-actions {
   display: flex;
+  align-items: center;
   gap: 4px;
+}
+
+/* 右下角绿色圆形「加入候选清单」按钮 */
+.add-cart-btn {
+  width: 26px;
+  height: 26px;
+  flex-shrink: 0;
+  border: none;
+  border-radius: 50%;
+  background: #67c23a;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 2px 6px rgba(103, 194, 58, 0.4);
+  transition: transform 0.15s, background 0.15s;
+}
+
+.add-cart-btn:hover:not(:disabled) {
+  transform: scale(1.12);
+  background: #5daf34;
+}
+
+.add-cart-btn.is-added {
+  background: #b3e19d;
+  cursor: default;
+  box-shadow: none;
+}
+
+.add-cart-btn :deep(.el-icon) {
+  font-size: 15px;
 }
 </style>

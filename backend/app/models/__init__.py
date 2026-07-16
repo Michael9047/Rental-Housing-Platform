@@ -1,5 +1,6 @@
 ﻿from app.db.session import Base
 from app.models.advertisement import AdImpression, Advertisement, AdvertisementStatus
+from app.models.agent_cart import AgentCart, AgentCartItem
 from app.models.audit_log import AuditLog
 from app.models.booking import Booking, BookingStatus
 from app.models.chat import ChatMessage, ChatMessageRole, ChatSession, ChatSessionStatus
@@ -23,14 +24,24 @@ from app.models.payment import Payment, PaymentStatus
 from app.models.poi import PropertyPOI
 from app.models.property import Property, PropertyStatus, PropertyType
 from app.models.property_image import PropertyImage
+from app.models.repair import (
+    RepairIssueType,
+    RepairRequest,
+    RepairStatus,
+    RepairWorker,
+    WorkerStatus,
+)
 from app.models.review import Review, ReviewStatus
 from app.models.saved_search import SavedSearch
 from app.models.user import User, UserRole, UserStatus
+from app.models.user_favorite import UserFavorite
 
 __all__ = [
     "AdImpression",
     "Advertisement",
     "AdvertisementStatus",
+    "AgentCart",
+    "AgentCartItem",
     "AuditLog",
     "Base",
     "Booking",
@@ -66,10 +77,16 @@ __all__ = [
     "PropertyPOI",
     "PropertyStatus",
     "PropertyType",
+    "RepairIssueType",
+    "RepairRequest",
+    "RepairStatus",
+    "RepairWorker",
     "Review",
     "ReviewStatus",
     "SavedSearch",
     "User",
+    "UserFavorite",
     "UserRole",
     "UserStatus",
+    "WorkerStatus",
 ]
