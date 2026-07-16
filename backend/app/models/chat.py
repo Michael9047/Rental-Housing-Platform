@@ -31,6 +31,11 @@ class ChatSession(TimestampMixin, Base):
         String(64), unique=True, index=True, default=lambda: uuid.uuid4().hex
     )
     title: Mapped[str | None] = mapped_column(String(200))
+    # 会话来源：agent = AI 租房管家气泡；chat = 客服在线沟通。
+    # 两者共用 chat_sessions 表，靠这个字段区分，避免会话列表互相串。
+    kind: Mapped[str] = mapped_column(
+        String(16), default="chat", server_default="chat", nullable=False, index=True
+    )
     status: Mapped[ChatSessionStatus] = mapped_column(
         Enum(ChatSessionStatus, name="chat_session_status"),
         default=ChatSessionStatus.active,

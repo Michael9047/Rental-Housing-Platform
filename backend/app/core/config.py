@@ -23,6 +23,10 @@ class Settings(BaseSettings):
 
     redis_url: str = Field(default="redis://localhost:6379/0", validation_alias="REDIS_URL")
 
+    # 搜索结果缓存开关。测试环境关掉，避免用例之间通过共享 Redis 互相污染
+    # （注意不能改用非法的 REDIS_URL 来关，因为 Celery broker 也读同一个 URL）
+    cache_enabled: bool = Field(default=True, validation_alias="CACHE_ENABLED")
+
     auth_secret_key: str = Field(
         default="dev-only-change-me",
         validation_alias="AUTH_SECRET_KEY",

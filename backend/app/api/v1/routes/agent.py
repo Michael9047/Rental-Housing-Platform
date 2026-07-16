@@ -7,11 +7,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import get_current_user, get_db_session
 from app.models.user import User
 from app.schemas.agent import (
+    AgentElicit,
+    AgentHistoryMessage,
     AgentLink,
     AgentMessageRequest,
     AgentMessageResponse,
     AgentRecommendation,
     AgentSessionResponse,
+    AgentSessionSummary,
     CartItemAddRequest,
     CartItemRead,
     CartRead,
@@ -19,10 +22,12 @@ from app.schemas.agent import (
     CompareRequest,
     CompareResponse,
     FaqChip,
+    MessageFeedbackRequest,
+    MessageFeedbackResponse,
 )
 from app.schemas.property import PropertySearchResult
 from app.services.agent_faq import list_faq_chips
-from app.services.agent_service import AgentService
+from app.services.agent_service import DEFAULT_SESSION_TITLE, AgentService
 from app.services.chat_service import ChatService
 
 logger = logging.getLogger(__name__)
@@ -42,7 +47,9 @@ async def create_agent_session(
     current_user: User = Depends(get_current_user),
 ) -> AgentSessionResponse:
     chat_service = ChatService(session)
-    chat_session = await chat_service.create_session(current_user.id, title="租房推荐 Agent")
+    chat_session = await chat_service.create_session(current_user.id, title=DEFAULT_SESSION_TITLE)
+    # 标记为 AI 管家会话（与客服会话共用 chat_sessions 表，靠 kind 区分）
+    chat_session.kind = "agent"
 
     agent_service = AgentService(session)
     cart = await agent_service.get_or_create_cart(current_user.id)
@@ -56,6 +63,64 @@ async def create_agent_session(
         cart_id=cart.id,
         title=chat_session.title,
     )
+
+
+@router.get("/sessions", response_model=list[AgentSessionSummary])
+async def list_agent_sessions(
+    session: AsyncSession = Depends(get_db_session),
+    current_user: User = Depends(get_current_user),
+) -> list[AgentSessionSummary]:
+    """左侧对话列表：该用户的全部 AI 管家会话，最近活跃在前"""
+    sessions = await AgentService(session).list_sessions(current_user.id)
+    return [AgentSessionSummary.model_validate(s) for s in sessions]
+
+
+@router.get("/sessions/{session_id}/messages", response_model=list[AgentHistoryMessage])
+async def get_agent_session_messages(
+    session_id: int,
+    session: AsyncSession = Depends(get_db_session),
+    current_user: User = Depends(get_current_user),
+) -> list[AgentHistoryMessage]:
+    """回放历史会话（推荐卡按 property_id 还原成真实房源）"""
+    agent_service = AgentService(session)
+    chat_session = await agent_service.get_session(session_id, current_user.id)
+    if chat_session is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Agent 会话不存在")
+
+    msgs = await agent_service.get_session_messages(session_id)
+    return [
+        AgentHistoryMessage(
+            role=m["role"],
+            content=m["content"],
+            recommendations=[
+                AgentRecommendation(
+                    property_id=r["property_id"],
+                    match_reason=r.get("match_reason", ""),
+                    pros=r.get("pros", []),
+                    cons=r.get("cons", []),
+                    property=_to_search_result(r["property"]),
+                )
+                for r in m["recommendations"]
+            ],
+            elicit=AgentElicit(**m["elicit"]) if m.get("elicit") else None,
+            feedback=m.get("feedback"),
+            intent=m.get("intent"),
+            created_at=m["created_at"],
+            id=m["id"],
+        )
+        for m in msgs
+    ]
+
+
+@router.delete("/sessions/{session_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_agent_session(
+    session_id: int,
+    session: AsyncSession = Depends(get_db_session),
+    current_user: User = Depends(get_current_user),
+) -> None:
+    deleted = await AgentService(session).delete_session(session_id, current_user.id)
+    if not deleted:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Agent 会话不存在")
 
 
 @router.post("/sessions/{session_id}/messages", response_model=AgentMessageResponse)
@@ -73,10 +138,11 @@ async def send_agent_message(
     agent_service = AgentService(session)
     filters = body.filters.model_dump(exclude_none=True) if body.filters else None
     result = await agent_service.handle_message(
-        chat_session, current_user.id, body.message, filters
+        chat_session, current_user.id, body.message, filters, body.slot_answers
     )
 
     return AgentMessageResponse(
+        message_id=result.get("message_id"),
         reply=result["reply"],
         intent=result["intent"],
         recommendations=[
@@ -93,7 +159,24 @@ async def send_agent_message(
         ai_available=result["ai_available"],
         quick_replies=result.get("quick_replies", []),
         links=[AgentLink(**link) for link in result.get("links", [])],
+        elicit=AgentElicit(**result["elicit"]) if result.get("elicit") else None,
     )
+
+
+@router.patch("/messages/{message_id}/feedback", response_model=MessageFeedbackResponse)
+async def set_message_feedback(
+    message_id: int,
+    body: MessageFeedbackRequest,
+    session: AsyncSession = Depends(get_db_session),
+    current_user: User = Depends(get_current_user),
+) -> MessageFeedbackResponse:
+    """给某条 AI 回复点赞/点踩；再次提交同值等于取消（前端自行传 null 实现）"""
+    ok = await AgentService(session).set_message_feedback(
+        current_user.id, message_id, body.feedback
+    )
+    if not ok:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="消息不存在")
+    return MessageFeedbackResponse(message_id=message_id, feedback=body.feedback)
 
 
 @router.get("/faqs", response_model=list[FaqChip])

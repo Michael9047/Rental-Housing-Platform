@@ -171,14 +171,40 @@ def match_faq(message: str) -> tuple[str, list[FaqEntry]]:
     if len(strong_hits) == 1:
         return "strong", strong_hits
     if len(strong_hits) > 1:
-        return "weak", strong_hits  # 同时像多个 → 反问让用户选
+        return "weak", strong_hits  # 同时像多个 → 交上层用 LLM 定夺
 
-    # 3) 弱正则：只出现主题词（如单独说"押金"）→ 反问确认。
-    #    仅对短消息生效：长句更可能是找房需求（如"找个3000以内的房子顺便预约看房"），
-    #    交给后面的 LLM 意图分类，避免误拦 recommend。
-    if len(text) <= 15:
-        weak_hits = [e for e in FAQ_ENTRIES if e.weak is not None and e.weak.search(text)]
-        if weak_hits:
-            return "weak", weak_hits
+    # 3) 弱正则：出现了主题词但问法不在强正则里（如"定房子要哪些费用"）。
+    #    注意这里只是"疑似 FAQ"信号，**不代表要反问**——上层会交给 LLM 判断并作答，
+    #    只有真正的孤立主题词（见 is_bare_topic）才反问。
+    weak_hits = [e for e in FAQ_ENTRIES if e.weak is not None and e.weak.search(text)]
+    if weak_hits:
+        return "weak", weak_hits
 
     return "none", []
+
+
+# 疑问/动词信号：出现任一即说明用户在问一个完整的问题，而不是只丢了个主题词
+_QUESTION_SIGNAL = re.compile(
+    r"[?？]|怎么|如何|怎样|咋|什么|啥|哪些|哪个|多少|几|能否|可以|能不能|是否|要不要|"
+    r"退|交|付|收|签|订|租|办|走|流程|规则|政策|说明|介绍|解释|讲讲|告诉"
+)
+
+
+def is_bare_topic(message: str) -> bool:
+    """是否只是一个孤立的主题词（如光打"押金""费用"两个字）。
+
+    只有这种情况才值得反问确认；只要用户带了疑问词/动词（"定房子要哪些费用"），
+    就说明问题是明确的，应该直接用 LLM + 知识库作答，而不是机械地让他再点一次按钮。
+    """
+    text = message.strip().strip("？?。.! ！")
+    if len(text) > 6:
+        return False
+    return not _QUESTION_SIGNAL.search(text)
+
+
+def faq_kb_text(entry: FaqEntry) -> str:
+    """把一条 FAQ 的知识库内容拼成给 LLM 的上下文（答案 + 可跳转页面）"""
+    lines = [f"【{entry.chip}】", entry.answer]
+    if entry.links:
+        lines.append("可引导用户前往的页面：" + "、".join(f"{l.label}({l.to})" for l in entry.links))
+    return "\n".join(lines)

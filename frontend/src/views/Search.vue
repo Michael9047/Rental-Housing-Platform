@@ -196,6 +196,33 @@
       <span v-if="filters.country" class="meta-filter">
         筛选范围：{{ getCountryLabel(filters.country) }}
       </span>
+
+      <!-- 多选对比：右上角开关 -->
+      <div class="compare-toggle">
+        <el-button
+          v-if="!compareMode"
+          size="small"
+          :icon="Select"
+          @click="compareMode = true"
+        >
+          多选对比
+        </el-button>
+        <template v-else>
+          <el-checkbox :model-value="allPagedSelected" @change="toggleSelectAll">
+            全选本页
+          </el-checkbox>
+          <span class="compare-count">已选 {{ selectedIds.length }} 套</span>
+          <el-button
+            size="small"
+            type="primary"
+            :disabled="selectedIds.length < 2"
+            @click="goCompareSelected"
+          >
+            去对比
+          </el-button>
+          <el-button size="small" text @click="exitCompareMode">取消</el-button>
+        </template>
+      </div>
     </div>
 
     <!-- Results Grid -->
@@ -213,8 +240,11 @@
           :key="p.id"
           :property="p"
           :show-similarity="semanticMode && !!filters.q"
-          :show-quick-book="true"
+          :show-quick-book="!compareMode"
+          :compare-mode="compareMode"
+          :selected="selectedIds.includes(p.id)"
           @book="openBookingDialog"
+          @toggle-select="(v: boolean) => toggleSelect(p.id, v)"
         />
       </div>
     </div>
@@ -244,7 +274,8 @@
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Search } from '@element-plus/icons-vue'
+import { Search, Select } from '@element-plus/icons-vue'
+import { ElMessage } from 'element-plus'
 import { usePropertyStore } from '@/stores/property'
 import { storeToRefs } from 'pinia'
 import PropertyCard from '@/components/PropertyCard.vue'
@@ -255,6 +286,45 @@ const route = useRoute()
 const router = useRouter()
 const propertyStore = usePropertyStore()
 const { searchResults, loading } = storeToRefs(propertyStore)
+
+// ── 多选对比：勾选几套房源，跳到 AI 管家气泡里对比 ──────────────
+const compareMode = ref(false)
+const selectedIds = ref<number[]>([])
+
+const allPagedSelected = computed(
+  () => pagedResults.value.length > 0 && pagedResults.value.every((p) => selectedIds.value.includes(p.id)),
+)
+
+function toggleSelect(id: number, checked: boolean) {
+  if (checked) {
+    if (!selectedIds.value.includes(id)) selectedIds.value.push(id)
+  } else {
+    selectedIds.value = selectedIds.value.filter((x) => x !== id)
+  }
+}
+
+function toggleSelectAll(checked: boolean) {
+  const pageIds = pagedResults.value.map((p) => p.id)
+  if (checked) {
+    for (const id of pageIds) if (!selectedIds.value.includes(id)) selectedIds.value.push(id)
+  } else {
+    selectedIds.value = selectedIds.value.filter((id) => !pageIds.includes(id))
+  }
+}
+
+function exitCompareMode() {
+  compareMode.value = false
+  selectedIds.value = []
+}
+
+function goCompareSelected() {
+  if (selectedIds.value.length < 2) {
+    ElMessage.warning('请至少选择 2 套房源再对比')
+    return
+  }
+  router.push({ name: 'compare', query: { ids: selectedIds.value.join(',') } })
+  exitCompareMode()
+}
 
 const semanticMode = ref(true)
 const sortBy = ref('similarity')
@@ -465,6 +535,19 @@ watch(() => route.query, (query) => {
 .meta-filter {
   font-size: 13px;
   color: var(--text-muted);
+}
+
+.compare-toggle {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.compare-count {
+  font-size: 13px;
+  color: var(--text-secondary);
+  white-space: nowrap;
 }
 
 .property-grid {

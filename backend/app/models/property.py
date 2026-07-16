@@ -3,7 +3,7 @@ from datetime import date, datetime
 from decimal import Decimal
 
 from sqlalchemy import Boolean, CheckConstraint, Date, DateTime, Enum, Float, ForeignKey, Index, Integer, Numeric, String, Text as SAText
-from sqlalchemy.dialects.postgresql import ARRAY
+from sqlalchemy.dialects.postgresql import ARRAY as PgARRAY
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.types import TypeDecorator
 
@@ -40,6 +40,23 @@ class VectorColumn(TypeDecorator):
 
             return dialect.type_descriptor(PgVector(1536))
         return dialect.type_descriptor(SAText())
+
+
+class StringArrayColumn(TypeDecorator):
+    """字符串数组列：Postgres 用原生 ARRAY，其他方言（如测试用的 SQLite）退化为 JSON。
+
+    数据库层实际类型不变（迁移仍建 Postgres ARRAY 列），此类型仅让本地/测试用的
+    SQLite 内存库也能创建 properties 表，不影响生产 Postgres 行为。
+    """
+    impl = SAText
+    cache_ok = True
+
+    def load_dialect_impl(self, dialect):
+        if dialect.name == "postgresql":
+            return dialect.type_descriptor(PgARRAY(String(30)))
+        from sqlalchemy import JSON
+
+        return dialect.type_descriptor(JSON())
 
 
 class PropertyType(str, enum.Enum):
@@ -98,6 +115,7 @@ class Property(TimestampMixin, Base):
     description: Mapped[str | None] = mapped_column(SAText)
     address: Mapped[str] = mapped_column(String(300), nullable=False)
     district: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+    country: Mapped[str] = mapped_column(String(2), nullable=False, default="CN", server_default="CN", index=True)
     price_monthly: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
     area_sqm: Mapped[Decimal | None] = mapped_column(Numeric(8, 2))
     bedrooms: Mapped[int] = mapped_column(default=0, nullable=False)
@@ -120,7 +138,7 @@ class Property(TimestampMixin, Base):
     service_fee_rate: Mapped[float | None] = mapped_column(Float, nullable=True, default=0.10)
 
     # ── 新增字段 ──
-    amenities: Mapped[list[str] | None] = mapped_column(ARRAY(String(30)), nullable=True)
+    amenities: Mapped[list[str] | None] = mapped_column(StringArrayColumn, nullable=True)
     available_from: Mapped[date | None] = mapped_column(Date, nullable=True)
     min_stay_months: Mapped[int] = mapped_column(Integer, default=3, nullable=False)
     deposit_type: Mapped[DepositType | None] = mapped_column(

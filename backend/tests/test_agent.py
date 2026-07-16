@@ -53,7 +53,8 @@ async def test_create_agent_session(
     data = resp.json()
     assert "session_id" in data
     assert "cart_id" in data
-    assert data["title"] == "租房推荐 Agent"
+    # 新会话是占位标题，收到第一条用户消息后会自动改成消息摘要
+    assert data["title"] == "新对话"
 
 
 @pytest.mark.asyncio
@@ -68,11 +69,18 @@ async def test_agent_recommend_returns_properties(
     session_resp = await client.post("/api/v1/agent/sessions", headers=headers)
     session_id = session_resp.json()["session_id"]
 
+    # 条件给全（区域/预算/户型/类型）→ 无需引导追问，直接出推荐
     resp = await client.post(
         f"/api/v1/agent/sessions/{session_id}/messages",
         json={
             "message": "我想找预算3000以内的房子",
-            "filters": {"district": "SIP", "price_min": 0, "price_max": 3000},
+            "filters": {
+                "district": "SIP",
+                "price_min": 0,
+                "price_max": 3000,
+                "bedrooms": 1,
+                "property_type": "apartment",
+            },
         },
         headers=headers,
     )
@@ -84,6 +92,117 @@ async def test_agent_recommend_returns_properties(
     rec = data["recommendations"][0]
     assert rec["property"]["title"] == "低价单间"
     assert rec["property"]["status"] == "available"
+
+
+@pytest.mark.asyncio
+async def test_agent_elicits_missing_conditions_in_one_panel(
+    client: AsyncClient,
+    landlord_register_payload: dict[str, str],
+) -> None:
+    """条件不全时循循善诱：把所有缺失维度一次性摆成多组面板，而不是一个个串行问"""
+    landlord_id, headers = await _register_and_login(client, landlord_register_payload)
+    await _create_property(client, headers, landlord_id, title="低价单间", price_monthly="2500.00", bedrooms=1)
+
+    session_id = (
+        await client.post("/api/v1/agent/sessions", headers=headers)
+    ).json()["session_id"]
+
+    # 只给了区域 → 预算/户型/类型应该一次性摆成三组面板（不会重复问区域，也不会一个个串行问）
+    resp = await client.post(
+        f"/api/v1/agent/sessions/{session_id}/messages",
+        json={"message": "帮我找房子", "filters": {"district": "SIP"}},
+        headers=headers,
+    )
+    assert resp.status_code == 200, resp.text
+    data = resp.json()
+    assert data["intent"] == "elicit"
+    assert data["recommendations"] == []
+    groups = data["elicit"]["groups"]
+    assert [g["field"] for g in groups] == ["price_max", "bedrooms", "property_type"]
+    for g in groups:
+        assert g["options"]
+        assert any(o["value"] == "__any__" for o in g["options"])  # 每组都能选「不限」
+    assert data["elicit"]["allow_custom"] is True
+
+    # 面板一次性提交多个维度（前端把每组选中的 option.value 精确打进 slot_answers）
+    # → 直接出结果，不再追问
+    resp = await client.post(
+        f"/api/v1/agent/sessions/{session_id}/messages",
+        json={
+            "message": "预算 3000、2 室、公寓",
+            "slot_answers": {"price_max": "3000", "bedrooms": "2", "property_type": "apartment"},
+        },
+        headers=headers,
+    )
+    assert resp.status_code == 200, resp.text
+    data = resp.json()
+    assert data["intent"] == "recommend"
+    assert data["elicit"] is None
+
+
+@pytest.mark.asyncio
+async def test_agent_panel_partial_submit_reasks_only_remaining_fields(
+    client: AsyncClient,
+    landlord_register_payload: dict[str, str],
+) -> None:
+    """面板只勾了部分维度也能提交；下一轮只再问还没填的那几个维度"""
+    landlord_id, headers = await _register_and_login(client, landlord_register_payload)
+    await _create_property(client, headers, landlord_id, title="低价单间", price_monthly="2500.00", bedrooms=1)
+
+    session_id = (
+        await client.post("/api/v1/agent/sessions", headers=headers)
+    ).json()["session_id"]
+
+    await client.post(
+        f"/api/v1/agent/sessions/{session_id}/messages",
+        json={"message": "帮我找房子", "filters": {"district": "SIP"}},
+        headers=headers,
+    )
+    resp = await client.post(
+        f"/api/v1/agent/sessions/{session_id}/messages",
+        json={"message": "预算 3000", "slot_answers": {"price_max": "3000"}},
+        headers=headers,
+    )
+    assert resp.status_code == 200, resp.text
+    data = resp.json()
+    assert data["intent"] == "elicit"
+    assert [g["field"] for g in data["elicit"]["groups"]] == ["bedrooms", "property_type"]
+
+    # 用「不限」哨兵值一次交完剩下两个维度 → 出结果
+    resp = await client.post(
+        f"/api/v1/agent/sessions/{session_id}/messages",
+        json={"message": "户型不限、类型不限", "slot_answers": {"bedrooms": "__any__", "property_type": "__any__"}},
+        headers=headers,
+    )
+    assert resp.status_code == 200, resp.text
+    data = resp.json()
+    assert data["intent"] == "recommend"
+    assert data["elicit"] is None
+
+
+@pytest.mark.asyncio
+async def test_agent_skip_elicit_goes_straight_to_results(
+    client: AsyncClient,
+    landlord_register_payload: dict[str, str],
+) -> None:
+    """用户说「直接推荐」→ 剩余条件按不限处理，立刻出结果，不再追问"""
+    landlord_id, headers = await _register_and_login(client, landlord_register_payload)
+    await _create_property(client, headers, landlord_id, title="低价单间", price_monthly="2500.00", bedrooms=1)
+
+    session_id = (
+        await client.post("/api/v1/agent/sessions", headers=headers)
+    ).json()["session_id"]
+
+    resp = await client.post(
+        f"/api/v1/agent/sessions/{session_id}/messages",
+        json={"message": "直接推荐吧", "filters": {"district": "SIP"}},
+        headers=headers,
+    )
+    assert resp.status_code == 200, resp.text
+    data = resp.json()
+    assert data["intent"] == "recommend"
+    assert data["elicit"] is None
+    assert len(data["recommendations"]) >= 1
 
 
 @pytest.mark.asyncio
@@ -229,10 +348,18 @@ async def test_agent_add_first_recommendation_via_message(
     session_resp = await client.post("/api/v1/agent/sessions", headers=headers)
     session_id = session_resp.json()["session_id"]
 
-    # 先推荐
+    # 先推荐（条件给全，跳过引导追问）
     resp = await client.post(
         f"/api/v1/agent/sessions/{session_id}/messages",
-        json={"message": "帮我找找 SIP 的房子", "filters": {"district": "SIP"}},
+        json={
+            "message": "帮我找找 SIP 的房子",
+            "filters": {
+                "district": "SIP",
+                "price_max": 9999,
+                "bedrooms": 2,
+                "property_type": "apartment",
+            },
+        },
         headers=headers,
     )
     assert resp.status_code == 200
@@ -265,3 +392,115 @@ async def test_agent_requires_auth(client: AsyncClient) -> None:
 
     resp = await client.post("/api/v1/agent/cart/compare")
     assert resp.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_agent_sessions_list_history_and_delete(
+    client: AsyncClient,
+    landlord_register_payload: dict[str, str],
+) -> None:
+    """多会话：列表、历史回放（推荐卡还原真实房源）、删除"""
+    landlord_id, headers = await _register_and_login(client, landlord_register_payload)
+    await _create_property(client, headers, landlord_id, title="历史房源", price_monthly="2500.00")
+
+    s1 = (await client.post("/api/v1/agent/sessions", headers=headers)).json()["session_id"]
+    s2 = (await client.post("/api/v1/agent/sessions", headers=headers)).json()["session_id"]
+
+    # 在 s1 里聊出一条推荐
+    await client.post(
+        f"/api/v1/agent/sessions/{s1}/messages",
+        json={
+            "message": "找个 SIP 的房子",
+            "filters": {
+                "district": "SIP",
+                "price_max": 9999,
+                "bedrooms": 2,
+                "property_type": "apartment",
+            },
+        },
+        headers=headers,
+    )
+
+    # 列表：两个会话都在，s1 标题被首条消息自动命名
+    resp = await client.get("/api/v1/agent/sessions", headers=headers)
+    assert resp.status_code == 200
+    sessions = resp.json()
+    assert {s["id"] for s in sessions} == {s1, s2}
+    s1_row = next(s for s in sessions if s["id"] == s1)
+    assert s1_row["title"] == "找个 SIP 的房子"
+
+    # 历史回放：推荐卡带回完整房源对象
+    resp = await client.get(f"/api/v1/agent/sessions/{s1}/messages", headers=headers)
+    assert resp.status_code == 200
+    msgs = resp.json()
+    assert [m["role"] for m in msgs] == ["user", "assistant"]
+    recs = msgs[1]["recommendations"]
+    assert len(recs) == 1
+    assert recs[0]["property"]["title"] == "历史房源"
+
+    # 删除
+    assert (await client.delete(f"/api/v1/agent/sessions/{s2}", headers=headers)).status_code == 204
+    remaining = (await client.get("/api/v1/agent/sessions", headers=headers)).json()
+    assert {s["id"] for s in remaining} == {s1}
+
+
+@pytest.mark.asyncio
+async def test_agent_message_feedback_set_and_clear(
+    client: AsyncClient,
+    landlord_register_payload: dict[str, str],
+) -> None:
+    """点赞/点踩：写入后历史回放能带回来；传 null 取消；不能碰别人的消息"""
+    landlord_id, headers = await _register_and_login(client, landlord_register_payload)
+    await _create_property(client, headers, landlord_id, title="低价单间", price_monthly="2500.00")
+
+    session_id = (
+        await client.post("/api/v1/agent/sessions", headers=headers)
+    ).json()["session_id"]
+    resp = await client.post(
+        f"/api/v1/agent/sessions/{session_id}/messages",
+        json={"message": "帮我找房子", "filters": {"district": "SIP", "price_max": 9999}},
+        headers=headers,
+    )
+    data = resp.json()
+    message_id = data["message_id"]
+    assert message_id is not None
+
+    # 点赞
+    resp = await client.patch(
+        f"/api/v1/agent/messages/{message_id}/feedback",
+        json={"feedback": "up"},
+        headers=headers,
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json() == {"message_id": message_id, "feedback": "up"}
+
+    # 历史回放能看到这条反馈
+    resp = await client.get(f"/api/v1/agent/sessions/{session_id}/messages", headers=headers)
+    assistant_msg = next(m for m in resp.json() if m["id"] == message_id)
+    assert assistant_msg["feedback"] == "up"
+
+    # 再传 null 取消
+    resp = await client.patch(
+        f"/api/v1/agent/messages/{message_id}/feedback",
+        json={"feedback": None},
+        headers=headers,
+    )
+    assert resp.status_code == 200
+    assert resp.json()["feedback"] is None
+
+    # 另一个用户碰不到这条消息
+    other_id, other_headers = await _register_and_login(
+        client,
+        {
+            "username": "other_tenant",
+            "email": "other_tenant@example.com",
+            "password": "Passw0rd!123",
+            "role": "tenant",
+        },
+    )
+    resp = await client.patch(
+        f"/api/v1/agent/messages/{message_id}/feedback",
+        json={"feedback": "down"},
+        headers=other_headers,
+    )
+    assert resp.status_code == 404

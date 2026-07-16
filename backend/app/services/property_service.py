@@ -40,7 +40,10 @@ async def _get_redis() -> "Redis | None":  # noqa: F821
     try:
         from redis.asyncio import Redis as AsyncRedis
         from app.core.config import get_settings
-        return AsyncRedis.from_url(get_settings().redis_url, decode_responses=False)
+        settings = get_settings()
+        if not settings.cache_enabled:
+            return None
+        return AsyncRedis.from_url(settings.redis_url, decode_responses=False)
     except Exception:
         logger.debug("Redis not available; search caching disabled.")
         return None
@@ -400,16 +403,13 @@ class PropertyService:
         except Exception:
             logger.exception("Failed to refresh POI for property %s", property_obj.id)
 
-<<<<<<< HEAD
+        # 同步优先生成 embedding（失败退回异步），并让搜索缓存失效
         await self._ensure_embedding(property_obj)
         await _bump_search_cache_version()
-=======
-        self._dispatch_embedding_task(property_obj.id)
 
         await self._audit(property_obj.landlord_id, "property_update", property_obj.id,
                           {"title": property_obj.title, "changed_fields": list(update_data.keys())})
 
->>>>>>> origin/main
         return property_obj
 
     async def delete(self, property_id: int) -> bool:
@@ -421,6 +421,7 @@ class PropertyService:
         property_obj.deleted_at = datetime.now(timezone.utc)
         property_obj.status = PropertyStatus.offline
         await self.session.commit()
+        await _bump_search_cache_version()  # 下架房源即时从缓存的筛选结果消失
 
         await self._audit(property_obj.landlord_id, "property_delete", property_obj.id,
                           {"title": property_obj.title})
@@ -439,6 +440,7 @@ class PropertyService:
         property_obj.status = PropertyStatus.available
         await self.session.commit()
         await self.session.refresh(property_obj)
+        await _bump_search_cache_version()  # 恢复房源即时回到筛选结果
         return property_obj
 
     async def batch_update_status(self, ids: list[int], new_status: str, landlord_id: int) -> dict:

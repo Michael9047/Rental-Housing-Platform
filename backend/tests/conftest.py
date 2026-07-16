@@ -12,12 +12,11 @@ os.environ.setdefault("ZHIPU_API_KEY", "")
 os.environ.setdefault("AMAP_WEB_KEY", "")
 os.environ.setdefault("CELERY_TASK_ALWAYS_EAGER", "true")
 os.environ.setdefault("CELERY_TASK_EAGER_PROPAGATES", "true")
-# Disable Redis during tests: an unsupported URL scheme makes _get_redis() fail
-# fast at client construction and return None (no socket attempts), so search
-# caching is skipped entirely. Each test uses a fresh in-memory DB; a shared or
-# ambient Redis would otherwise serve stale cross-test search results (the cache
-# key is filter-based, not DB-scoped).
-os.environ.setdefault("REDIS_URL", "disabled://tests")
+# 测试期关闭搜索缓存：每个用例用全新的内存数据库，但缓存键只按筛选条件算、
+# 不区分数据库，共享的 Redis 会把上一个用例的搜索结果串给下一个用例。
+# 只关缓存、不动 REDIS_URL —— Celery 的 broker 也读同一个 URL，把它改成非法
+# scheme 会让 kombu 在派发任务时抛 "No such transport"。
+os.environ.setdefault("CACHE_ENABLED", "false")
 
 import pytest
 import pytest_asyncio

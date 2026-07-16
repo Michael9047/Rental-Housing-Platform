@@ -1,5 +1,5 @@
 <template>
-  <div class="property-card" @click="goDetail">
+  <div class="property-card" :class="{ 'is-compare-mode': compareMode, selected }" @click="handleCardClick">
     <!-- Image -->
     <div class="card-image">
       <img
@@ -18,6 +18,14 @@
       </span>
       <!-- District Tag -->
       <span class="district-badge">{{ property.district }}</span>
+      <!-- 对比多选框（compareMode 开启时显示） -->
+      <label v-if="compareMode" class="compare-check" @click.stop>
+        <el-checkbox
+          :model-value="selected"
+          size="large"
+          @change="(v: boolean) => emit('toggle-select', v)"
+        />
+      </label>
     </div>
 
     <!-- Info -->
@@ -94,10 +102,14 @@ const props = defineProps<{
   property: Property | PropertySearchResult
   showSimilarity?: boolean
   showQuickBook?: boolean
+  /** 对比多选模式：开启后卡片左上角出现勾选框，点击卡片切换选中而非跳详情 */
+  compareMode?: boolean
+  selected?: boolean
 }>()
 
 const emit = defineEmits<{
   (e: 'book', property: Property | PropertySearchResult): void
+  (e: 'toggle-select', value: boolean): void
 }>()
 
 const router = useRouter()
@@ -197,6 +209,14 @@ function goDetail() {
   router.push(`/property/${props.property.id}`)
 }
 
+function handleCardClick() {
+  if (props.compareMode) {
+    emit('toggle-select', !props.selected)
+    return
+  }
+  goDetail()
+}
+
 function handleBook() {
   emit('book', props.property)
 }
@@ -219,6 +239,22 @@ function handleBook() {
   transform: translateY(-4px);
   box-shadow: var(--shadow-lg);
   border-color: var(--primary);
+}
+
+.property-card.is-compare-mode.selected {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 2px var(--primary);
+}
+
+.compare-check {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  background: rgba(255, 255, 255, 0.92);
+  border-radius: 6px;
+  padding: 3px 5px;
+  line-height: 1;
+  z-index: 1;
 }
 
 /* ── Image ────────────────────────── */

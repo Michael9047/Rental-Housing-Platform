@@ -1,20 +1,38 @@
 // 租房推荐 Agent API 服务
 import api from './api'
 import type {
+  AgentHistoryMessage,
   AgentMessageRequest,
   AgentMessageResponse,
   AgentSession,
+  AgentSessionSummary,
   Cart,
   CartItem,
   ComparePriority,
   CompareResponse,
   FaqChip,
+  MessageFeedback,
 } from '@/types/agent'
 
 export const agentService = {
   /** 创建 Agent 会话（返回 session_id 和 cart_id） */
   createSession(): Promise<AgentSession> {
     return api.post('/agent/sessions').then((r) => r.data)
+  },
+
+  /** 会话列表（左侧对话列表，最近活跃在前） */
+  listSessions(): Promise<AgentSessionSummary[]> {
+    return api.get('/agent/sessions').then((r) => r.data)
+  },
+
+  /** 回放某个会话的历史消息（推荐卡已还原成真实房源） */
+  getSessionMessages(sessionId: number): Promise<AgentHistoryMessage[]> {
+    return api.get(`/agent/sessions/${sessionId}/messages`).then((r) => r.data)
+  },
+
+  /** 删除会话 */
+  deleteSession(sessionId: number): Promise<void> {
+    return api.delete(`/agent/sessions/${sessionId}`).then(() => undefined)
   },
 
   /** FAQ 快捷入口 chips */
@@ -45,6 +63,16 @@ export const agentService = {
   /** 从购物车移除房源 */
   removeCartItem(propertyId: number): Promise<void> {
     return api.delete(`/agent/cart/items/${propertyId}`).then(() => undefined)
+  },
+
+  /** 给某条 AI 回复点赞/点踩；传 null 取消 */
+  setMessageFeedback(
+    messageId: number,
+    feedback: MessageFeedback,
+  ): Promise<{ message_id: number; feedback: MessageFeedback }> {
+    return api
+      .patch(`/agent/messages/${messageId}/feedback`, { feedback })
+      .then((r) => r.data)
   },
 
   /**
