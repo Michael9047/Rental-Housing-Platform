@@ -1,11 +1,12 @@
-﻿"""Security audit utilities: rate limiting, JWT refresh, and OWASP Top 10 checks."""
+"""Security audit utilities: rate limiting, JWT refresh, and OWASP Top 10 checks."""
 
 from __future__ import annotations
 
 import hashlib
 import logging
 import time
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
+UTC = timezone.utc
 from typing import Any
 
 import jwt
