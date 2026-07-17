@@ -118,19 +118,16 @@
               <el-icon><MagicStick /></el-icon>
               <span>AI 找房</span>
             </el-menu-item>
-            <el-menu-item v-if="authStore.isLoggedIn" index="/agent">
-              <el-icon><ChatDotRound /></el-icon>
-              <span>推荐管家</span>
-            </el-menu-item>
             <el-menu-item v-if="authStore.isLoggedIn" index="/cart">
               <el-icon><ShoppingCart /></el-icon>
               <span>候选清单</span>
-              <el-badge
-                v-if="cartStore.count > 0"
-                :value="cartStore.count"
-                :max="99"
-                class="cart-menu-badge"
-              />
+              <span v-if="cartStore.count > 0" class="cart-menu-badge">
+                {{ cartStore.count > 99 ? '99+' : cartStore.count }}
+              </span>
+            </el-menu-item>
+            <el-menu-item v-if="authStore.isLoggedIn" index="/compare">
+              <el-icon><Histogram /></el-icon>
+              <span>房源对比</span>
             </el-menu-item>
             <el-menu-item index="/search">
               <el-icon><Search /></el-icon>
@@ -235,7 +232,7 @@
       </el-main>
     </el-container>
 
-    <!-- 浮动 AI 管家（登录可见，/agent 页不显示） -->
+    <!-- 浮动 AI 管家：全站唯一的找房/对比入口，登录可见 -->
     <AssistantBubble />
   </el-container>
 </template>
@@ -245,8 +242,8 @@ import { ref, computed, watch, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import {
   MagicStick, Search, HomeFilled, User, UserFilled, ArrowDown, ArrowLeft, Setting, SwitchButton,
-  Plus, List, Bell, DataAnalysis, Tickets, OfficeBuilding, Location, ChatDotRound,
-  ShoppingCart,
+  Plus, List, Bell, DataAnalysis, Tickets, OfficeBuilding, Location,
+  ShoppingCart, Histogram,
 } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 import { useAgentChatStore } from '@/stores/agentChat'
@@ -456,12 +453,20 @@ watch(
 }
 
 .cart-menu-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
   margin-left: 8px;
-}
-
-.cart-menu-badge :deep(.el-badge__content) {
-  position: static;
-  transform: none;
+  border-radius: 9px;
+  background: var(--el-color-danger, #f56c6c);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  flex-shrink: 0;
 }
 
 .layout-main {

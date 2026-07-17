@@ -35,7 +35,9 @@ class PropertyBase(BaseModel):
 
 class PropertyCreate(PropertyBase):
     landlord_id: int
-    institute_id: int
+    # 与 ORM 模型一致（Property.institute_id 为 nullable，ondelete="SET NULL"）：
+    # 机构关联是可选的，不是所有房东都挂靠机构
+    institute_id: int | None = None
     image_urls: list[str] | None = None
 
 

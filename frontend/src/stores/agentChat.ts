@@ -1,18 +1,14 @@
-// 推荐管家会话 store —— 让聊天记录跨页面切换持久
-// AgentView 组件卸载（用户点去别的页面）时，会话 id 和消息都保留在这里，
-// 回到 /agent 直接续聊，不再每次进入新建会话。
+// AI 租房管家（浮动气泡）会话 store —— 多会话 + 跨页面持久
+// 像 Claude 一样支持多个对话：左侧列表可新建/切换/删除，历史消息从后端回放。
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { agentService } from '@/services/agent'
-import type { AgentChatMessage } from '@/types/agent'
+import type { AgentChatMessage, AgentSessionSummary } from '@/types/agent'
 
 export const GREETING: AgentChatMessage = {
   role: 'assistant',
-  content:
-    '你好，我是租房推荐管家 👋\n' +
-    '告诉我地区、预算和户型，我来帮你找房并给出推荐理由；' +
-    '也可以直接问「押金怎么退」「合同怎么签」这类问题。\n' +
-    '看中的房源可以加入候选清单，凑够两套随时让我对比。',
+  content: '你好，我是租房推荐管家 👋 这些入口可能对你有帮助：',
+  isWelcome: true,
 }
 
 export const useAgentChatStore = defineStore('agentChat', () => {
@@ -20,31 +16,106 @@ export const useAgentChatStore = defineStore('agentChat', () => {
   const messages = ref<AgentChatMessage[]>([])
   const aiAvailable = ref(true)
 
+  const sessions = ref<AgentSessionSummary[]>([])
+  const loadingHistory = ref(false)
+
   let creating: Promise<void> | null = null
 
-  /** 确保会话存在（并发安全，只创建一次）；首次创建时附上欢迎语 */
+  /** 拉取会话列表（左侧对话列表） */
+  async function fetchSessions(): Promise<void> {
+    try {
+      sessions.value = await agentService.listSessions()
+    } catch {
+      // 未登录/接口异常时忽略
+    }
+  }
+
+  /** 确保有一个可用会话（并发安全，只创建一次）；首次创建时附上欢迎语 */
   async function ensureSession(): Promise<void> {
     if (sessionId.value !== null) return
     if (!creating) {
-      creating = agentService
-        .createSession()
-        .then((s) => {
-          sessionId.value = s.session_id
-          if (messages.value.length === 0) messages.value.push({ ...GREETING })
-        })
-        .finally(() => {
-          creating = null
-        })
+      creating = (async () => {
+        // 优先续用最近一个已有会话，没有再新建
+        await fetchSessions()
+        if (sessions.value.length > 0) {
+          await switchSession(sessions.value[0].id)
+          return
+        }
+        const s = await agentService.createSession()
+        sessionId.value = s.session_id
+        messages.value = [{ ...GREETING }]
+        await fetchSessions()
+      })().finally(() => {
+        creating = null
+      })
     }
     await creating
+  }
+
+  /** 新建一个对话（左侧「新对话」按钮） */
+  async function newSession(): Promise<void> {
+    const s = await agentService.createSession()
+    sessionId.value = s.session_id
+    messages.value = [{ ...GREETING }]
+    await fetchSessions()
+  }
+
+  /** 切换到某个历史会话，并回放它的消息 */
+  async function switchSession(id: number): Promise<void> {
+    loadingHistory.value = true
+    try {
+      const history = await agentService.getSessionMessages(id)
+      sessionId.value = id
+      messages.value = history.length
+        ? history.map((m) => ({
+            id: m.id ?? undefined,
+            role: m.role,
+            content: m.content,
+            recommendations: m.recommendations?.length ? m.recommendations : undefined,
+            elicit: m.elicit ?? undefined,
+            feedback: m.feedback,
+            intent: m.intent,
+          }))
+        : [{ ...GREETING }]
+    } finally {
+      loadingHistory.value = false
+    }
+  }
+
+  /** 删除会话；删掉的是当前会话就自动切到别的（或新建） */
+  async function deleteSession(id: number): Promise<void> {
+    await agentService.deleteSession(id)
+    await fetchSessions()
+    if (sessionId.value === id) {
+      sessionId.value = null
+      messages.value = []
+      if (sessions.value.length > 0) {
+        await switchSession(sessions.value[0].id)
+      } else {
+        await newSession()
+      }
+    }
   }
 
   /** 登出等场景清空 */
   function reset(): void {
     sessionId.value = null
     messages.value = []
+    sessions.value = []
     aiAvailable.value = true
   }
 
-  return { sessionId, messages, aiAvailable, ensureSession, reset }
+  return {
+    sessionId,
+    messages,
+    aiAvailable,
+    sessions,
+    loadingHistory,
+    fetchSessions,
+    ensureSession,
+    newSession,
+    switchSession,
+    deleteSession,
+    reset,
+  }
 })

@@ -12,7 +12,7 @@
         :disabled="cartStore.count < 2"
         @click="goCompare"
       >
-        去推荐管家对比
+        对比候选清单
       </el-button>
     </div>
 
@@ -85,6 +85,7 @@ import {
   ShoppingCart,
   Star,
 } from '@element-plus/icons-vue'
+import { ElMessage } from 'element-plus'
 import { useCartStore } from '@/stores/cart'
 import type { PropertySearchResult, PropertyType } from '@/types/property'
 
@@ -110,7 +111,14 @@ function goDetail(propertyId: number) {
 }
 
 function goCompare() {
-  router.push('/agent')
+  if (cartStore.count < 2) {
+    ElMessage.warning('候选清单至少需要 2 套房源才能对比')
+    return
+  }
+  router.push({
+    name: 'compare',
+    query: { ids: cartStore.items.map((it) => it.property_id).join(',') },
+  })
 }
 
 async function handleRemove(propertyId: number) {
