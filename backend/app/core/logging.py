@@ -10,7 +10,8 @@ import time
 import traceback
 import uuid
 from collections.abc import Awaitable, Callable
-from datetime import UTC, datetime
+from datetime import datetime, timezone
+UTC = timezone.utc
 from typing import Any
 
 from fastapi import FastAPI, Request, Response
