@@ -1,4 +1,4 @@
-"""Database index optimization for pgvector and high-frequency queries.
+﻿"""Database index optimization for pgvector and high-frequency queries.
 
 Provides utilities to create performance indexes on PostgreSQL + pgvector,
 including IVFFlat tuning and composite indexes for common access patterns."""

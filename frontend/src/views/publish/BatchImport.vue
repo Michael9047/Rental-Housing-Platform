@@ -64,16 +64,11 @@
     <el-card v-if="step===2" shadow="never">
       <template #header><span>第三步：预览数据并确认导入</span></template>
       <div class="preview-info">
-        <el-tag v-for="h in batchHeaders" :key="h" :type="columnMapping.confidence[h]==='exact'?'success':'warning'" size="small" class="mapping-tag">{{ h }} → {{ FIELD_CN[columnMapping.matched[h]] || columnMapping.matched[h] || '未识别' }}<span v-if="REQUIRED.includes(columnMapping.matched[h])" style="color:#f56c6c">*</span></el-tag>
+        <el-tag v-for="h in batchHeaders" :key="h" :type="columnMapping.confidence[h]==='exact'?'success':'warning'" size="small" class="mapping-tag">{{ h }} → {{ columnMapping.matched[h]||'未识别' }}<span v-if="REQUIRED.includes(columnMapping.matched[h])" style="color:#f56c6c">*</span></el-tag>
       </div>
       <p class="section-title">数据预览（前 5 行）：</p>
-      <el-table :data="batchPreviewRows.slice(0,5)" border stripe size="small" max-height="240"><el-table-column v-for="h in batchHeaders" :key="h" :prop="h" :label="cnLabel(h)" min-width="120" show-overflow-tooltip /></el-table>
-      <el-alert v-if="batchOutlierRows.length" :title="'异常区间检测：共'+batchOutlierRows.length+'行房源数据存在数值异常'" type="warning" :closable="false" show-icon style="margin:12px 0" />
-      <div v-if="batchOutlierRows.length" class="anomaly-detail">
-        异常房源行号：<span v-for="(r,i) in batchOutlierRows" :key="r">
-          <el-tooltip content="月租金或面积偏离同批次中位数区间" placement="top"><span class="anomaly-row-link">{{ rowLabel(r) }}</span></el-tooltip>{{ i < batchOutlierRows.length-1 ? '、' : '' }}
-        </span>
-      </div>
+      <el-table :data="batchPreviewRows.slice(0,5)" border stripe size="small" max-height="240"><el-table-column v-for="h in batchHeaders" :key="h" :prop="h" :label="h" min-width="120" show-overflow-tooltip /></el-table>
+      <el-alert v-if="batchOutlierRows.length" :title="'⚠️ IQR检测：'+batchOutlierRows.length+' 行可能存在异常数据'" type="warning" :closable="false" show-icon style="margin:12px 0" />
 
       <!-- 楼栋共用照片（选填） -->
       <div v-if="selectedBuilding" style="margin-top:16px">
@@ -92,7 +87,10 @@
       </div>
 
       <div style="margin-top:12px;display:flex;gap:12px">
-        <el-radio-group v-model="importMode"><el-radio label="flexible">柔性模式（合规行直接入库，错误行跳过）</el-radio><el-radio label="strict">严格模式（有错全部不入库）</el-radio></el-radio-group>
+        <el-radio-group v-model="importMode">
+          <el-radio label="flexible">柔性模式（合规行直接入库，错误行跳过）</el-radio>
+          <el-radio label="strict">严格模式（有错全部不入库）</el-radio>
+        </el-radio-group>
       </div>
       <div style="margin-top:16px;display:flex;gap:12px">
         <el-button size="large" @click="step=1">← 重新选择文件</el-button>
@@ -102,55 +100,11 @@
 
     <!-- Step 4: 结果 -->
     <el-card v-if="step===3 && batchResult" shadow="never">
-      <template #header><span>导入结果</span></template>
+      <template #header><span>{{ importIsError?'❌ 导入失败':batchResult.failed_records>0?'⚠️ 部分成功':'✅ 导入全部成功' }}</span></template>
       <el-alert v-if="fileLevelError" :title="fileLevelError.error" type="error" :closable="false" show-icon style="margin-bottom:16px" />
-
-      <!-- IQR 异常区间检测摘要 -->
-      <el-alert v-if="!fileLevelError && rangeErrorRows.length" type="warning" :closable="false" show-icon style="margin:12px 0">
-        <template #title>
-          异常区间检测：共{{ rangeErrorRows.length }}行房源存在区间数值异常，数据已完成入库，请核实对应房源后再上架
-        </template>
-      </el-alert>
-      <div v-if="!fileLevelError && rangeErrorRows.length" class="anomaly-detail result-detail">
-        区间异常行：<span v-for="(r,i) in rangeErrorRows" :key="'rr'+r"><span class="anomaly-row-link">{{ rowLabel(r) }}</span>{{ i<rangeErrorRows.length-1?'、':'' }}</span>
-      </div>
-
-      <!-- 全部行明细表 -->
-      <div v-if="!fileLevelError && batchResult.rows?.length" class="results-table" style="margin-top:16px">
-        <h4>全部行导入明细（{{ batchResult.rows.length }} 行）</h4>
-        <el-table :data="batchResult.rows" border stripe size="small" max-height="500" :row-class-name="resultRowClass">
-          <el-table-column prop="row" label="行号" width="60" align="center" />
-          <el-table-column label="标题" min-width="140" show-overflow-tooltip>
-            <template #default="{ row: r }">{{ (r.data || {}).title || '—' }}</template>
-          </el-table-column>
-          <el-table-column label="地址" min-width="160" show-overflow-tooltip>
-            <template #default="{ row: r }"><span style="font-size:12px;color:#909399">{{ (r.data || {}).address || '' }}</span></template>
-          </el-table-column>
-          <el-table-column label="区域" width="80">
-            <template #default="{ row: r }">{{ (r.data || {}).district || '—' }}</template>
-          </el-table-column>
-          <el-table-column label="月租" width="80" align="right">
-            <template #default="{ row: r }">{{ (r.data || {}).price_monthly || '—' }}</template>
-          </el-table-column>
-          <el-table-column label="状态" width="70" align="center">
-            <template #default="{ row: r }">
-              <span v-if="r.status==='success'" style="font-size:16px">✅</span>
-              <span v-else-if="r.status==='warning'" style="font-size:16px">⚠️</span>
-              <span v-else style="font-size:16px">❌</span>
-            </template>
-          </el-table-column>
-          <el-table-column label="检测详情" min-width="280">
-            <template #default="{ row: r }">
-              <el-tag v-for="(e,i) in (r.errors||[])" :key="'e'+i" type="danger" size="small" effect="dark" class="err-tag">❌ {{ e.error }}</el-tag>
-              <el-tag v-for="(w,i) in filterWarnings(r,'iqr_outlier')" :key="'iqr'+i" type="warning" size="small" effect="dark" class="err-tag">🔶 区间异常: {{ w.error }}</el-tag>
-              <span v-if="!r.errors?.length && !filterWarnings(r,'iqr_outlier').length" style="color:#67c23a;font-size:12px">✅ 正常</span>
-            </template>
-          </el-table-column>
-        </el-table>
-      </div>
-
-      <!-- 错误详情（仅失败行） -->
-      <div v-if="!fileLevelError&&rowErrors.length" class="error-section">
+      <el-row v-if="batchResult.total_records>0" :gutter="20"><el-col :span="6"><el-statistic title="总计" :value="batchResult.total_records" /></el-col><el-col :span="6"><el-statistic title="成功"><template #default><span style="color:#67c23a;font-size:28px;font-weight:700">{{ batchResult.success_records }}</span></template></el-statistic></el-col><el-col :span="6"><el-statistic title="失败"><template #default><span :style="{color:batchResult.failed_records>0?'#f56c6c':'#909399',fontSize:'28px',fontWeight:'700'}">{{ batchResult.failed_records }}</span></template></el-statistic></el-col><el-col :span="6"><el-statistic title="AI待复核"><template #default><span :style="{color:aiReviewCount>0?'#e6a23c':'#909399',fontSize:'28px',fontWeight:'700'}">{{ aiReviewCount }}</span></template></el-statistic></el-col></el-row>
+      <el-alert v-if="aiReviewCount>0" :title="'AI检测：'+aiReviewCount+' 条房源标记为「待人工审核」（租金/面积异常），已入库但学生端暂不展示，需管理员审核后上架'" type="warning" :closable="false" show-icon style="margin:12px 0" />
+      <div v-if="rowErrors.length" class="error-section">
         <h4>失败详情（{{ rowErrors.length }} 条）</h4>
         <el-table :data="rowErrors" border stripe size="small" max-height="400"><el-table-column prop="row" label="行号" width="70"/><el-table-column prop="error" label="错误原因" show-overflow-tooltip><template #default="{row}"><span :style="{color:row.type==='duplicate'?'#e6a23c':row.type==='missing_field'?'#f56c6c':row.type==='format_error'?'#409eff':'#909399'}">{{ row.error }}</span></template></el-table-column><el-table-column label="类型" width="90"><template #default="{row}"><el-tag :type="row.type==='duplicate'?'warning':row.type==='missing_field'?'danger':row.type==='format_error'?'':'info'" size="small">{{ row.type==='duplicate'?'重复':row.type==='missing_field'?'缺字段':row.type==='format_error'?'格式错':'其他' }}</el-tag></template></el-table-column></el-table>
         <div style="margin-top:12px;display:flex;gap:12px">
@@ -205,37 +159,13 @@ const REQUIRED = ['title','address','district','price_monthly']
 
 const missingRequired = computed(()=>{const m=new Set(Object.values(columnMapping.value.matched||{}));return REQUIRED.filter(f=>!m.has(f))})
 const missingRequiredLabel = computed(()=>missingRequired.value.map(f=>({title:'房源标题',address:'详细地址',district:'所在区域',price_monthly:'月租金'})[f]||f).join('、'))
-const fileLevelError = computed(()=>batchResult.value?.error_log?.find((e:any)=>e.row===0&&e.type!=='review_summary')||null)
-const rowErrors = computed(()=>(batchResult.value?.error_log||[]).filter((e:any)=>e.row!==0&&e.type!=='review_summary'))
-const reviewSummary = computed(()=>(batchResult.value?.error_log||[]).find((e:any)=>e.type==='review_summary')||null)
-const rangeErrorRows = computed(()=>(reviewSummary.value?.range_error_rows||[]) as number[])
-function filterWarnings(r: any, type: string): any[] { return (r.warnings || []).filter((w: any) => w.type === type) }
-function resultRowClass({ row }: { row: any }) {
-  if (row.status === 'failed') return 'row-err'
-  if (row.status === 'warning') return 'row-ai'
-  return ''
-}
+const importIsError = computed(()=>batchResult.value?.status==='failed'||(batchResult.value?.success_records===0&&batchResult.value?.failed_records===0))
+// fileLevelError: 文件级错误（整个文件解析失败），排除 AI 审核消息
+const fileLevelError = computed(()=>(batchResult.value?.error_log||[]).find((e:any)=>e.row===0&&e.type!=='ai_review')||null)
+const rowErrors = computed(()=>(batchResult.value?.error_log||[]).filter((e:any)=>e.row!==0&&e.type!=='ai_review'))
+const aiReviewCount = computed(()=>(batchResult.value?.error_log||[]).filter((e:any)=>e.type==='ai_review').reduce((s:number,e:any)=>s+(parseInt(e.error)||1),0)||0)
 
 const ALIAS: Record<string,string>={'title':'title','房源标题':'title','标题':'title','名称':'title','address':'address','地址':'address','详细地址':'address','位置':'address','district':'district','区域':'district','地区':'district','所在区域':'district','城市':'district','price_monthly':'price_monthly','月租金':'price_monthly','租金':'price_monthly','月租':'price_monthly','价格':'price_monthly','area_sqm':'area_sqm','面积':'area_sqm','平方米':'area_sqm','㎡':'area_sqm','bedrooms':'bedrooms','卧室':'bedrooms','卧室数':'bedrooms','室':'bedrooms','bathrooms':'bathrooms','卫生间':'bathrooms','卫':'bathrooms','浴室':'bathrooms','property_type':'property_type','类型':'property_type','房源类型':'property_type','description':'description','描述':'description','房源描述':'description','简介':'description','备注':'description','deposit_amount':'deposit_amount','押金':'deposit_amount','押金金额':'deposit_amount','保证金':'deposit_amount','service_fee_rate':'service_fee_rate','服务费':'service_fee_rate','服务费比例':'service_fee_rate','building_name':'building_name','公寓名称':'building_name','公寓':'building_name','room_number':'room_number','房号':'room_number','房间号':'room_number','floor':'floor','楼层':'floor','latitude':'latitude','纬度':'latitude','lat':'latitude','longitude':'longitude','经度':'longitude','lng':'longitude'}
-
-/** 字段名 → 中文标签 */
-const FIELD_CN: Record<string,string> = {
-  title:'房源标题', address:'详细地址', district:'所在区域', price_monthly:'月租金(元)',
-  area_sqm:'面积(㎡)', bedrooms:'卧室数', bathrooms:'卫生间数', property_type:'房源类型',
-  description:'房源描述', deposit_amount:'押金(元)', service_fee_rate:'服务费率',
-  building_name:'公寓名称', room_number:'房号', floor:'楼层', latitude:'纬度', longitude:'经度',
-}
-
-/** 取中文表头：优先用字段中文名，否则用原始列名 */
-function rowLabel(n: number): string { return '第' + n + '行' }
-
-function cnLabel(h: string): string {
-  const field = columnMapping.value.matched?.[h]  // 映射后的标准字段名
-  if (field && FIELD_CN[field]) return FIELD_CN[field]
-  // 中文原文直接匹配
-  if (FIELD_CN[h]) return FIELD_CN[h]
-  return h
-}
 
 function formatSize(b:number):string{if(b<1024)return b+' B';if(b<1024*1024)return(b/1024).toFixed(1)+' KB';return(b/(1024*1024)).toFixed(2)+' MB'}
 function downloadTemplate(){adminService.downloadTemplate().then(blob=>{const u=URL.createObjectURL(blob);const a=document.createElement('a');a.href=u;a.download='import_template.xlsx';a.click();URL.revokeObjectURL(u);ElMessage.success('下载成功')}).catch(()=>ElMessage.error('下载失败'))}
@@ -251,18 +181,53 @@ function parseFile(raw:File):Promise<{headers:string[];rows:Record<string,string
 async function processFile(raw:File){if(!raw?.name){ElMessage.error('无法读取文件');return};const ext=(raw.name.split('.').pop()||'').toLowerCase();if(!['csv','xlsx','xls'].includes(ext)){ElMessage.error('仅支持.csv/.xlsx/.xls');return};if(raw.size>10*1024*1024){ElMessage.error('文件不超过10MB');return};clearFile();batchFile.value=raw;try{const {headers,rows}=await parseFile(raw);if(!headers.length){ElMessage.error('文件无内容或格式无法识别');return};if(!rows.length){ElMessage.error('未检测到有效数据，仅有表头');batchFile.value=null;return};if(rows.length>500){ElMessage.error('最多500行，当前'+rows.length+'行');batchFile.value=null;return};batchHeaders.value=headers;batchPreviewRows.value=rows.slice(0,5);batchTotalRows.value=rows.length;const matched:Record<string,string>={};const unmatched:string[]=[];const cf:Record<string,string>={};for(const h of headers){if(!h){unmatched.push('(空)');continue};const k=h.toLowerCase().trim().replace(/\(.*?\)/g,'').replace(/\*$/,'');if(ALIAS[k]){matched[h]=ALIAS[k];cf[h]='exact'}else if(ALIAS[h.toLowerCase().trim()]){matched[h]=ALIAS[h.toLowerCase().trim()];cf[h]='exact'}else{unmatched.push(h)}};columnMapping.value={matched,unmatched,confidence:cf};const prices=rows.map(r=>parseFloat(r['price_monthly']||r['月租金']||r['price']||'0')).filter(p=>p>0);if(prices.length>=4){const s=[...prices].sort((a,b)=>a-b);const q1=s[Math.floor(s.length*.25)];const q3=s[Math.floor(s.length*.75)];const iqr=q3-q1;const up=q3+1.5*iqr;const lo=q1-1.5*iqr;const ol:number[]=[];rows.forEach((r,i)=>{const v=parseFloat(r['price_monthly']||r['月租金']||r['price']||'0');if(v>up||v<lo)ol.push(i+2)});batchOutlierRows.value=ol};step.value=2}catch(e:any){ElMessage.error(e.message||'文件解析失败');batchFile.value=null}}
 
 async function doImport(){
-  if(!batchFile.value)return
-  if(!batchHeaders.value.length){ElMessage.error('无法识别表头，请使用模板格式');return}
-  if(!batchTotalRows.value){ElMessage.error('未检测到有效数据');return}
-  if(missingRequired.value.length){ElMessage.error('缺少必填列：'+missingRequiredLabel.value);return}
-  batchImporting.value=true;batchResult.value=null
+  if(!batchFile.value){
+    ElMessage.error('文件已丢失，请返回上一步重新选择文件')
+    console.error('[BatchImport] batchFile is null, cannot import')
+    return
+  }
+  if(!batchHeaders.value.length){
+    ElMessage.error('无法识别表头，请使用模板格式')
+    return
+  }
+  if(!batchTotalRows.value){
+    ElMessage.error('未检测到有效数据')
+    return
+  }
+  if(missingRequired.value.length){
+    ElMessage.error('缺少必填列：'+missingRequiredLabel.value)
+    return
+  }
+  batchImporting.value=true
+  batchResult.value=null
   try{
-    const r=await adminService.uploadImport(batchFile.value,selectedBuilding.value?.id,importMode.value);batchResult.value=r;step.value=3
-    if(r.failed_records===0&&r.success_records>0){ElMessage.success(`全部导入成功！共${r.success_records}条，跳转至房源列表...`);setTimeout(()=>router.push('/property/manage'),1500)}
-    else if(r.success_records>0){ElMessage.warning(`成功${r.success_records}条，失败${r.failed_records}条`)}
-    else{ElMessage.error(`全部${r.failed_records}条未通过校验`)}
-  }catch(e:any){ElMessage.error(extractErrorMessage(e)||'导入失败');step.value=2}
-  finally{batchImporting.value=false}
+    console.log('[BatchImport] Starting import: file=%s, instituteId=%s, mode=%s, rows=%d', batchFile.value.name, selectedBuilding.value?.id, importMode.value, batchTotalRows.value)
+    const r=await adminService.uploadImport(batchFile.value, selectedBuilding.value?.id, importMode.value)
+    console.log('[BatchImport] Import result:', r)
+    batchResult.value=r
+    step.value=3
+    if(r.failed_records===0 && r.success_records>0){
+      ElMessage.success(`全部导入成功！共${r.success_records}条，跳转至房源列表...`)
+      setTimeout(()=>router.push('/property/manage'),1500)
+    } else if(r.success_records>0){
+      ElMessage.warning(`成功${r.success_records}条，失败${r.failed_records}条`)
+    } else {
+      ElMessage.error(`全部${r.failed_records}条未通过校验`)
+    }
+  } catch(e:any){
+    console.error('[BatchImport] Import failed:', e)
+    const msg = extractErrorMessage(e)
+    if(msg){
+      ElMessage.error(msg)
+    } else if(e?.message){
+      ElMessage.error('导入失败：' + e.message)
+    } else {
+      ElMessage.error('导入失败，请检查网络连接或联系管理员')
+    }
+    step.value=2
+  } finally {
+    batchImporting.value=false
+  }
 }
 async function retryBatchImport(){if(!batchResult.value?.id)return;try{const r=await adminService.retryImportTask(batchResult.value.id);batchResult.value=r;ElMessage.success('重试完成')}catch(e:any){ElMessage.error(extractErrorMessage(e)||'重试失败')}}
 function goToList(){router.push('/property/manage')}
@@ -275,11 +240,4 @@ onMounted(loadBuildings)
 .drop-zone{border:2px dashed #dcdfe6;border-radius:12px;padding:40px;text-align:center;cursor:pointer;transition:all .3s}.drop-zone:hover,.drop-zone.active{border-color:#FF6B35;background:#fff8f2}
 .preview-info{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px}.mapping-tag{margin:0}
 .section-title{font-weight:600;font-size:14px;margin:16px 0 8px}.error-section h4{font-size:14px;color:#f56c6c;margin-bottom:10px}
-.anomaly-detail{background:#fdf6ec;border:1px solid #f5dab1;border-radius:8px;padding:10px 14px;margin:8px 0;font-size:13px;color:#b88230}
-.anomaly-detail.result-detail{background:#fef7f0;border-color:#fad4ae}
-.anomaly-row-link{color:#e6a23c;font-weight:600;cursor:pointer}
-.anomaly-row-link:hover{text-decoration:underline}
-.err-tag{white-space:normal;word-break:break-all;line-height:1.3;height:auto;padding:2px 6px;margin:1px}
-.results-table h4{font-size:14px;color:#303133;margin-bottom:8px}
-.row-err{background:#fef0f0}.row-ai{background:#fdf6ec}
 </style>

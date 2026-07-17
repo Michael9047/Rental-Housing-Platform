@@ -1,4 +1,4 @@
-"""Security audit utilities: rate limiting, JWT refresh, and OWASP Top 10 checks."""
+﻿"""Security audit utilities: rate limiting, JWT refresh, and OWASP Top 10 checks."""
 
 from __future__ import annotations
 

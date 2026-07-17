@@ -1,4 +1,4 @@
-"""保存搜索模型 - 租客保存搜索条件，新房源匹配时推送提醒。"""
+﻿"""保存搜索模型 - 租客保存搜索条件，新房源匹配时推送提醒。"""
 import enum
 from datetime import datetime
 

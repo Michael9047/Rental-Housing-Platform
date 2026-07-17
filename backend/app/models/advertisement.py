@@ -1,4 +1,4 @@
-"""广告系统模型（v2）。"""
+﻿"""广告系统模型（v2）。"""
 import enum
 from datetime import datetime
 

@@ -1,4 +1,4 @@
-import enum
+﻿import enum
 from datetime import datetime, timezone
 
 from sqlalchemy import DateTime, Enum, ForeignKey, String, Text as SAText

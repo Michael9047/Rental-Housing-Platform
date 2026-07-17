@@ -1,4 +1,4 @@
-import io
+﻿import io
 import os
 
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, status
@@ -63,24 +63,23 @@ async def upload_import(
 
     source_type = _map_ext_to_source_type(ext)
     import_service = ImportService(session)
-    user_id = current_user.id  # 提前取出，防止 rollback 后过期
 
     import_task = await import_service.create_import_task(
-        admin_id=user_id,
+        admin_id=current_user.id,
         source_name=file.filename,
         source_type=source_type,
     )
 
-    import_task, row_results = await import_service.parse_and_import(
+    import_task = await import_service.parse_and_import(
         import_task=import_task,
         file_content=content,
-        landlord_id=user_id,
+        landlord_id=current_user.id,
         institute_id=institute_id,
         mode=mode or "flexible",
     )
 
     await AuditService(session).create_log(
-        user_id=user_id,
+        user_id=current_user.id,
         action="data_import",
         resource_type="import",
         resource_id=import_task.id,
@@ -111,104 +110,6 @@ async def upload_import(
         "success_records": import_task.success_records,
         "failed_records": import_task.failed_records,
         "error_log": error_log,
-        "rows": row_results,
-        "created_at": import_task.created_at.isoformat(),
-    }
-
-
-@router.post("/preview")
-async def preview_import(
-    file: UploadFile,
-    session: AsyncSession = Depends(get_db_session),
-    current_user: User = Depends(require_landlord),
-    institute_id: int | None = Query(default=None, description="公寓ID"),
-) -> dict:
-    """仅预览：解析文件 + 校验 + IQR/孤立森林，不入库。返回每行的 errors/warnings/iqr/iforest。"""
-    ext = _validate_upload(file)
-    content = await file.read()
-    if len(content) == 0:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="文件无内容")
-    if len(content) > MAX_UPLOAD_SIZE:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"文件过大，最大 {MAX_UPLOAD_SIZE // (1024*1024)} MB")
-
-    source_type = _map_ext_to_source_type(ext)
-    import_service = ImportService(session)
-
-    import_task = await import_service.create_import_task(
-        admin_id=current_user.id,
-        source_name=file.filename,
-        source_type=source_type,
-    )
-
-    import_task, row_results = await import_service.preview_only(
-        import_task=import_task,
-        file_content=content,
-        landlord_id=current_user.id,
-        institute_id=institute_id,
-    )
-
-    return {
-        "preview_id": import_task.id,
-        "source_name": import_task.source_name,
-        "total_records": import_task.total_records,
-        "rows": row_results,
-        "created_at": import_task.created_at.isoformat(),
-    }
-
-
-@router.post("/confirm/{task_id}")
-async def confirm_import(
-    task_id: int,
-    body: dict,
-    session: AsyncSession = Depends(get_db_session),
-    current_user: User = Depends(require_landlord),
-) -> dict:
-    """确认导入：根据预览中忽略的行号列表，仅导入其余行。"""
-    skip_rows: list[int] = body.get("skip_rows", []) if body else []
-
-    import_service = ImportService(session)
-    import_task = await import_service.get_import_task(task_id)
-    if not import_task:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="预览任务不存在或已过期")
-
-    import_task, row_results = await import_service.confirm_import(
-        import_task=import_task,
-        landlord_id=current_user.id,
-        skip_rows=skip_rows,
-    )
-
-    import json as _json
-    error_log = import_task.error_log
-    if error_log:
-        try:
-            error_log = _json.loads(error_log) if isinstance(error_log, str) else error_log
-        except _json.JSONDecodeError:
-            pass
-
-    await AuditService(session).create_log(
-        user_id=user_id,
-        action="data_import",
-        resource_type="import",
-        resource_id=import_task.id,
-        details={
-            "source_name": import_task.source_name,
-            "total": import_task.total_records,
-            "success": import_task.success_records,
-            "failed": import_task.failed_records,
-            "skipped": getattr(import_task, "skipped_count", 0),
-        },
-    )
-
-    return {
-        "id": import_task.id,
-        "source_name": import_task.source_name,
-        "status": import_task.status.value,
-        "total_records": import_task.total_records,
-        "success_records": import_task.success_records,
-        "failed_records": import_task.failed_records,
-        "skipped_records": getattr(import_task, "skipped_count", 0),
-        "error_log": error_log,
-        "rows": row_results,
         "created_at": import_task.created_at.isoformat(),
     }
 

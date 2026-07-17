@@ -176,10 +176,6 @@
               <el-icon><Plus /></el-icon>
               <span>发布房源</span>
             </el-menu-item>
-            <el-menu-item index="/property/history">
-              <el-icon><Document /></el-icon>
-              <span>修改记录</span>
-            </el-menu-item>
             <el-menu-item index="/notifications">
               <el-icon><Bell /></el-icon>
               <span>消息通知</span>
@@ -199,10 +195,6 @@
             <el-menu-item index="/property/create">
               <el-icon><Plus /></el-icon>
               <span>发布房源</span>
-            </el-menu-item>
-            <el-menu-item index="/property/history">
-              <el-icon><Document /></el-icon>
-              <span>修改记录</span>
             </el-menu-item>
             <el-menu-item index="/bookings/landlord">
               <el-icon><Tickets /></el-icon>
@@ -254,7 +246,7 @@ import { useRouter, useRoute } from 'vue-router'
 import {
   MagicStick, Search, HomeFilled, User, UserFilled, ArrowDown, ArrowLeft, Setting, SwitchButton,
   Plus, List, Bell, DataAnalysis, Tickets, OfficeBuilding, Location, ChatDotRound,
-  ShoppingCart, Document,
+  ShoppingCart,
 } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 import { useAgentChatStore } from '@/stores/agentChat'
@@ -279,7 +271,6 @@ const activeMenu = computed(() => {
   if (path.startsWith('/property/')) {
     if (path === '/property/create') return '/property/create'
     if (path === '/property/manage') return '/property/manage'
-    if (path === '/property/history') return '/property/history'
     return '/search'
   }
   if (path.startsWith('/bookings/')) return path

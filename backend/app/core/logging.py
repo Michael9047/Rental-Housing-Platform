@@ -1,4 +1,4 @@
-"""Structured logging, request/response middleware, and global exception handlers."""
+﻿"""Structured logging, request/response middleware, and global exception handlers."""
 
 from __future__ import annotations
 

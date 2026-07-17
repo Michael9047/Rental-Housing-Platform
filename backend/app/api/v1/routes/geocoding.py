@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, status
+﻿from fastapi import APIRouter, HTTPException, status
 
 from app.schemas.geocoding import GeocodeRequest, GeocodeResponse
 from app.services.geocoding_service import geocode_with_fallback

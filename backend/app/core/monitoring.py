@@ -1,4 +1,4 @@
-"""Prometheus metrics collection for FastAPI, Celery, and database connections.
+﻿"""Prometheus metrics collection for FastAPI, Celery, and database connections.
 
 Requires `prometheus-client` (pip install prometheus-client).
 All metrics are no-ops when the package is not installed.

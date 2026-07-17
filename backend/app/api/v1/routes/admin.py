@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+﻿from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, get_db_session, require_admin
@@ -48,35 +48,6 @@ async def list_audit_logs(
     ]
 
 
-@router.get("/logs/resource")
-async def list_audit_logs_by_resource(
-    session: AsyncSession = Depends(get_db_session),
-    _: User = Depends(require_admin),
-    resource_type: str = Query(...),
-    resource_id: int = Query(...),
-    skip: int = Query(default=0, ge=0),
-    limit: int = Query(default=100, ge=1, le=500),
-) -> list[dict]:
-    """按资源类型+ID查询审计日志（房源修改历史）"""
-    logs = await AuditService(session).list_logs(
-        skip=skip, limit=limit,
-        resource_type=resource_type, resource_id=resource_id,
-    )
-    return [
-        {
-            "id": log.id,
-            "user_id": log.user_id,
-            "action": log.action,
-            "resource_type": log.resource_type,
-            "resource_id": log.resource_id,
-            "details": log.details,
-            "ip_address": log.ip_address,
-            "created_at": log.created_at.isoformat(),
-        }
-        for log in logs
-    ]
-
-
 @router.patch("/properties/{property_id}/status")
 async def moderate_property(
     property_id: int,
@@ -84,7 +55,7 @@ async def moderate_property(
     session: AsyncSession = Depends(get_db_session),
     current_user: User = Depends(require_admin),
 ) -> dict:
-    valid_statuses = {"available", "rented", "maintenance", "offline", "pending_review"}
+    valid_statuses = {"available", "rented", "maintenance", "offline"}
     if new_status not in valid_statuses:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -159,44 +130,3 @@ async def trigger_reindex(
         details={"property_id": property_id},
     )
     return result
-
-
-@router.get("/properties/pending")
-async def list_pending_review_properties(
-    session: AsyncSession = Depends(get_db_session),
-    _: User = Depends(require_admin),
-    limit: int = Query(default=100, ge=1, le=500),
-) -> list[dict]:
-    """列出所有待人工审核的房源（status=pending_review）"""
-    from sqlalchemy import select
-
-    from app.models.property import Property, PropertyStatus
-    from app.models.property_image import PropertyImage
-
-    stmt = (
-        select(Property)
-        .where(Property.status == PropertyStatus.pending_review)
-        .order_by(Property.created_at.desc())
-        .limit(limit)
-    )
-    result = await session.scalars(stmt)
-    properties = list(result)
-
-    return [
-        {
-            "id": p.id,
-            "title": p.title,
-            "address": p.address,
-            "district": p.district,
-            "price_monthly": str(p.price_monthly),
-            "area_sqm": str(p.area_sqm) if p.area_sqm else None,
-            "bedrooms": p.bedrooms,
-            "bathrooms": p.bathrooms,
-            "property_type": p.property_type.value if p.property_type else None,
-            "status": p.status.value,
-            "description": p.description,
-            "created_at": p.created_at.isoformat(),
-            "landlord_id": p.landlord_id,
-        }
-        for p in properties
-    ]

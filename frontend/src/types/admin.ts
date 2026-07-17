@@ -44,8 +44,7 @@ export interface ImportTaskDetail extends ImportTask {
 export interface ImportError {
   row: number
   error: string
-  type?: 'duplicate' | 'missing_field' | 'format_error' | 'unknown' | 'review_summary'
-  range_error_rows?: number[]
+  type?: 'duplicate' | 'missing_field' | 'format_error' | 'unknown'
 }
 
 export interface ImportResult {
@@ -56,9 +55,7 @@ export interface ImportResult {
   total_records: number
   success_records: number
   failed_records: number
-  skipped_records?: number
   error_log?: ImportError[] | null
-  rows?: RowResult[] | null
   created_at?: string
   updated_at?: string
 }
@@ -116,15 +113,6 @@ export interface BatchRentEstimate {
     deviation_pct: number
   }[]
   warning_count: number
-}
-
-/** 单行导入结果 */
-export interface RowResult {
-  row: number
-  status: 'success' | 'failed' | 'warning' | 'skipped' | 'valid'
-  data?: Record<string, string>
-  errors?: { field: string; error: string; type: string }[]
-  warnings?: { field: string; error: string; type: string }[]
 }
 
 /** LLM 解析结果 */

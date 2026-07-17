@@ -12,46 +12,29 @@
         </div>
       </div>
 
-      <!-- Image Gallery 双向联动 -->
-      <div v-if="imageList.length > 0" class="gallery">
-        <!-- 大图展示区 -->
-        <div class="gallery-viewer">
-          <button
-            class="gallery-arrow gallery-arrow-left"
-            :class="{ disabled: currentIndex <= 0 }"
-            :disabled="currentIndex <= 0"
-            @click="prevImage"
-          >‹</button>
-          <div class="gallery-main-wrap">
+      <!-- Image Gallery -->
+      <div v-if="sortedImages.length > 0" class="gallery">
+        <el-carousel :interval="4000" height="420px" trigger="click" class="gallery-carousel">
+          <el-carousel-item v-for="(img, idx) in sortedImages" :key="img.id">
             <el-image
-              :src="imageList[currentIndex].url"
+              :src="`/api/v1/uploads/${img.filename}`"
               fit="cover"
-              class="gallery-main-img"
+              class="gallery-img"
               :preview-src-list="allImageUrls"
-              :initial-index="currentIndex"
+              :initial-index="idx"
               preview-teleported
             />
-          </div>
-          <button
-            class="gallery-arrow gallery-arrow-right"
-            :class="{ disabled: currentIndex >= imageList.length - 1 }"
-            :disabled="currentIndex >= imageList.length - 1"
-            @click="nextImage"
-          >›</button>
-        </div>
-
-        <!-- 缩略图横向滚动栏 -->
-        <div class="gallery-thumbs-wrap">
-          <div ref="thumbsRef" class="gallery-thumbs">
-            <div
-              v-for="(img, idx) in imageList"
-              :key="img.id ?? idx"
-              class="gallery-thumb"
-              :class="{ active: currentIndex === idx }"
-              @click="selectImage(idx)"
-            >
-              <img :src="img.url" :alt="`缩略图 ${idx + 1}`" />
-            </div>
+          </el-carousel-item>
+        </el-carousel>
+        <div class="gallery-thumbs">
+          <div
+            v-for="(img, idx) in sortedImages.slice(0, 6)"
+            :key="img.id"
+            class="thumb"
+            :class="{ active: currentSlide === idx }"
+            @click="currentSlide = idx"
+          >
+            <img :src="`/api/v1/uploads/${img.filename}`" />
           </div>
         </div>
       </div>
@@ -276,7 +259,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onUnmounted, watch, nextTick } from 'vue'
+import { ref, computed, onUnmounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ArrowLeft, Star, Share } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
@@ -298,56 +281,9 @@ const propertyStore = usePropertyStore()
 const authStore = useAuthStore()
 const { currentProperty: property, loading } = storeToRefs(propertyStore)
 
-const currentIndex = ref(0)
-const thumbsRef = ref<HTMLElement | null>(null)
+const currentSlide = ref(0)
 
-/** 统一图片数据源：每项含 url */
-const imageList = computed(() =>
-  sortedImages.value.map((img) => ({
-    id: img.id,
-    url: `/api/v1/uploads/${img.filename}`,
-  }))
-)
-
-/** 点击缩略图 → 同步切换大图 */
-function selectImage(idx: number) {
-  currentIndex.value = idx
-  scrollThumbIntoView(idx)
-}
-
-/** 上一张 */
-function prevImage() {
-  if (currentIndex.value > 0) {
-    currentIndex.value--
-    scrollThumbIntoView(currentIndex.value)
-  }
-}
-
-/** 下一张 */
-function nextImage() {
-  if (currentIndex.value < imageList.value.length - 1) {
-    currentIndex.value++
-    scrollThumbIntoView(currentIndex.value)
-  }
-}
-
-/** 将当前选中缩略图横向滚动到可视区域居中 */
-function scrollThumbIntoView(idx: number) {
-  nextTick(() => {
-    const container = thumbsRef.value
-    if (!container) return
-    const thumb = container.children[idx] as HTMLElement | undefined
-    if (!thumb) return
-    // 计算目标滚动位置：缩略图左边缘 - 容器宽度一半 + 缩略图宽度一半 = 居中
-    const containerWidth = container.clientWidth
-    const thumbLeft = thumb.offsetLeft
-    const thumbWidth = thumb.offsetWidth
-    container.scrollTo({
-      left: thumbLeft - containerWidth / 2 + thumbWidth / 2,
-      behavior: 'smooth',
-    })
-  })
-}
+// Map
 const mapSrc = computed(() => {
   if (!property.value?.latitude || !property.value?.longitude) return ''
   const lat = Number(property.value.latitude)
@@ -577,119 +513,42 @@ onUnmounted(() => stopWatch())
 
 .gallery {
   margin-bottom: 20px;
-  border-radius: 12px;
+  border-radius: var(--radius);
   overflow: hidden;
-  background: #1a1a1a;
 }
 
-/* 大图展示区 */
-.gallery-viewer {
-  position: relative;
-  display: flex;
-  align-items: center;
-  background: #1a1a1a;
-  height: 420px;
+.gallery-carousel :deep(.el-carousel__container) {
+  border-radius: var(--radius);
 }
 
-.gallery-main-wrap {
-  flex: 1;
-  height: 100%;
-  min-width: 0;
-}
-
-.gallery-main-img {
+.gallery-img {
   width: 100%;
-  height: 100%;
-}
-
-.gallery-main-img :deep(img) {
-  object-fit: contain;
-}
-
-/* 左右箭头 */
-.gallery-arrow {
-  position: absolute;
-  top: 50%;
-  transform: translateY(-50%);
-  z-index: 10;
-  width: 44px;
-  height: 44px;
-  border-radius: 50%;
-  border: none;
-  background: rgba(255, 255, 255, 0.85);
-  color: #333;
-  font-size: 28px;
-  line-height: 1;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: all 0.2s;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
-}
-
-.gallery-arrow:hover:not(.disabled) {
-  background: #fff;
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
-}
-
-.gallery-arrow.disabled {
-  opacity: 0.25;
-  cursor: not-allowed;
-}
-
-.gallery-arrow-left {
-  left: 12px;
-}
-
-.gallery-arrow-right {
-  right: 12px;
-}
-
-/* 缩略图滚动容器 */
-.gallery-thumbs-wrap {
-  background: #f5f5f5;
-  padding: 10px 0;
+  height: 420px;
 }
 
 .gallery-thumbs {
   display: flex;
-  gap: 8px;
-  padding: 0 16px;
-  overflow-x: auto;
-  overflow-y: hidden;
-  white-space: nowrap;
-  scroll-behavior: smooth;
+  gap: 6px;
+  margin-top: 8px;
 }
 
-/* 隐藏滚动条（Chrome/Safari） */
-.gallery-thumbs::-webkit-scrollbar {
-  height: 0;
-}
-
-/* 单张缩略图 */
-.gallery-thumb {
-  flex-shrink: 0;
-  width: 72px;
-  height: 54px;
+.thumb {
+  width: 60px;
+  height: 44px;
   border-radius: 6px;
   overflow: hidden;
   cursor: pointer;
-  opacity: 0.45;
+  opacity: 0.5;
   border: 2px solid transparent;
-  transition: opacity 0.2s, border-color 0.2s;
+  transition: all 0.2s;
 }
 
-.gallery-thumb:hover {
-  opacity: 0.75;
-}
-
-.gallery-thumb.active {
+.thumb.active {
   opacity: 1;
-  border-color: #FF6B35; /* 橙色主色调 */
+  border-color: var(--primary);
 }
 
-.gallery-thumb img {
+.thumb img {
   width: 100%;
   height: 100%;
   object-fit: cover;
