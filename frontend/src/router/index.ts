@@ -1,4 +1,4 @@
-﻿﻿import { createRouter, createWebHistory } from 'vue-router'
+import { createRouter, createWebHistory } from 'vue-router'
 import type { RouteRecordRaw } from 'vue-router'
 import DefaultLayout from '@/layouts/DefaultLayout.vue'
 
@@ -99,15 +99,15 @@ const routes: RouteRecordRaw[] = [
         meta: { requiresAuth: true, requiresLandlord: true },
       },
       {
-        path: 'property/history',
-        name: 'property-history',
-        component: () => import('@/views/PropertyHistory.vue'),
-        meta: { requiresAuth: true, requiresLandlord: true },
-      },
-      {
         path: 'booking/confirm',
         name: 'booking-confirm',
         component: () => import('@/views/BookingConfirm.vue'),
+        meta: { requiresAuth: true },
+      },
+      {
+        path: 'booking/flow',
+        name: 'booking-flow',
+        component: () => import('@/views/BookingFlow.vue'),
         meta: { requiresAuth: true },
       },
       {

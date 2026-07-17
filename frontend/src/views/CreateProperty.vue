@@ -24,12 +24,13 @@
 
     <!-- ====== 单个发布表单 ====== -->
     <template v-if="uploadMode==='single'">
-      <!-- 快速解析 -->
+      <!-- AI智能解析 -->
       <el-card shadow="never" class="smart-card">
-        <template #header><div class="smart-header"><span>粘贴房源描述自动填充</span><el-tag v-if="parseResult" :type="parseResult.confidence==='high'?'success':'warning'" size="small">{{ parseResult.confidence==='high'?'高置信度':'部分识别' }}</el-tag></div></template>
-        <el-input v-model="rawText" type="textarea" :rows="4" placeholder="粘贴房源描述，自动提取字段。例如：工业园区翰林缘单身公寓1201室，月租2200元，38㎡独立卫浴..." />
+        <template #header><div class="smart-header"><span>🤖 AI 智能识别 — 粘贴房源描述自动填充</span><el-tag v-if="parseResult" :type="parseResult.confidence==='high'?'success':'warning'" size="small">{{ parseResult.confidence==='high'?'高置信度':'部分识别' }}</el-tag></div></template>
+        <el-input v-model="rawText" type="textarea" :rows="4" placeholder="粘贴房源描述，AI自动提取字段。例如：工业园区翰林缘单身公寓1201室，月租2200元，38㎡独立卫浴..." />
         <div class="smart-actions">
           <el-button type="primary" :loading="parsing" @click="smartParse" :disabled="!rawText.trim()">⚡ 快速识别</el-button>
+          <el-button type="warning" :loading="llmParsing" @click="llmSmartParse" :disabled="!rawText.trim()">🔮 AI 深度解析</el-button>
           <el-button @click="rawText='';parseResult=null">清空</el-button>
         </div>
       </el-card>
@@ -76,7 +77,8 @@
             <el-col :span="12"><el-form-item label="房源标题" prop="title"><el-input v-model="f.title" placeholder="如：翰林缘精装单间" maxlength="50" /></el-form-item></el-col>
           </el-row>
 
-          <el-form-item label="详细地址" prop="address"><el-input v-model="f.address" placeholder="含路名+小区+门牌号" @change="onAddressChange" /></el-form-item>
+          <el-form-item label="详细地址" prop="address"><el-input v-model="f.address" placeholder="含路名+小区+门牌号" /></el-form-item>
+          <el-form-item label="所在区域" prop="district"><el-select v-model="f.district" @change="triggerRentEstimate"><el-option v-for="d in districts" :key="d" :label="d" :value="d" /></el-select></el-form-item>
 
           <el-row :gutter="16">
             <el-col :span="8"><el-form-item label="户型" prop="property_type"><el-select v-model="f.property_type"><el-option label="Studio/单间" value="studio" /><el-option label="Ensuite/套间" value="apartment" /><el-option label="Twin/双人间" value="shared" /><el-option label="Double/大床房" value="house" /></el-select></el-form-item></el-col>
@@ -199,6 +201,7 @@ const rules: FormRules = {
   institute_id:[{required:true,message:'请选择公寓',trigger:'change'}],
   title:[{required:true,message:'请输入房源标题',trigger:'blur'}],
   address:[{required:true,message:'请输入详细地址',trigger:'blur'}],
+  district:[{required:true,message:'请选择区域',trigger:'change'}],
   price_monthly:[{required:true,message:'请输入月租金',trigger:'blur'}],
   area_sqm:[{required:true,message:'请输入面积',trigger:'blur'}],
   property_type:[{required:true,message:'请选择户型',trigger:'change'}],
@@ -211,12 +214,7 @@ const newBuilding = reactive({name:'',address:'',contact_phone:'',description:''
 async function loadBuildings() {
   try { buildings.value = await buildingService.list({limit:200}) } catch {}
 }
-function onBuildingChange() { if (f.institute_id && !f.address) { const b = buildings.value.find(x => x.id===f.institute_id); if (b?.address) f.address = b.address }; if (f.address) autoDetectDistrict() }
-function autoDetectDistrict() {
-  if (!f.address) return
-  for (const d of districts) { if (f.address.includes(d)) { f.district = d; return } }
-}
-function onAddressChange() { autoDetectDistrict(); triggerRentEstimate() }
+function onBuildingChange() { if (f.institute_id && !f.address) { const b = buildings.value.find(x => x.id===f.institute_id); if (b?.address) f.address = b.address } }
 async function createBuilding() {
   if (!newBuilding.name.trim()) { ElMessage.error('请输入公寓名称'); return }
   creatingBuilding.value = true
@@ -230,7 +228,7 @@ async function createBuilding() {
 }
 
 // AI 解析
-const rawText = ref(''); const parsing = ref(false)
+const rawText = ref(''); const parsing = ref(false); const llmParsing = ref(false)
 const parseResult = ref<ParsedProperty|null>(null)
 const cn: Record<string,number>={一:1,二:2,两:2,三:3,四:4,五:5,六:6,七:7,八:8,九:9,十:10}
 function pcn(s:string):number{return cn[s]??parseInt(s)}
@@ -252,6 +250,7 @@ function smartParse(){/* same regex logic as before */parsing.value=true;parseRe
   if(title)f.title=title;if(addr)f.address=addr;if(dist)f.district=dist;if(rent)f.price_monthly=rent;if(deposit)f.deposit_amount=deposit;if(br>0)f.bedrooms=br;if(bh>0)f.bathrooms=bh;if(area)f.area_sqm=area;if(pt)f.property_type=pt;f.description=t
   parsing.value=false;parseResult.value={confidence:'medium'};ElMessage.success('识别完成，请核对');triggerRentEstimate()
 }
+async function llmSmartParse(){llmParsing.value=true;try{const r=await propertyService.parseDescription(rawText.value);parseResult.value=r;if(r.title)f.title=r.title;if(r.address)f.address=r.address;if(r.district)f.district=r.district;if(r.price_monthly)f.price_monthly=r.price_monthly;if(r.deposit_amount)f.deposit_amount=r.deposit_amount;if(r.area_sqm)f.area_sqm=r.area_sqm;if(r.property_type)f.property_type=r.property_type as PropertyType;if(r.description)f.description=r.description;if(r.amenities)selectedAmenities.value=r.amenities;if(r.room_number)f.room_number=r.room_number;ElMessage.success('AI深度解析完成')}catch(e:any){ElMessage.error(extractErrorMessage(e)||'解析失败')}finally{llmParsing.value=false}}
 
 // 租金预估
 const rentEstimate = ref<RentEstimate>({predicted:0,lower_bound:0,upper_bound:0,feature_importance:{}})

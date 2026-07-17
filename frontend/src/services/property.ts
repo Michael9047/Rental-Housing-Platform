@@ -114,6 +114,11 @@ export const propertyService = {
   },
 
   // ---- ML ----
+  /** AI 深度解析房源描述 */
+  parseDescription(rawText: string): Promise<import('@/types/admin').ParsedProperty> {
+    return api.post('/ml/parse', { raw_text: rawText }).then((r) => r.data)
+  },
+
   /** 智能租金预估 */
   estimateRent(params: {
     area_sqm?: number

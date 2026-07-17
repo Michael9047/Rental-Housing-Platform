@@ -49,6 +49,12 @@ class PropertyType(str, enum.Enum):
     shared = "shared"
 
 
+class RentType(str, enum.Enum):
+    monthly = "monthly"
+    quarterly = "quarterly"
+    yearly = "yearly"
+
+
 class PropertyStatus(str, enum.Enum):
     available = "available"          # 正常上架（学生端可见）
     pending_review = "pending_review"  # 待人工审核（AI标记异常，学生端不可见）
@@ -123,6 +129,23 @@ class Property(TimestampMixin, Base):
 
     deposit_amount: Mapped[int | None] = mapped_column(Integer, nullable=True, default=1000)
     service_fee_rate: Mapped[float | None] = mapped_column(Float, nullable=True, default=0.10)
+    min_lease_months: Mapped[int] = mapped_column(Integer, nullable=False, default=12)
+    max_lease_months: Mapped[int | None] = mapped_column(Integer, nullable=True, default=60)
+    rent_type: Mapped[RentType] = mapped_column(
+        Enum(RentType, name="rent_type"),
+        default=RentType.monthly,
+        nullable=False,
+    )
+
+    # ── 新增字段 ──
+    amenities: Mapped[list[str] | None] = mapped_column(ARRAY(String(30)), nullable=True)
+    available_from: Mapped[date | None] = mapped_column(Date, nullable=True)
+    min_stay_months: Mapped[int] = mapped_column(Integer, default=3, nullable=False)
+    deposit_type: Mapped[DepositType | None] = mapped_column(
+        Enum(DepositType, name="deposit_type"), nullable=True, default=None
+    )
+    version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
 
     # ── 新增字段 ──
     amenities: Mapped[list[str] | None] = mapped_column(ARRAY(String(30)), nullable=True)
