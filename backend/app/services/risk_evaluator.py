@@ -271,3 +271,111 @@ class RiskEvaluator:
             return float(val) if val is not None else 0.0
         except (ValueError, TypeError):
             return 0.0
+
+    def evaluate_warnings_only(
+        self,
+        valid_rows: list[dict],
+        *,
+        rent_predictor=None,
+    ) -> list[dict]:
+        """
+        仅对校验通过的房源做 IQR + 孤立森林 + XGBoost 检测，
+        返回每行的警告信息（不阻断入库）。
+
+        返回: [{row_idx, iqr_warnings[], iforest_warnings[], xgboost_warnings[]}]
+        """
+        if not valid_rows:
+            return []
+
+        from app.services.outlier_detector import (
+            IQROutlierDetector,
+            IsolationForestDetector,
+        )
+
+        n = len(valid_rows)
+
+        # Step 1: IQR 检测
+        iqr_detector = IQROutlierDetector()
+        iqr_price = set(iqr_detector.detect(valid_rows, "price_monthly", multiplier=1.5))
+        iqr_area = set(iqr_detector.detect(valid_rows, "area_sqm", multiplier=1.5))
+        iqr_all = iqr_price | iqr_area
+
+        # Step 2: 孤立森林（需 ≥10 条）
+        iforest_outliers = set()
+        if IsolationForestDetector.is_available() and n >= 10:
+            iforest_outliers = set(
+                IsolationForestDetector.detect(
+                    valid_rows,
+                    feature_fields=["area_sqm", "price_monthly", "bedrooms"],
+                    contamination=0.05,
+                )
+            )
+
+        # Step 3: 逐条生成警告
+        results = []
+        for i, row in enumerate(valid_rows):
+            row_idx = i + 1
+            iqr_w = []
+            if_w = []
+            xgb_w = []
+
+            # IQR
+            if i in iqr_price:
+                price_v = self._to_float(row.get("price_monthly", 0))
+                iqr_w.append(f"IQR检测：月租 ¥{price_v:.0f} 偏离同批次中位数（价格异常）")
+            if i in iqr_area:
+                area_v = self._to_float(row.get("area_sqm", 0))
+                iqr_w.append(f"IQR检测：面积 {area_v:.0f}m2 偏离同批次中位数（面积异常）")
+
+            # 孤立森林
+            if i in iforest_outliers:
+                if_w.append("孤立森林检测：多维度特征组合异常，建议人工复核")
+
+            # XGBoost 租金偏差
+            price = self._to_float(row.get("price_monthly", 0))
+            area = self._to_float(row.get("area_sqm", 0))
+            if rent_predictor and rent_predictor.is_trained and price > 0 and area > 0:
+                try:
+                    features = {
+                        "area_sqm": area,
+                        "bedrooms": int(row.get("bedrooms", 0) or 0),
+                        "bathrooms": int(row.get("bathrooms", 0) or 0),
+                        "district": str(row.get("district", "")),
+                        "property_type": str(row.get("property_type", "apartment")),
+                    }
+                    predicted = rent_predictor.predict_single(features)
+                    if predicted > 0:
+                        deviation = abs(price - predicted) / predicted
+                        if deviation > 0.30:
+                            xgb_w.append(
+                                f"XGBoost检测：实际租金 ¥{price:.0f} 与模型预测 ¥{predicted:.0f} "
+                                f"偏差 {deviation*100:.0f}%，建议核实定价"
+                            )
+                except Exception:
+                    pass
+
+            # 描述过短警告
+            desc_w = []
+            desc = str(row.get("description", ""))
+            if len(desc) < 10:
+                desc_w.append("房源描述过短（<10字），建议补充详细信息")
+
+            results.append({
+                "row_idx": row_idx,
+                "iqr_flagged": len(iqr_w) > 0,
+                "iforest_flagged": len(if_w) > 0,
+                "xgboost_flagged": len(xgb_w) > 0,
+                "iqr_warnings": iqr_w,
+                "iforest_warnings": if_w,
+                "xgboost_warnings": xgb_w,
+                "desc_warnings": desc_w,
+            })
+
+        logger.info(
+            "Batch AI evaluation (warnings only): %d rows, IQR=%d, IF=%d, XGBoost=%d",
+            n,
+            sum(1 for r in results if r["iqr_flagged"]),
+            sum(1 for r in results if r["iforest_flagged"]),
+            sum(1 for r in results if r["xgboost_flagged"]),
+        )
+        return results

@@ -1,4 +1,4 @@
-﻿"""公寓管理机构模型 - 大型公寓管理机构，由BD经理代录入，非直接系统用户。"""
+"""公寓管理机构模型 - 大型公寓管理机构，由BD经理代录入，非直接系统用户。"""
 import enum
 from sqlalchemy import Boolean, Enum, ForeignKey, String, Text as SAText
 from sqlalchemy.dialects.postgresql import JSON

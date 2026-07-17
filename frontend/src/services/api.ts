@@ -3,7 +3,7 @@ import { ElMessage } from 'element-plus'
 
 const api = axios.create({
   baseURL: '/api/v1',
-  timeout: 30000,
+  timeout: 60000,  // 60s，导入/上传等耗时操作需要较长超时
   headers: {
     'Content-Type': 'application/json',
   },
