@@ -5,12 +5,11 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from app.models.property import DepositType, PropertyStatus, PropertyType, RentType
 from app.schemas.property_image import PropertyImageRead
-
 class PropertyBase(BaseModel):
     title: str = Field(min_length=1, max_length=200)
     description: str | None = None
     address: str = Field(min_length=1, max_length=300)
-    district: str = Field(min_length=1, max_length=100)
+    district: str = Field(default="", max_length=100)
     price_monthly: Decimal = Field(ge=0)
     country: str = Field(default="CN", min_length=2, max_length=2)
     area_sqm: Decimal | None = Field(default=None, gt=0)

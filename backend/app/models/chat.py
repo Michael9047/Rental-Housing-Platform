@@ -1,4 +1,4 @@
-﻿import enum
+import enum
 import uuid
 
 from sqlalchemy import Enum, ForeignKey, String, Text as SAText

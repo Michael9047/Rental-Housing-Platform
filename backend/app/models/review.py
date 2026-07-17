@@ -1,4 +1,4 @@
-﻿"""评价评分模型 - 租客对公寓管理机构进行评价。"""
+"""评价评分模型 - 租客对公寓管理机构进行评价。"""
 import enum
 
 from sqlalchemy import Enum, ForeignKey, Integer, String, Text as SAText

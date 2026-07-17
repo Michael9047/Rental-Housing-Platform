@@ -113,6 +113,14 @@
         <!-- Building header -->
         <div class="building-header" @click="toggleExpand(building.id)">
           <div class="building-info">
+            <el-checkbox
+              v-if="batchMode"
+              :model-value="isBuildingAllSelected(building.id)"
+              :indeterminate="isBuildingPartialSelected(building.id)"
+              @click.stop
+              @change="toggleBuildingSelect(building.id)"
+              style="margin-right:4px"
+            />
             <span class="building-icon">🏢</span>
             <span class="building-name">{{ building.name }}</span>
             <el-tag size="small" type="info" class="building-count">
@@ -136,38 +144,43 @@
             stripe
             size="small"
             style="width: 100%"
+            :default-sort="defaultSort"
+            @sort-change="onSortChange"
           >
             <el-table-column v-if="batchMode" width="40"><template #default="{ row }"><el-checkbox :model-value="selectedIds.has(row.id)" @change="toggleSelect(row.id)" /></template></el-table-column>
-            <el-table-column prop="id" label="ID" width="55" />
-            <el-table-column label="房号" width="90" show-overflow-tooltip>
+            <el-table-column prop="id" label="ID" width="55" sortable="custom" />
+            <el-table-column label="房号" width="90" show-overflow-tooltip sortable="custom" prop="room_number">
               <template #default="{ row }">
                 <span :style="{ color: row.room_number ? '#303133' : '#c0c4cc' }">
                   {{ row.room_number || '-' }}
                 </span>
               </template>
             </el-table-column>
-            <el-table-column prop="title" label="标题" min-width="160" show-overflow-tooltip />
-            <el-table-column label="户型" width="100">
+            <el-table-column prop="title" label="标题" min-width="160" show-overflow-tooltip sortable="custom" />
+            <el-table-column label="户型" width="100" sortable="custom" prop="bedrooms">
               <template #default="{ row }">
                 {{ row.bedrooms }}室{{ row.bathrooms }}卫
               </template>
             </el-table-column>
-            <el-table-column label="月租" width="110">
+            <el-table-column label="月租" width="110" sortable="custom" prop="price_monthly">
               <template #default="{ row }">
                 <span class="price-cell">¥{{ row.price_monthly?.toLocaleString() }}</span>
               </template>
             </el-table-column>
-            <el-table-column prop="property_type" label="类型" width="70">
+            <el-table-column prop="property_type" label="类型" width="70" sortable="custom">
               <template #default="{ row }">
                 <el-tag size="small" type="info">{{ typeLabels[row.property_type as PropertyType] }}</el-tag>
               </template>
             </el-table-column>
-            <el-table-column prop="status" label="状态" width="85">
+            <el-table-column prop="status" label="状态" width="85" sortable="custom">
               <template #default="{ row }">
                 <el-tag size="small" :type="statusTagType(row.status)">
                   {{ statusLabels[row.status as PropertyStatus] }}
                 </el-tag>
               </template>
+            </el-table-column>
+            <el-table-column label="面积(㎡)" width="90" sortable="custom" prop="area_sqm">
+              <template #default="{ row }">{{ row.area_sqm ?? '-' }}</template>
             </el-table-column>
             <el-table-column label="操作" width="260" fixed="right">
               <template #default="{ row }">
@@ -236,38 +249,41 @@
         </div>
       </div>
       <div v-show="expandedIds.has(-1)" class="building-properties">
-        <el-table :data="unlinkedProperties" :row-class-name="getRowClass" stripe size="small" style="width: 100%">
+        <el-table :data="unlinkedProperties" :row-class-name="getRowClass" stripe size="small" style="width: 100%" :default-sort="defaultSort" @sort-change="onSortChange">
           <el-table-column v-if="batchMode" width="40"><template #default="{ row }"><el-checkbox :model-value="selectedIds.has(row.id)" @change="toggleSelect(row.id)" /></template></el-table-column>
-          <el-table-column prop="id" label="ID" width="55" />
-          <el-table-column label="房号" width="90" show-overflow-tooltip>
+          <el-table-column prop="id" label="ID" width="55" sortable="custom" />
+          <el-table-column label="房号" width="90" show-overflow-tooltip sortable="custom" prop="room_number">
             <template #default="{ row }">
               <span :style="{ color: row.room_number ? '#303133' : '#c0c4cc' }">
                 {{ row.room_number || '-' }}
               </span>
             </template>
           </el-table-column>
-          <el-table-column prop="title" label="标题" min-width="160" show-overflow-tooltip />
-          <el-table-column label="户型" width="100">
+          <el-table-column prop="title" label="标题" min-width="160" show-overflow-tooltip sortable="custom" />
+          <el-table-column label="户型" width="100" sortable="custom" prop="bedrooms">
             <template #default="{ row }">
               {{ row.bedrooms }}室{{ row.bathrooms }}卫
             </template>
           </el-table-column>
-          <el-table-column label="月租" width="110">
+          <el-table-column label="月租" width="110" sortable="custom" prop="price_monthly">
             <template #default="{ row }">
               <span class="price-cell">¥{{ row.price_monthly?.toLocaleString() }}</span>
             </template>
           </el-table-column>
-          <el-table-column prop="property_type" label="类型" width="70">
+          <el-table-column prop="property_type" label="类型" width="70" sortable="custom">
             <template #default="{ row }">
               <el-tag size="small" type="info">{{ typeLabels[row.property_type as PropertyType] }}</el-tag>
             </template>
           </el-table-column>
-          <el-table-column prop="status" label="状态" width="85">
+          <el-table-column prop="status" label="状态" width="85" sortable="custom">
             <template #default="{ row }">
               <el-tag size="small" :type="statusTagType(row.status)">
                 {{ statusLabels[row.status as PropertyStatus] }}
               </el-tag>
             </template>
+          </el-table-column>
+          <el-table-column label="面积(㎡)" width="90" sortable="custom" prop="area_sqm">
+            <template #default="{ row }">{{ row.area_sqm ?? '-' }}</template>
           </el-table-column>
           <el-table-column label="操作" width="350" fixed="right">
             <template #default="{ row }">
@@ -529,35 +545,22 @@ function applyFilters() {
   page.value = 1  // reset to first page on new search
   const kw = searchKeyword.value.trim()
 
+  // 筛选条件全部透传给后端
   propertyStore.fetchList({
-    page: 1, page_size: 500, landlord_id: user.id,
+    page: 1, page_size: pageSize.value, landlord_id: user.id,
     keyword: kw || undefined,
     property_type: filterPropertyType.value || undefined,
     status: filterStatus.value || undefined,
     price_min: filterPriceMin.value,
     price_max: filterPriceMax.value,
+    institute_id: filterInstituteId.value || undefined,
   }).then(() => {
-    let filtered = [...propertyStore.properties]
-    if (filterInstituteId.value) {
-      filtered = filtered.filter(p => p.institute_id === filterInstituteId.value)
-    }
-    const matches = new Set<number>()
-    if (kw) {
-      const lower = kw.toLowerCase()
-      for (const p of filtered) {
-        if (
-          (p.room_number && p.room_number.toLowerCase().includes(lower)) ||
-          (p.title && p.title.toLowerCase().includes(lower)) ||
-          (p.address && p.address.toLowerCase().includes(lower))
-        ) { matches.add(p.id) }
-      }
-    }
-    if (filtered.length === 0) {
+    if (propertyStore.properties.length === 0) {
       searchNoResult.value = true
     } else {
       searchNoResult.value = false
-      const filteredIds = new Set(filtered.map(p => p.id))
-      highlightedIds.value = kw ? matches : filteredIds
+      const filteredIds = new Set(propertyStore.properties.map(p => p.id))
+      highlightedIds.value = kw ? filteredIds : new Set()
       if (highlightedIds.value.size > 0) scrollToFirstMatch(highlightedIds.value)
       if (highlightTimer) clearTimeout(highlightTimer)
       highlightTimer = setTimeout(() => { highlightedIds.value = new Set() }, 3000)
@@ -606,6 +609,37 @@ function toggleSelect(id: number) {
     selectedIds.value.delete(id)
   } else {
     selectedIds.value.add(id)
+  }
+  selectedIds.value = new Set(selectedIds.value)
+}
+
+// ── 按公寓全选 ──
+function getBuildingPropertyIds(buildingId: number): number[] {
+  return getBuildingProperties(buildingId).map(p => p.id)
+}
+
+function isBuildingAllSelected(buildingId: number): boolean {
+  const ids = getBuildingPropertyIds(buildingId)
+  if (ids.length === 0) return false
+  return ids.every(id => selectedIds.value.has(id))
+}
+
+function isBuildingPartialSelected(buildingId: number): boolean {
+  const ids = getBuildingPropertyIds(buildingId)
+  if (ids.length === 0) return false
+  const some = ids.some(id => selectedIds.value.has(id))
+  const all = ids.every(id => selectedIds.value.has(id))
+  return some && !all
+}
+
+function toggleBuildingSelect(buildingId: number) {
+  const ids = getBuildingPropertyIds(buildingId)
+  if (isBuildingAllSelected(buildingId)) {
+    // 全部取消
+    for (const id of ids) selectedIds.value.delete(id)
+  } else {
+    // 全部勾选
+    for (const id of ids) selectedIds.value.add(id)
   }
   selectedIds.value = new Set(selectedIds.value)
 }
@@ -868,10 +902,35 @@ function statusTagType(status: PropertyStatus): string {
   return map[status]
 }
 
-// Group properties by institute_id
+const defaultSort = ref<{ prop: string; order: 'ascending' | 'descending' }>({ prop: 'created_at', order: 'descending' })
+const sortKey = ref<string>('created_at')
+const sortOrder = ref<'ascending' | 'descending'>('descending')
+function onSortChange({ prop, order }: { prop: string; order: 'ascending' | 'descending' | null }) {
+  if (!order) { sortKey.value = 'created_at'; sortOrder.value = 'descending' }
+  else { sortKey.value = prop; sortOrder.value = order }
+}
+
+const sortedProperties = computed(() => {
+  const arr = [...allProperties.value]
+  if (!sortKey.value) return arr
+  const k = sortKey.value as keyof Property
+  const dir = sortOrder.value === 'ascending' ? 1 : -1
+  arr.sort((a, b) => {
+    const av = a[k]
+    const bv = b[k]
+    if (av == null && bv == null) return 0
+    if (av == null) return 1
+    if (bv == null) return -1
+    if (typeof av === 'number' && typeof bv === 'number') return (av - bv) * dir
+    return String(av).localeCompare(String(bv)) * dir
+  })
+  return arr
+})
+
+// Group properties by institute_id（基于排序后的列表）
 const propertyGroups = computed(() => {
   const groups = new Map<number, Property[]>()
-  for (const p of allProperties.value) {
+  for (const p of sortedProperties.value) {
     const key = p.institute_id ?? -1
     if (!groups.has(key)) groups.set(key, [])
     groups.get(key)!.push(p)
