@@ -665,11 +665,12 @@ class Supervisor:
     async def _execute_agent(
         self, agent_name: str, context: AgentContext
     ) -> AgentResult:
-        """执行单个 Agent。
+        """执行单个 Agent（精简后：全部直接执行，无 ReAct 开销）。
 
-        - CartAgent / FAQAgent → 直接调用（无 LLM）
-        - SearchAgent / CompareAgent → ReAct loop
-        - 其他 Agent → 根据 Agent 定义选择执行方式
+        - cart/faq/compare → 直接委托现有 Service 层
+        - filter_agent → 单次 LLM JSON 提取（走 FilterAgent.handle()）
+        - search_agent → 直接走 AgentService.recommend_properties() 成熟管线
+        - synthesizer_agent → 单次 LLM 合成（走 SynthesizerAgent.handle()）
         """
         agent_def = self.registry.get(agent_name)
 
@@ -685,19 +686,19 @@ class Supervisor:
         if agent_name == "compare_agent":
             return await self._run_compare_agent(context)
 
-        # ── 搜索 Agent（优先走 ReAct loop，LLM 不可用时降级到旧管线） ──
+        # ── 筛选 Agent（单次 LLM JSON 提取，走 filter_agent 自己的 FILTER_PROMPT） ──
+        if agent_name == "filter_agent":
+            return await self._run_filter_agent(context)
+
+        # ── 搜索 Agent（直接走成熟旧管线，跳过 ReAct） ──
         if agent_name == "search_agent":
-            agent_def = self.registry.get(agent_name)
-            if agent_def and self.llm_service.is_available:
-                return await self._run_react_agent(agent_name, agent_def, context)
-            # LLM 不可用时降级到成熟旧管线
             return await self._run_search_agent(context)
 
-        # ── filter_agent 等：使用 ReAct loop ──
-        if self.llm_service.is_available and agent_def is not None:
-            return await self._run_react_agent(agent_name, agent_def, context)
+        # ── 合成 Agent（单次 LLM 调用，按漏斗阶段适配语调） ──
+        if agent_name == "synthesizer_agent":
+            return await self._run_synthesizer_agent(context)
 
-        # ── 降级：SynthesizerAgent 生成兜底 ──
+        # ── 降级：兜底回复 ──
         return await self._run_synthesizer(context, is_fallback=True)
 
     # ═══════════════════════════════════════════════════════════════════════
@@ -808,17 +809,55 @@ class Supervisor:
                 ),
             )
 
+    async def _run_filter_agent(self, context: AgentContext) -> AgentResult:
+        """筛选条件提取（单次 LLM JSON 提取，使用 filter_agent 的 FILTER_PROMPT）。
+
+        FilterAgent.handle() 直接调用 llm_service.complete_json() 做单次 JSON 提取，
+        含完整的设施口语映射表 + 硬约束/软偏好区分逻辑。不走 ReAct loop。
+        """
+        from app.services.agentic.agents.filter_agent import FilterAgent
+        try:
+            agent = FilterAgent()
+            return await agent.handle(context)
+        except Exception as exc:
+            logger.exception("filter_agent 失败")
+            return AgentResult(
+                content="{}", success=True, data={},
+                error=AgentError(
+                    type_=AgentErrorType.TOOL_FAILURE,
+                    message=str(exc), agent_id="filter_agent",
+                ),
+            )
+
+    async def _run_synthesizer_agent(self, context: AgentContext) -> AgentResult:
+        """回复合成（单次 LLM 调用，按漏斗阶段适配语调）。
+
+        SynthesizerAgent.handle() 读取漏斗阶段并选择对应语气做单次 complete_text()，
+        不走 ReAct loop。
+        """
+        from app.services.agentic.agents.synthesizer_agent import SynthesizerAgent
+        try:
+            agent = SynthesizerAgent()
+            return await agent.handle(context)
+        except Exception as exc:
+            logger.warning("SynthesizerAgent LLM 失败: %s", exc)
+            return AgentResult(
+                content="抱歉，AI 服务暂时不可用。您可以尝试使用筛选功能来查找房源。",
+                success=False,
+            )
+
     async def _run_react_agent(
         self,
         agent_name: str,
         agent_def: Any,
         context: AgentContext,
     ) -> AgentResult:
-        """使用 ReAct loop 执行 Agent。
+        """使用 ReAct loop 执行 Agent（仅 Handoff 链使用，主 DAG 路径不再调用）。
 
-        对 search_agent 特殊处理：ReAct loop 生成文本回复后，
-        额外调用 AgentService.recommend_properties() 获取结构化房源数据，
-        确保前端推荐卡片有数据可渲染。
+        主 DAG 路径中，filter/search/synthesizer 均已改为直接执行：
+        - filter → FilterAgent.handle()（单次 LLM JSON 提取）
+        - search → AgentService.recommend_properties()（成熟管线）
+        - synthesizer → SynthesizerAgent.handle()（单次 LLM 合成）
         """
         # 构建系统提示（含 Handoff 可用 Agent 列表）
         system_prompt = self._build_system_prompt(agent_name, context)
@@ -895,16 +934,16 @@ class Supervisor:
     async def _run_synthesizer(
         self, context: AgentContext, is_fallback: bool = False
     ) -> AgentResult:
-        """合成最终回复（或兜底）。"""
+        """兜底合成（LLM 不可用或全部 Agent 失败时使用）。"""
         if not self.llm_service.is_available:
             return AgentResult(
-                content="我是租房推荐助手。请告诉我您想找的地区、预算和户型，我来帮您推荐房源。",
+                content="我是西交利物浦大学周边的租房助手。请告诉我你想找的区域、预算和户型，我帮你筛房源。",
                 success=True,
             )
 
         try:
-            prompt = """你是租房顾问助手。用 1-2 句话简洁回答，不要展开长篇分析。
-不要编造房源信息。如果用户输入不完整，礼貌地请用户补充。"""
+            prompt = """你是西交利物浦大学周边的租房顾问。用 1-2 句话简洁回答用户的问题。
+不要编造房源信息。如果用户输入不完整，礼貌引导补充关键信息（预算？区域？户型？通勤要求？）。"""
 
             reply = await self.llm_service.complete_text(
                 messages=[

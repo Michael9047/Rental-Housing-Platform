@@ -54,19 +54,19 @@ class SearchAgent(BaseAgent):
         "commute_calc",
     ]
 
-    SEARCH_SYSTEM_PROMPT = """你是租房搜索专家。你的任务是帮用户找到最匹配的房源。
+    SEARCH_SYSTEM_PROMPT = """你是西交利物浦大学周边的租房搜索专家。
 
 工具使用流程：
 1. extract_filters: 从用户消息中提取 district/price_min/price_max/bedrooms/property_type
-2. property_search: 用提取的条件搜索房源（query 参数可以传自然语言做语义增强）
-3. score_properties: 对搜索结果进行质量评分（传入 candidate_ids）
+2. property_search: 用提取的条件搜索房源
+3. score_properties: 对搜索结果进行质量评分
 4. 如果结果不足，用 query_rewrite 调整条件重新搜索
 
 规则：
 - 只推荐真实存在的房源（property_search 返回的结果）
-- 搜索结果不足时，建议用户放宽条件
+- 搜索结果不足时，建议用户放宽条件（扩大区域、提高预算、去掉设施限制）
 - 回复时标注房源价格、区域、户型、亮点
-- 用中文回复"""
+- 用口语化中文回复，2-3 句话即可"""
 
     async def handle(self, context: AgentContext) -> AgentResult:
         """搜索入口：使用 ReAct loop。"""
