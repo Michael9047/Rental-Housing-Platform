@@ -99,7 +99,7 @@
 </div>
 
 <h1>🏠 租房平台 AI Agent 架构全景图</h1>
-<p class="subtitle">精简后架构 | 2026-07-18 | 6 Agent · 5 DAG · 16 工具 | ✅ P0 完成：0 ReAct 开销，全部直接执行 | 基于 AI_SCENARIOS.md</p>
+<p class="subtitle">精简后架构 | 2026-07-18 | 6 Agent · 5 DAG · 16 工具 | ✅ P0 完成 + Few-Shot | 0 ReAct · 全部 Prompt 含示例 | 基于 AI_SCENARIOS.md</p>
 
 <!-- ═══════════════════════════════════════════════════════════════════════════ -->
 <h2 id="overview">1. 架构总览</h2>
@@ -385,6 +385,21 @@ class Intent(str, Enum):
   </table>
 </div>
 
+<div class="card green" style="margin-bottom:16px">
+  <h3>✅ 已完成 — 第三阶段：全部 Prompt 加入 Few-Shot Examples（2026-07-18）</h3>
+  <table>
+    <tr><th>Prompt</th><th>示例数</th><th>覆盖场景</th></tr>
+    <tr><td>EXTRACT_FILTERS_PROMPT</td><td>3</td><td>园区单间 / 文星合租 / 西交通勤推断</td></tr>
+    <tr><td>RECOMMEND_SYSTEM_PROMPT</td><td>3</td><td>结果充足 / 结果偏少 / 无结果</td></tr>
+    <tr><td>UNIFIED_CLASSIFIER_PROMPT</td><td>4</td><td>filter / faq / compare / greeting</td></tr>
+    <tr><td>GENERAL_SYSTEM_PROMPT</td><td>2</td><td>问候 / 区域推荐</td></tr>
+    <tr><td>COMPARE_SYSTEM_PROMPT</td><td>1</td><td>三套对比 + 通勤优先</td></tr>
+    <tr><td>FilterAgent.FILTER_PROMPT</td><td>3</td><td>硬约束 / 软偏好 / 通勤</td></tr>
+    <tr><td>SynthesizerAgent.STAGE_TONES</td><td>6</td><td>explore / calibrate / narrow / compare / decide / general 各含口语示例</td></tr>
+    <tr><td>SearchAgent.SEARCH_SYSTEM_PROMPT</td><td>1</td><td>完整推荐回复示例</td></tr>
+  </table>
+</div>
+
 <div class="card yellow" style="margin-bottom:16px">
   <h3>🟡 P1 — 增强与清理</h3>
   <table>
@@ -406,10 +421,9 @@ class Intent(str, Enum):
 
 <div class="card green" style="margin-top:16px;text-align:center;padding:32px">
   <p style="font-size:18px;color:var(--accent)"><strong>核心结论</strong></p>
-  <p style="color:var(--green);margin-top:8px"><strong>✅ 6 Agent · 5 DAG · 16 工具 · 0 ReAct</strong></p>
-  <p style="color:var(--text);margin-top:8px">全部 Agent 直接执行。filter（单次 JSON 提取）→ search（成熟管线推荐）→ synthesizer（漏斗语气合成）。</p>
-  <p style="color:var(--text)">compare/cart/faq 三个条件 Agent 均无 LLM，纯委托/规则匹配。</p>
-  <p style="color:var(--yellow);margin-top:8px">下一步 P1：commute+POI 并行层、market_stats 分层聚类、删除 handoff 死代码。</p>
+  <p style="color:var(--green);margin-top:8px"><strong>✅ 6 Agent · 5 DAG · 16 工具 · 0 ReAct · 全部 Prompt 含 Few-Shot 示例</strong></p>
+  <p style="color:var(--text);margin-top:8px">全部 Agent 直接执行。所有 8 个 Prompt（7 个系统提示 + 6 个合成阶段语气）均加入 XJTLU 租房场景的真实示例。</p>
+  <p style="color:var(--yellow);margin-top:8px">下一步 P1：上下文记忆（跟踪已推荐+用户偏好）→ commute+POI 并行层 → 删除 handoff 死代码。</p>
 </div>
 
 <script>
