@@ -311,7 +311,7 @@ class Supervisor:
                 "properties": {
                     "target_agent": {
                         "type": "string",
-                        "description": "目标 Agent 的 ID，如 commute_expert, search_agent, compare_agent, poi_agent, faq_agent 等",
+                        "description": "目标 Agent 的 ID，如 search_agent, compare_agent, faq_agent, cart_agent 等",
                     },
                     "task_description": {
                         "type": "string",
@@ -461,12 +461,13 @@ class Supervisor:
             # 规则兜底
             return self._rule_route_for_handoff(intent, sub_intent)
 
-        # 构建可用 Agent 列表
+        # Build available agent catalog for router prompt
         all_agents = self.registry.list_all()
-        agent_catalog = "\n".join(
-            f"- {a.id}: {a.name} — {a.description}" for a in all_agents
-            if a.id not in ("router_agent", "planner_agent")  # 避免路由到自己
-        )
+        catalog_lines = []
+        for a in all_agents:
+            if a.id != agent_name:
+                catalog_lines.append(f"- {a.id}: {a.name} - {a.description}")
+        agent_catalog = "\n".join(catalog_lines)
 
         router_prompt = f"""你是多 Agent 系统的智能路由器。根据用户消息和分类结果，决定第一个应该处理此请求的 Agent。
 
@@ -482,12 +483,9 @@ class Supervisor:
 路由规则：
 - 找房/推荐 → filter_agent（有筛选条件时）或 search_agent（直接搜索）
 - 对比房源 → compare_agent
-- 通勤分析 → commute_agent
-- 周边设施 → poi_agent
+- 通勤/周边/市场分析 → search_agent（search_agent 有 commute_calc/poi_lookup/market_stats 工具）
 - FAQ/政策 → faq_agent
 - 购物车操作 → cart_agent
-- 市场分析 → market_agent
-- 复杂多步请求 → planner_agent（暂不可用，用 search_agent 替代）
 - 无法判断 → search_agent
 
 只输出目标 Agent ID，不要其他内容。"""
@@ -524,12 +522,6 @@ class Supervisor:
             return "cart_agent"
         elif intent == "faq":
             return "faq_agent"
-        elif intent == "market_analysis":
-            return "market_agent"
-        elif intent == "commute_info":
-            return "commute_agent"
-        elif intent == "poi_info":
-            return "poi_agent"
         else:
             return "search_agent"
 
@@ -584,24 +576,24 @@ class Supervisor:
                 "stage": "general", "complexity": 0.1,
                 "confidence": 0.7, "routing": "fast",
             }
-        # 市场分析
+        # 市场分析 → 统一走 search DAG（search_agent 有 market_stats 工具）
         if any(kw in text for kw in _MARKET_KEYWORDS):
             return {
-                "intent": "market_analysis", "sub_intent": "",
+                "intent": "search", "sub_intent": "market",
                 "stage": "calibrate", "complexity": 0.5,
                 "confidence": 0.6, "routing": "agent",
             }
-        # 通勤
+        # 通勤 → 统一走 search DAG（search_agent 有 commute_calc 工具）
         if any(kw in text for kw in _COMMUTE_KEYWORDS):
             return {
-                "intent": "commute_info", "sub_intent": "",
+                "intent": "search", "sub_intent": "commute",
                 "stage": "narrow", "complexity": 0.4,
                 "confidence": 0.6, "routing": "agent",
             }
-        # POI
+        # POI → 统一走 search DAG（search_agent 有 poi_lookup 工具）
         if any(kw in text for kw in _POI_KEYWORDS):
             return {
-                "intent": "poi_info", "sub_intent": "",
+                "intent": "search", "sub_intent": "poi",
                 "stage": "narrow", "complexity": 0.4,
                 "confidence": 0.6, "routing": "agent",
             }
@@ -624,47 +616,17 @@ class Supervisor:
         """拓扑执行 DAG。同层节点可并行。
 
         参考 EstateWise Supervisor.executePlan()。
-
-        特殊处理：
-        - search_agent 结果注入 context.extra，供 amenity_expert 使用
-        - amenity_expert 硬过滤零结果时，短路跳过 MoE 专家组
         """
         levels = dag.topological_sort()
         results: dict[str, AgentResult] = {}
 
-        # 跟踪硬过滤是否清空了候选
-        hard_filter_empty = False
-
         for level_idx, level in enumerate(levels):
-            # 短路：硬过滤零结果 → 跳过 MoE 专家层，只执行 synthesizer
-            if hard_filter_empty:
-                skip_level = True
-                for node in level:
-                    if node.agent_name == "synthesizer_agent":
-                        skip_level = False
-                        break
-                if skip_level:
-                    logger.info("硬过滤零结果，跳过 Level %d", level_idx)
-                    continue
-
             # 同层 Agent 并行执行
             if len(level) == 1:
                 node = level[0]
                 try:
                     result = await self._execute_agent(node.agent_name, context)
                     results[node.agent_name] = result
-
-                    # search_agent 执行后，把结果注入 context.extra 供 amenity_expert 使用
-                    if node.agent_name == "search_agent" and result.success and result.data:
-                        if context.extra is None:
-                            context.extra = {}
-                        context.extra["search_result"] = result.data
-
-                    # amenity_expert 执行后，检查是否硬过滤零结果
-                    if node.agent_name == "amenity_expert" and result.success and result.data:
-                        if isinstance(result.data, dict) and result.data.get("hard_filter_empty"):
-                            hard_filter_empty = True
-                            logger.warning("amenity_expert 硬过滤零结果，将跳过后续 MoE 专家组")
 
                 except Exception as exc:
                     logger.warning("Agent %s 执行失败: %s", node.agent_name, exc)
@@ -731,11 +693,7 @@ class Supervisor:
             # LLM 不可用时降级到成熟旧管线
             return await self._run_search_agent(context)
 
-        # ── 设施硬约束专家（纯 Python 逻辑，不调用 LLM） ──
-        if agent_name == "amenity_expert":
-            return await self._run_amenity_expert(context)
-
-        # ── filter_agent / market_agent 等：使用 ReAct loop ──
+        # ── filter_agent 等：使用 ReAct loop ──
         if self.llm_service.is_available and agent_def is not None:
             return await self._run_react_agent(agent_name, agent_def, context)
 
@@ -849,85 +807,6 @@ class Supervisor:
                     agent_id="search_agent",
                 ),
             )
-
-    async def _run_amenity_expert(self, context: AgentContext) -> AgentResult:
-        """设施硬约束二次确认（AND 语义，纯 Python 逻辑）。
-
-        从 context.search_state / context.extra 中获取 search_agent 的
-        候选房源列表，逐条检查硬约束设施是否全部满足。
-        不调用 LLM，纯计算。
-        """
-        import json
-        from app.services.agentic.agents.experts.amenity_expert import (
-            AmenityExpert,
-            check_hard_constraints,
-        )
-
-        filters: dict[str, Any] = context.filters or {}
-        required_amenities: list[str] = filters.get("amenities") or []
-        required_room_type: str | None = filters.get("room_type")
-        required_bathrooms: int | None = filters.get("bathrooms")
-
-        # 无硬约束 → 跳过
-        if not required_amenities and not required_room_type and not required_bathrooms:
-            return AgentResult(
-                content="无硬约束，跳过设施检查",
-                success=True,
-                data={"no_hard_constraints": True},
-            )
-
-        # 从 search_agent 结果中提取候选房源
-        candidates: list[dict[str, Any]] = []
-        search_result = context.extra.get("search_result") if context.extra else None
-
-        if search_result and isinstance(search_result, dict):
-            # search_agent 的 data 中包含 recommendations 和 top_picks
-            recs = search_result.get("recommendations") or []
-            for r in recs:
-                prop = r.get("property")
-                if prop is not None:
-                    candidates.append({"property": prop, "match_reason": r.get("match_reason", "")})
-
-        # 也检查 context.search_state
-        if not candidates and context.search_state:
-            if hasattr(context.search_state, "last_candidates"):
-                raw = context.search_state.last_candidates or []
-                candidates = [{"property": p} if not isinstance(p, dict) else p for p in raw]
-
-        if not candidates:
-            logger.debug("amenity_expert: 无候选房源可供检查 (candidates=0)")
-            return AgentResult(
-                content=json.dumps({"note": "无候选房源", "required": required_amenities},
-                                   ensure_ascii=False),
-                success=True,
-                data={"no_candidates": True, "required_amenities": required_amenities},
-            )
-
-        # 执行硬约束检查
-        result = check_hard_constraints(
-            candidates=candidates,
-            required_amenities=required_amenities,
-            required_room_type=required_room_type,
-            required_bathrooms=required_bathrooms,
-        )
-
-        logger.info(
-            "amenity_expert: %d/%d 通过硬约束 (amenities=%s, room_type=%s)",
-            result["passed_count"], result["total"],
-            required_amenities, required_room_type,
-        )
-
-        return AgentResult(
-            content=json.dumps({
-                "passed_count": result["passed_count"],
-                "excluded_count": result["excluded_count"],
-                "total": result["total"],
-                "required_amenities": required_amenities,
-                "hard_filter_empty": result["passed_count"] == 0,
-            }, ensure_ascii=False),
-            success=True,
-            data=result,
-        )
 
     async def _run_react_agent(
         self,
@@ -1108,9 +987,6 @@ class Supervisor:
             "manage_cart": "manage_cart",
             "compare": "compare",
             "general": "general",
-            "market_analysis": "recommend",
-            "commute_info": "recommend",
-            "poi_info": "recommend",
         }
         intent = intent_map.get(raw_intent, raw_intent)
         logger.info("SUPERVISOR _build_response: raw_intent=%s → intent=%s", raw_intent, intent)
@@ -1140,53 +1016,10 @@ class Supervisor:
                 source_info = data.get("source_info", "")
                 needs_refinement = data.get("needs_refinement", False)
 
-        # ── 硬约束零结果降级回复 ──
-        amenity_result = agent_results.get("amenity_expert")
-        hard_filter_empty = False
-        hard_filter_info: dict[str, Any] = {}
-        if amenity_result and amenity_result.success and amenity_result.data:
-            if isinstance(amenity_result.data, dict):
-                hard_filter_empty = amenity_result.data.get("hard_filter_empty", False)
-                if hard_filter_empty:
-                    hard_filter_info = {
-                        "required_amenities": amenity_result.data.get("required_amenities", []),
-                        "total_candidates": amenity_result.data.get("total", 0),
-                    }
-
-        if hard_filter_empty:
-            required = hard_filter_info.get("required_amenities", [])
-            required_str = "、".join(required) if required else "指定条件"
-            reply = (
-                f"很遗憾，没有找到同时满足「{required_str}」的房源。\n\n"
-                f"建议尝试放宽以下条件之一：\n"
-                + "\n".join(f"- 去掉「{a}」限制" for a in required)
-                + "\n\n你也可以换个区域或调整预算，我帮你重新搜索。"
-            )
-            quick_replies = [f"去掉「{a}」" for a in required] if required else ["放宽条件重搜"]
-        else:
-            quick_replies = []
-
         # 如果 search_agent 的回复内容非空，优先用它（而非合成后的拼接）
-        if not hard_filter_empty and search_result and search_result.success and search_result.content:
+        quick_replies: list[str] = []
+        if search_result and search_result.success and search_result.content:
             reply = search_result.content
-
-        # ── 附加 MoE 专家分析到回复中（当专家有实质性输出时） ──
-        _moe_expert_keys = [
-            "price_expert", "commute_expert", "lifestyle_expert",
-            "space_expert", "area_expert", "merger_agent",
-        ]
-        _expert_insights: list[str] = []
-        for key in _moe_expert_keys:
-            expert_result = agent_results.get(key)
-            if expert_result and expert_result.success and expert_result.content:
-                content = expert_result.content.strip()
-                # 过滤掉过于通用或空泛的回复（≤15字视为无实质内容）
-                if len(content) > 15:
-                    _expert_insights.append(content)
-
-        if _expert_insights:
-            expert_section = "\n\n---\n### 🔍 多维度专家分析\n\n" + "\n\n".join(_expert_insights)
-            reply = (reply or "") + expert_section
 
         return {
             "reply": reply,
@@ -1204,8 +1037,6 @@ class Supervisor:
             "relaxation_level": relaxation_level,
             "candidate_snapshot": candidate_snapshot,
             "source_info": source_info,
-            # 硬约束过滤统计
-            "hard_filter_breakdown": hard_filter_info if hard_filter_empty else None,
             # 专家模式思考步骤（供前端展示 Agent 执行过程）
             "thinking_steps": _build_thinking_steps(agent_results),
             # 附加：编排元数据
@@ -1231,7 +1062,7 @@ class Supervisor:
         all_agents = self.registry.list_all()
         agent_catalog_lines: list[str] = []
         for a in all_agents:
-            if a.id not in ("router_agent", "planner_agent", agent_name):
+            if a.id != agent_name:
                 agent_catalog_lines.append(f"  - {a.id}: {a.description}")
         agent_catalog = "\n".join(agent_catalog_lines[:20])  # 最多 20 个，避免 prompt 过长
 
@@ -1277,19 +1108,6 @@ class Supervisor:
 "已提取条件：区域=苏州，最高预算=2000元，户型=单间"
 {handoff_instructions}""",
 
-            "market_agent": f"""你是租房市场分析专家。当前漏斗阶段: {stage or "explore"}。
-调用 market_stats 工具获取市场数据后，**停止调用工具，用中文输出分析结果**。
-如果没有数据，直接告知用户并给出建议。
-{handoff_instructions}""",
-
-            "commute_agent": f"""你是通勤分析专家。调用 commute_calc 工具计算通勤后，
-**停止调用工具，用中文输出分析结果**。
-{handoff_instructions}""",
-
-            "poi_agent": f"""你是周边设施分析专家。调用 poi_lookup 工具查询后，
-**停止调用工具，用中文输出分析结果**。
-{handoff_instructions}""",
-
             "synthesizer_agent": f"""你是租房对话回复合成专家。当前漏斗阶段: {stage or "explore"}。
 将多个 Agent 的分析结果融合为自然、友好的中文回复。
 - explore阶段：市场概览语气，引导用户细化需求
@@ -1301,13 +1119,6 @@ class Supervisor:
 如果需要检查检索质量，可以调用 safe_fallback_check 和 build_fallback_reply。
 完成任务后必须直接输出中文文本回复。
 {handoff_instructions}""",
-
-            "price_expert": f"你是价格分析专家。分析房源价格的合理性、性价比、与市场均价的对比。分析完后直接输出中文文本结论。{handoff_instructions}",
-            "commute_expert": f"你是通勤便利性专家。分析房源的通勤便利程度。分析完后直接输出中文文本结论。{handoff_instructions}",
-            "lifestyle_expert": f"你是生活配套专家。分析房源周边的餐饮、购物、健身等生活便利性。分析完后直接输出中文文本结论。{handoff_instructions}",
-            "space_expert": f"你是户型空间专家。分析房源的面积效率、户型合理性、空间利用率。分析完后直接输出中文文本结论。{handoff_instructions}",
-            "area_expert": f"你是区域分析专家。分析房源所在区域的安全性、社区氛围、发展规划。分析完后直接输出中文文本结论。{handoff_instructions}",
-            "merger_agent": f"你是综合分析专家。综合5个专家的分析视角，给出加权综合评价。综合完后直接输出中文文本结论。{handoff_instructions}",
         }
 
         return prompts.get(agent_name, f"你是 {agent_name}。完成分配给您的任务。{handoff_instructions}")
@@ -1328,25 +1139,10 @@ def _build_thinking_steps(agent_results: dict) -> list[dict]:
     _AGENT_CN_NAMES: dict[str, str] = {
         "filter_agent": "筛选条件提取",
         "search_agent": "房源搜索",
-        "price_expert": "价格分析专家",
-        "commute_expert": "通勤分析专家",
-        "lifestyle_expert": "生活配套专家",
-        "space_expert": "户型空间专家",
-        "area_expert": "区域分析专家",
-        "merger_agent": "综合分析",
         "synthesizer_agent": "回复合成",
         "compare_agent": "房源对比",
         "cart_agent": "购物车管理",
         "faq_agent": "FAQ 问答",
-        "market_agent": "市场分析",
-        "commute_agent": "通勤分析",
-        "poi_agent": "周边设施分析",
-        "ranking_agent": "排序去重",
-        "compliance_agent": "合规分析",
-        "relation_agent": "房源关系分析",
-        "router_agent": "路由决策",
-        "planner_agent": "任务规划",
-        "context_agent": "上下文管理",
     }
 
     steps = []

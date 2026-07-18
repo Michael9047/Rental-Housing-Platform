@@ -22,12 +22,9 @@ class Intent(str, Enum):
     MANAGE_CART = "manage_cart"
     FAQ = "faq"
     GENERAL = "general"
-    MARKET_ANALYSIS = "market_analysis"
-    COMMUTE_INFO = "commute_info"
-    POI_INFO = "poi_info"
 
 
-# 每种 Intent 对应的 Agent DAG 模板
+# 每种 Intent 对应的 Agent DAG 模板（精简为 5 种）
 INTENT_DAG_TEMPLATES: dict[Intent, list[dict]] = {
     Intent.SEARCH: [
         {"agent_id": "filter_agent", "dependencies": [], "can_parallelize": False},
@@ -47,40 +44,7 @@ INTENT_DAG_TEMPLATES: dict[Intent, list[dict]] = {
     Intent.GENERAL: [
         {"agent_id": "synthesizer_agent", "dependencies": [], "can_parallelize": False},
     ],
-    Intent.MARKET_ANALYSIS: [
-        {"agent_id": "filter_agent", "dependencies": [], "can_parallelize": False},
-        {"agent_id": "search_agent", "dependencies": ["filter_agent"], "can_parallelize": False},
-        {"agent_id": "market_agent", "dependencies": ["search_agent"], "can_parallelize": True},
-        {"agent_id": "synthesizer_agent", "dependencies": ["search_agent", "market_agent"], "can_parallelize": False},
-    ],
-    Intent.COMMUTE_INFO: [
-        {"agent_id": "commute_agent", "dependencies": [], "can_parallelize": False},
-        {"agent_id": "synthesizer_agent", "dependencies": ["commute_agent"], "can_parallelize": False},
-    ],
-    Intent.POI_INFO: [
-        {"agent_id": "poi_agent", "dependencies": [], "can_parallelize": False},
-        {"agent_id": "synthesizer_agent", "dependencies": ["poi_agent"], "can_parallelize": False},
-    ],
 }
-
-# 复杂搜索（需要 MoE 专家组的场景）
-COMPLEX_SEARCH_DAG: list[dict] = [
-    {"agent_id": "filter_agent", "dependencies": [], "can_parallelize": False},
-    {"agent_id": "search_agent", "dependencies": ["filter_agent"], "can_parallelize": False},
-    # 硬约束二次确认 —— 在软评分专家之前执行，做 AND 语义设施检查
-    {"agent_id": "amenity_expert", "dependencies": ["search_agent", "filter_agent"], "can_parallelize": False},
-    # MoE 专家组 — 5 个专家并行分析同一批房源（仅分析通过硬约束的候选）
-    {"agent_id": "price_expert", "dependencies": ["amenity_expert"], "can_parallelize": True},
-    {"agent_id": "commute_expert", "dependencies": ["amenity_expert"], "can_parallelize": True},
-    {"agent_id": "lifestyle_expert", "dependencies": ["amenity_expert"], "can_parallelize": True},
-    {"agent_id": "space_expert", "dependencies": ["amenity_expert"], "can_parallelize": True},
-    {"agent_id": "area_expert", "dependencies": ["amenity_expert"], "can_parallelize": True},
-    # 融合专家分析结果
-    {"agent_id": "merger_agent", "dependencies": [
-        "price_expert", "commute_expert", "lifestyle_expert", "space_expert", "area_expert"
-    ], "can_parallelize": False},
-    {"agent_id": "synthesizer_agent", "dependencies": ["search_agent", "merger_agent", "amenity_expert"], "can_parallelize": False},
-]
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -103,7 +67,6 @@ class ExecutionDAG:
     参考 EstateWise Supervisor.buildExecutionPlan()：
     - 从 Intent → 选择 DAG 模板
     - 拓扑排序（同层可并行）
-    - 复杂度 > 0.6 时使用复杂搜索 DAG（含 MoE）
     """
 
     def __init__(self, nodes: list[ExecutionNode] | None = None) -> None:
@@ -193,22 +156,18 @@ class ExecutionDAG:
         complexity: float = 0.5,
         enable_moe: bool = True,
     ) -> ExecutionDAG:
-        """根据 Intent + 复杂度构建 DAG。
+        """根据 Intent 构建 DAG。
 
         Args:
-            intent: 意图名称（search/compare/faq/general/...）
-            complexity: 复杂度 0-1（> 0.6 触发复杂搜索 DAG）
-            enable_moe: 是否启用 MoE 专家组
+            intent: 意图名称（search/compare/manage_cart/faq/general）
+            complexity: 保留参数（兼容旧调用方，不再影响 DAG 选择）
+            enable_moe: 保留参数（兼容旧调用方）
         """
-        # 复杂搜索 → 使用 MoE DAG
-        if intent == "search" and complexity > 0.6 and enable_moe:
-            template = COMPLEX_SEARCH_DAG
-        else:
-            try:
-                intent_enum = Intent(intent)
-                template = INTENT_DAG_TEMPLATES.get(intent_enum, INTENT_DAG_TEMPLATES[Intent.GENERAL])
-            except ValueError:
-                template = INTENT_DAG_TEMPLATES[Intent.GENERAL]
+        try:
+            intent_enum = Intent(intent)
+            template = INTENT_DAG_TEMPLATES.get(intent_enum, INTENT_DAG_TEMPLATES[Intent.GENERAL])
+        except ValueError:
+            template = INTENT_DAG_TEMPLATES[Intent.GENERAL]
 
         nodes = [
             ExecutionNode(

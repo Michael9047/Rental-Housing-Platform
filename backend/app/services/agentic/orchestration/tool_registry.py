@@ -217,7 +217,7 @@ def register_default_tools(
             },
             "required": ["property_id"],
         },
-        agent_names=["poi_agent", "lifestyle_expert", "search_agent"],
+        agent_names=["search_agent"],
     ))
 
     registry.register(ToolDef(
@@ -232,7 +232,7 @@ def register_default_tools(
             },
             "required": ["property_id", "destination"],
         },
-        agent_names=["commute_agent", "commute_expert", "search_agent"],
+        agent_names=["search_agent"],
     ))
 
     # ── 市场分析工具 ──
@@ -247,7 +247,7 @@ def register_default_tools(
             },
             "required": [],
         },
-        agent_names=["market_agent", "price_expert", "area_expert"],
+        agent_names=["search_agent"],
     ))
 
     # ── 购物车工具 ──
@@ -306,7 +306,7 @@ def register_default_tools(
             },
             "required": ["scores"],
         },
-        agent_names=["search_agent", "ranking_agent"],
+        agent_names=["search_agent"],
     ))
 
     registry.register(ToolDef(
