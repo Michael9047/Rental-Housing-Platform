@@ -2,11 +2,11 @@
 <template>
   <el-card shadow="never" class="commute-card" v-if="hasCoords">
     <template #header>
-      <span class="card-header-text">🚌 通勤路线 <span v-if="originName">— 从 {{ originName }} 出发</span></span>
+      <span class="card-header-text">🚌 {{ hasSchoolContext ? '通勤路线' : '房源周边' }} <span v-if="hasSchoolContext && originName">— 从 {{ originName }} 出发</span></span>
     </template>
 
-    <!-- 模式 tabs -->
-    <div class="mode-tabs">
+    <!-- 模式 tabs（仅学校上下文时显示）-->
+    <div v-if="hasSchoolContext" class="mode-tabs">
       <button
         v-for="m in modes"
         :key="m.key"
@@ -25,10 +25,12 @@
       <div v-if="loading" class="map-loading-overlay">
         <el-icon class="is-loading" :size="28"><Loading /></el-icon>
       </div>
+      <!-- 右下角地图商标 -->
+      <div class="map-attribution">© OpenStreetMap contributors</div>
     </div>
 
-    <!-- 底部摘要 -->
-    <div class="route-summary" v-if="routeDetail">
+    <!-- 底部摘要（仅学校上下文时显示）-->
+    <div v-if="hasSchoolContext && routeDetail" class="route-summary">
       📍 全程 <strong>{{ routeDetail.dist_km }}km</strong> · 约 <strong>{{ routeDetail.duration_min }} 分钟</strong>
       <span v-if="routeDetail.source === 'haversine_fallback'" class="fallback-badge">估算值</span>
     </div>
@@ -36,7 +38,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, onMounted, onUnmounted, nextTick, shallowRef } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted, nextTick, shallowRef } from 'vue'
 import { Loading } from '@element-plus/icons-vue'
 import { commuteService, type RouteDetailResponse, type RouteSegment } from '@/services/commute'
 import L from 'leaflet'
@@ -68,6 +70,11 @@ const props = defineProps<{
 }>()
 
 const hasCoords = true // 由父组件 v-if 控制，组件内始终 true
+
+// 是否有外部起点（学校上下文），没有则仅展示房源周边地图
+const hasSchoolContext = computed(() => {
+  return props.originLat !== props.destLat || props.originLng !== props.destLng
+})
 
 // ── 模式 ──
 interface ModeOption { key: string; emoji: string; minutes: number }
@@ -103,6 +110,12 @@ function initMap() {
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     maxZoom: 19,
   }).addTo(mapInstance)
+
+  // 确保容器尺寸正确后再刷新地图
+  setTimeout(() => {
+    mapInstance?.invalidateSize()
+  }, 200)
+
   mapReady = true
 }
 
@@ -218,6 +231,20 @@ function drawSegments(segments: RouteSegment[], mode: string) {
   }
 }
 
+// ── 仅展示房源标记（无学校上下文时）──
+function showPropertyOnly() {
+  if (!mapInstance) return
+  clearLayers()
+  const pos: [number, number] = [props.destLat, props.destLng]
+  const marker = L.circleMarker(pos, {
+    radius: 8, color: '#ef4444', fillColor: '#ef4444', fillOpacity: 0.8, weight: 2,
+  })
+  marker.bindTooltip(props.destTitle || '房源', { direction: 'top', offset: [0, -8] })
+  marker.addTo(mapInstance)
+  allLayers.value = [marker]
+  mapInstance.setView(pos, 14)
+}
+
 // ── 切换模式 ──
 async function switchMode(mode: string) {
   if (loading.value || activeMode.value === mode) return
@@ -254,8 +281,13 @@ async function fetchRoute() {
 onMounted(() => {
   nextTick(() => {
     initMap()
-    // 初始加载默认模式（walking）
-    nextTick(() => fetchRoute())
+    if (hasSchoolContext.value) {
+      // 有学校上下文：加载通勤路线
+      nextTick(() => fetchRoute())
+    } else {
+      // 无学校上下文：仅展示房源位置
+      nextTick(() => showPropertyOnly())
+    }
   })
 })
 
@@ -371,5 +403,21 @@ watch(() => [props.originLat, props.originLng, props.destLat, props.destLng], ()
   color: #92400e;
   padding: 1px 8px;
   border-radius: 10px;
+}
+
+/* ── 地图商标（右下角）── */
+.map-attribution {
+  position: absolute;
+  right: 6px;
+  bottom: 4px;
+  z-index: 800;
+  font-size: 10px;
+  color: #666;
+  background: rgba(255, 255, 255, 0.8);
+  padding: 1px 6px;
+  border-radius: 3px;
+  pointer-events: none;
+  user-select: none;
+  line-height: 1.6;
 }
 </style>

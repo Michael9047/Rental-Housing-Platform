@@ -1,16 +1,9 @@
 """通勤时间计算服务 —— 多引擎路线规划
 
-方案 A：接入高德/Google 路线规划 API，获取四种交通模式的真实通勤时间。
-方案 B（后续）：自建 OSRM 路由引擎。
-
 引擎选择：
 - 中国大陆 (CN) → 高德地图 Directions API（步行/骑行/驾车/公交）
-- 海外 → Google Maps Distance Matrix API（批量，四种模式）
+- 海外 → ORS（OpenRouteService，基于 OSM）+ 高德备选
 - API 不可用时 → Haversine 直线距离估算作为兜底
-
-调用方式：
-- 高德：每个目的地每种模式一次 HTTP 调用（并发 asyncio.gather）
-- Google：所有目的地合并到一次 Distance Matrix 调用（分模式，共 4 次调用）
 """
 
 from __future__ import annotations
@@ -694,6 +687,99 @@ class GoogleCommuteService:
         )
 
 
+# ── OpenRouteService（OSM 全球路线引擎，步行/骑行/驾车）───────────
+
+_ORS_MODE_MAP = {
+    "walking": "foot-walking",
+    "bicycling": "cycling-regular",
+    "driving": "driving-car",
+}
+
+
+class ORSCommuteService:
+    """OpenRouteService Directions API —— 基于 OSM 数据，覆盖步行/骑行/驾车。"""
+
+    def __init__(self) -> None:
+        self.settings = get_settings()
+
+    @property
+    def api_key(self) -> str:
+        return self.settings.ors_api_key
+
+    @property
+    def base_url(self) -> str:
+        return self.settings.ors_directions_url
+
+    async def _call_ors(
+        self, client: httpx.AsyncClient,
+        origin_lat: float, origin_lng: float,
+        dest_lat: float, dest_lng: float, mode: str,
+    ) -> tuple[int, float] | None:
+        profile = _ORS_MODE_MAP.get(mode)
+        if not profile:
+            return None
+        url = f"{self.base_url}/{profile}"
+        body = {"coordinates": [[origin_lng, origin_lat], [dest_lng, dest_lat]]}
+        headers = {"Authorization": self.api_key, "Content-Type": "application/json"}
+        try:
+            resp = await client.post(url, json=body, headers=headers)
+            resp.raise_for_status()
+            data = resp.json()
+            route = data["routes"][0]
+            s = route["summary"]
+            dur, dist = int(s["duration"]), float(s["distance"])
+            return (dur, dist) if dur > 0 else None
+        except Exception as exc:
+            logger.debug("ORS API 失败 (mode=%s): %s", mode, exc)
+            return None
+
+    async def get_one(
+        self, origin_lat: float, origin_lng: float,
+        dest_lat: float, dest_lng: float, city: str | None = None,
+    ) -> CommuteResult:
+        dist = _haversine_km(origin_lat, origin_lng, dest_lat, dest_lng)
+        timeout = httpx.Timeout(self.settings.ors_timeout_seconds)
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            walk, bike, drive = await asyncio.gather(
+                self._call_ors(client, origin_lat, origin_lng, dest_lat, dest_lng, "walking"),
+                self._call_ors(client, origin_lat, origin_lng, dest_lat, dest_lng, "bicycling"),
+                self._call_ors(client, origin_lat, origin_lng, dest_lat, dest_lng, "driving"),
+                return_exceptions=True,
+            )
+
+        def _u(t): return None if isinstance(t, BaseException) else t
+        w, b, d = _u(walk), _u(bike), _u(drive)
+        if w and d:
+            return CommuteResult(
+                dest_id=0, dist_km=round(dist, 2),
+                walk_min=max(1, round(w[0] / 60)),
+                bike_min=max(1, round(b[0] / 60)) if b else max(1, round(dist * _DETOUR_FACTOR / _BIKE_SPEED * 60)),
+                drive_min=max(1, round(d[0] / 60)),
+                transit_min=max(1, round(dist * _DETOUR_FACTOR / _TRANSIT_SPEED * 60)),
+                source="api",
+            )
+        return _haversine_estimate(origin_lat, origin_lng, dest_lat, dest_lng)
+
+    async def get_batch(
+        self, origin_lat: float, origin_lng: float,
+        destinations: list[CommuteDestination],
+    ) -> list[CommuteResult]:
+        if not destinations:
+            return []
+        tasks = [self.get_one(origin_lat, origin_lng, d.lat, d.lng) for d in destinations]
+        raw = await asyncio.gather(*tasks, return_exceptions=True)
+        results: list[CommuteResult] = []
+        for i, r in enumerate(raw):
+            if isinstance(r, BaseException):
+                fb = _haversine_estimate(origin_lat, origin_lng, destinations[i].lat, destinations[i].lng)
+                fb.dest_id = destinations[i].dest_id
+                results.append(fb)
+            else:
+                r.dest_id = destinations[i].dest_id
+                results.append(r)
+        return results
+
+
 # ── 工厂 & 公共接口 ───────────────────────────────────────────────────
 
 
@@ -701,7 +787,7 @@ def get_commute_service(country: str | None = None):
     """根据国家代码返回对应的通勤计算服务"""
     if _is_amap_primary(country):
         return AmapCommuteService()
-    return GoogleCommuteService()
+    return ORSCommuteService()
 
 
 async def calculate_commute_batch(
@@ -716,7 +802,7 @@ async def calculate_commute_batch(
     Args:
         origin_lat/lng: 起点坐标（学校）
         destinations: 目标房源列表
-        country: 国家代码（决定用高德还是 Google）
+        country: 国家代码（决定用高德还是 ORS）
         city: 城市名（高德公交模式需要，中文名如"苏州"）
 
     Returns:
@@ -755,9 +841,9 @@ async def calculate_commute_batch(
                 source="api" if api_ok else "haversine_fallback",
             )
         else:
-            service = GoogleCommuteService()
+            service = ORSCommuteService()
             if not service.api_key:
-                logger.warning("Google Maps API Key 未配置，降级为 Haversine 估算")
+                logger.warning("ORS API Key 未配置，降级为 Haversine 估算")
                 return _fallback_batch(origin_lat, origin_lng, destinations)
 
             results = await service.get_batch(origin_lat, origin_lng, destinations)
@@ -833,10 +919,114 @@ async def get_route_detail(
                 return _route_fallback(origin_lat, origin_lng, dest_lat, dest_lng, mode)
             return await service.get_route_detail(origin_lat, origin_lng, dest_lat, dest_lng, mode, city=city)
         else:
-            service = GoogleCommuteService()
-            if not service.api_key:
-                return _route_fallback(origin_lat, origin_lng, dest_lat, dest_lng, mode)
-            return await service.get_route_detail(origin_lat, origin_lng, dest_lat, dest_lng, mode)
+            # 海外：ORS 不支持路线详情，直接用直线 polyline 兜底
+            return _route_fallback(origin_lat, origin_lng, dest_lat, dest_lng, mode)
     except Exception:
         logger.exception("路线详情获取异常，降级为直线")
         return _route_fallback(origin_lat, origin_lng, dest_lat, dest_lng, mode)
+
+
+# ── 网络环境探测 + 弹性批量通勤计算 ─────────────────────────────────
+
+_amap_reachable_cache: bool | None = None
+_AMAP_PROBE_TIMEOUT = 2.0
+
+
+async def _probe_amap_reachable() -> bool:
+    """探测高德 API 是否可达（进程级缓存）。
+
+    - 可达 → 国内网络，优先用高德
+    - 超时 → 海外网络，优先用 ORS
+    """
+    global _amap_reachable_cache
+    if _amap_reachable_cache is not None:
+        return _amap_reachable_cache
+
+    settings = get_settings()
+    if not settings.amap_web_key:
+        _amap_reachable_cache = False
+        return False
+
+    try:
+        async with httpx.AsyncClient(timeout=_AMAP_PROBE_TIMEOUT) as client:
+            await client.get(
+                "https://restapi.amap.com/v3/geocode/geo",
+                params={"key": settings.amap_web_key, "address": "北京"},
+            )
+        _amap_reachable_cache = True
+        logger.info("高德 API 可达 → 国内网络环境")
+        return True
+    except Exception:
+        _amap_reachable_cache = False
+        logger.info("高德 API 不可达 → 海外网络环境")
+        return False
+
+
+async def _try_engine(
+    origin_lat: float, origin_lng: float,
+    destinations: list[CommuteDestination],
+    engine: str, city: str | None,
+) -> BatchCommuteResult | None:
+    """尝试用指定引擎计算通勤。engine: 'amap' | 'ors'。返回 None 表示完全失败。"""
+    try:
+        if engine == "amap":
+            service = AmapCommuteService()
+            if not service.web_key:
+                return None
+            tasks = [service.get_one(origin_lat, origin_lng, d.lat, d.lng, city=city) for d in destinations]
+            raw = await asyncio.gather(*tasks, return_exceptions=True)
+            results: list[CommuteResult] = []
+            api_ok = False
+            for i, r in enumerate(raw):
+                if isinstance(r, BaseException):
+                    fb = _haversine_estimate(origin_lat, origin_lng, destinations[i].lat, destinations[i].lng)
+                    fb.dest_id = destinations[i].dest_id
+                    results.append(fb)
+                else:
+                    r.dest_id = destinations[i].dest_id
+                    results.append(r)
+                    if r.source == "api":
+                        api_ok = True
+            return BatchCommuteResult(results=results, source=f"{engine}_api") if api_ok else None
+
+        elif engine == "ors":
+            service = ORSCommuteService()
+            if not service.api_key:
+                return None
+            results = await service.get_batch(origin_lat, origin_lng, destinations)
+            api_ok = any(r.source == "api" for r in results)
+            return BatchCommuteResult(results=results, source=f"{engine}_api") if api_ok else None
+
+    except Exception:
+        logger.warning("引擎 %s 调用异常", engine, exc_info=True)
+    return None
+
+
+async def calculate_commute_batch_resilient(
+    origin_lat: float, origin_lng: float,
+    destinations: list[CommuteDestination],
+    country: str | None = None, city: str | None = None,
+) -> BatchCommuteResult:
+    """弹性批量通勤计算 —— 三级降级链。
+
+    海外: ORS → 高德 → Haversine
+    国内: 高德 → ORS → Haversine
+    """
+    if not destinations:
+        return BatchCommuteResult(source="api")
+
+    amap_reachable = await _probe_amap_reachable()
+
+    if amap_reachable:
+        chain = ["amap", "ors"]
+    else:
+        chain = ["ors", "amap"]
+
+    for engine in chain:
+        result = await _try_engine(origin_lat, origin_lng, destinations, engine, city)
+        if result is not None:
+            return result
+
+    # 全部失败 → Haversine 兜底
+    logger.warning("所有路线引擎均失败，使用 Haversine 估算")
+    return _fallback_batch(origin_lat, origin_lng, destinations)

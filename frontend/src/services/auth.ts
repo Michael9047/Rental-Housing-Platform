@@ -1,5 +1,14 @@
 import api from './api'
-import type { RegisterRequest, LoginRequest, TokenResponse } from '@/types/auth'
+import type {
+  RegisterRequest,
+  LoginRequest,
+  TokenResponse,
+  PhoneLoginRequest,
+  PhoneLoginResponse,
+  PhoneRegisterRequest,
+  SendSmsCodeRequest,
+  VerifySmsCodeRequest,
+} from '@/types/auth'
 import type { User } from '@/types/user'
 
 export const authService = {
@@ -18,5 +27,25 @@ export const authService = {
 
   getMe(): Promise<User> {
     return api.get('/auth/me').then((r) => r.data)
+  },
+
+  /** 发送短信验证码 */
+  sendSmsCode(data: SendSmsCodeRequest): Promise<{ detail: string }> {
+    return api.post('/auth/send-sms-code', data).then((r) => r.data)
+  },
+
+  /** 验证短信验证码 */
+  verifySmsCode(data: VerifySmsCodeRequest): Promise<{ verified: boolean }> {
+    return api.post('/auth/verify-sms-code', data).then((r) => r.data)
+  },
+
+  /** 手机号 + 短信验证码登录 */
+  phoneLogin(data: PhoneLoginRequest): Promise<PhoneLoginResponse> {
+    return api.post('/auth/phone-login', data).then((r) => r.data)
+  },
+
+  /** 新用户手机号注册（验证码验证后设置用户名密码） */
+  phoneRegister(data: PhoneRegisterRequest): Promise<TokenResponse> {
+    return api.post('/auth/phone-register', data).then((r) => r.data)
   },
 }

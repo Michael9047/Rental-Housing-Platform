@@ -4,7 +4,7 @@ import json
 import logging
 import threading
 import uuid
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from decimal import Decimal
 from typing import Any
 
@@ -235,6 +235,13 @@ class PropertyService:
             "total_pages": max(1, (total + limit - 1) // limit) if limit > 0 else 1,
         }
 
+    # 房型值映射（前端 → 后端枚举）
+    _ROOM_TYPE_MAP: dict[str, str] = {
+        "ensuite": "ensuite", "studio": "studio",
+        "1bed": "one_bed", "2bed": "two_bed",
+        "3bed+": "three_bed_plus", "shared": "shared",
+    }
+
     async def search(
         self,
         *,
@@ -246,6 +253,16 @@ class PropertyService:
         property_type: str | None = None,
         status: str | None = None,
         limit: int = 20,
+        institute_id: int | None = None,
+        room_type: str | None = None,
+        amenities: list[str] | None = None,
+        available_from: str | None = None,
+        min_lease_months: int | None = None,
+        max_lease_months: int | None = None,
+        bathrooms: int | None = None,
+        area_min: float | None = None,
+        area_max: float | None = None,
+        sort_by: str | None = None,
     ) -> list[tuple[Property, float | None]]:
         from sqlalchemy.orm import selectinload
 
@@ -259,6 +276,16 @@ class PropertyService:
                 "property_type": property_type,
                 "status": status,
                 "limit": limit,
+                "institute_id": institute_id,
+                "room_type": room_type,
+                "amenities": sorted(amenities) if amenities else None,
+                "available_from": available_from,
+                "min_lease_months": min_lease_months,
+                "max_lease_months": max_lease_months,
+                "bathrooms": bathrooms,
+                "area_min": area_min,
+                "area_max": area_max,
+                "sort_by": sort_by,
             }
             redis = await _get_redis()
             if redis is not None:
@@ -281,24 +308,37 @@ class PropertyService:
                     except Exception:
                         pass
 
+        query_vec = None
         if query:
             from sqlalchemy import Float
 
             from app.services.embedding_service import EmbeddingService
 
             embedding_service = EmbeddingService()
-            query_vec = await embedding_service.generate_embedding(query)
+            try:
+                query_vec = await embedding_service.generate_embedding(query)
+            except Exception:
+                logger.warning("Embedding failed for query '%s', falling back to keyword", query)
 
-            # pgvector 的 L2 距离操作符（新版 pgvector 不再导出 l2_distance 函数）
-            similarity_expr = (
-                Property.embedding.op("<->", return_type=Float)(query_vec).label("similarity")
-            )
-            stmt = (
-                select(Property, similarity_expr)
-                .options(selectinload(Property.institute))
-                .where(Property.embedding.isnot(None), Property.deleted_at.is_(None))
-            )
-            stmt = stmt.order_by(similarity_expr)
+            if query_vec is not None:
+                # pgvector 的 L2 距离操作符
+                similarity_expr = (
+                    Property.embedding.op("<->", return_type=Float)(query_vec).label("similarity")
+                )
+                stmt = (
+                    select(Property, similarity_expr)
+                    .options(selectinload(Property.institute))
+                    .where(Property.embedding.isnot(None), Property.deleted_at.is_(None))
+                )
+                stmt = stmt.order_by(similarity_expr)
+            else:
+                query_vec = None  # 确保走关键词回退
+                stmt = (
+                    select(Property, text("NULL AS similarity"))
+                    .options(selectinload(Property.institute))
+                    .where(Property.deleted_at.is_(None))
+                )
+                stmt = stmt.order_by(Property.created_at.desc())
         else:
             stmt = (
                 select(Property, text("NULL AS similarity"))
@@ -320,11 +360,122 @@ class PropertyService:
         if status:
             stmt = stmt.where(Property.status == status)
 
+        # ── 新增筛选条件 ──
+        if institute_id is not None:
+            stmt = stmt.where(Property.institute_id == institute_id)
+        if amenities:
+            stmt = stmt.where(Property.amenities.op("&&")(amenities))
+        if available_from:
+            # 入住月份：YYYYMM → 当月及之前可入住的房源
+            year = int(available_from[:4])
+            month = int(available_from[4:6])
+            if month == 12:
+                end_date = date(year + 1, 1, 1)
+            else:
+                end_date = date(year, month + 1, 1)
+            stmt = stmt.where(
+                Property.available_from.isnot(None),
+                Property.available_from < end_date,
+            )
+        if room_type:
+            mapped_type = PropertyService._ROOM_TYPE_MAP.get(room_type, room_type)
+            from app.models.room_type import RoomType
+            # 使用子查询避免 JOIN 产生重复行
+            room_sub = select(RoomType.property_id).where(
+                RoomType.room_type == mapped_type
+            ).subquery()
+            stmt = stmt.where(Property.id.in_(select(room_sub)))
+        if min_lease_months is not None:
+            stmt = stmt.where(Property.max_lease_months >= min_lease_months)
+        if max_lease_months is not None:
+            stmt = stmt.where(Property.min_lease_months <= max_lease_months)
+        if bathrooms is not None:
+            stmt = stmt.where(Property.bathrooms >= bathrooms)
+        if area_min is not None:
+            stmt = stmt.where(Property.area_sqm >= area_min)
+        if area_max is not None:
+            stmt = stmt.where(Property.area_sqm <= area_max)
+        # ── 排序 ──
+        if sort_by == "price_asc":
+            stmt = stmt.order_by(Property.price_monthly.asc())
+        elif sort_by == "price_desc":
+            stmt = stmt.order_by(Property.price_monthly.desc())
+        elif sort_by == "created_at":
+            stmt = stmt.order_by(Property.created_at.desc())
+
         stmt = stmt.where(Property.status == "available")
         stmt = stmt.limit(limit)
         result = await self.session.execute(stmt)
         rows = result.all()
         results = [(row[0], row[1]) for row in rows]
+
+        # 向量搜索 0 结果回退：房源均无 embedding → 关键词 ILIKE 搜索
+        if len(results) == 0 and query_vec is not None and query:
+            logger.info("SEARCH vector returned 0 results, falling back to keyword ILIKE")
+            from sqlalchemy import or_
+            fallback_stmt = (
+                select(Property, text("NULL AS similarity"))
+                .options(selectinload(Property.institute))
+                .where(Property.deleted_at.is_(None))
+            )
+            kw = f"%{query}%"
+            fallback_stmt = fallback_stmt.where(or_(
+                Property.title.ilike(kw),
+                Property.address.ilike(kw),
+                Property.district.ilike(kw),
+                Property.description.ilike(kw),
+            ))
+            if district:
+                fallback_stmt = fallback_stmt.where(Property.district == district)
+            if price_min is not None:
+                fallback_stmt = fallback_stmt.where(Property.price_monthly >= price_min)
+            if price_max is not None:
+                fallback_stmt = fallback_stmt.where(Property.price_monthly <= price_max)
+            if bedrooms is not None:
+                fallback_stmt = fallback_stmt.where(Property.bedrooms == bedrooms)
+            if property_type:
+                fallback_stmt = fallback_stmt.where(Property.property_type == property_type)
+            if status:
+                fallback_stmt = fallback_stmt.where(Property.status == status)
+
+            # ── 新增筛选条件（回退路径）──
+            if institute_id is not None:
+                fallback_stmt = fallback_stmt.where(Property.institute_id == institute_id)
+            if amenities:
+                fallback_stmt = fallback_stmt.where(Property.amenities.op("&&")(amenities))
+            if available_from:
+                year = int(available_from[:4])
+                month = int(available_from[4:6])
+                if month == 12:
+                    end_date = date(year + 1, 1, 1)
+                else:
+                    end_date = date(year, month + 1, 1)
+                fallback_stmt = fallback_stmt.where(
+                    Property.available_from.isnot(None),
+                    Property.available_from < end_date,
+                )
+            if room_type:
+                mapped_type = PropertyService._ROOM_TYPE_MAP.get(room_type, room_type)
+                # 使用子查询避免 JOIN 产生重复行
+                room_fb_sub = select(RoomType.property_id).where(
+                    RoomType.room_type == mapped_type
+                ).subquery()
+                fallback_stmt = fallback_stmt.where(Property.id.in_(select(room_fb_sub)))
+            if min_lease_months is not None:
+                fallback_stmt = fallback_stmt.where(Property.max_lease_months >= min_lease_months)
+            if max_lease_months is not None:
+                fallback_stmt = fallback_stmt.where(Property.min_lease_months <= max_lease_months)
+            if bathrooms is not None:
+                fallback_stmt = fallback_stmt.where(Property.bathrooms >= bathrooms)
+            if area_min is not None:
+                fallback_stmt = fallback_stmt.where(Property.area_sqm >= area_min)
+            if area_max is not None:
+                fallback_stmt = fallback_stmt.where(Property.area_sqm <= area_max)
+            fallback_stmt = fallback_stmt.where(Property.status == "available")
+            fallback_stmt = fallback_stmt.order_by(Property.created_at.desc())
+            fallback_stmt = fallback_stmt.limit(limit)
+            fallback_result = await self.session.execute(fallback_stmt)
+            results = [(row[0], row[1]) for row in fallback_result.all()]
 
         # --- Cache non-vector results ---
         if not query:
@@ -400,16 +551,11 @@ class PropertyService:
         except Exception:
             logger.exception("Failed to refresh POI for property %s", property_obj.id)
 
-<<<<<<< HEAD
         await self._ensure_embedding(property_obj)
         await _bump_search_cache_version()
-=======
-        self._dispatch_embedding_task(property_obj.id)
 
         await self._audit(property_obj.landlord_id, "property_update", property_obj.id,
                           {"title": property_obj.title, "changed_fields": list(update_data.keys())})
-
->>>>>>> origin/main
         return property_obj
 
     async def delete(self, property_id: int) -> bool:

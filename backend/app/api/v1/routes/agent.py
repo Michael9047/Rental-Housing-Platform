@@ -1,4 +1,7 @@
-"""租房推荐 Agent —— 会话、推荐、购物车、对比接口"""
+"""租房推荐 Agent —— 会话、推荐、购物车、对比接口
+
+统一使用多 Agent DAG 编排（Supervisor + MoE 专家组）。
+"""
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -19,6 +22,7 @@ from app.schemas.agent import (
     CompareRequest,
     CompareResponse,
     FaqChip,
+    ThinkingStep,
 )
 from app.schemas.property import PropertySearchResult
 from app.services.agent_faq import list_faq_chips
@@ -70,11 +74,7 @@ async def send_agent_message(
     if chat_session is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Agent 会话不存在")
 
-    agent_service = AgentService(session)
-    filters = body.filters.model_dump(exclude_none=True) if body.filters else None
-    result = await agent_service.handle_message(
-        chat_session, current_user.id, body.message, filters
-    )
+    result = await _handle_with_supervisor(session, chat_session, current_user.id, body)
 
     return AgentMessageResponse(
         reply=result["reply"],
@@ -87,13 +87,101 @@ async def send_agent_message(
                 cons=r.get("cons", []),
                 property=_to_search_result(r["property"]),
             )
-            for r in result["recommendations"]
+            for r in result.get("recommendations", [])
         ],
-        cart_changed=result["cart_changed"],
-        ai_available=result["ai_available"],
+        top_picks=[
+            AgentRecommendation(
+                property_id=tp["property_id"],
+                match_reason=tp.get("match_reason", ""),
+                pros=tp.get("pros", []),
+                cons=tp.get("cons", []),
+                property=_to_search_result(tp["property"]),
+            )
+            for tp in result.get("top_picks", [])
+        ],
+        cart_changed=result.get("cart_changed", False),
+        ai_available=result.get("ai_available", True),
         quick_replies=result.get("quick_replies", []),
         links=[AgentLink(**link) for link in result.get("links", [])],
+        thinking_steps=[
+            ThinkingStep(**step) for step in result.get("thinking_steps", [])
+        ],
     )
+
+
+async def _handle_with_supervisor(
+    session: AsyncSession,
+    chat_session,
+    user_id: int,
+    body: AgentMessageRequest,
+) -> dict:
+    """使用 Supervisor 多 Agent DAG 编排处理消息。"""
+    from app.models.chat import ChatMessage, ChatMessageRole
+    from app.services.agentic.orchestration.supervisor import Supervisor
+    from app.services.agentic.agents.registry import register_all_agents
+    from app.services.agentic.orchestration.agent_registry import AgentRegistry
+    from app.services.agentic.orchestration.tool_registry import ToolRegistry, bind_tool_handlers
+
+    # 注册 Agent + 绑定工具
+    registry = AgentRegistry()
+    register_all_agents(registry)
+    tool_registry = ToolRegistry.get_instance()
+    bind_tool_handlers(tool_registry, session, user_id)
+
+    # 构建对话历史
+    history = await _build_chat_history(session, chat_session.id, user_id)
+
+    # 提取筛选条件
+    filters = body.filters.model_dump(exclude_none=True) if body.filters else None
+
+    supervisor = Supervisor(session=session, registry=registry, tool_registry=tool_registry)
+    result = await supervisor.handle_message(
+        message=body.message,
+        history=history,
+        filters=filters,
+        user_id=user_id,
+        compare_property_ids=body.compare_property_ids,
+    )
+
+    # 持久化消息到数据库（与 legacy 行为一致）
+    user_msg = ChatMessage(
+        session_id=chat_session.id,
+        role=ChatMessageRole.user,
+        content=body.message,
+        metadata_={"filters": filters or {}, "pipeline": "agentic"},
+    )
+    assistant_msg = ChatMessage(
+        session_id=chat_session.id,
+        role=ChatMessageRole.assistant,
+        content=result["reply"],
+        metadata_={
+            "intent": result.get("intent"),
+            "pipeline": "agentic",
+            "orchestration": result.get("_orchestration"),
+            "recommendations": [
+                {"property_id": r["property_id"], "match_reason": r.get("match_reason", "")}
+                for r in result.get("recommendations", [])
+            ],
+        },
+    )
+    session.add_all([user_msg, assistant_msg])
+    await session.commit()
+
+    return result
+
+
+async def _build_chat_history(
+    session: AsyncSession, chat_session_id: int, user_id: int
+) -> list[dict]:
+    """从数据库获取对话历史，转为 Supervisor 需要的格式。"""
+    from app.services.chat_service import ChatService as Cs
+    chat_svc = Cs(session)
+    messages = await chat_svc.get_messages(chat_session_id, user_id)
+    history = []
+    for msg in messages:
+        role = "user" if msg.role.value == "user" else "assistant"
+        history.append({"role": role, "content": msg.content})
+    return history
 
 
 @router.get("/faqs", response_model=list[FaqChip])

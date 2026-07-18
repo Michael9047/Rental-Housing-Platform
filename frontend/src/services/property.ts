@@ -7,12 +7,30 @@ import type {
   PropertySearchParams,
   PropertyListResponse,
   PropertyImage,
+  RoomType,
 } from '@/types/property'
 
 export interface PropertyPOI {
   content: string
   poi_data: Record<string, { name: string; distance: string }[]>
   generated_at: string
+}
+
+/** 地图小卡片 POI 预生成数据 */
+export interface MapPOIItem {
+  id: number | string
+  name: string
+  lat: number
+  lng: number
+  distance: number | null
+  line: string | null
+}
+
+export interface MapPOIResponse {
+  property_id: number
+  generated_at: string | null
+  search_radius_m: number
+  categories: Record<string, MapPOIItem[]>
 }
 
 export interface GeocodeResult {
@@ -113,6 +131,11 @@ export const propertyService = {
     return api.get(`/pois/${propertyId}`).then((r) => r.data).catch(() => null)
   },
 
+  /** 地图小卡片 POI 预生成数据（6 大类，含 lat/lng） */
+  getMapPOIs(propertyId: number | string): Promise<MapPOIResponse | null> {
+    return api.get(`/pois/${propertyId}/map`).then((r) => r.data).catch(() => null)
+  },
+
   // ---- ML ----
   /** AI 深度解析房源描述 */
   parseDescription(rawText: string): Promise<import('@/types/admin').ParsedProperty> {
@@ -130,5 +153,10 @@ export const propertyService = {
     service_fee_rate?: number
   }): Promise<import('@/types/admin').RentEstimate> {
     return api.get('/ml/rent-estimate', { params }).then((r) => r.data)
+  },
+
+  /** 获取某个楼栋下的所有房型 */
+  listRoomTypes(propertyId: number): Promise<RoomType[]> {
+    return api.get(`/properties/${propertyId}/room-types`).then((r) => r.data)
   },
 }

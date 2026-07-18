@@ -104,6 +104,7 @@ class Property(TimestampMixin, Base):
     description: Mapped[str | None] = mapped_column(SAText)
     address: Mapped[str] = mapped_column(String(300), nullable=False)
     district: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+    country: Mapped[str] = mapped_column(String(2), default="CN", nullable=False, index=True)
     price_monthly: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
     area_sqm: Mapped[Decimal | None] = mapped_column(Numeric(8, 2))
     bedrooms: Mapped[int] = mapped_column(default=0, nullable=False)
@@ -150,4 +151,8 @@ class Property(TimestampMixin, Base):
 
     images: Mapped[list["PropertyImage"]] = relationship(
         "PropertyImage", back_populates="property", cascade="all, delete-orphan", lazy="selectin"
+    )
+
+    room_types: Mapped[list["RoomType"]] = relationship(
+        "RoomType", back_populates="property", cascade="all, delete-orphan", lazy="selectin"
     )

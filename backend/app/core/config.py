@@ -189,6 +189,20 @@ class Settings(BaseSettings):
         validation_alias="NOMINATIM_TIMEOUT_SECONDS",
     )
 
+    # ========== OpenRouteService（OSM 全球路线引擎）==========
+    ors_api_key: str = Field(
+        default="",
+        validation_alias="ORS_API_KEY",
+    )
+    ors_directions_url: str = Field(
+        default="https://api.openrouteservice.org/v2/directions",
+        validation_alias="ORS_DIRECTIONS_URL",
+    )
+    ors_timeout_seconds: float = Field(
+        default=8.0,
+        validation_alias="ORS_TIMEOUT_SECONDS",
+    )
+
     upload_dir: str = Field(default="./uploads", validation_alias="UPLOAD_DIR")
     max_upload_size: int = Field(default=5 * 1024 * 1024, validation_alias="MAX_UPLOAD_SIZE")
     allowed_image_types: list[str] = Field(

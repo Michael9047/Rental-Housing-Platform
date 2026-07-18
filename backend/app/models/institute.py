@@ -1,6 +1,7 @@
-﻿"""公寓管理机构模型 - 大型公寓管理机构，由BD经理代录入，非直接系统用户。"""
+"""公寓管理机构 / 大学模型 - 大型公寓管理机构或海外大学，由BD经理代录入，非直接系统用户。"""
 import enum
-from sqlalchemy import Boolean, Enum, ForeignKey, String, Text as SAText
+from decimal import Decimal
+from sqlalchemy import Boolean, Enum, ForeignKey, Numeric, String, Text as SAText
 from sqlalchemy.dialects.postgresql import JSON
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.models.mixins import TimestampMixin
@@ -18,7 +19,11 @@ class Institute(TimestampMixin, Base):
 
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
     name: Mapped[str] = mapped_column(String(200), nullable=False)
+    name_cn: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    abbreviation: Mapped[str | None] = mapped_column(String(50), nullable=True)
     address: Mapped[str | None] = mapped_column(String(300))
+    latitude: Mapped[Decimal | None] = mapped_column(Numeric(9, 6), nullable=True)
+    longitude: Mapped[Decimal | None] = mapped_column(Numeric(9, 6), nullable=True)
     contact_phone: Mapped[str | None] = mapped_column(String(32))
     contact_email: Mapped[str | None] = mapped_column(String(255))
     logo_url: Mapped[str | None] = mapped_column(String(500))
@@ -43,5 +48,8 @@ class Institute(TimestampMixin, Base):
         back_populates="institute", lazy="selectin"
     )
     reviews: Mapped[list["Review"]] = relationship(
+        back_populates="institute", lazy="selectin"
+    )
+    pms_connections: Mapped[list["PMSConnection"]] = relationship(
         back_populates="institute", lazy="selectin"
     )

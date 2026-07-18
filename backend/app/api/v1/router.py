@@ -1,12 +1,13 @@
 ﻿from fastapi import APIRouter
 
-from app.api.v1.routes import admin, agent, ai_search, auth, bookings, buildings, chat, commute, contracts, dashboard, favorites, geocoding, health, images, imports, map_routes, ml, notifications, payments, pms, pois, properties, repair_workers, repairs, search_suggestions, upload, users, wechat
+from app.api.v1.routes import admin, agent, ai_search, auth, bookings, buildings, chat, commute, contracts, dashboard, favorites, geocoding, health, images, imports, map_routes, ml, notifications, payments, pms, pois, properties, repair_workers, repairs, room_types, search_suggestions, upload, users, wechat
 
 api_router = APIRouter()
 api_router.include_router(health.router, tags=["health"])
 api_router.include_router(auth.router, prefix="/auth", tags=["auth"])
 api_router.include_router(users.router, prefix="/users", tags=["users"])
 api_router.include_router(properties.router, prefix="/properties", tags=["properties"])
+api_router.include_router(room_types.router, prefix="/properties", tags=["room-types"])
 api_router.include_router(images.router, prefix="/properties", tags=["images"])
 api_router.include_router(bookings.router, prefix="/bookings", tags=["bookings"])
 api_router.include_router(notifications.router, prefix="/notifications", tags=["notifications"])

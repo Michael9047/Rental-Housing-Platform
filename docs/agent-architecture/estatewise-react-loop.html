@@ -1,0 +1,546 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>EstateWise ReAct Loop — Agent 思考-行动-观察循环</title>
+<style>
+  :root {
+    --bg: #0f172a;
+    --card: #1e293b;
+    --border: #334155;
+    --text: #e2e8f0;
+    --muted: #94a3b8;
+    --think: #a78bfa;
+    --act: #f59e0b;
+    --obs: #10b981;
+    --llm: #3b82f6;
+    --err: #ef4444;
+    --warn: #fbbf24;
+  }
+
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body {
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    display: flex; flex-direction: column; align-items: center;
+    padding: 40px 20px 100px;
+  }
+
+  h1 { font-size: 2rem; margin-bottom: 6px; color: var(--think); }
+  .subtitle { color: var(--muted); font-size: 0.92rem; margin-bottom: 36px; }
+
+  /* ═══════════════ Main Loop Diagram ═══════════════ */
+  .loop-container {
+    position: relative;
+    width: 100%; max-width: 820px;
+    display: flex; flex-direction: column; align-items: center;
+  }
+
+  /* ── The Circle ── */
+  .loop-circle {
+    position: relative;
+    width: 460px; height: 460px;
+    margin: 20px 0 40px;
+  }
+  .loop-circle svg { overflow: visible; }
+
+  .loop-node {
+    position: absolute;
+    width: 110px; height: 110px;
+    border-radius: 50%;
+    border: 2.5px solid;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    text-align: center;
+    font-weight: 700; font-size: 0.8rem;
+    gap: 4px;
+    transition: all .35s ease;
+    cursor: default;
+    z-index: 2;
+  }
+  .loop-node:hover {
+    transform: scale(1.12);
+    box-shadow: 0 0 40px rgba(0,0,0,.5);
+    z-index: 10;
+  }
+  .loop-node .icon { font-size: 1.5rem; }
+  .loop-node .label { font-size: 0.72rem; }
+
+  .node-think {
+    top: 20px; left: 175px;
+    border-color: var(--think);
+    background: radial-gradient(circle at 30% 30%, rgba(167,139,250,.25), rgba(167,139,250,.06));
+    color: var(--think);
+  }
+  .node-act {
+    bottom: 20px; right: 25px;
+    border-color: var(--act);
+    background: radial-gradient(circle at 30% 30%, rgba(245,158,11,.25), rgba(245,158,11,.06));
+    color: var(--act);
+  }
+  .node-obs {
+    bottom: 20px; left: 25px;
+    border-color: var(--obs);
+    background: radial-gradient(circle at 30% 30%, rgba(16,185,129,.25), rgba(16,185,129,.06));
+    color: var(--obs);
+  }
+
+  /* Center token gauge */
+  .center-gauge {
+    position: absolute;
+    top: 155px; left: 155px;
+    width: 150px; height: 150px;
+    border-radius: 50%;
+    background: rgba(0,0,0,.45);
+    border: 1px solid var(--border);
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    gap: 2px;
+    z-index: 1;
+  }
+  .center-gauge .val {
+    font-size: 1.6rem; font-weight: 800;
+    font-family: 'Cascadia Code','Fira Code',monospace;
+    color: var(--llm);
+  }
+  .center-gauge .lbl {
+    font-size: 0.65rem; color: var(--muted);
+  }
+  .center-gauge .divider {
+    width: 40px; height: 1px; background: var(--border);
+    margin: 6px 0;
+  }
+
+  /* ── Loop Arrows ── */
+  .loop-arrow {
+    position: absolute;
+    z-index: 0;
+  }
+
+  /* ── Guard Labels ── */
+  .guard-tag {
+    position: absolute;
+    z-index: 3;
+    font-size: 0.65rem;
+    padding: 2px 8px;
+    border-radius: 99px;
+    font-weight: 600;
+    white-space: nowrap;
+    pointer-events: none;
+  }
+  .guard-tag.tokens  { background: rgba(59,130,246,.15); color: var(--llm); }
+  .guard-tag.timeout { background: rgba(239,68,68,.12); color: var(--err); }
+  .guard-tag.maxstep { background: rgba(251,191,36,.12); color: var(--warn); }
+
+  .entry-point {
+    position: absolute;
+    top: -36px; left: 175px;
+    width: 110px;
+    text-align: center;
+    font-size: 0.72rem; color: var(--muted);
+    font-weight: 600;
+    z-index: 3;
+  }
+  .entry-point::after {
+    content: '↓';
+    display: block;
+    font-size: 1.2rem;
+    color: var(--think);
+  }
+
+  /* ═══════════════ Step Timeline ═══════════════ */
+  .section-title {
+    font-size: 1.1rem; font-weight: 700;
+    color: var(--text);
+    margin: 48px 0 20px;
+    align-self: flex-start;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .section-title::before {
+    content: '';
+    width: 4px; height: 20px;
+    background: var(--think); border-radius: 2px;
+  }
+
+  .timeline {
+    width: 100%; max-width: 820px;
+    display: flex; flex-direction: column;
+    gap: 0;
+  }
+  .timeline-step {
+    display: flex;
+    gap: 16px;
+    position: relative;
+  }
+  .timeline-step .rail {
+    display: flex; flex-direction: column; align-items: center;
+    width: 36px; flex-shrink: 0;
+  }
+  .timeline-step .dot {
+    width: 14px; height: 14px;
+    border-radius: 50%;
+    border: 2px solid;
+    flex-shrink: 0;
+    z-index: 1;
+  }
+  .dot.think { border-color: var(--think); background: rgba(167,139,250,.2); }
+  .dot.act   { border-color: var(--act);   background: rgba(245,158,11,.2); }
+  .dot.obs   { border-color: var(--obs);   background: rgba(16,185,129,.2); }
+  .dot.end   { border-color: var(--llm);   background: rgba(59,130,246,.2); }
+  .timeline-step .rail .line {
+    width: 2px; flex: 1; min-height: 20px;
+    background: var(--border);
+  }
+  .timeline-step .body {
+    flex: 1; padding-bottom: 20px;
+  }
+  .timeline-step .body .step-title {
+    font-weight: 700; font-size: 0.9rem; margin-bottom: 4px;
+  }
+  .timeline-step .body .step-desc {
+    font-size: 0.82rem; color: var(--muted); line-height: 1.55;
+  }
+  .timeline-step .body .step-code {
+    margin-top: 8px;
+    background: rgba(0,0,0,.35);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 14px;
+    font-family: 'Cascadia Code','Fira Code',monospace;
+    font-size: 0.76rem;
+    line-height: 1.6;
+    overflow-x: auto;
+    white-space: pre;
+    color: var(--text);
+  }
+  .step-code .kw  { color: #c084fc; }
+  .step-code .fn  { color: #60a5fa; }
+  .step-code .str { color: #34d399; }
+  .step-code .num { color: #fbbf24; }
+  .step-code .cmt { color: #64748b; font-style: italic; }
+
+  /* ═══════════════ Comparison Table ═══════════════ */
+  .compare-grid {
+    width: 100%; max-width: 820px;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin-top: 16px;
+  }
+  .compare-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 20px;
+  }
+  .compare-card h3 {
+    font-size: 0.95rem; margin-bottom: 10px;
+  }
+  .compare-card.ours h3 { color: var(--err); }
+  .compare-card.theirs h3 { color: var(--obs); }
+  .compare-card ul {
+    list-style: none;
+    font-size: 0.82rem; color: var(--muted);
+    line-height: 1.8;
+  }
+  .compare-card ul li::before { content: '· '; color: var(--think); font-weight: bold; }
+
+  @media (max-width: 640px) {
+    .loop-circle { width: 320px; height: 320px; }
+    .loop-node { width: 80px; height: 80px; font-size: 0.65rem; }
+    .loop-node .icon { font-size: 1.1rem; }
+    .node-think { top: 10px; left: 120px; }
+    .node-act { bottom: 10px; right: 10px; }
+    .node-obs { bottom: 10px; left: 10px; }
+    .center-gauge { top: 105px; left: 105px; width: 110px; height: 110px; }
+    .center-gauge .val { font-size: 1.2rem; }
+    .compare-grid { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<h1>🔄 ReAct Loop</h1>
+<p class="subtitle">EstateWise 每个 Agent 内部的 思考→行动→观察 循环 — 三层守卫 + MCP 工具调用</p>
+
+<!-- ═══════════════ CIRCLE DIAGRAM ═══════════════ -->
+<div class="loop-container">
+  <div class="loop-circle">
+
+    <!-- SVG arrows -->
+    <svg style="position:absolute;top:0;left:0;width:460px;height:460px;pointer-events:none;">
+      <!-- Think → Act (top-right) -->
+      <path d="M 270,75 Q 340,70 360,170 Q 380,270 370,310" fill="none"
+            stroke="var(--think)" stroke-width="2.5" stroke-dasharray="8,4"
+            marker-end="url(#arrowhead-think)"/>
+      <!-- Act → Obs (bottom) -->
+      <line x1="320" y1="380" x2="195" y2="380" fill="none"
+            stroke="var(--act)" stroke-width="2.5" stroke-dasharray="8,4"
+            marker-end="url(#arrowhead-act)"/>
+      <!-- Obs → Think (left side up) -->
+      <path d="M 90,340 Q 70,270 70,175 Q 70,70 175,75" fill="none"
+            stroke="var(--obs)" stroke-width="2.5" stroke-dasharray="8,4"
+            marker-end="url(#arrowhead-obs)"/>
+
+      <defs>
+        <marker id="arrowhead-think" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+          <path d="M 0 0 L 10 5 L 0 10 z" fill="var(--think)"/>
+        </marker>
+        <marker id="arrowhead-act" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+          <path d="M 0 0 L 10 5 L 0 10 z" fill="var(--act)"/>
+        </marker>
+        <marker id="arrowhead-obs" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+          <path d="M 0 0 L 10 5 L 0 10 z" fill="var(--obs)"/>
+        </marker>
+      </defs>
+    </svg>
+
+    <div class="entry-point">用户任务进入</div>
+
+    <!-- Think Node -->
+    <div class="loop-node node-think">
+      <div class="icon">🤔</div>
+      <div class="label">思考<br>Thought</div>
+    </div>
+
+    <!-- Act Node -->
+    <div class="loop-node node-act">
+      <div class="icon">🔧</div>
+      <div class="label">行动<br>Action</div>
+    </div>
+
+    <!-- Obs Node -->
+    <div class="loop-node node-obs">
+      <div class="icon">👁️</div>
+      <div class="label">观察<br>Observation</div>
+    </div>
+
+    <!-- Center gauge -->
+    <div class="center-gauge">
+      <div class="lbl">已用 / 预算</div>
+      <div class="val" id="tokenVal">1,247</div>
+      <div class="lbl">/ 8,192 tokens</div>
+      <div class="divider"></div>
+      <div class="lbl">Step 3 / 10</div>
+    </div>
+
+    <!-- Guards -->
+    <div class="guard-tag tokens" style="top:100px;right:85px;">🔒 token 预算</div>
+    <div class="guard-tag timeout" style="top:290px;left:130px;">⏱️ 30s 超时</div>
+    <div class="guard-tag maxstep" style="top:100px;left:95px;">🔒 maxSteps=10</div>
+
+  </div>
+</div>
+
+<!-- ═══════════════ STEP-BY-STEP TIMELINE ═══════════════ -->
+<div class="section-title">一次完整的 ReAct 追踪</div>
+
+<div class="timeline">
+
+  <!-- Step 0: Entry -->
+  <div class="timeline-step">
+    <div class="rail"><div class="dot end"></div><div class="line"></div></div>
+    <div class="body">
+      <div class="step-title" style="color:var(--llm);">Step 0 · 任务注入 & 上下文组装</div>
+      <div class="step-desc">Supervisor DAG 把子任务 + 可用工具列表 + 系统提示词一起注入 Agent</div>
+      <div class="step-code">
+<span class="kw">const</span> context = {
+  task:        <span class="str">"搜索 Chapel Hill 3b2b 房源，预算 $2000"</span>,
+  tools:       [<span class="str">'property_search'</span>, <span class="str">'neo4j_query'</span>, <span class="str">'pinecone_similar'</span>, <span class="str">'commute_calc'</span>],
+  systemPrompt: <span class="str">"你是房产搜索专家..."</span>,
+  maxSteps:    <span class="num">10</span>,
+  tokenBudget: <span class="num">8192</span>,
+  timeoutMs:   <span class="num">30000</span>
+};
+<span class="fn">agent</span>.run(context);
+      </div>
+    </div>
+  </div>
+
+  <!-- Step 1: Think -->
+  <div class="timeline-step">
+    <div class="rail"><div class="dot think"></div><div class="line"></div></div>
+    <div class="body">
+      <div class="step-title" style="color:var(--think);">Step 1 · 思考 Thought</div>
+      <div class="step-desc">LLM 分析当前上下文，决定是调用工具还是直接回答。输出 JSON 结构化思考。</div>
+      <div class="step-code">
+<span class="cmt">// LLM 输出（结构化 JSON）</span>
+{
+  <span class="str">"thought"</span>:   <span class="str">"需要先用 property_search 工具查询 Chapel Hill 地区的 3b2b 房源"</span>,
+  <span class="str">"action"</span>:    <span class="str">"call_tool"</span>,               <span class="cmt">// call_tool | answer | ask_clarify</span>
+  <span class="str">"tool"</span>:      <span class="str">"mcp:property_search"</span>,
+  <span class="str">"args"</span>:      { city: <span class="str">"Chapel Hill"</span>, beds: <span class="num">3</span>, baths: <span class="num">2</span>, budget: <span class="num">2000</span> },
+  <span class="str">"confidence"</span>: <span class="num">0.87</span>
+}
+      </div>
+    </div>
+  </div>
+
+  <!-- Step 2: Act -->
+  <div class="timeline-step">
+    <div class="rail"><div class="dot act"></div><div class="line"></div></div>
+    <div class="body">
+      <div class="step-title" style="color:var(--act);">Step 2 · 行动 Action</div>
+      <div class="step-desc">Agent 通过 MCP 协议调用工具，执行真实的 I/O（数据库查询、API 调用、知识图谱遍历）</div>
+      <div class="step-code">
+<span class="cmt">// MCP 工具调用</span>
+<span class="kw">const</span> result = <span class="kw">await</span> <span class="fn">mcpClient</span>.callTool(<span class="str">'property_search'</span>, {
+  city:   <span class="str">'Chapel Hill'</span>,
+  beds:   <span class="num">3</span>,
+  baths:  <span class="num">2</span>,
+  budget: <span class="num">2000</span>
+});
+
+<span class="cmt">// → 返回 12 条匹配房源</span>
+<span class="cmt">// → 耗时 1.4s，消耗 487 tokens</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Step 3: Obs -->
+  <div class="timeline-step">
+    <div class="rail"><div class="dot obs"></div><div class="line"></div></div>
+    <div class="body">
+      <div class="step-title" style="color:var(--obs);">Step 3 · 观察 Observation</div>
+      <div class="step-desc">工具结果被追加到对话上下文，作为下一轮 LLM 思考的输入。Agent 判断是否继续。</div>
+      <div class="step-code">
+<span class="cmt">// 观察结果追加到上下文</span>
+context.messages.push({
+  role: <span class="str">'tool'</span>,
+  content: <span class="str">`找到 12 条房源：
+    1. 123 Main St — $1,800/月 — 3b2b — 评分 4.2
+    2. 456 Oak Ave  — $1,950/月 — 3b2b — 评分 4.7
+    ...
+    12. 789 Pine Rd — $2,100/月 — 3b2b — 评分 3.9`</span>
+});
+
+<span class="cmt">// Agent 判断：还需进一步筛选 → 继续循环</span>
+<span class="kw">if</span> (!done &amp;&amp; step &lt; maxSteps &amp;&amp; tokens &lt; budget) <span class="kw">goto</span> Step 1;
+      </div>
+    </div>
+  </div>
+
+  <!-- Step 4: Think again -->
+  <div class="timeline-step">
+    <div class="rail"><div class="dot think"></div><div class="line"></div></div>
+    <div class="body">
+      <div class="step-title" style="color:var(--think);">Step 4 · 思考 Thought (第二轮)</div>
+      <div class="step-desc">LLM 根据观察结果调整策略。发现结果太多，决定用 Pinecone 向量搜索做语义重排，同时查通勤时间。</div>
+      <div class="step-code">
+{
+  <span class="str">"thought"</span>: <span class="str">"12 条结果太多。用 Pinecone 做语义相似度重排，同时查通勤到 UNC 的时间"</span>,
+  <span class="str">"action"</span>:  <span class="str">"call_tool"</span>,
+  <span class="str">"tool"</span>:    <span class="str">"mcp:pinecone_similar"</span>,       <span class="cmt">// 本轮先用 Pinecone</span>
+  <span class="str">"args"</span>:    { query: <span class="str">"安静的 3b2b 近 UNC 校园"</span>, topK: <span class="num">6</span> }
+}
+      </div>
+    </div>
+  </div>
+
+  <!-- Step 5-6: More actions -->
+  <div class="timeline-step">
+    <div class="rail"><div class="dot act"></div><div class="line"></div></div>
+    <div class="body">
+      <div class="step-title" style="color:var(--act);">Step 5–6 · 并行行动</div>
+      <div class="step-desc">EstateWise 支持单轮并行调用多个 MCP 工具——同一轮 thought 可以触发两个 action，结果合并后统一观察</div>
+      <div class="step-code">
+<span class="cmt">// 并行调用（同一轮）</span>
+<span class="kw">const</span> [pineconeRes, commuteRes] = <span class="kw">await</span> Promise.all([
+  <span class="fn">mcpClient</span>.callTool(<span class="str">'pinecone_similar'</span>, { query, topK: <span class="num">6</span> }),
+  <span class="fn">mcpClient</span>.callTool(<span class="str">'commute_calc'</span>,     { origin: addr, dest: <span class="str">'UNC Chapel Hill'</span> })
+]);
+
+<span class="cmt">// pineconeRes → 语义 Top 6，已按相似度降序</span>
+<span class="cmt">// commuteRes → 每套房到 UNC 的通勤时间（分钟）</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Step 7: Final think -->
+  <div class="timeline-step">
+    <div class="rail"><div class="dot think"></div><div class="line"></div></div>
+    <div class="body">
+      <div class="step-title" style="color:var(--think);">Step 7 · 思考 Thought (第三轮) — 决策终止</div>
+      <div class="step-desc">综合所有信息后，LLM 判断已充分回答，输出 action=answer，终止循环。</div>
+      <div class="step-code">
+{
+  <span class="str">"thought"</span>: <span class="str">"已有语义排名 + 通勤数据，可以给出 Top 3 推荐并附理由"</span>,
+  <span class="str">"action"</span>:  <span class="str">"answer"</span>,                         <span class="cmt">// ← 终止信号</span>
+  <span class="str">"confidence"</span>: <span class="num">0.94</span>
+}
+<span class="cmt">// 循环退出 → 生成最终回复</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Step 8: Return -->
+  <div class="timeline-step">
+    <div class="rail"><div class="dot end"></div></div>
+    <div class="body">
+      <div class="step-title" style="color:var(--llm);">Step 8 · 最终回复 · Final Answer</div>
+      <div class="step-desc">LLM 把所有观察结果 + 上下文综合成最终自然语言回复，返回给 Supervisor</div>
+      <div class="step-code">
+<span class="kw">return</span> <span class="kw">await</span> <span class="fn">llm</span>.finalAnswer(context);
+<span class="cmt">// → "为您推荐 Chapel Hill 3 套最佳 3b2b 房源：
+<span class="cmt">//     1. 456 Oak Ave — $1,950/月 — 通勤 12min — ★4.7 （最推荐）
+<span class="cmt">//     2. 123 Main St — $1,800/月 — 通勤 18min — ★4.2
+<span class="cmt">//     3. 234 Elm St  — $2,100/月 — 通勤 8min  — ★4.5
+<span class="cmt">//     需要预约看房吗？"</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════ COMPARISON ═══════════════ -->
+<div class="section-title">我们的 Agent vs EstateWise ReAct</div>
+
+<div class="compare-grid">
+  <div class="compare-card ours">
+    <h3>🏠 我们当前：线性 Pipeline</h3>
+    <ul>
+      <li>单次 LLM 调用 → 输出 JSON</li>
+      <li>工具调用在 LLM 外部（代码硬编排）</li>
+      <li>无循环——一次失败无法重试</li>
+      <li>无 token 预算 / 超时守卫</li>
+      <li>无观察反馈——LLM 看不见工具结果</li>
+      <li>优势：快、简洁、可预测</li>
+    </ul>
+  </div>
+  <div class="compare-card theirs">
+    <h3>🧠 EstateWise：ReAct 循环</h3>
+    <ul>
+      <li>LLM ← → 工具 多轮交互</li>
+      <li>LLM 自主决定调哪个工具、何时停</li>
+      <li>观察驱动：失败可重试、结果不足可追加</li>
+      <li>三层守卫：token / timeout / maxSteps</li>
+      <li>支持单轮并行调用多个 MCP 工具</li>
+      <li>代价：tokens 消耗多 3-5×，延迟更高</li>
+    </ul>
+  </div>
+</div>
+
+<p style="color:var(--muted);font-size:0.75rem;margin-top:40px;">
+  ReAct 循环 = 思考(Thought) → 行动(Action) → 观察(Observation) → 循环，直到 LLM 输出 action=answer 或触发守卫上限<br>
+  我们的项目可在下一阶段 Agent 迭代时，为基础查询保留线性 Pipeline，复杂多步请求引入 ReAct Loop
+</p>
+
+<script>
+  // Animate token counter
+  const el = document.getElementById('tokenVal');
+  if (el) {
+    let v = 0;
+    const target = 1247;
+    const step = () => {
+      v = Math.min(v + Math.ceil(target / 40), target);
+      el.textContent = v.toLocaleString();
+      if (v < target) requestAnimationFrame(step);
+    };
+    setTimeout(step, 600);
+  }
+</script>
+
+</body>
+</html>

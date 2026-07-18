@@ -85,10 +85,13 @@ import {
   ShoppingCart,
   Star,
 } from '@element-plus/icons-vue'
+import { useAgentChatStore } from '@/stores/agentChat'
 import { useCartStore } from '@/stores/cart'
 import type { PropertySearchResult, PropertyType } from '@/types/property'
+import { getImageUrl } from '@/utils/image'
 
 const router = useRouter()
+const agentChatStore = useAgentChatStore()
 const cartStore = useCartStore()
 
 const typeLabels: Record<PropertyType, string> = {
@@ -102,7 +105,7 @@ function imageUrl(property: PropertySearchResult): string | null {
   const images = property.images
   if (!images || images.length === 0) return null
   const primary = images.find((img) => img.is_primary) || images[0]
-  return `/api/v1/uploads/${primary.filename}`
+  return getImageUrl(primary.filename)
 }
 
 function goDetail(propertyId: number) {
@@ -110,7 +113,7 @@ function goDetail(propertyId: number) {
 }
 
 function goCompare() {
-  router.push('/agent')
+  agentChatStore.openWithQuery('帮我对比候选清单里的房源')
 }
 
 async function handleRemove(propertyId: number) {

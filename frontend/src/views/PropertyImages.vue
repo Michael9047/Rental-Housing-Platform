@@ -100,13 +100,13 @@
 
             <el-image
 
-              :src="`/api/v1/uploads/${img.filename}`"
+              :src="getImageUrl(img.filename)"
 
               fit="cover"
 
               class="property-image"
 
-              :preview-src-list="[`/api/v1/uploads/${img.filename}`]"
+              :preview-src-list="[getImageUrl(img.filename)]"
 
               preview-teleported
 
@@ -185,6 +185,7 @@ import { ElMessage } from 'element-plus'
 import { ArrowLeft, UploadFilled, Star, Delete } from '@element-plus/icons-vue'
 
 import type { UploadFile, UploadRawFile } from 'element-plus'
+import { getImageUrl } from '@/utils/image'
 
 import { usePropertyStore } from '@/stores/property'
 

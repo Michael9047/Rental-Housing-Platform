@@ -66,7 +66,6 @@
           <span class="price-unit">/月</span>
         </div>
         <div class="card-actions" @click.stop>
-          <el-button size="small" text type="primary" @click="goDetail">查看详情</el-button>
           <el-button
             v-if="showQuickBook"
             size="small"
@@ -101,6 +100,7 @@ import { useRouter } from 'vue-router'
 import { PictureFilled, LocationFilled, Plus, Check } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import type { Property, PropertySearchResult, PropertyType } from '@/types/property'
+import { getImageUrl } from '@/utils/image'
 import { useAuthStore } from '@/stores/auth'
 import { useCartStore } from '@/stores/cart'
 
@@ -161,7 +161,7 @@ const primaryImageUrl = computed(() => {
   const images = props.property.images
   if (!images || images.length === 0) return null
   const primary = images.find((img) => img.is_primary) || images[0]
-  return `/api/v1/uploads/${primary.filename}`
+  return getImageUrl(primary.filename)
 })
 
 // Smart amenity tags inferred from property attributes

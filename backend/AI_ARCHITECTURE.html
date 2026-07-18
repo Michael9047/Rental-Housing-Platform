@@ -1,0 +1,625 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>租房平台 AI Agent 架构全景图（含场景必要性分析）</title>
+<style>
+  :root {
+    --bg: #0f1117; --card: #161822; --border: #252836;
+    --text: #cdd6f4; --muted: #6c7086; --accent: #89b4fa;
+    --green: #a6e3a1; --red: #f38ba8; --yellow: #f9e2af;
+    --orange: #fab387; --purple: #cba6f7; --teal: #94e2d5;
+    --blue: #74c7ec; --pink: #f5c2e7;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { background:var(--bg); color:var(--text); font:14px/1.6 system-ui,sans-serif; padding:20px; }
+  h1 { font-size:28px; margin-bottom:4px; }
+  h2 { font-size:20px; margin:32px 0 12px; padding-bottom:8px; border-bottom:2px solid var(--border); }
+  h3 { font-size:16px; margin:16px 0 8px; color:var(--accent); }
+  .subtitle { color:var(--muted); margin-bottom:24px; }
+  .badge { display:inline-block; padding:2px 8px; border-radius:10px; font-size:11px; font-weight:600; }
+  .badge-keep { background:#1a3824; color:var(--green); }
+  .badge-remove { background:#381a24; color:var(--red); }
+  .badge-merge { background:#382a1a; color:var(--orange); }
+  .badge-moe { background:#2a1a38; color:var(--purple); }
+  .badge-dag { background:#1a2a38; color:var(--blue); }
+  .badge-real { background:#1a3828; color:var(--teal); }
+  .badge-dead { background:#381a24; color:var(--red); }
+  .badge-active { background:#1a3824; color:var(--green); }
+
+  .grid { display:grid; gap:16px; }
+  .grid-2 { grid-template-columns:1fr 1fr; }
+  .grid-3 { grid-template-columns:1fr 1fr 1fr; }
+  .grid-4 { grid-template-columns:repeat(4,1fr); }
+
+  .card { background:var(--card); border:1px solid var(--border); border-radius:10px; padding:16px; }
+  .card.green { border-color:#1a3824; }
+  .card.red { border-color:#381a24; }
+  .card.purple { border-color:#2a1a38; }
+  .card.yellow { border-color:#3a3a1a; }
+
+  table { width:100%; border-collapse:collapse; font-size:13px; }
+  th { text-align:left; padding:8px 6px; border-bottom:2px solid var(--border); color:var(--accent); font-size:11px; text-transform:uppercase; }
+  td { padding:6px; border-bottom:1px solid var(--border); vertical-align:top; }
+  tr:hover td { background:rgba(255,255,255,0.02); }
+
+  .flow { display:flex; align-items:center; gap:8px; flex-wrap:wrap; padding:12px 0; font-family:'JetBrains Mono','Fira Code',monospace; font-size:13px; }
+  .flow-node { padding:8px 14px; border-radius:8px; font-weight:600; white-space:nowrap; }
+  .flow-arrow { color:var(--muted); font-size:16px; }
+  .node-filter { background:#1a2a38; color:var(--blue); border:1px solid #1e3a5a; }
+  .node-search { background:#1a3828; color:var(--green); border:1px solid #1e4a3a; }
+  .node-synth { background:#2a2a1a; color:var(--yellow); border:1px solid #4a4a1e; }
+  .node-compare { background:#381a2a; color:var(--pink); border:1px solid #4a1e3a; }
+  .node-cart { background:#1a2838; color:var(--teal); border:1px solid #1e3a4a; }
+  .node-faq { background:#2a2a2a; color:var(--muted); border:1px solid #3a3a3a; }
+  .node-commute { background:#2a1a2a; color:var(--orange); border:1px solid #4a1e3a; }
+  .node-poi { background:#1a2a2a; color:var(--teal); border:1px solid #1e3a3a; }
+  .node-market { background:#2a1a1a; color:var(--red); border:1px solid #4a1e1e; }
+  .node-moe { background:#1a1a2a; color:var(--purple); border:1px solid #2a2a4a; }
+  .node-dead { background:#1a1a1a; color:var(--muted); border:1px dashed #333; text-decoration:line-through; }
+
+  .prompt-block { background:#0a0b10; border-radius:8px; padding:12px; font-size:12px; max-height:200px; overflow-y:auto; white-space:pre-wrap; font-family:'JetBrains Mono',monospace; color:var(--muted); margin-top:8px; }
+
+  .tool-card { border-left:3px solid var(--pink); padding-left:12px; margin:6px 0; }
+  .tool-name { color:var(--pink); font-weight:600; }
+  .tool-handler { color:var(--teal); font-size:11px; }
+
+  .legend { display:flex; gap:20px; flex-wrap:wrap; margin:12px 0; }
+  .legend-item { display:flex; align-items:center; gap:6px; font-size:12px; }
+  .legend-dot { width:10px; height:10px; border-radius:50%; }
+
+  .section-nav { position:sticky; top:8px; background:var(--card); border:1px solid var(--border); border-radius:10px; padding:12px 16px; margin-bottom:24px; display:flex; gap:16px; flex-wrap:wrap; z-index:10; }
+  .section-nav a { color:var(--accent); text-decoration:none; font-size:13px; }
+  .section-nav a:hover { text-decoration:underline; }
+
+  .count-big { font-size:48px; font-weight:800; line-height:1; }
+  .count-label { color:var(--muted); font-size:12px; }
+
+  .dag-diagram { margin:12px 0; padding:16px; background:#0a0b10; border-radius:8px; overflow-x:auto; }
+
+  .verdict-box { padding:12px 16px; border-radius:8px; margin:8px 0; font-weight:600; }
+  .verdict-yes { background:#1a3824; color:var(--green); border:1px solid #2a5840; }
+  .verdict-no { background:#381a24; color:var(--red); border:1px solid #582a40; }
+  .verdict-partial { background:#3a3a1a; color:var(--yellow); border:1px solid #5a5a2a; }
+
+  @media (max-width:900px) {
+    .grid-2,.grid-3,.grid-4 { grid-template-columns:1fr; }
+    .flow { flex-direction:column; align-items:flex-start; }
+    .flow-arrow { transform:rotate(90deg); }
+  }
+</style>
+</head>
+<body>
+
+<div class="section-nav">
+  <strong>导航:</strong>
+  <a href="#overview">总览</a>
+  <a href="#dag-working">DAG是否在跑？</a>
+  <a href="#necessity">场景必要性分析</a>
+  <a href="#agents">Agent清单(含判决)</a>
+  <a href="#tools">工具层(含判决)</a>
+  <a href="#dag">DAG管线</a>
+  <a href="#prompts">System Prompt</a>
+  <a href="#recommendations">建议方案</a>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+<h1>🏠 租房平台 AI Agent 架构全景图（含场景必要性分析）</h1>
+<p class="subtitle">基于 AI_SCENARIOS.md 的三层 8 场景 | 2026-07-18 | 管线实际在跑（每次请求进 Supervisor）</p>
+
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+<h2 id="overview">1. 架构总览</h2>
+
+<div class="grid grid-4" style="margin-bottom:16px;">
+  <div class="card green" style="text-align:center">
+    <div class="count-big" style="color:var(--green)">3</div>
+    <div class="count-label">核心 Agent（真正干活）</div>
+  </div>
+  <div class="card red" style="text-align:center">
+    <div class="count-big" style="color:var(--red)">13</div>
+    <div class="count-label">应删除的 Agent</div>
+  </div>
+  <div class="card yellow" style="text-align:center">
+    <div class="count-big" style="color:var(--yellow)">6</div>
+    <div class="count-label">保留但有条件的 Agent</div>
+  </div>
+  <div class="card" style="text-align:center;border-color:var(--teal)">
+    <div class="count-big" style="color:var(--teal)">16</div>
+    <div class="count-label">工具（全部真实可用）</div>
+  </div>
+</div>
+
+<div class="card green" style="margin-bottom:16px">
+  <div class="verdict-box verdict-yes">✅ DAG 管线确实在跑。agent.py:77 无条件调用 _handle_with_supervisor()，每次请求都进 Supervisor.handle_message()。</div>
+  <p style="font-size:12px;color:var(--muted);margin-top:4px">但实际执行的只有 filter_agent → search_agent → synthesizer_agent 三层。其余 19 个 Agent 要么不在 DAG 模板中（6个死代码），要么在永不被触发的 MoE 路径中（7个），要么只偶尔条件触发（6个）。</p>
+</div>
+
+<div class="card">
+  <h3>请求真实链路（每次 /messages 调用）</h3>
+  <pre style="font:13px monospace;line-height:2.2;color:var(--muted)">
+POST /api/v1/agent/sessions/:id/messages
+  │
+  ▼
+<span style="color:var(--accent)">agent.py:77</span>  _handle_with_supervisor()            <span style="color:var(--green)">← 无条件调用，不走 legacy 分支</span>
+  │
+  ├─ register_all_agents(registry)           ← 注册 22 个 Agent 定义
+  ├─ bind_tool_handlers(tool_registry)       ← 绑定 16 个工具 handler
+  ├─ supervisor.handle_message(message, ...)
+  │    │
+  │    ├─ _classify(message)                 ← LLM / 规则兜底 → intent + complexity
+  │    ├─ ExecutionDAG.from_intent(intent, 0.5)
+  │    │    └─ intent="search" → <span style="color:var(--green)">SEARCH DAG: filter → search → synthesizer</span>
+  │    │    └─ intent="other"  → <span style="color:var(--yellow)">对应的简单 DAG</span>
+  │    │    └─ complexity≥0.6 → <span style="color:var(--red)">COMPLEX_SEARCH (从未触发)</span>
+  │    ├─ _execute_dag(dag, context)         ← 拓扑排序执行
+  │    └─ _build_response(...)               ← 组装返回
+  │
+  └─ 持久化消息到 ChatMessage 表</pre>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+<h2 id="dag-working">2. DAG 管线到底有没有在真正工作？</h2>
+
+<div class="verdict-box verdict-yes">✅ 在跑。每次请求都走 Supervisor DAG。</div>
+
+<p>但"在跑"不等于"全都在跑"。实际执行情况：</p>
+
+<div class="grid grid-2" style="margin-top:12px">
+  <div class="card green">
+    <h3>✅ 真正执行且有用的（3个）</h3>
+    <table>
+    <tr><td><strong>filter_agent</strong></td><td>ReAct 2轮，提取筛选条件</td><td>覆盖场景1-4</td></tr>
+    <tr><td><strong>search_agent</strong></td><td>ReAct 4轮→降级旧管线取结构化数据</td><td>覆盖场景1-4</td></tr>
+    <tr><td><strong>synthesizer_agent</strong></td><td>ReAct 合成中文回复</td><td>所有场景</td></tr>
+    </table>
+  </div>
+  <div class="card yellow">
+    <h3>⚠️ 执行但效果存疑</h3>
+    <table>
+    <tr><td><strong>filter_agent</strong></td><td>Supervisor 用 _build_system_prompt() 跑 ReAct，<span style="color:var(--red)">没用 filter_agent 自己的 FILTER_PROMPT</span>（那个有完整的设施口语映射表+硬约束区分逻辑）。跑是跑了，但 prompt 是简化版的。</td></tr>
+    <tr><td><strong>search_agent</strong></td><td>ReAct 先跑→然后无论如何再跑一次 legacy recommend_properties() 取结构化数据（代码行981-998）。<span style="color:var(--yellow)">ReAct 的产出只用作文本，结构化数据来自旧管线。</span></td></tr>
+    <tr><td><strong>synthesizer</strong></td><td>走 ReAct loop 但实际不需要多轮工具调用，<span style="color:var(--yellow)">应该简化为单次 LLM 调用</span>。</td></tr>
+    </table>
+  </div>
+  <div class="card red">
+    <h3>❌ 注册了但永不被调用（13个）</h3>
+    <table>
+    <tr><td><strong>6个死代码</strong></td><td>router_agent, planner_agent, ranking_agent, relation_agent, compliance_agent, context_agent — 不在任何 DAG 模板中</td></tr>
+    <tr><td><strong>7个MoE</strong></td><td>amenity/price/commute/lifestyle/space/area/merger — 仅在 COMPLEX_SEARCH_DAG 中，complexity 阈值永远达不到</td></tr>
+    </table>
+  </div>
+  <div class="card yellow">
+    <h3>🔀 条件触发（6个）</h3>
+    <table>
+    <tr><td>compare_agent</td><td>仅 intent=compare 时</td></tr>
+    <tr><td>cart_agent</td><td>仅 intent=manage_cart 时</td></tr>
+    <tr><td>faq_agent</td><td>仅 intent=faq 时</td></tr>
+    <tr><td>market_agent</td><td>仅 intent=market_analysis 时</td></tr>
+    <tr><td>commute_agent</td><td>仅 intent=commute_info 时</td></tr>
+    <tr><td>poi_agent</td><td>仅 intent=poi_info 时</td></tr>
+    </table>
+  </div>
+</div>
+
+<div class="card" style="margin-top:16px">
+  <h3>filter_agent 的 prompt 被 Supervisor 覆盖——具体证据</h3>
+  <div class="grid grid-2">
+    <div>
+      <strong style="color:var(--red)">Supervisor 用的（实际执行的）：</strong>
+      <div class="prompt-block">你是筛选条件提取专家。
+你的任务：调用 extract_filters 工具从用户消息中提取结构化搜索条件。
+调用一次工具后，**立即用中文输出提取到的条件摘要**，不要再调用其他工具。
+输出格式示例："已提取条件：区域=苏州，最高预算=2000元，户型=单间"</div>
+    </div>
+    <div>
+      <strong style="color:var(--green)">filter_agent 自己定义的（被跳过的）：</strong>
+      <div class="prompt-block">你是租房搜索条件提取助手。从用户消息中提取结构化条件...
+- amenities 映射表：独卫→独立卫浴, 养猫→宠物友好, wifi→WiFi...
+- 硬约束 vs 软偏好区分
+- 设施口语映射到标准值
+- 输出完整 JSON 格式（含 hard_filters / soft_preferences）</div>
+    </div>
+  </div>
+  <p style="color:var(--yellow);margin-top:8px">⚠ Supervisor._execute_agent("filter_agent") → _run_react_agent() → _build_system_prompt("filter_agent") → 用的是左边那个简化版。filter_agent.handle() 里精心写的 FILTER_PROMPT 从来没被 Supervisor 调用过。</p>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+<h2 id="necessity">3. 场景必要性分析——基于 AI_SCENARIOS.md 的三层 8 场景</h2>
+
+<p>对照用户实际需求判断每个组件的必要性。判决标准：<strong>这个 Agent/工具/DAG 在用户的实际租房场景中是不是必要的？</strong></p>
+
+<h3>3.1 Agent 必要性逐项分析</h3>
+
+<table>
+<thead>
+<tr><th>Agent</th><th>覆盖场景</th><th>必要性</th><th>判决</th><th>理由</th></tr>
+</thead>
+<tbody>
+
+<tr style="background:rgba(0,255,0,0.04)">
+  <td><strong>filter_agent</strong></td>
+  <td>1,2,3,4</td>
+  <td>🔴 必须</td>
+  <td><span class="badge badge-keep">保留</span></td>
+  <td>核心搜索的第一步，NL→结构化条件是所有搜索的基础</td>
+</tr>
+<tr style="background:rgba(0,255,0,0.04)">
+  <td><strong>search_agent</strong></td>
+  <td>1,2,4</td>
+  <td>🔴 必须</td>
+  <td><span class="badge badge-keep">保留</span></td>
+  <td>核心搜索链路，评分+推荐是用户最需要的</td>
+</tr>
+<tr style="background:rgba(0,255,0,0.04)">
+  <td><strong>synthesizer_agent</strong></td>
+  <td>全部</td>
+  <td>🔴 必须</td>
+  <td><span class="badge badge-keep">保留</span></td>
+  <td>所有场景的最终回复都需要合成</td>
+</tr>
+
+<tr style="background:rgba(255,255,0,0.04)">
+  <td><strong>commute_agent</strong></td>
+  <td>1</td>
+  <td>🟡 重要</td>
+  <td><span class="badge badge-keep">保留但改</span></td>
+  <td>通勤是场景1核心约束。但不应是独立Agent——应作为 search 的并行补充工具。预计算后变成纯DB查询。</td>
+</tr>
+<tr style="background:rgba(255,255,0,0.04)">
+  <td><strong>poi_agent</strong></td>
+  <td>1</td>
+  <td>🟡 重要</td>
+  <td><span class="badge badge-keep">保留但改</span></td>
+  <td>POI是场景1常见需求。同样不应是独立Agent，应作为 search 的并行补充工具。</td>
+</tr>
+<tr style="background:rgba(255,255,0,0.04)">
+  <td><strong>compare_agent</strong></td>
+  <td>7,8</td>
+  <td>🟡 重要</td>
+  <td><span class="badge badge-keep">保留</span></td>
+  <td>多维度对比是第三层核心场景，直接委托 AgentService.compare_cart() 可靠</td>
+</tr>
+<tr style="background:rgba(255,255,0,0.04)">
+  <td><strong>cart_agent</strong></td>
+  <td>7(前置)</td>
+  <td>🟢 有用</td>
+  <td><span class="badge badge-keep">保留</span></td>
+  <td>购物车管理，无LLM，纯委托。轻量无负担</td>
+</tr>
+<tr style="background:rgba(255,255,0,0.04)">
+  <td><strong>faq_agent</strong></td>
+  <td>—</td>
+  <td>🟢 有用</td>
+  <td><span class="badge badge-keep">保留</span></td>
+  <td>FAQ 规则匹配，无LLM，轻量</td>
+</tr>
+
+<tr style="background:rgba(255,0,0,0.04)">
+  <td><strong>market_agent</strong></td>
+  <td>5,6</td>
+  <td>🟠 低价值</td>
+  <td><span class="badge badge-remove">移除</span></td>
+  <td>学生租房市场几个月内价格波动极小。行情分层可以用 market_stats 工具 + synthesizer 直接生成，不需要独立 Agent 跑 ReAct。</td>
+</tr>
+<tr style="background:rgba(255,0,0,0.04)">
+  <td>router_agent</td>
+  <td>—</td>
+  <td>🔴 无用</td>
+  <td><span class="badge badge-remove">移除</span></td>
+  <td>路由由 Supervisor._classify() + ExecutionDAG 完成</td>
+</tr>
+<tr style="background:rgba(255,0,0,0.04)">
+  <td>planner_agent</td>
+  <td>—</td>
+  <td>🔴 无用</td>
+  <td><span class="badge badge-remove">移除</span></td>
+  <td>DAG 模板已静态定义，不需要 LLM 做任务分解</td>
+</tr>
+<tr style="background:rgba(255,0,0,0.04)">
+  <td>ranking_agent</td>
+  <td>—</td>
+  <td>🔴 无用</td>
+  <td><span class="badge badge-remove">移除</span></td>
+  <td>score_properties + gap_detect 工具已完成排序去重</td>
+</tr>
+<tr style="background:rgba(255,0,0,0.04)">
+  <td>relation_agent</td>
+  <td>—</td>
+  <td>🔴 无用</td>
+  <td><span class="badge badge-remove">移除</span></td>
+  <td>学生租房不需要房源关系分析</td>
+</tr>
+<tr style="background:rgba(255,0,0,0.04)">
+  <td>compliance_agent</td>
+  <td>—</td>
+  <td>🔴 危险</td>
+  <td><span class="badge badge-remove">移除</span></td>
+  <td>无法规库，纯LLM回答法律问题有合规风险</td>
+</tr>
+<tr style="background:rgba(255,0,0,0.04)">
+  <td>context_agent</td>
+  <td>—</td>
+  <td>🔴 无用</td>
+  <td><span class="badge badge-remove">移除</span></td>
+  <td>上下文由 search_state 管理</td>
+</tr>
+
+<tr style="background:rgba(128,0,255,0.04)">
+  <td>amenity_expert</td>
+  <td>—</td>
+  <td>🔴 无用</td>
+  <td><span class="badge badge-remove">移除</span></td>
+  <td rowspan="7">MoE专家组：为学生租房（几个月周期）完全没必要。不存在需要5个专家并行分析同一批房源的场景。设施硬约束可以在 filter 阶段就处理好，不需要独立 Agent。</td>
+</tr>
+<tr style="background:rgba(128,0,255,0.04)">
+  <td>price_expert</td>
+  <td>—</td>
+  <td>🔴 无用</td>
+  <td><span class="badge badge-remove">移除</span></td>
+</tr>
+<tr style="background:rgba(128,0,255,0.04)">
+  <td>commute_expert</td>
+  <td>—</td>
+  <td>🔴 无用</td>
+  <td><span class="badge badge-remove">移除</span></td>
+</tr>
+<tr style="background:rgba(128,0,255,0.04)">
+  <td>lifestyle_expert</td>
+  <td>—</td>
+  <td>🔴 无用</td>
+  <td><span class="badge badge-remove">移除</span></td>
+</tr>
+<tr style="background:rgba(128,0,255,0.04)">
+  <td>space_expert</td>
+  <td>—</td>
+  <td>🔴 无用</td>
+  <td><span class="badge badge-remove">移除</span></td>
+</tr>
+<tr style="background:rgba(128,0,255,0.04)">
+  <td>area_expert</td>
+  <td>—</td>
+  <td>🔴 无用+危险</td>
+  <td><span class="badge badge-remove">移除</span></td>
+</tr>
+<tr style="background:rgba(128,0,255,0.04)">
+  <td>merger_agent</td>
+  <td>—</td>
+  <td>🔴 无用</td>
+  <td><span class="badge badge-remove">移除</span></td>
+</tr>
+</tbody>
+</table>
+
+<div class="card" style="margin-top:16px">
+  <h3>判决汇总</h3>
+  <div class="grid grid-3">
+    <div class="card green" style="text-align:center">
+      <div class="count-big" style="color:var(--green)">6</div>
+      <div class="count-label">保留（含3个核心+3个条件）</div>
+      <p style="font-size:12px;color:var(--muted)">filter / search / synthesizer<br>commute / poi / compare<br>cart / faq</p>
+    </div>
+    <div class="card yellow" style="text-align:center">
+      <div class="count-big" style="color:var(--yellow)">2</div>
+      <div class="count-label">改造成工具（不再独立Agent）</div>
+      <p style="font-size:12px;color:var(--muted)">commute → 预计算DB查<br>poi → 预计算DB查<br>market → 统计工具 + synth直出</p>
+    </div>
+    <div class="card red" style="text-align:center">
+      <div class="count-big" style="color:var(--red)">14</div>
+      <div class="count-label">删除</div>
+      <p style="font-size:12px;color:var(--muted)">6死代码 + 7MoE + 1低价值(market)</p>
+    </div>
+  </div>
+</div>
+
+<h3>3.2 关于 MoE 专家组的具体论证</h3>
+<div class="card red">
+  <p><strong>MoE（Mixture of Experts）的设计前提：</strong>有大量候选房源（>20套），需要从多个独立维度深度分析，每个维度需要独立的 LLM 视角，最后加权融合。</p>
+  <p style="margin-top:8px"><strong>为什么学生租房不需要：</strong></p>
+  <ul style="padding-left:20px;color:var(--red);margin-top:4px">
+    <li>候选集通常只有 5-15 套，不需要 5 个专家并行分析</li>
+    <li>学生租房决策因素简单：价格 > 通勤 > 独卫 > 配套。不需要"空间利用率""区域发展潜力"这种维度</li>
+    <li>5 个专家并行调 LLM = 5× 的 token 消耗 + 5× 的延迟，换来的只是"空间专家说这个户型还不错"——用户不关心</li>
+    <li>area_expert 在没有犯罪数据的情况下分析"安全性"，纯 LLM 编造</li>
+    <li>EstateWise 的 MoE 是为美国买房场景设计的（几十万美金决策需要多维度尽调），跟中国学生租房完全不搭</li>
+  </ul>
+  <p style="margin-top:8px;color:var(--yellow)"><strong>设施硬约束怎么办？</strong> amenity_expert 的 AND 语义检查（必须同时满足独卫+阳台+WiFi）是纯 Python 逻辑，不需要 Agent。把这个检查逻辑放到 search_agent 的评分阶段就行——不满足硬约束的直接从候选集排除。</p>
+</div>
+
+<h3>3.3 关于 market_agent 的具体论证</h3>
+<div class="card yellow">
+  <p><strong>market_agent 的设计意图：</strong>分析市场价格趋势、投资回报率、同比涨跌。</p>
+  <p style="margin-top:8px"><strong>为什么学生租房不需要独立 Agent：</strong></p>
+  <ul style="padding-left:20px;color:var(--yellow);margin-top:4px">
+    <li>学生租房周期 3-12 个月，价格在这个时间窗口内基本不变</li>
+    <li>用户问"园区单间大概多少钱"需要的是<strong>当前快照</strong>（DB 聚合查询），不是时间序列分析</li>
+    <li>market_stats 工具已经能返回价格分布/户型分布，synthesizer_agent 直接把这些数据转成自然语言描述即可</li>
+    <li>分层卡片（经济型/舒适型/高端型）是前端渲染 + DB 聚合的事，不需要 Agent 参与</li>
+    <li>如果未来需要真正的趋势分析（同比/环比），在 market_stats 工具里加就好，仍然不需要独立 Agent</li>
+  </ul>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+<h2 id="agents">4. Agent 完整清单（22个→建议保留8个）</h2>
+
+<div class="legend">
+  <div class="legend-item"><div class="legend-dot" style="background:var(--green)"></div> 保留</div>
+  <div class="legend-item"><div class="legend-dot" style="background:var(--red)"></div> 删除</div>
+  <div class="legend-item"><div class="legend-dot" style="background:var(--yellow)"></div> 保留但改造</div>
+  <div class="legend-item"><div class="legend-dot" style="background:var(--orange)"></div> 降级为工具</div>
+</div>
+
+<table>
+<thead><tr><th>#</th><th>Agent ID</th><th>当前状态</th><th>场景覆盖</th><th>判决</th><th>说明</th></tr></thead>
+<tbody>
+<tr style="background:rgba(0,255,0,0.04)"><td>1</td><td>filter_agent</td><td>核心DAG</td><td>1,2,3,4</td><td><span class="badge badge-keep">保留</span></td><td>但需修复——让 Supervisor 走 filter_agent.handle() 而不是 _build_system_prompt() 的简化版</td></tr>
+<tr style="background:rgba(0,255,0,0.04)"><td>2</td><td>search_agent</td><td>核心DAG</td><td>1,2,4</td><td><span class="badge badge-keep">保留</span></td><td>简化执行路径——现在 ReAct+降级双路径太复杂，直接用旧管线</td></tr>
+<tr style="background:rgba(0,255,0,0.04)"><td>3</td><td>synthesizer_agent</td><td>核心DAG</td><td>全部</td><td><span class="badge badge-keep">保留</span></td><td>简化为单次 LLM 调用（不需要 ReAct），重写中文 prompt 加入漏斗阶段语境</td></tr>
+<tr style="background:rgba(255,255,0,0.04)"><td>4</td><td>commute_agent</td><td>条件DAG</td><td>1</td><td><span class="badge badge-merge">降级为工具</span></td><td>不应是独立 Agent。commute_calc 作为工具挂到 search 的 DAG 并行层即可。预计算后是纯 DB 查询。</td></tr>
+<tr style="background:rgba(255,255,0,0.04)"><td>5</td><td>poi_agent</td><td>条件DAG</td><td>1</td><td><span class="badge badge-merge">降级为工具</span></td><td>同上，poi_lookup 作为工具挂到 search 的 DAG 并行层</td></tr>
+<tr style="background:rgba(255,255,0,0.04)"><td>6</td><td>compare_agent</td><td>条件DAG</td><td>7,8</td><td><span class="badge badge-keep">保留</span></td><td>委托 AgentService，可靠</td></tr>
+<tr style="background:rgba(255,255,0,0.04)"><td>7</td><td>cart_agent</td><td>条件DAG</td><td>7前置</td><td><span class="badge badge-keep">保留</span></td><td>无LLM，轻量</td></tr>
+<tr style="background:rgba(255,255,0,0.04)"><td>8</td><td>faq_agent</td><td>条件DAG</td><td>—</td><td><span class="badge badge-keep">保留</span></td><td>规则匹配，轻量</td></tr>
+<tr style="background:rgba(255,0,0,0.04)"><td>9</td><td>market_agent</td><td>条件DAG</td><td>5,6</td><td><span class="badge badge-remove">删除</span></td><td>行情快照用 market_stats 工具+synthesizer 直出即可，不需要独立 Agent 跑 ReAct</td></tr>
+<tr style="background:rgba(255,0,0,0.04)"><td>10</td><td>router_agent</td><td>死代码</td><td>—</td><td><span class="badge badge-remove">删除</span></td><td></td></tr>
+<tr style="background:rgba(255,0,0,0.04)"><td>11</td><td>planner_agent</td><td>死代码</td><td>—</td><td><span class="badge badge-remove">删除</span></td><td></td></tr>
+<tr style="background:rgba(255,0,0,0.04)"><td>12</td><td>ranking_agent</td><td>死代码</td><td>—</td><td><span class="badge badge-remove">删除</span></td><td></td></tr>
+<tr style="background:rgba(255,0,0,0.04)"><td>13</td><td>relation_agent</td><td>死代码</td><td>—</td><td><span class="badge badge-remove">删除</span></td><td></td></tr>
+<tr style="background:rgba(255,0,0,0.04)"><td>14</td><td>compliance_agent</td><td>死代码</td><td>—</td><td><span class="badge badge-remove">删除</span></td><td></td></tr>
+<tr style="background:rgba(255,0,0,0.04)"><td>15</td><td>context_agent</td><td>死代码</td><td>—</td><td><span class="badge badge-remove">删除</span></td><td></td></tr>
+<tr style="background:rgba(128,0,255,0.04)"><td>16-22</td><td>7个MoE专家</td><td>MoE(不触发)</td><td>—</td><td><span class="badge badge-remove">删除</span></td><td>amenity_expert的AND检查逻辑移到评分阶段，不需要Agent</td></tr>
+</tbody>
+</table>
+
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+<h2 id="tools">5. 工具层——16个工具必要性分析</h2>
+
+<p style="color:var(--muted);margin-bottom:12px">工具全部真实可用（100%绑定）。但基于场景分析，有些工具的使用者和调用方式需要调整。</p>
+
+<table>
+<thead><tr><th>#</th><th>工具</th><th>覆盖场景</th><th>必要性</th><th>判决</th><th>说明</th></tr></thead>
+<tbody>
+<tr><td>1</td><td><strong>property_search</strong></td><td>1-6</td><td>🔴 核心</td><td><span class="badge badge-keep">保留</span></td><td>核心搜索，所有场景的基础</td></tr>
+<tr><td>2</td><td><strong>extract_filters</strong></td><td>1-4</td><td>🔴 核心</td><td><span class="badge badge-keep">保留</span></td><td>NL→结构化条件，搜索入口</td></tr>
+<tr><td>3</td><td><strong>score_properties</strong></td><td>1,5</td><td>🔴 核心</td><td><span class="badge badge-keep">保留</span></td><td>确定性评分，不需要 LLM</td></tr>
+<tr><td>4</td><td><strong>commute_calc</strong></td><td>1</td><td>🟡 重要</td><td><span class="badge badge-keep">保留但改实现</span></td><td>从调 API 改为查 property_commutes 表</td></tr>
+<tr><td>5</td><td><strong>poi_lookup</strong></td><td>1</td><td>🟡 重要</td><td><span class="badge badge-keep">保留</span></td><td>已是 DB 查询，确认 POI 类型覆盖学生场景</td></tr>
+<tr><td>6</td><td><strong>compare_dimensions</strong></td><td>7,8</td><td>🟡 重要</td><td><span class="badge badge-keep">保留</span></td><td>多维度对比矩阵</td></tr>
+<tr><td>7</td><td><strong>market_stats</strong></td><td>5,6</td><td>🟡 重要</td><td><span class="badge badge-keep">保留+增强</span></td><td>加分层聚类能力（经济/舒适/高端分档）</td></tr>
+<tr><td>8</td><td><strong>query_rewrite</strong></td><td>2</td><td>🟡 重要</td><td><span class="badge badge-keep">保留</span></td><td>相对查询的核心</td></tr>
+<tr><td>9</td><td><strong>gap_detect</strong></td><td>1</td><td>🟢 有用</td><td><span class="badge badge-keep">保留</span></td><td>分数断层检测，纯算法</td></tr>
+<tr><td>10</td><td><strong>safe_fallback_check</strong></td><td>全部</td><td>🟢 有用</td><td><span class="badge badge-keep">保留</span></td><td>检索质量不足时兜底</td></tr>
+<tr><td>11</td><td><strong>build_fallback_reply</strong></td><td>全部</td><td>🟢 有用</td><td><span class="badge badge-keep">保留</span></td><td>全部失败时兜底回复</td></tr>
+<tr><td>12-14</td><td>cart_view / cart_add / cart_remove</td><td>7前置</td><td>🟢 有用</td><td><span class="badge badge-keep">保留</span></td><td>购物车 CRUD</td></tr>
+<tr><td>15</td><td>faq_match</td><td>—</td><td>🟢 有用</td><td><span class="badge badge-keep">保留</span></td><td>FAQ 规则匹配</td></tr>
+<tr><td>16</td><td>generate_embedding</td><td>1</td><td>🟢 有用</td><td><span class="badge badge-keep">保留</span></td><td>向量搜索需要</td></tr>
+</tbody>
+</table>
+
+<div class="card green" style="margin-top:16px">
+  <strong>工具层结论：16个工具全部保留。</strong>没有冗余工具，每个都对应具体场景需求。需要改的是工具的实现方式（commute_calc 从调API改查DB）和调用方式（commute/poi 从独立Agent的工具变成search DAG并行层的工具）。
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+<h2 id="dag">6. DAG 管线——当前 vs 建议</h2>
+
+<h3>6.1 当前 SEARCH DAG（每次搜索都在跑）</h3>
+<div class="dag-diagram">
+<div class="flow">
+  <div class="flow-node node-filter">filter_agent<br><small>ReAct 2轮</small></div>
+  <div class="flow-arrow">→</div>
+  <div class="flow-node node-search">search_agent<br><small>ReAct 4轮→降级旧管线</small></div>
+  <div class="flow-arrow">→</div>
+  <div class="flow-node node-synth">synthesizer_agent<br><small>ReAct</small></div>
+</div>
+</div>
+<p style="color:var(--yellow)">问题：每个 Agent 都跑 ReAct loop，filter 不需要（一次 LLM JSON 提取就够），search 是套壳（数据来自旧管线），synthesizer 也不需要（单次 LLM 调用即可）。三倍 ReAct 开销但实际逻辑都在工具层。</p>
+
+<h3>6.2 其他当前 DAG</h3>
+<div class="grid grid-3">
+  <div class="card"><strong>COMPLEX_SEARCH</strong> (10 Agent)<br><span style="color:var(--red)">永不被触发→删除</span></div>
+  <div class="card"><strong>COMPARE</strong>: compare → synthesizer<br><span style="color:var(--green)">保留</span></div>
+  <div class="card"><strong>MANAGE_CART</strong>: cart_agent<br><span style="color:var(--green)">保留</span></div>
+  <div class="card"><strong>FAQ</strong>: faq_agent<br><span style="color:var(--green)">保留</span></div>
+  <div class="card"><strong>GENERAL</strong>: synthesizer<br><span style="color:var(--green)">保留</span></div>
+  <div class="card"><strong>MARKET_ANALYSIS</strong>: filter→search→market→synth<br><span style="color:var(--red)">删除（market_agent移除）</span></div>
+  <div class="card"><strong>COMMUTE_INFO</strong>: commute→synth<br><span style="color:var(--orange)">合并到 SEARCH</span></div>
+  <div class="card"><strong>POI_INFO</strong>: poi→synth<br><span style="color:var(--orange)">合并到 SEARCH</span></div>
+</div>
+
+<h3>6.3 建议的 SEARCH DAG（精简为一条主链路）</h3>
+<div class="card green">
+  <p style="margin-bottom:8px"><strong>不再区分 SEARCH / COMMUTE_INFO / POI_INFO / MARKET_ANALYSIS 四种意图。统一为一条 DAG，按需启用可选层。</strong></p>
+  <div class="dag-diagram">
+    <div style="font:13px monospace;line-height:2.5">
+<span style="color:var(--blue)">[Layer 0]</span>  filter_agent: LLM JSON提取筛选条件（单次调用，不走ReAct）
+         │
+<span style="color:var(--green)">[Layer 1]</span>  search_agent: property_search + score_properties + gap_detect
+         │    （走旧管线 recommend_properties，确定性评分，不需要 ReAct）
+         │
+<span style="color:var(--yellow)">[Layer 2]</span>  ┌─ commute_calc（DB查，如果有通勤需求）
+  （并行）  └─ poi_lookup  （DB查，如果有POI需求）
+         │
+<span style="color:var(--yellow)">[Layer 3]</span>  synthesizer_agent: 单次 LLM 调用合成回复
+    </div>
+  </div>
+  <p style="font-size:12px;color:var(--muted);margin-top:8px">
+  Layer 0 ← 规则触发（消息含筛选关键词）<br>
+  Layer 1 ← 始终执行<br>
+  Layer 2 ← 条件触发（消息含通勤/POI关键词 或 显式要求）<br>
+  Layer 3 ← 始终执行<br>
+  <strong>全程只有 1-3 次 LLM 调用（filter 1次 + search 0次 + synth 1次 + 可选并行层 0次），无 ReAct 开销。</strong>
+  </p>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+<h2 id="prompts">7. System Prompt 现状与改造方向</h2>
+
+<div class="grid grid-2">
+  <div class="card">
+    <h3>filter_agent 的 prompt 问题</h3>
+    <p style="color:var(--red)">Supervisor 用的是简化版，filter_agent 自己精心写的 FILTER_PROMPT（含设施口语映射表+硬约束区分）被跳过了。</p>
+    <p style="color:var(--green);margin-top:8px"><strong>修复：</strong>让 filter_agent 走自己的 handle() 方法（单次 LLM JSON 提取），不走 _run_react_agent()。</p>
+  </div>
+  <div class="card">
+    <h3>synthesizer 的 prompt 改造</h3>
+    <p>加入学生租房漏斗阶段的语境引导：</p>
+    <div class="prompt-block">你是西交利物浦大学周边的租房顾问。
+当前阶段: {stage}
+- explore: 用户刚开始看，给市场概览，引导细化需求
+- narrow: 用户有明确条件，逐套分析匹配度
+- compare: 用户在做决定，给出明确推荐和理由
+- decide: 用户即将预订，引导下一步（预约看房）
+
+回复要求：中文口语化，2-3句话，不要编造数据。</div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+<h2 id="recommendations">8. 建议方案汇总</h2>
+
+<div class="card green">
+  <h3>保留的 Agent（8个）</h3>
+  <table>
+  <tr><th>Agent</th><th>执行方式</th><th>是否需要 ReAct</th></tr>
+  <tr><td>filter_agent</td><td>单次 LLM JSON 提取</td><td>❌ 不需要</td></tr>
+  <tr><td>search_agent</td><td>直连 recommend_properties()</td><td>❌ 不需要</td></tr>
+  <tr><td>synthesizer_agent</td><td>单次 LLM 调用</td><td>❌ 不需要</td></tr>
+  <tr><td>compare_agent</td><td>直连 AgentService.compare_cart()</td><td>❌ 不需要</td></tr>
+  <tr><td>cart_agent</td><td>直连 AgentService CRUD</td><td>❌ 不需要</td></tr>
+  <tr><td>faq_agent</td><td>规则匹配 match_faq()</td><td>❌ 不需要</td></tr>
+  <tr><td>commute_calc</td><td>查 property_commutes 表</td><td>— 不再作为 Agent</td></tr>
+  <tr><td>poi_lookup</td><td>查 POI 表</td><td>— 不再作为 Agent</td></tr>
+  </table>
+  <p style="margin-top:12px;color:var(--green)"><strong>ReAct 在精简后的架构中完全不需要。</strong>所有 Agent 要么是单次 LLM 调用，要么是纯 Python/DB 查询。这是合理的——你的场景不需要 Agent 反复思考、调工具、观察、再思考。</p>
+</div>
+
+<div class="card" style="margin-top:16px">
+  <h3>建议的执行计划</h3>
+  <table>
+  <tr><th>优先级</th><th>任务</th><th>涉及文件</th></tr>
+  <tr><td>🔴 P0</td><td>删除 14 个 Agent 文件 + registry 注册</td><td>agents/*.py (14个), agents/registry.py</td></tr>
+  <tr><td>🔴 P0</td><td>删除 COMPLEX_SEARCH_DAG + MARKET_ANALYSIS/COMMUTE_INFO/POI_INFO DAG 模板，简化为 SEARCH/COMPARE/CART/FAQ/GENERAL 5 种</td><td>execution_dag.py</td></tr>
+  <tr><td>🔴 P0</td><td>filter_agent: 让 Supervisor 走 handle() 而非 _run_react_agent()</td><td>supervisor.py _execute_agent()</td></tr>
+  <tr><td>🔴 P0</td><td>search_agent: 移除 ReAct，直接用旧管线</td><td>supervisor.py _execute_agent()</td></tr>
+  <tr><td>🔴 P0</td><td>synthesizer_agent: 单次 LLM，移除 ReAct</td><td>supervisor.py _execute_agent()</td></tr>
+  <tr><td>🔴 P0</td><td>重写 3 个核心 prompt（filter/search/synthesizer）</td><td>filter_agent.py, search_agent.py, supervisor.py</td></tr>
+  <tr><td>🟡 P1</td><td>SEARCH DAG 加入 commute+POI 并行层</td><td>execution_dag.py, supervisor.py</td></tr>
+  <tr><td>🟡 P1</td><td>market_stats 加分层聚类，synthesizer 直接出分层描述</td><td>tool_registry.py, supervisor.py</td></tr>
+  <tr><td>🟡 P1</td><td>删除 Handoff 链代码（550行死代码）</td><td>supervisor.py</td></tr>
+  <tr><td>🟡 P1</td><td>建 property_commutes 表 + 房源导入时异步计算</td><td>migration, commute_service.py</td></tr>
+  <tr><td>🟡 P1</td><td>建 area_profiles 表 + 手工录入区域描述</td><td>migration, admin</td></tr>
+  <tr><td>🟢 P2</td><td>写 Agent 层测试</td><td>tests/</td></tr>
+  </table>
+</div>
+
+<div class="card" style="margin-top:16px;text-align:center;padding:32px;border-color:var(--green)">
+  <p style="font-size:18px;color:var(--accent)"><strong>核心结论</strong></p>
+  <p style="color:var(--text);margin-top:8px">DAG 在跑，但跑的是 EstateWise 翻译过来的通用架构，不是你需要的学生租房搜索架构。</p>
+  <p style="color:var(--text)">14 个 Agent 应该删除，ReAct 全部移除，3 个核心 Agent 改为单次 LLM/直连模式。</p>
+  <p style="color:var(--text)">工具层不需要大改（16个工具全部有用），改的是实现方式（预计算替代实时API调用）。</p>
+  <p style="color:var(--muted);margin-top:8px">参考文档: AI_SCENARIOS.md（场景定义） | AGENT_REFACTOR_CHECKLIST.md（执行清单）</p>
+</div>
+
+</body>
+</html>

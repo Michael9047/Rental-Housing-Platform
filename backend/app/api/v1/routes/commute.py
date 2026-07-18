@@ -19,7 +19,7 @@ from app.services.commute_service import (
     CommuteDestination,
     RouteDetail,
     RouteSegment,
-    calculate_commute_batch,
+    calculate_commute_batch_resilient,
     get_route_detail,
 )
 
@@ -65,10 +65,10 @@ class CommuteCalculateResponse(BaseModel):
 async def calculate_commute(body: CommuteCalculateRequest):
     """批量计算通勤时间
 
-    根据 country 自动选择引擎：
-    - CN → 高德地图 Directions API
-    - 其他 → Google Maps Distance Matrix API
-    - API 不可用时自动降级为 Haversine 直线距离估算
+    弹性四级降级链：
+    - 国内 → 高德 → ORS → Google → Haversine
+    - 海外 → ORS → Google → 高德 → Haversine
+    - 全部失败时降级为 Haversine 直线距离估算
 
     返回四种模式：walk_min（步行）、bike_min（骑行）、drive_min（驾车）、transit_min（公交地铁）
     """
@@ -77,7 +77,7 @@ async def calculate_commute(body: CommuteCalculateRequest):
         for d in body.destinations
     ]
 
-    result: BatchCommuteResult = await calculate_commute_batch(
+    result: BatchCommuteResult = await calculate_commute_batch_resilient(
         origin_lat=body.origin_lat,
         origin_lng=body.origin_lng,
         destinations=destinations,

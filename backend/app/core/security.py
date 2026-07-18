@@ -35,8 +35,11 @@ def decode_access_token(token: str) -> dict[str, Any]:
 
 # ── SMS 验证码 Redis 辅助函数 ──────────────────────────────
 
+import logging
 import secrets as _secrets
 from redis.asyncio import Redis as _Redis
+
+logger = logging.getLogger(__name__)
 
 
 async def _redis() -> _Redis:
@@ -46,21 +49,36 @@ async def _redis() -> _Redis:
 
 async def store_sms_code(phone: str, code: str, ttl: int = 300) -> None:
     """将验证码存储到 Redis，默认 5 分钟过期"""
+    key = f"sms_code:{phone}"
     r = await _redis()
     try:
-        await r.setex(f"sms_code:{phone}", ttl, code)
+        await r.setex(key, ttl, code)
+        logger.info("SMS code stored: key=%s code=%s ttl=%s", key, code, ttl)
+    except Exception:
+        logger.exception("Failed to store SMS code: key=%s", key)
+        raise
     finally:
         await r.close()
 
 
 async def verify_and_consume_sms_code(phone: str, code: str) -> bool:
     """验证并消费验证码，成功返回 True 并删除 Redis 中的码"""
+    key = f"sms_code:{phone}"
     r = await _redis()
     try:
-        stored = await r.get(f"sms_code:{phone}")
-        if stored and stored.decode() == code:
-            await r.delete(f"sms_code:{phone}")
+        stored = await r.get(key)
+        if stored is None:
+            logger.warning("SMS code NOT FOUND in Redis: key=%s input_code=%s", key, code)
+            return False
+        stored_str = stored.decode()
+        if stored_str == code:
+            await r.delete(key)
+            logger.info("SMS code verified and consumed: key=%s", key)
             return True
+        logger.warning("SMS code MISMATCH: key=%s stored=%s input=%s", key, stored_str, code)
+        return False
+    except Exception:
+        logger.exception("Redis error while verifying SMS code: key=%s", key)
         return False
     finally:
         await r.close()

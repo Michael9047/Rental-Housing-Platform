@@ -7,6 +7,13 @@
       <span class="school-count">{{ searchResults.length }} 套</span>
     </div>
 
+    <!-- AI Agent 推荐结果横幅 -->
+    <div v-if="fromAgent" class="school-banner agent-banner">
+      <el-icon :size="22" color="#409eff"><ChatDotRound /></el-icon>
+      <h1>AI 智能推荐结果</h1>
+      <span class="school-count">{{ searchResults.length }} 套</span>
+    </div>
+
     <div class="search-layout">
       <!-- ════════════════════════════════════════════ -->
       <!--  左侧筛选栏                                 -->
@@ -33,7 +40,7 @@
         <template v-if="searchMode === 'school'">
           <div class="filter-block">
             <div class="filter-block-title">到学校的时间</div>
-            <el-radio-group v-model="commuteTime" class="fg-radio" @change="doSearch">
+            <el-radio-group v-model="commuteTime" class="fg-radio" @change="onCommuteFilterChange">
               <el-radio :value="null">不限</el-radio>
               <el-radio :value="5">步行5分钟以内</el-radio>
               <el-radio :value="10">步行10分钟以内</el-radio>
@@ -45,7 +52,7 @@
 
           <div class="filter-block">
             <div class="filter-block-title">距离</div>
-            <el-radio-group v-model="distanceFilter" class="fg-radio" @change="doSearch">
+            <el-radio-group v-model="distanceFilter" class="fg-radio" @change="onCommuteFilterChange">
               <el-radio :value="null">不限</el-radio>
               <el-radio :value="0.5">500m 以内</el-radio>
               <el-radio :value="1">1km 以内</el-radio>
@@ -164,11 +171,15 @@
         <!-- ──────── 排序 ──────── -->
         <div class="filter-block">
           <div class="filter-block-title">排序方式</div>
-          <el-radio-group v-model="sortBy" class="fg-radio" @change="doSearch">
+          <el-radio-group v-model="sortBy" class="fg-radio" @change="onSortChange">
             <el-radio value="similarity">匹配度优先</el-radio>
             <el-radio value="price_asc">价格从低到高</el-radio>
             <el-radio value="price_desc">价格从高到低</el-radio>
             <el-radio value="area_desc">面积从大到小</el-radio>
+            <template v-if="searchMode === 'school'">
+              <el-radio value="commute_time">通勤时间最短</el-radio>
+              <el-radio value="commute_dist">距离最近</el-radio>
+            </template>
           </el-radio-group>
         </div>
       </aside>
@@ -178,7 +189,7 @@
       <!-- ════════════════════════════════════════════ -->
       <main class="results-area" :class="{ 'map-layout': viewMode === 'map' }">
         <div class="results-top">
-          <span class="results-count">共 <strong>{{ searchResults.length }}</strong> 套房源</span>
+          <span class="results-count">共 <strong>{{ filteredAndSortedResults.length }}</strong> 套房源</span>
         </div>
 
         <div v-if="loading" class="loading-wrap">
@@ -186,7 +197,7 @@
           <p>搜索中...</p>
         </div>
 
-        <el-empty v-else-if="searchResults.length === 0" description="暂无匹配房源，请调整筛选条件" />
+        <el-empty v-else-if="filteredAndSortedResults.length === 0" description="暂无匹配房源，请调整筛选条件" />
 
         <!-- ═══ 地图模式 ═══ -->
         <template v-else-if="viewMode === 'map'">
@@ -194,7 +205,7 @@
             <!-- 房源列表列 -->
             <div class="map-property-col" ref="propertyListCol">
               <div
-                v-for="p in searchResults" :key="p.id"
+                v-for="p in filteredAndSortedResults" :key="p.id"
                 :id="'prop-' + p.id"
                 class="map-property-card"
               >
@@ -228,7 +239,7 @@
           <div v-if="searchResults.length > pageSize" class="pag">
             <el-pagination
               v-model:current-page="currentPage" :page-size="pageSize"
-              :total="searchResults.length" layout="prev, pager, next" background small
+              :total="filteredAndSortedResults.length" layout="prev, pager, next" background small
             />
           </div>
         </template>
@@ -248,7 +259,7 @@
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Search, School, Grid, List, Location, Loading } from '@element-plus/icons-vue'
+import { Search, School, Grid, List, Location, Loading, ChatDotRound } from '@element-plus/icons-vue'
 import { usePropertyStore } from '@/stores/property'
 import { storeToRefs } from 'pinia'
 import PropertyCard from '@/components/PropertyCard.vue'
@@ -275,10 +286,13 @@ const propertyStore = usePropertyStore()
 const { searchResults, loading } = storeToRefs(propertyStore)
 
 // ── 模式 ──
-const searchMode = ref<'city' | 'school'>('city')
+const searchMode = ref<'city' | 'school' | 'agent'>('city')
 const schoolId = ref<number | null>(null)
 const schoolName = ref('')
 const viewMode = ref<'grid' | 'list'>('grid')
+/** 是否来自 Agent 推荐（显示 AI 推荐横幅） */
+const fromAgent = ref(false)
+const agentContext = ref<{ filters?: Record<string, unknown>; total?: number } | null>(null)
 
 // ── 学校专属 ──
 const commuteTime = ref<number | null>(null)
@@ -323,7 +337,7 @@ function renderMarkers() {
   if (!mapInstance) return
   markerLayer.clearLayers()
   const bounds: [number, number][] = []
-  for (const p of searchResults.value) {
+  for (const p of filteredAndSortedResults.value) {
     const lat = Number((p as any).latitude)
     const lng = Number((p as any).longitude)
     if (isNaN(lat) || isNaN(lng)) continue
@@ -381,8 +395,8 @@ watch(viewMode, (mode) => {
   }
 })
 
-// 地图模式下搜索结果变化时刷新标记
-watch(searchResults, (results) => {
+// 地图模式下筛选结果变化时刷新标记
+watch(filteredAndSortedResults, (results) => {
   if (viewMode.value === 'map' && mapReady.value) {
     nextTick(() => renderMarkers())
   }
@@ -517,6 +531,11 @@ watch([searchResults, schoolId], () => {
   fetchCommuteTimes()
 })
 
+// 通勤数据更新后重置分页（可能因筛选导致结果减少）
+watch(commuteMap, () => {
+  currentPage.value = 1
+})
+
 /** 传递给详情页的 school query 参数 */
 const schoolLinkQuery = computed(() => {
   if (searchMode.value !== 'school' || !schoolId.value) return {} as Record<string, string>
@@ -561,9 +580,65 @@ function handleBookingConfirm(data: { propertyId: number; date: string; slot: st
   router.push({ path: '/booking/confirm', query: { property_id: String(data.propertyId), date: data.date, slot: data.slot } })
 }
 
+/** 应用客户端筛选（通勤时间/距离/排序）后的最终结果 */
+const filteredAndSortedResults = computed(() => {
+  let results = [...searchResults.value]
+
+  // ── 通勤时间筛选（学校模式）──
+  if (searchMode.value === 'school' && commuteTime.value != null) {
+    const maxMin = commuteTime.value
+    results = results.filter(p => {
+      const c = commuteMap.value[p.id]
+      if (!c) return false // 无通勤数据则排除
+      // 前3档（≤15）按步行时间，后2档（20/30）按驾车时间
+      if (maxMin <= 15) {
+        return c.walk_min <= maxMin
+      } else {
+        return c.drive_min <= maxMin
+      }
+    })
+  }
+
+  // ── 距离筛选（学校模式）──
+  if (searchMode.value === 'school' && distanceFilter.value != null) {
+    const maxKm = distanceFilter.value
+    results = results.filter(p => {
+      const c = commuteMap.value[p.id]
+      if (!c) return false
+      return c.dist_km <= maxKm
+    })
+  }
+
+  // ── 客户端排序 ──
+  if (sortBy.value === 'commute_time') {
+    results.sort((a, b) => {
+      const ca = commuteMap.value[a.id]
+      const cb = commuteMap.value[b.id]
+      const ta = ca ? Math.min(ca.walk_min, ca.drive_min) : Infinity
+      const tb = cb ? Math.min(cb.walk_min, cb.drive_min) : Infinity
+      return ta - tb
+    })
+  } else if (sortBy.value === 'commute_dist') {
+    results.sort((a, b) => {
+      const ca = commuteMap.value[a.id]
+      const cb = commuteMap.value[b.id]
+      return (ca?.dist_km ?? Infinity) - (cb?.dist_km ?? Infinity)
+    })
+  } else if (sortBy.value === 'price_asc') {
+    results.sort((a, b) => a.price_monthly - b.price_monthly)
+  } else if (sortBy.value === 'price_desc') {
+    results.sort((a, b) => b.price_monthly - a.price_monthly)
+  } else if (sortBy.value === 'area_desc') {
+    results.sort((a, b) => (b.area_sqm || 0) - (a.area_sqm || 0))
+  }
+  // 'similarity' / 'created_at' 走后端排序，不在此处理
+
+  return results
+})
+
 const pagedResults = computed(() => {
   const s = (currentPage.value - 1) * pageSize
-  return searchResults.value.slice(s, s + pageSize)
+  return filteredAndSortedResults.value.slice(s, s + pageSize)
 })
 
 // ── 搜索 ──
@@ -583,9 +658,62 @@ function doSearch() {
   if (filters.price_max != null) p.price_max = filters.price_max
   if (filters.bedrooms != null) p.bedrooms = filters.bedrooms
   if (filters.property_type) p.property_type = filters.property_type as PropertyType
-  p.limit = 30
+
+  // 入住月份 → available_from (YYYYMM 字符串)
+  if (filters.move_in_month) {
+    p.available_from = String(filters.move_in_month)
+  }
+
+  // 房型
+  if (filters.room_type) {
+    p.room_type = filters.room_type
+  }
+
+  // 合并 features + amenities + location_tags → amenities 数组
+  const allAmenities = [
+    ...(filters.features || []),
+    ...(filters.amenities || []),
+    ...(filters.location_tags || []),
+  ]
+  if (allAmenities.length > 0) {
+    p.amenities = allAmenities
+  }
+
+  // 时长（城市模式）→ 租期范围
+  if (durationFilter.value) {
+    if (durationFilter.value === 'short') {
+      p.max_lease_months = 3
+    } else if (durationFilter.value === 'medium') {
+      p.min_lease_months = 3
+      p.max_lease_months = 6
+    } else if (durationFilter.value === 'long') {
+      p.min_lease_months = 12
+    }
+  }
+
+  // 排序（非通勤排序发送到后端）
+  if (sortBy.value && !['commute_time', 'commute_dist'].includes(sortBy.value)) {
+    p.sort_by = sortBy.value
+  }
+
+  p.limit = 50  // 增加 limit 为客户端通勤筛选留余量
 
   propertyStore.fetchSearch(p)
+}
+
+/** 通勤筛选变更（纯客户端筛选，不需要重新请求后端） */
+function onCommuteFilterChange() {
+  currentPage.value = 1 // 重置分页
+  // filteredAndSortedResults 会自动响应 commuteTime/distanceFilter/commuteMap 变化
+}
+
+/** 排序变更 — 后端排序需重新请求，客户端排序仅重置分页 */
+function onSortChange() {
+  currentPage.value = 1
+  if (sortBy.value && !['commute_time', 'commute_dist', 'area_desc'].includes(sortBy.value)) {
+    doSearch() // 后端排序需要重新请求
+  }
+  // 客户端排序：filteredAndSortedResults 自动响应
 }
 
 function resetFilters() {
@@ -601,6 +729,35 @@ function resetFilters() {
 // ── 路由初始化 ──
 function initFromRoute() {
   const q = route.query
+
+  // 优先检查是否来自 Agent 推荐（sessionStorage 中预存了结果）
+  const agentResultsJson = sessionStorage.getItem('agentSearchResults')
+  const agentCtxJson = sessionStorage.getItem('agentSearchContext')
+  if (agentResultsJson && q.from === 'agent') {
+    try {
+      const results = JSON.parse(agentResultsJson)
+      const ctx = agentCtxJson ? JSON.parse(agentCtxJson) : null
+      if (Array.isArray(results) && results.length > 0) {
+        propertyStore.setSearchResults(results)
+        fromAgent.value = true
+        agentContext.value = ctx
+        searchMode.value = 'agent'
+        // 预填筛选条件
+        if (ctx?.filters) {
+          const f = ctx.filters as Record<string, unknown>
+          if (f.country) filters.country = f.country as string
+          if (f.district) filters.district = f.district as string
+        }
+      }
+    } catch {
+      // 解析失败，回退到正常搜索
+    }
+    // 消费后清除（避免刷新页面重复加载）
+    sessionStorage.removeItem('agentSearchResults')
+    sessionStorage.removeItem('agentSearchContext')
+    return
+  }
+
   if (q.school_id) {
     searchMode.value = 'school'; schoolId.value = Number(q.school_id)
     filters.institute_id = schoolId.value; filters.district = undefined
@@ -643,6 +800,12 @@ watch(() => route.query, () => initFromRoute())
 }
 .school-banner h1 { font-size: 20px; font-weight: 700; color: var(--text-primary); margin: 0; }
 .school-count { font-size: 13px; color: var(--text-muted); background: var(--bg); padding: 2px 12px; border-radius: 20px; }
+
+/* Agent 推荐横幅 */
+.agent-banner {
+  border-color: var(--el-color-primary-light-5, #b3d8ff);
+  background: linear-gradient(135deg, #f0f7ff 0%, #fff 100%);
+}
 
 /* ── Layout ── */
 .search-layout {

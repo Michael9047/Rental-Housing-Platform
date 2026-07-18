@@ -22,11 +22,18 @@ export const agentService = {
     return api.get('/agent/faqs').then((r) => r.data)
   },
 
-  /** 发送用户消息（筛选条件 + 自然语言），返回回复和推荐房源 */
+  /** 发送用户消息（筛选条件 + 自然语言 + 可选对比房源ID），返回回复和推荐房源 */
   sendMessage(sessionId: number, body: AgentMessageRequest): Promise<AgentMessageResponse> {
     // Agent 推荐涉及 LLM 调用，超时放宽
+    const payload: Record<string, unknown> = {
+      message: body.message,
+      filters: body.filters,
+    }
+    if (body.compare_property_ids?.length) {
+      payload.compare_property_ids = body.compare_property_ids
+    }
     return api
-      .post(`/agent/sessions/${sessionId}/messages`, body, { timeout: 60000 })
+      .post(`/agent/sessions/${sessionId}/messages`, payload, { timeout: 60000 })
       .then((r) => r.data)
   },
 

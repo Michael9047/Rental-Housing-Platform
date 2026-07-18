@@ -1,101 +1,15 @@
-﻿import json
+﻿import asyncio
 import logging
 from datetime import datetime, timezone
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.config import get_settings
 from app.models.poi import PropertyPOI
 from app.models.property import Property
-from app.services.geocoding_service import (BaseGeocodingService, get_primary_service, search_nearby_with_fallback)
+from app.services.geocoding_service import (BaseGeocodingService, get_primary_service)
 
 logger = logging.getLogger(__name__)
-settings = get_settings()
-
-MOCK_POI = {
-    "工业园区": {
-        "summary": "该地址位于苏州工业园区核心地段，周边商业配套成熟，交通便捷。邻近金鸡湖景区，环境优美，适合居住。",
-        "categories": {
-            "交通": [
-                {"name": "地铁1号线时代广场站", "distance": "500m"},
-                {"name": "地铁3号线东方之门站", "distance": "800m"},
-                {"name": "星海街公交站", "distance": "300m"},
-            ],
-            "餐饮": [
-                {"name": "星海广场美食街", "distance": "400m"},
-                {"name": "圆融时代广场", "distance": "600m"},
-            ],
-            "购物": [
-                {"name": "久光百货", "distance": "500m"},
-                {"name": "圆融时代商圈", "distance": "600m"},
-            ],
-        },
-    },
-    "姑苏区": {
-        "summary": "该地址位于苏州古城区，历史文化氛围浓厚。周边园林景观优美，古典与现代交融，生活便利。",
-        "categories": {
-            "交通": [
-                {"name": "地铁4号线乐桥站", "distance": "600m"},
-                {"name": "地铁1号线临顿路站", "distance": "900m"},
-            ],
-            "餐饮": [
-                {"name": "平江路美食街", "distance": "300m"},
-                {"name": "观前街小吃一条街", "distance": "1km"},
-            ],
-            "购物": [
-                {"name": "观前街商圈", "distance": "1km"},
-                {"name": "美罗商城", "distance": "1.5km"},
-            ],
-        },
-    },
-    "高新区": {
-        "summary": "该地址位于苏州高新区，周边高新企业众多，商业配套快速发展。交通便利，环境宜居。",
-        "categories": {
-            "交通": [
-                {"name": "地铁3号线狮山路站", "distance": "400m"},
-                {"name": "有轨电车1号线", "distance": "600m"},
-            ],
-            "餐饮": [
-                {"name": "龙湖天街美食层", "distance": "500m"},
-                {"name": "绿宝广场", "distance": "800m"},
-            ],
-            "购物": [
-                {"name": "龙湖天街", "distance": "500m"},
-            ],
-        },
-    },
-    "吴中区": {
-        "summary": "该地址位于吴中区，紧邻太湖，自然环境优越。周边新兴商圈快速发展，生态居住区域。",
-        "categories": {
-            "交通": [{"name": "地铁4号线支线太湖新城站", "distance": "1km"}],
-            "餐饮": [{"name": "永旺梦乐城", "distance": "800m"}],
-            "购物": [{"name": "永旺梦乐城", "distance": "800m"}],
-        },
-    },
-    "相城区": {
-        "summary": "该地址位于相城区，交通便捷，高铁新城辐射显著。商业配套在快速完善中。",
-        "categories": {
-            "交通": [
-                {"name": "地铁2号线高铁苏州北站", "distance": "500m"},
-                {"name": "高铁苏州北站", "distance": "500m"},
-            ],
-            "餐饮": [{"name": "高铁新城商业街", "distance": "400m"}],
-            "购物": [{"name": "高铁新城吾悦广场", "distance": "600m"}],
-        },
-    },
-    "吴江区": {
-        "summary": "该地址位于吴江区，水乡特色鲜明，生活成本较低。交通便捷，与上海青浦接壤。",
-        "categories": {
-            "交通": [
-                {"name": "地铁4号线汾湖站", "distance": "1km"},
-                {"name": "汾湖高速入口", "distance": "2km"},
-            ],
-            "餐饮": [{"name": "汾湖商业街", "distance": "500m"}],
-            "购物": [{"name": "汾湖中心商场", "distance": "800m"}],
-        },
-    },
-}
 
 NEARBY_SEARCH_PLAN: dict[str, list[str]] = {
     "交通": ["地铁站", "公交站", "火车站"],
@@ -106,19 +20,20 @@ NEARBY_SEARCH_PLAN: dict[str, list[str]] = {
     "生活服务": ["银行", "菜市场", "快递", "洗衣店"],
 }
 
+# 地图小卡片 POI 分类 → 搜索关键词（与前端 PropertyMapCard 6 个 Tab 对齐）
+MAP_POI_CATEGORIES: dict[str, list[str]] = {
+    "school": ["大学"],
+    "bus_station": ["公交站"],
+    "subway_station": ["地铁站"],
+    "supermarket": ["超市"],
+    "restaurant": ["餐厅", "快餐"],
+    "pharmacy": ["药店"],
+}
+MAP_POI_SEARCH_RADIUS = 3000  # 米
+
 class POIService:
     def __init__(self, session: AsyncSession):
         self.session = session
-        self.client = None
-        try:
-            if settings.openai_api_key:
-                from openai import AsyncOpenAI
-                self.client = AsyncOpenAI(
-                    api_key=settings.openai_api_key,
-                    base_url=getattr(settings, "openai_base_url", None),
-                )
-        except Exception as e:
-            logger.warning("OpenAI init failed: %s", e)
 
     async def generate_poi_for_property(self, property_obj: Property, *, force: bool = False) -> PropertyPOI | None:
         existing = await self.session.execute(
@@ -128,7 +43,15 @@ class POIService:
         if found and not force:
             return found
 
-        summary, categories = await self._build_poi_payload(property_obj)
+        try:
+            summary, categories = await self._build_poi_payload(property_obj)
+        except Exception as exc:
+            logger.error("POI 生成失败 property_id=%s: %s", property_obj.id, exc)
+            # 删除旧假数据
+            if found:
+                await self.session.delete(found)
+                await self.session.commit()
+            return None
 
         if found:
             found.content = summary
@@ -151,47 +74,17 @@ class POIService:
         return poi
 
     async def _build_poi_payload(self, property_obj: Property) -> tuple[str, dict[str, list[dict[str, str]]]]:
-        district = property_obj.district or "工业园区"
+        """通过 Overpass/高德 搜索真实周边设施，失败时抛出异常而非返回假数据"""
+        geo_service = get_primary_service(property_obj.country)
+        location = await self._resolve_location(geo_service, property_obj)
+        if not location:
+            raise RuntimeError(f"无法解析房源坐标: {property_obj.address}")
 
-        try:
-            geo_service = get_primary_service(property_obj.country)
-            location = await self._resolve_location(geo_service, property_obj)
-            if location:
-                categories = await self._collect_nearby_categories(geo_service, location)
-                if categories:
-                    summary = await self._compose_summary(property_obj, categories)
-                    return summary, categories
-        except Exception as exc:
-            logger.warning("Primary geocoding nearby generation failed, using fallback: %s", exc)
+        categories = await self._collect_nearby_categories(geo_service, location)
+        if not categories:
+            raise RuntimeError(f"周边设施搜索无结果: {property_obj.address} (引擎: {type(geo_service).__name__})")
 
-        mock = MOCK_POI.get(district, MOCK_POI["工业园区"])
-        summary = mock["summary"]
-        categories = mock["categories"]
-
-        if self.client:
-            try:
-                prompt = (
-                    "请根据以下房源地址与周边设施数据，用中文生成一段自然的居住环境简介。"
-                    "要求：不要编造不存在的设施，不要分点，控制在80-120字。"
-                    + "\n\n地址：" + property_obj.address
-                    + "\n\n周边设施JSON："
-                    + json.dumps(categories, ensure_ascii=False)
-                    + "\n\n请只返回JSON：{\"summary\": \"...\"}"
-                )
-                response = await self.client.chat.completions.create(
-                    model=settings.openai_chat_model or "gpt-4o",
-                    messages=[{"role": "user", "content": prompt}],
-                    temperature=0.5,
-                    max_tokens=300,
-                    response_format={"type": "json_object"},
-                )
-                content_text = response.choices[0].message.content
-                if content_text:
-                    result = json.loads(content_text)
-                    summary = result.get("summary", summary)
-            except Exception as e:
-                logger.warning("OpenAI POI failed, using fallback: %s", e)
-
+        summary = self._compose_deterministic_summary(property_obj, categories)
         return summary, categories
 
     async def _resolve_location(
@@ -210,61 +103,64 @@ class POIService:
         geo_service: BaseGeocodingService,
         location: str,
     ) -> dict[str, list[dict[str, str]]]:
-        categories: dict[str, list[dict[str, str]]] = {}
-
+        """并发搜索周边设施，限流 6 个并发避免压垮 Overpass 端点"""
+        # 扁平化所有 (category, keyword) 任务
+        tasks: list[tuple[str, str]] = []
         for category, keywords in NEARBY_SEARCH_PLAN.items():
-            merged: dict[str, dict[str, str]] = {}
             for keyword in keywords:
-                results = await geo_service.search_nearby(location, keyword, category=category)
-                for item in results:
-                    existing = merged.get(item.name)
-                    current_distance = self._distance_to_int(item.distance)
-                    existing_distance = self._distance_to_int(existing.get("distance")) if existing else None
-                    if existing is None or (
-                        current_distance is not None
-                        and (existing_distance is None or current_distance < existing_distance)
-                    ):
-                        merged[item.name] = item.to_dict()
+                tasks.append((category, keyword))
 
+        semaphore = asyncio.Semaphore(6)
+
+        async def search_one(category: str, keyword: str) -> tuple[str, str, list]:
+            async with semaphore:
+                try:
+                    results = await geo_service.search_nearby(location, keyword, category=category)
+                except Exception:
+                    results = []
+                return category, keyword, results
+
+        all_results = await asyncio.gather(
+            *[search_one(cat, kw) for cat, kw in tasks],
+            return_exceptions=True,
+        )
+
+        # 按分类聚合结果
+        merged_by_category: dict[str, dict[str, dict[str, str]]] = {}
+        for item in all_results:
+            if isinstance(item, BaseException):
+                continue
+            cat, kw, results = item
+            if cat not in merged_by_category:
+                merged_by_category[cat] = {}
+            merged = merged_by_category[cat]
+            for poi in results:
+                existing = merged.get(poi.name)
+                current_dist = self._distance_to_int(poi.distance)
+                existing_dist = self._distance_to_int(existing.get("distance")) if existing else None
+                if existing is None or (
+                    current_dist is not None
+                    and (existing_dist is None or current_dist < existing_dist)
+                ):
+                    merged[poi.name] = poi.to_dict()
+
+        categories: dict[str, list[dict[str, str]]] = {}
+        for cat, merged in merged_by_category.items():
             if merged:
                 ordered = sorted(
                     merged.values(),
                     key=lambda entry: self._distance_to_int(entry.get("distance")) or 10**9,
                 )
-                categories[category] = ordered[:5]
+                categories[cat] = ordered[:5]
 
         return categories
 
-    async def _compose_summary(
+    def _compose_deterministic_summary(
         self,
         property_obj: Property,
         categories: dict[str, list[dict[str, str]]],
     ) -> str:
-        if self.client:
-            try:
-                prompt = (
-                    "请根据以下房源地址和周边设施数据，用中文生成一段真实、克制的居住环境简介。"
-                    "不要夸大，不要编造，只返回JSON：{\"summary\": \"...\"}。"
-                    + "\n\n地址：" + property_obj.address
-                    + "\n\n周边设施JSON："
-                    + json.dumps(categories, ensure_ascii=False)
-                )
-                response = await self.client.chat.completions.create(
-                    model=settings.openai_chat_model or "gpt-4o",
-                    messages=[{"role": "user", "content": prompt}],
-                    temperature=0.4,
-                    max_tokens=240,
-                    response_format={"type": "json_object"},
-                )
-                content_text = response.choices[0].message.content
-                if content_text:
-                    result = json.loads(content_text)
-                    summary = result.get("summary")
-                    if summary:
-                        return summary
-            except Exception as exc:
-                logger.warning("OpenAI summary failed, using deterministic summary: %s", exc)
-
+        """根据真实搜索数据生成摘要，不依赖 AI"""
         parts: list[str] = []
         for category, items in categories.items():
             if not items:
@@ -274,7 +170,7 @@ class POIService:
 
         base = property_obj.district or property_obj.address
         if parts:
-            return f"该房源位于{base}，周边已检索到{ '；'.join(parts) }等配套，适合日常居住。"
+            return f"该房源位于{base}，周边已检索到{'；'.join(parts)}等配套，适合日常居住。"
         return f"该房源位于{base}，周边生活配套待补充。"
 
     @staticmethod
@@ -292,22 +188,143 @@ class POIService:
             return None
 
     async def get_or_generate_poi(self, property_id: int) -> PropertyPOI | None:
+        """获取或自动生成房源 POI 数据。
+
+        优先返回已有 POI；不存在时自动生成（含 mock 兜底）。
+        仅在房源本身不存在时返回 None。
+        """
         result = await self.session.execute(
             select(PropertyPOI).where(PropertyPOI.property_id == property_id)
         )
         poi = result.scalar_one_or_none()
         if poi:
             return poi
+
         prop = await self.session.get(Property, property_id)
         if not prop:
             return None
-        return await self.generate_poi_for_property(prop)
+
+        try:
+            return await self.generate_poi_for_property(prop)
+        except Exception as exc:
+            logger.error("生成 POI 失败 property_id=%s: %s", property_id, exc)
+            # 生成失败时返回 None，由调用方决定如何处理
+            return None
 
     async def get_poi(self, property_id: int) -> PropertyPOI | None:
         result = await self.session.execute(
             select(PropertyPOI).where(PropertyPOI.property_id == property_id)
         )
         return result.scalar_one_or_none()
+
+    # ── 地图小卡片 POI 预生成 ───────────────────────────────
+
+    async def generate_map_pois(self, property_obj: Property) -> dict | None:
+        """生成地图小卡片 POI 数据（6 大类，3km 半径，含 lat/lng）。
+
+        与 AI 分析面板的 _build_poi_payload 独立，仅搜 6 个前端 Tab 分类。
+        返回的 dict 存入 PropertyPOI.map_poi_data。
+        """
+        geo_service = get_primary_service(property_obj.country)
+        location = await self._resolve_location(geo_service, property_obj)
+        if not location:
+            logger.error("Map POI: 无法解析房源坐标 property_id=%s", property_obj.id)
+            return None
+
+        # 展开所有 (category_key, keyword) 任务（约 7 个，全部并行）
+        tasks: list[tuple[str, str]] = []
+        for cat_key, keywords in MAP_POI_CATEGORIES.items():
+            for kw in keywords:
+                tasks.append((cat_key, kw))
+
+        async def search_one(cat_key: str, keyword: str) -> list:
+            try:
+                return await geo_service.search_nearby(
+                    location,
+                    keyword,
+                    radius=MAP_POI_SEARCH_RADIUS,
+                    page_size=25,
+                    category=cat_key,
+                )
+            except Exception:
+                return []
+
+        all_results = await asyncio.gather(
+            *[search_one(cat, kw) for cat, kw in tasks],
+            return_exceptions=True,
+        )
+
+        # 按分类聚合，去重，保留最近
+        merged: dict[str, dict[str, dict]] = {}
+        for i, item in enumerate(all_results):
+            if isinstance(item, BaseException):
+                continue
+            cat_key = tasks[i][0]
+            if cat_key not in merged:
+                merged[cat_key] = {}
+            for poi in item:
+                if not poi.name or not poi.lat or not poi.lng:
+                    continue
+                existing = merged[cat_key].get(poi.name)
+                new_dist = poi.distance_meters or 10**9
+                old_dist = existing["distance"] if existing else 10**9
+                if existing is None or new_dist < old_dist:
+                    merged[cat_key][poi.name] = {
+                        "id": hash(poi.name) % 10**8,
+                        "name": poi.name,
+                        "lat": poi.lat,
+                        "lng": poi.lng,
+                        "distance": poi.distance_meters,
+                        "line": None,
+                    }
+
+        categories: dict[str, list[dict]] = {}
+        for cat_key, merged_items in merged.items():
+            if merged_items:
+                categories[cat_key] = sorted(
+                    merged_items.values(),
+                    key=lambda x: x["distance"] if x["distance"] is not None else 10**9,
+                )[:30]
+
+        return {
+            "search_radius_m": MAP_POI_SEARCH_RADIUS,
+            "categories": categories,
+        }
+
+    async def get_or_generate_map_pois(self, property_id: int) -> dict | None:
+        """获取或生成地图 POI 数据。已缓存则直接返回，否则实时生成并持久化。"""
+        result = await self.session.execute(
+            select(PropertyPOI).where(PropertyPOI.property_id == property_id)
+        )
+        poi = result.scalar_one_or_none()
+
+        # 已有缓存 → 直接返回
+        if poi and poi.map_poi_data:
+            return poi.map_poi_data
+
+        prop = await self.session.get(Property, property_id)
+        if not prop:
+            return None
+
+        data = await self.generate_map_pois(prop)
+        if not data:
+            return None
+
+        # 持久化到 map_poi_data
+        if poi:
+            poi.map_poi_data = data
+        else:
+            poi = PropertyPOI(
+                property_id=property_id,
+                content="",
+                map_poi_data=data,
+                generated_at=datetime.now(timezone.utc),
+                reviewed=False,
+            )
+            self.session.add(poi)
+
+        await self.session.commit()
+        return data
 
 
 

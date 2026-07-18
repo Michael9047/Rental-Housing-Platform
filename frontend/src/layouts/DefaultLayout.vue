@@ -10,16 +10,90 @@
       </div>
 
       <div class="header-center">
-        <div class="header-search-wrapper">
-          <el-input
-            v-model="searchQuery"
-            placeholder="搜索房源：输入区域、小区、国家、城市..."
-            :prefix-icon="Search"
-            class="search-input"
-            size="large"
-            @keyup.enter="handleSearch"
-          />
-          <el-button type="primary" @click="handleSearch" class="search-btn">搜索</el-button>
+        <div class="header-search-area">
+          <div class="header-search-wrapper" :class="{ focused: searchFocused }">
+            <el-input
+              ref="searchInputRef"
+              v-model="searchQuery"
+              placeholder="搜索学校、城市或地区..."
+              :prefix-icon="Search"
+              class="search-input"
+              size="large"
+              @keyup.enter="handleSearchSubmit"
+              @focus="onSearchFocus"
+              @blur="onSearchBlur"
+              @input="onSearchInput"
+            />
+            <el-button type="primary" @click="handleSearchSubmit" class="search-btn">搜索</el-button>
+          </div>
+
+          <!-- 搜索建议下拉 -->
+          <div v-if="showSuggestions" class="search-suggestions">
+            <!-- 加载中 -->
+            <div v-if="suggestionsLoading" class="suggestions-loading">
+              <el-icon class="is-loading"><Loading /></el-icon>
+              <span>搜索中...</span>
+            </div>
+
+            <template v-else>
+              <!-- 学校匹配 -->
+              <div v-if="matchingSchools.length > 0" class="suggestions-group">
+                <div class="suggestions-group-title">🏫 {{ searchQuery.trim() ? '匹配学校' : '热门学校' }}</div>
+                <div
+                  v-for="school in matchingSchools"
+                  :key="'school-' + school.id"
+                  class="suggestion-item"
+                  @mousedown.prevent="selectSchool(school)"
+                >
+                  <div class="suggestion-main">
+                    <span class="suggestion-name">{{ school.name }}</span>
+                    <span v-if="school.abbreviation" class="suggestion-abbr">{{ school.abbreviation }}</span>
+                    <el-tag v-if="school.count > 0" size="small" type="primary" effect="plain">{{ school.count }}套</el-tag>
+                  </div>
+                  <div v-if="school.name_cn" class="suggestion-sub">{{ school.name_cn }}</div>
+                </div>
+              </div>
+
+              <!-- 地区匹配 -->
+              <div v-if="matchingCities.length > 0" class="suggestions-group">
+                <div class="suggestions-group-title">📍 {{ searchQuery.trim() ? '匹配地区' : '热门地区' }}</div>
+                <div
+                  v-for="city in matchingCities"
+                  :key="'city-' + (city.name || '') + '-' + (city.country || '')"
+                  class="suggestion-item"
+                  @mousedown.prevent="selectCity(city)"
+                >
+                  <div class="suggestion-main">
+                    <span class="suggestion-name">{{ city.name }}</span>
+                    <span v-if="city.country" class="suggestion-country">{{ city.country }}</span>
+                    <el-tag v-if="city.count > 0" size="small" type="success" effect="plain">{{ city.count }}套</el-tag>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 房源匹配 -->
+              <div v-if="matchingProperties.length > 0" class="suggestions-group">
+                <div class="suggestions-group-title">🏠 匹配房源</div>
+                <div
+                  v-for="prop in matchingProperties"
+                  :key="'prop-' + prop.id"
+                  class="suggestion-item"
+                  @mousedown.prevent="selectProperty(prop)"
+                >
+                  <div class="suggestion-main">
+                    <span class="suggestion-name">{{ prop.title }}</span>
+                    <span class="suggestion-sub">{{ prop.district }}</span>
+                    <span v-if="prop.price_monthly" class="suggestion-price">¥{{ prop.price_monthly }}/月</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 无结果 -->
+              <div v-if="!hasAnySuggestions && !suggestionsLoading && searchQuery.trim()" class="suggestions-empty">
+                未找到匹配的学校或地区
+              </div>
+            </template>
+          </div>
         </div>
       </div>
 
@@ -103,127 +177,8 @@
     </el-header>
 
     <el-container class="layout-body">
-      <!-- Sidebar -->
-      <el-aside class="layout-sidebar" width="200px">
-        <el-menu :default-active="activeMenu" router class="sidebar-menu">
-          <!-- 公共 -->
-          <el-menu-item index="/">
-            <el-icon><HomeFilled /></el-icon>
-            <span>首页</span>
-          </el-menu-item>
-
-          <!-- ====== 租客侧边栏 ====== -->
-          <template v-if="!authStore.isLandlord && !authStore.isAdmin && !authStore.isMaintenance && !authStore.isBdManager">
-            <el-menu-item index="/ai-search">
-              <el-icon><MagicStick /></el-icon>
-              <span>AI 找房</span>
-            </el-menu-item>
-            <el-menu-item v-if="authStore.isLoggedIn" index="/agent">
-              <el-icon><ChatDotRound /></el-icon>
-              <span>推荐管家</span>
-            </el-menu-item>
-            <el-menu-item v-if="authStore.isLoggedIn" index="/cart">
-              <el-icon><ShoppingCart /></el-icon>
-              <span>候选清单</span>
-              <el-badge
-                v-if="cartStore.count > 0"
-                :value="cartStore.count"
-                :max="99"
-                class="cart-menu-badge"
-              />
-            </el-menu-item>
-            <el-menu-item index="/search">
-              <el-icon><Search /></el-icon>
-              <span>搜索房源</span>
-            </el-menu-item>
-            <el-menu-item index="/map">
-              <el-icon><Location /></el-icon>
-              <span>地图找房</span>
-            </el-menu-item>
-            <el-menu-item v-if="authStore.isLoggedIn" index="/bookings/tenant">
-              <el-icon><List /></el-icon>
-              <span>我的预订</span>
-            </el-menu-item>
-            <el-menu-item v-if="authStore.isLoggedIn" index="/profile">
-              <el-icon><User /></el-icon>
-              <span>个人中心</span>
-            </el-menu-item>
-          </template>
-
-          <!-- ====== 维修师傅侧边栏 ====== -->
-          <template v-if="authStore.isMaintenance">
-            <el-menu-item index="/worker/dashboard">
-              <el-icon><DataAnalysis /></el-icon>
-              <span>工单中心</span>
-            </el-menu-item>
-            <el-menu-item index="/notifications">
-              <el-icon><Bell /></el-icon>
-              <span>消息通知</span>
-            </el-menu-item>
-          </template>
-
-          <!-- ====== BD经理侧边栏 ====== -->
-          <template v-if="authStore.isBdManager">
-            <el-menu-item index="/bd/dashboard">
-              <el-icon><DataAnalysis /></el-icon>
-              <span>数据台</span>
-            </el-menu-item>
-            <el-menu-item index="/property/manage">
-              <el-icon><OfficeBuilding /></el-icon>
-              <span>房源管理</span>
-            </el-menu-item>
-            <el-menu-item index="/property/create">
-              <el-icon><Plus /></el-icon>
-              <span>发布房源</span>
-            </el-menu-item>
-            <el-menu-item index="/notifications">
-              <el-icon><Bell /></el-icon>
-              <span>消息通知</span>
-            </el-menu-item>
-          </template>
-
-          <!-- ====== 房东/管理员侧边栏 ====== -->
-          <template v-if="authStore.isLandlord || authStore.isAdmin">
-            <el-menu-item index="/workspace">
-              <el-icon><DataAnalysis /></el-icon>
-              <span>运营工作台</span>
-            </el-menu-item>
-            <el-menu-item index="/property/manage">
-              <el-icon><OfficeBuilding /></el-icon>
-              <span>房源管理</span>
-            </el-menu-item>
-            <el-menu-item index="/property/create">
-              <el-icon><Plus /></el-icon>
-              <span>发布房源</span>
-            </el-menu-item>
-            <el-menu-item index="/bookings/landlord">
-              <el-icon><Tickets /></el-icon>
-              <span>预约管理</span>
-            </el-menu-item>
-            <el-menu-item index="/notifications">
-              <el-icon><Bell /></el-icon>
-              <span>消息通知</span>
-            </el-menu-item>
-          </template>
-
-          <!-- 管理员额外菜单 -->
-          <template v-if="authStore.isAdmin">
-            <el-divider style="margin: 8px 0" />
-            <el-sub-menu index="admin-sub">
-              <template #title>
-                <el-icon><DataAnalysis /></el-icon>
-                <span>系统管理</span>
-              </template>
-              <el-menu-item index="/admin">仪表盘</el-menu-item>
-              <el-menu-item index="/admin/users">用户管理</el-menu-item>
-              <el-menu-item index="/admin/properties">房源审核</el-menu-item>
-              <el-menu-item index="/admin/import">数据导入</el-menu-item>
-              <el-menu-item index="/admin/logs">审计日志</el-menu-item>
-              <el-menu-item index="/admin/embeddings">Embedding</el-menu-item>
-            </el-sub-menu>
-          </template>
-        </el-menu>
-      </el-aside>
+      <!-- 全局侧边栏 -->
+      <GlobalSidebar />
 
       <!-- Main Content -->
       <el-main class="layout-main">
@@ -235,7 +190,7 @@
       </el-main>
     </el-container>
 
-    <!-- 浮动 AI 管家（登录可见，/agent 页不显示） -->
+    <!-- 浮动 AI 管家（登录可见） -->
     <AssistantBubble />
   </el-container>
 </template>
@@ -244,16 +199,45 @@
 import { ref, computed, watch, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import {
-  MagicStick, Search, HomeFilled, User, UserFilled, ArrowDown, ArrowLeft, Setting, SwitchButton,
-  Plus, List, Bell, DataAnalysis, Tickets, OfficeBuilding, Location, ChatDotRound,
-  ShoppingCart,
+  Search, User, UserFilled, ArrowDown, ArrowLeft, Setting, SwitchButton,
+  Plus, List, Bell, DataAnalysis, Tickets, Loading,
 } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 import { useAgentChatStore } from '@/stores/agentChat'
 import { useCartStore } from '@/stores/cart'
 import { notificationService } from '@/services/notification'
+import api from '@/services/api'
 import GlobalFooter from '@/components/GlobalFooter.vue'
+import GlobalSidebar from '@/components/GlobalSidebar.vue'
 import AssistantBubble from '@/components/AssistantBubble.vue'
+
+interface SuggestionSchool {
+  type: string
+  id: number
+  name: string
+  name_cn: string | null
+  abbreviation: string | null
+  address: string | null
+  count: number
+  query: { school_id: number }
+}
+
+interface SuggestionCity {
+  type: string
+  name: string
+  country: string
+  count: number
+  query: { district: string; country: string }
+}
+
+interface SuggestionProperty {
+  type: string
+  id: number
+  title: string
+  district: string
+  price_monthly: number | null
+  query: { property_id: number }
+}
 
 const router = useRouter()
 const route = useRoute()
@@ -264,25 +248,104 @@ const agentChatStore = useAgentChatStore()
 const searchQuery = ref('')
 const unreadCount = ref(0)
 
-const activeMenu = computed(() => {
-  const path = route.path
-  if (path.startsWith('/admin')) return path
-  if (path.startsWith('/notifications')) return '/notifications'
-  if (path.startsWith('/property/')) {
-    if (path === '/property/create') return '/property/create'
-    if (path === '/property/manage') return '/property/manage'
-    return '/search'
-  }
-  if (path.startsWith('/bookings/')) return path
-  if (path.startsWith('/workspace')) return '/workspace'
-  return path
-})
+// ── 搜索建议状态 ─────────────────────────
+const searchFocused = ref(false)
+const showSuggestions = ref(false)
+const suggestionsLoading = ref(false)
+const matchingSchools = ref<SuggestionSchool[]>([])
+const matchingCities = ref<SuggestionCity[]>([])
+const matchingProperties = ref<SuggestionProperty[]>([])
+let debounceTimer: ReturnType<typeof setTimeout> | null = null
+let blurTimer: ReturnType<typeof setTimeout> | null = null
 
-function handleSearch() {
+const hasAnySuggestions = computed(() =>
+  matchingSchools.value.length > 0 ||
+  matchingCities.value.length > 0 ||
+  matchingProperties.value.length > 0
+)
+
+// ── 搜索建议请求 ─────────────────────────
+
+async function fetchSuggestions(q: string) {
+  suggestionsLoading.value = true
+  try {
+    const params: Record<string, string | number> = { limit: 6 }
+    if (q.trim()) params.q = q.trim()
+    const resp = await api.get('/search/suggestions', { params })
+    const data = resp.data
+
+    if (q.trim()) {
+      matchingSchools.value = data.matching_schools || []
+      matchingCities.value = data.matching_cities || []
+      matchingProperties.value = data.matching_properties || []
+    } else {
+      matchingSchools.value = data.popular_schools || []
+      matchingCities.value = data.popular_cities || []
+      matchingProperties.value = []
+    }
+  } catch {
+    matchingSchools.value = []
+    matchingCities.value = []
+    matchingProperties.value = []
+  } finally {
+    suggestionsLoading.value = false
+  }
+}
+
+// ── 输入处理（防抖 300ms）─────────────────
+
+function onSearchInput() {
+  if (debounceTimer) clearTimeout(debounceTimer)
+  debounceTimer = setTimeout(() => {
+    fetchSuggestions(searchQuery.value)
+  }, 300)
+}
+
+function onSearchFocus() {
+  if (blurTimer) clearTimeout(blurTimer)
+  searchFocused.value = true
+  showSuggestions.value = true
+  // 聚焦时立即拉取建议（展示热门或匹配结果）
+  fetchSuggestions(searchQuery.value)
+}
+
+function onSearchBlur() {
+  searchFocused.value = false
+  // 延迟关闭，让 mousedown 有时间触发
+  blurTimer = setTimeout(() => {
+    showSuggestions.value = false
+  }, 200)
+}
+
+// ── 选择处理 ─────────────────────────────
+
+function selectSchool(school: SuggestionSchool) {
+  showSuggestions.value = false
+  searchQuery.value = school.name
+  router.push({ name: 'search', query: { school_id: String(school.id) } })
+}
+
+function selectCity(city: SuggestionCity) {
+  showSuggestions.value = false
+  searchQuery.value = city.name
+  router.push({ name: 'search', query: { district: city.name, country: city.country } })
+}
+
+function selectProperty(prop: SuggestionProperty) {
+  showSuggestions.value = false
+  router.push({ name: 'property-detail', params: { id: prop.id } })
+}
+
+// ── 搜索提交 ─────────────────────────────
+
+function handleSearchSubmit() {
+  showSuggestions.value = false
   if (searchQuery.value.trim()) {
     router.push({ name: 'search', query: { q: searchQuery.value.trim() } })
   }
 }
+
+// ── 通知 ─────────────────────────────────
 
 async function fetchUnreadCount() {
   if (!authStore.isLoggedIn) return
@@ -302,6 +365,8 @@ onMounted(() => {
 // 每次路由变化刷新未读数（从通知页回来时数字更新）
 watch(() => route.path, () => {
   fetchUnreadCount()
+  // 路由变化时关闭建议
+  showSuggestions.value = false
 })
 
 // 登录状态变化时同步候选清单与管家会话（登录后拉取、登出清空）
@@ -365,12 +430,21 @@ watch(
   margin: 0 40px;
 }
 
+.header-search-area {
+  position: relative;
+}
+
 .header-search-wrapper {
   display: flex;
   align-items: center;
   border-radius: 36px;
   overflow: hidden;
   height: 48px;
+  transition: box-shadow 0.2s;
+}
+
+.header-search-wrapper.focused {
+  box-shadow: 0 0 0 3px rgba(64, 158, 255, 0.15);
 }
 
 .search-input {
@@ -412,6 +486,115 @@ watch(
   background: var(--primary-light) !important;
 }
 
+/* ── 搜索建议下拉 ─────────────────────────── */
+
+.search-suggestions {
+  position: absolute;
+  top: 54px;
+  left: 0;
+  right: 110px;
+  background: var(--bg-white);
+  border: 1px solid var(--border-light, #ebeef5);
+  border-radius: 12px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1);
+  max-height: 420px;
+  overflow-y: auto;
+  z-index: 200;
+  padding: 8px 0;
+}
+
+.suggestions-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 24px 16px;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.suggestions-group {
+  padding: 4px 0;
+}
+
+.suggestions-group + .suggestions-group {
+  border-top: 1px solid var(--border-light, #f0f0f0);
+}
+
+.suggestions-group-title {
+  padding: 8px 16px 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.suggestion-item {
+  display: flex;
+  flex-direction: column;
+  padding: 8px 16px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.suggestion-item:hover {
+  background: var(--primary-light, #ecf5ff);
+}
+
+.suggestion-main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.suggestion-name {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.suggestion-abbr {
+  font-size: 12px;
+  color: var(--primary);
+  font-weight: 600;
+  background: var(--primary-light, #ecf5ff);
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+
+.suggestion-country {
+  font-size: 11px;
+  color: var(--text-muted);
+  background: #f5f7fa;
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+
+.suggestion-price {
+  margin-left: auto;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--danger, #f56c6c);
+}
+
+.suggestion-sub {
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--text-muted);
+  padding-left: 0;
+}
+
+.suggestions-empty {
+  padding: 24px 16px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
 .header-right {
   display: flex;
   align-items: center;
@@ -442,26 +625,6 @@ watch(
 
 .layout-body {
   flex: 1;
-}
-
-.layout-sidebar {
-  background: var(--bg-white);
-  border-right: 1px solid var(--border);
-}
-
-.sidebar-menu {
-  border-right: none !important;
-  height: 100%;
-  padding-top: 8px;
-}
-
-.cart-menu-badge {
-  margin-left: 8px;
-}
-
-.cart-menu-badge :deep(.el-badge__content) {
-  position: static;
-  transform: none;
 }
 
 .layout-main {

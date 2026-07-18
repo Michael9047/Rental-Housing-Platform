@@ -166,12 +166,15 @@ import { ref, onMounted, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { Search, ArrowRight, ArrowLeft, PictureFilled, Microphone } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
+import { useAgentChatStore } from '@/stores/agentChat'
 import { usePropertyStore } from '@/stores/property'
 import { storeToRefs } from 'pinia'
 import BookingDateDialog from '@/components/BookingDateDialog.vue'
 import type { Property, PropertyType } from '@/types/property'
+import { getImageUrl } from '@/utils/image'
 
 const router = useRouter()
+const agentChatStore = useAgentChatStore()
 const propertyStore = usePropertyStore()
 const { properties, loading } = storeToRefs(propertyStore)
 
@@ -281,18 +284,18 @@ function handleBookingConfirm(data: { propertyId: number; date: string; slot: st
 // Navigation
 function aiSearch() {
   const q = query.value.trim()
-  if (q) router.push({ name: 'search', query: { q } })
+  if (q) agentChatStore.openWithQuery(q)
 }
 
 function quickSearch(hint: string) {
-  router.push({ name: 'search', query: { q: hint } })
+  agentChatStore.openWithQuery(hint)
 }
 
 function searchByRegion(region: string) {
   if (region === 'more') {
     router.push({ name: 'search' })
   } else {
-    router.push({ name: 'search', query: { country: region } })
+    agentChatStore.openWithQuery(region)
   }
 }
 
@@ -304,7 +307,7 @@ function getPrimaryImage(p: Property): string | undefined {
   const images = p.images
   if (!images || images.length === 0) return undefined
   const primary = images.find((img) => img.is_primary) || images[0]
-  return `/api/v1/uploads/${primary.filename}`
+  return getImageUrl(primary.filename)
 }
 
 onMounted(() => {
