@@ -64,10 +64,17 @@
   /* ── Todo checkbox styles ── */
   .todo-check { width:16px; height:16px; cursor:pointer; accent-color:var(--green); margin-right:4px; vertical-align:middle; }
   tr.checked td { text-decoration:line-through; opacity:0.45; }
-  tr.checked td:first-child { text-decoration:none; opacity:1; }
+  tr.checked td:first-child, tr.checked td:nth-child(2) { text-decoration:none; opacity:1; }
+  .attn-btn { width:22px; height:22px; border-radius:50%; border:2px solid var(--red); background:transparent; color:var(--red); cursor:pointer; font-size:12px; font-weight:700; line-height:1; padding:0; text-align:center; opacity:0.4; transition:all 0.2s; }
+  .attn-btn:hover { opacity:0.8; }
+  .attn-btn.active { opacity:1; background:var(--red); color:var(--bg); }
+  tr.attention td { color:var(--red) !important; }
+  tr.attention td .attn-btn { opacity:1; background:var(--red); color:var(--bg); }
+  tr.attention.checked td { color:var(--red) !important; text-decoration:line-through; opacity:0.65; }
   .progress-bar { height:6px; border-radius:3px; background:var(--border); margin-top:8px; overflow:hidden; }
   .progress-fill { height:100%; background:var(--green); border-radius:3px; transition:width 0.3s; }
   .progress-text { font-size:12px; color:var(--muted); margin-top:4px; }
+  .attn-count { color:var(--red); }
   .reset-btn { background:none; border:1px solid var(--border); color:var(--muted); border-radius:6px; padding:4px 12px; cursor:pointer; font-size:11px; margin-left:12px; }
   .reset-btn:hover { border-color:var(--red); color:var(--red); }
 
@@ -122,7 +129,7 @@
 
 <div class="card" style="margin-top:16px;text-align:center">
   <strong style="font-size:14px">📋 进度追踪</strong>
-  <span class="progress-text" id="progress-label">Agent: 0/6 &nbsp;|&nbsp; 工具: 0/16</span>
+  <span class="progress-text" id="progress-label">Agent: 0/6 &nbsp;|&nbsp; 工具: 0/16 &nbsp;|&nbsp; <span class="attn-count" id="attn-label">⚠ 0</span></span>
   <div class="progress-bar"><div class="progress-fill" id="progress-fill" style="width:0%"></div></div>
   <button class="reset-btn" onclick="resetAll()">↺ 重置全部</button>
 </div>
@@ -189,10 +196,11 @@ POST /api/v1/agent/sessions/:id/messages
 
 <h3>3.1 核心搜索链路 — 全部直接执行，无 ReAct</h3>
 <table class="todo-table" data-group="agent-core">
-<thead><tr><th>✓</th><th>Agent ID</th><th>中文名</th><th>文件</th><th>执行方式</th><th>LLM 调用</th><th>工具</th></tr></thead>
+<thead><tr><th>✓</th><th>!</th><th>Agent ID</th><th>中文名</th><th>文件</th><th>执行方式</th><th>LLM 调用</th><th>工具</th></tr></thead>
 <tbody>
 <tr style="background:rgba(0,255,0,0.04)" data-id="filter_agent">
   <td><input type="checkbox" class="todo-check" data-id="filter_agent" onchange="toggleCheck(this)"></td>
+  <td><button class="attn-btn" data-id="filter_agent" onclick="toggleAttn(this)" title="标记需关注">!</button></td>
   <td><strong>filter_agent</strong></td><td>筛选条件提取</td><td><code>agents/filter_agent.py</code></td>
   <td>Supervisor._run_filter_agent() → FilterAgent.handle() → llm.complete_json(FILTER_PROMPT)</td>
   <td>1 次 JSON 提取</td>
@@ -200,6 +208,7 @@ POST /api/v1/agent/sessions/:id/messages
 </tr>
 <tr style="background:rgba(0,255,0,0.04)" data-id="search_agent">
   <td><input type="checkbox" class="todo-check" data-id="search_agent" onchange="toggleCheck(this)"></td>
+  <td><button class="attn-btn" data-id="search_agent" onclick="toggleAttn(this)" title="标记需关注">!</button></td>
   <td><strong>search_agent</strong></td><td>房源搜索</td><td><code>agents/search_agent.py</code></td>
   <td>Supervisor._run_search_agent() → AgentService.recommend_properties()（搜索+评分+LLM推荐回复）</td>
   <td>1 次推荐生成</td>
@@ -207,6 +216,7 @@ POST /api/v1/agent/sessions/:id/messages
 </tr>
 <tr style="background:rgba(0,255,0,0.04)" data-id="synthesizer_agent">
   <td><input type="checkbox" class="todo-check" data-id="synthesizer_agent" onchange="toggleCheck(this)"></td>
+  <td><button class="attn-btn" data-id="synthesizer_agent" onclick="toggleAttn(this)" title="标记需关注">!</button></td>
   <td><strong>synthesizer_agent</strong></td><td>回复合成</td><td><code>agents/synthesizer_agent.py</code></td>
   <td>Supervisor._run_synthesizer_agent() → SynthesizerAgent.handle() → llm.complete_text(stage_prompt)</td>
   <td>1 次文本合成</td>
@@ -217,11 +227,11 @@ POST /api/v1/agent/sessions/:id/messages
 
 <h3>3.2 条件任务 Agent — 全部 0 LLM</h3>
 <table class="todo-table" data-group="agent-task">
-<thead><tr><th>✓</th><th>Agent ID</th><th>中文名</th><th>执行方式</th><th>LLM</th><th>触发意图</th></tr></thead>
+<thead><tr><th>✓</th><th>!</th><th>Agent ID</th><th>中文名</th><th>执行方式</th><th>LLM</th><th>触发意图</th></tr></thead>
 <tbody>
-<tr data-id="compare_agent"><td><input type="checkbox" class="todo-check" data-id="compare_agent" onchange="toggleCheck(this)"></td><td><strong>compare_agent</strong></td><td>房源对比</td><td>委托 AgentService.compare_cart()</td><td>❌</td><td>compare</td></tr>
-<tr data-id="cart_agent"><td><input type="checkbox" class="todo-check" data-id="cart_agent" onchange="toggleCheck(this)"></td><td><strong>cart_agent</strong></td><td>购物车管理</td><td>委托 AgentService CRUD</td><td>❌</td><td>manage_cart</td></tr>
-<tr data-id="faq_agent"><td><input type="checkbox" class="todo-check" data-id="faq_agent" onchange="toggleCheck(this)"></td><td><strong>faq_agent</strong></td><td>FAQ 问答</td><td>agent_faq.match_faq() 规则匹配</td><td>❌</td><td>faq</td></tr>
+<tr data-id="compare_agent"><td><input type="checkbox" class="todo-check" data-id="compare_agent" onchange="toggleCheck(this)"></td><td><button class="attn-btn" data-id="compare_agent" onclick="toggleAttn(this)" title="标记需关注">!</button></td><td><strong>compare_agent</strong></td><td>房源对比</td><td>委托 AgentService.compare_cart()</td><td>❌</td><td>compare</td></tr>
+<tr data-id="cart_agent"><td><input type="checkbox" class="todo-check" data-id="cart_agent" onchange="toggleCheck(this)"></td><td><button class="attn-btn" data-id="cart_agent" onclick="toggleAttn(this)" title="标记需关注">!</button></td><td><strong>cart_agent</strong></td><td>购物车管理</td><td>委托 AgentService CRUD</td><td>❌</td><td>manage_cart</td></tr>
+<tr data-id="faq_agent"><td><input type="checkbox" class="todo-check" data-id="faq_agent" onchange="toggleCheck(this)"></td><td><button class="attn-btn" data-id="faq_agent" onclick="toggleAttn(this)" title="标记需关注">!</button></td><td><strong>faq_agent</strong></td><td>FAQ 问答</td><td>agent_faq.match_faq() 规则匹配</td><td>❌</td><td>faq</td></tr>
 </tbody>
 </table>
 
@@ -238,22 +248,22 @@ POST /api/v1/agent/sessions/:id/messages
 <h2 id="tools">4. 工具层（16 个）</h2>
 
 <table class="todo-table" data-group="tool">
-<thead><tr><th>✓</th><th>#</th><th>工具名</th><th>可用 Agent</th><th>功能</th></tr></thead>
+<thead><tr><th>✓</th><th>!</th><th>#</th><th>工具名</th><th>可用 Agent</th><th>功能</th></tr></thead>
 <tbody>
-<tr data-id="tool-property_search"><td><input type="checkbox" class="todo-check" data-id="tool-property_search" onchange="toggleCheck(this)"></td><td>1</td><td><strong>property_search</strong></td><td>search_agent, filter_agent</td><td>核心房源搜索（渐进放宽）</td></tr>
-<tr data-id="tool-extract_filters"><td><input type="checkbox" class="todo-check" data-id="tool-extract_filters" onchange="toggleCheck(this)"></td><td>2</td><td><strong>extract_filters</strong></td><td>search_agent, filter_agent</td><td>NL → 结构化筛选条件（LLM JSON 提取）</td></tr>
-<tr data-id="tool-score_properties"><td><input type="checkbox" class="todo-check" data-id="tool-score_properties" onchange="toggleCheck(this)"></td><td>3</td><td><strong>score_properties</strong></td><td>search_agent</td><td>确定性质量评分</td></tr>
-<tr data-id="tool-commute_calc"><td><input type="checkbox" class="todo-check" data-id="tool-commute_calc" onchange="toggleCheck(this)"></td><td>4</td><td><strong>commute_calc</strong></td><td>search_agent</td><td>通勤时间/距离计算（待改为 DB 查）</td></tr>
-<tr data-id="tool-poi_lookup"><td><input type="checkbox" class="todo-check" data-id="tool-poi_lookup" onchange="toggleCheck(this)"></td><td>5</td><td><strong>poi_lookup</strong></td><td>search_agent</td><td>周边设施查询</td></tr>
-<tr data-id="tool-compare_dimensions"><td><input type="checkbox" class="todo-check" data-id="tool-compare_dimensions" onchange="toggleCheck(this)"></td><td>6</td><td><strong>compare_dimensions</strong></td><td>compare_agent, search_agent</td><td>多维度对比矩阵</td></tr>
-<tr data-id="tool-market_stats"><td><input type="checkbox" class="todo-check" data-id="tool-market_stats" onchange="toggleCheck(this)"></td><td>7</td><td><strong>market_stats</strong></td><td>search_agent</td><td>价格/户型/区域分布统计（待增强分层聚类）</td></tr>
-<tr data-id="tool-query_rewrite"><td><input type="checkbox" class="todo-check" data-id="tool-query_rewrite" onchange="toggleCheck(this)"></td><td>8</td><td><strong>query_rewrite</strong></td><td>search_agent, filter_agent</td><td>模糊描述 → 精确条件</td></tr>
-<tr data-id="tool-gap_detect"><td><input type="checkbox" class="todo-check" data-id="tool-gap_detect" onchange="toggleCheck(this)"></td><td>9</td><td><strong>gap_detect</strong></td><td>search_agent</td><td>分数断层检测（纯算法）</td></tr>
-<tr data-id="tool-safe_fallback_check"><td><input type="checkbox" class="todo-check" data-id="tool-safe_fallback_check" onchange="toggleCheck(this)"></td><td>10</td><td><strong>safe_fallback_check</strong></td><td>search_agent, synthesizer_agent</td><td>检索质量不足 → 触发兜底</td></tr>
-<tr data-id="tool-build_fallback_reply"><td><input type="checkbox" class="todo-check" data-id="tool-build_fallback_reply" onchange="toggleCheck(this)"></td><td>11</td><td><strong>build_fallback_reply</strong></td><td>synthesizer_agent</td><td>全部失败时兜底回复</td></tr>
-<tr data-id="tool-cart_crud"><td><input type="checkbox" class="todo-check" data-id="tool-cart_crud" onchange="toggleCheck(this)"></td><td>12-14</td><td><strong>cart_view / cart_add / cart_remove</strong></td><td>cart_agent, compare_agent</td><td>候选清单 CRUD</td></tr>
-<tr data-id="tool-faq_match"><td><input type="checkbox" class="todo-check" data-id="tool-faq_match" onchange="toggleCheck(this)"></td><td>15</td><td><strong>faq_match</strong></td><td>faq_agent</td><td>FAQ 知识库匹配</td></tr>
-<tr data-id="tool-generate_embedding"><td><input type="checkbox" class="todo-check" data-id="tool-generate_embedding" onchange="toggleCheck(this)"></td><td>16</td><td><strong>generate_embedding</strong></td><td>search_agent</td><td>文本向量生成（语义搜索）</td></tr>
+<tr data-id="tool-property_search"><td><input type="checkbox" class="todo-check" data-id="tool-property_search" onchange="toggleCheck(this)"></td><td><button class="attn-btn" data-id="tool-property_search" onclick="toggleAttn(this)" title="标记需关注">!</button></td><td>1</td><td><strong>property_search</strong></td><td>search_agent, filter_agent</td><td>核心房源搜索（渐进放宽）</td></tr>
+<tr data-id="tool-extract_filters"><td><input type="checkbox" class="todo-check" data-id="tool-extract_filters" onchange="toggleCheck(this)"></td><td><button class="attn-btn" data-id="tool-extract_filters" onclick="toggleAttn(this)" title="标记需关注">!</button></td><td>2</td><td><strong>extract_filters</strong></td><td>search_agent, filter_agent</td><td>NL → 结构化筛选条件（LLM JSON 提取）</td></tr>
+<tr data-id="tool-score_properties"><td><input type="checkbox" class="todo-check" data-id="tool-score_properties" onchange="toggleCheck(this)"></td><td><button class="attn-btn" data-id="tool-score_properties" onclick="toggleAttn(this)" title="标记需关注">!</button></td><td>3</td><td><strong>score_properties</strong></td><td>search_agent</td><td>确定性质量评分</td></tr>
+<tr data-id="tool-commute_calc"><td><input type="checkbox" class="todo-check" data-id="tool-commute_calc" onchange="toggleCheck(this)"></td><td><button class="attn-btn" data-id="tool-commute_calc" onclick="toggleAttn(this)" title="标记需关注">!</button></td><td>4</td><td><strong>commute_calc</strong></td><td>search_agent</td><td>通勤时间/距离计算（待改为 DB 查）</td></tr>
+<tr data-id="tool-poi_lookup"><td><input type="checkbox" class="todo-check" data-id="tool-poi_lookup" onchange="toggleCheck(this)"></td><td><button class="attn-btn" data-id="tool-poi_lookup" onclick="toggleAttn(this)" title="标记需关注">!</button></td><td>5</td><td><strong>poi_lookup</strong></td><td>search_agent</td><td>周边设施查询</td></tr>
+<tr data-id="tool-compare_dimensions"><td><input type="checkbox" class="todo-check" data-id="tool-compare_dimensions" onchange="toggleCheck(this)"></td><td><button class="attn-btn" data-id="tool-compare_dimensions" onclick="toggleAttn(this)" title="标记需关注">!</button></td><td>6</td><td><strong>compare_dimensions</strong></td><td>compare_agent, search_agent</td><td>多维度对比矩阵</td></tr>
+<tr data-id="tool-market_stats"><td><input type="checkbox" class="todo-check" data-id="tool-market_stats" onchange="toggleCheck(this)"></td><td><button class="attn-btn" data-id="tool-market_stats" onclick="toggleAttn(this)" title="标记需关注">!</button></td><td>7</td><td><strong>market_stats</strong></td><td>search_agent</td><td>价格/户型/区域分布统计（待增强分层聚类）</td></tr>
+<tr data-id="tool-query_rewrite"><td><input type="checkbox" class="todo-check" data-id="tool-query_rewrite" onchange="toggleCheck(this)"></td><td><button class="attn-btn" data-id="tool-query_rewrite" onclick="toggleAttn(this)" title="标记需关注">!</button></td><td>8</td><td><strong>query_rewrite</strong></td><td>search_agent, filter_agent</td><td>模糊描述 → 精确条件</td></tr>
+<tr data-id="tool-gap_detect"><td><input type="checkbox" class="todo-check" data-id="tool-gap_detect" onchange="toggleCheck(this)"></td><td><button class="attn-btn" data-id="tool-gap_detect" onclick="toggleAttn(this)" title="标记需关注">!</button></td><td>9</td><td><strong>gap_detect</strong></td><td>search_agent</td><td>分数断层检测（纯算法）</td></tr>
+<tr data-id="tool-safe_fallback_check"><td><input type="checkbox" class="todo-check" data-id="tool-safe_fallback_check" onchange="toggleCheck(this)"></td><td><button class="attn-btn" data-id="tool-safe_fallback_check" onclick="toggleAttn(this)" title="标记需关注">!</button></td><td>10</td><td><strong>safe_fallback_check</strong></td><td>search_agent, synthesizer_agent</td><td>检索质量不足 → 触发兜底</td></tr>
+<tr data-id="tool-build_fallback_reply"><td><input type="checkbox" class="todo-check" data-id="tool-build_fallback_reply" onchange="toggleCheck(this)"></td><td><button class="attn-btn" data-id="tool-build_fallback_reply" onclick="toggleAttn(this)" title="标记需关注">!</button></td><td>11</td><td><strong>build_fallback_reply</strong></td><td>synthesizer_agent</td><td>全部失败时兜底回复</td></tr>
+<tr data-id="tool-cart_crud"><td><input type="checkbox" class="todo-check" data-id="tool-cart_crud" onchange="toggleCheck(this)"></td><td><button class="attn-btn" data-id="tool-cart_crud" onclick="toggleAttn(this)" title="标记需关注">!</button></td><td>12-14</td><td><strong>cart_view / cart_add / cart_remove</strong></td><td>cart_agent, compare_agent</td><td>候选清单 CRUD</td></tr>
+<tr data-id="tool-faq_match"><td><input type="checkbox" class="todo-check" data-id="tool-faq_match" onchange="toggleCheck(this)"></td><td><button class="attn-btn" data-id="tool-faq_match" onclick="toggleAttn(this)" title="标记需关注">!</button></td><td>15</td><td><strong>faq_match</strong></td><td>faq_agent</td><td>FAQ 知识库匹配</td></tr>
+<tr data-id="tool-generate_embedding"><td><input type="checkbox" class="todo-check" data-id="tool-generate_embedding" onchange="toggleCheck(this)"></td><td><button class="attn-btn" data-id="tool-generate_embedding" onclick="toggleAttn(this)" title="标记需关注">!</button></td><td>16</td><td><strong>generate_embedding</strong></td><td>search_agent</td><td>文本向量生成（语义搜索）</td></tr>
 </tbody>
 </table>
 
@@ -405,6 +415,7 @@ class Intent(str, Enum):
 <script>
 // ── Todo: localStorage persistence + progress tracking ──
 const STORAGE_KEY = 'ai_arch_checklist';
+const ATTN_KEY = 'ai_arch_attention';
 
 function loadState() {
   try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || {}; }
@@ -413,7 +424,15 @@ function loadState() {
 function saveState(state) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
 }
+function loadAttn() {
+  try { return JSON.parse(localStorage.getItem(ATTN_KEY)) || {}; }
+  catch { return {}; }
+}
+function saveAttn(state) {
+  localStorage.setItem(ATTN_KEY, JSON.stringify(state));
+}
 
+// ── 完成勾选 ──
 function toggleCheck(cb) {
   const id = cb.dataset.id;
   const state = loadState();
@@ -423,38 +442,67 @@ function toggleCheck(cb) {
   updateProgress();
 }
 
+// ── 关注标记（圆形按钮） ──
+function toggleAttn(btn) {
+  const id = btn.dataset.id;
+  const attn = loadAttn();
+  attn[id] = !attn[id];
+  saveAttn(attn);
+  btn.classList.toggle('active', attn[id]);
+  const tr = btn.closest('tr');
+  tr.classList.toggle('attention', attn[id]);
+  updateProgress();
+}
+
 function applyState() {
   const state = loadState();
+  const attn = loadAttn();
+
   document.querySelectorAll('.todo-check').forEach(cb => {
     cb.checked = !!state[cb.dataset.id];
     const tr = cb.closest('tr');
     if (cb.checked) tr.classList.add('checked');
     else tr.classList.remove('checked');
   });
+
+  document.querySelectorAll('.attn-btn').forEach(btn => {
+    const active = !!attn[btn.dataset.id];
+    btn.classList.toggle('active', active);
+    const tr = btn.closest('tr');
+    tr.classList.toggle('attention', active);
+  });
 }
 
 function updateProgress() {
   const state = loadState();
+  const attn = loadAttn();
+
   const agentChecks = document.querySelectorAll('[data-group="agent-core"] .todo-check, [data-group="agent-task"] .todo-check');
   const toolChecks = document.querySelectorAll('[data-group="tool"] .todo-check');
+  const agentBtns = document.querySelectorAll('[data-group="agent-core"] .attn-btn, [data-group="agent-task"] .attn-btn');
+  const toolBtns = document.querySelectorAll('[data-group="tool"] .attn-btn');
 
   const agentDone = [...agentChecks].filter(cb => state[cb.dataset.id]).length;
   const toolDone = [...toolChecks].filter(cb => state[cb.dataset.id]).length;
+  const agentAttn = [...agentBtns].filter(b => attn[b.dataset.id]).length;
+  const toolAttn = [...toolBtns].filter(b => attn[b.dataset.id]).length;
   const agentTotal = agentChecks.length;
   const toolTotal = toolChecks.length;
   const totalDone = agentDone + toolDone;
+  const totalAttn = agentAttn + toolAttn;
   const totalAll = agentTotal + toolTotal;
 
   const label = document.getElementById('progress-label');
-  if (label) label.textContent = `Agent: ${agentDone}/${agentTotal}  |  工具: ${toolDone}/${toolTotal}  |  总计: ${totalDone}/${totalAll}`;
+  if (label) label.innerHTML = `Agent: ${agentDone}/${agentTotal}  |  工具: ${toolDone}/${toolTotal}  |  总计: ${totalDone}/${totalAll}  |  <span class="attn-count">⚠ ${totalAttn}</span>`;
 
   const fill = document.getElementById('progress-fill');
   if (fill) fill.style.width = totalAll > 0 ? (totalDone / totalAll * 100) + '%' : '0%';
 }
 
 function resetAll() {
-  if (confirm('确定要重置全部勾选状态吗？')) {
+  if (confirm('确定要重置全部勾选和关注标记吗？')) {
     localStorage.removeItem(STORAGE_KEY);
+    localStorage.removeItem(ATTN_KEY);
     applyState();
     updateProgress();
   }
