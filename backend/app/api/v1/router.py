@@ -1,4 +1,4 @@
-﻿from fastapi import APIRouter
+from fastapi import APIRouter
 
 from app.api.v1.routes import admin, agent, ai_search, auth, bookings, buildings, chat, commute, contracts, dashboard, favorites, geocoding, health, images, imports, map_routes, ml, notifications, payments, pms, pois, properties, repair_workers, repairs, room_types, search_suggestions, upload, users, wechat
 

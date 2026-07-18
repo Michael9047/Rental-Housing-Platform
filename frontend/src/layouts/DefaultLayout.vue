@@ -179,7 +179,6 @@
     <el-container class="layout-body">
       <!-- 全局侧边栏 -->
       <GlobalSidebar />
-
       <!-- Main Content -->
       <el-main class="layout-main">
         <div class="back-bar" v-if="route.path !== '/'">
@@ -200,8 +199,7 @@ import { ref, computed, watch, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import {
   Search, User, UserFilled, ArrowDown, ArrowLeft, Setting, SwitchButton,
-  Plus, List, Bell, DataAnalysis, Tickets, Loading,
-} from '@element-plus/icons-vue'
+  Plus, List, Bell, DataAnalysis, Tickets, Loading,} from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 import { useAgentChatStore } from '@/stores/agentChat'
 import { useCartStore } from '@/stores/cart'
@@ -257,7 +255,6 @@ const matchingCities = ref<SuggestionCity[]>([])
 const matchingProperties = ref<SuggestionProperty[]>([])
 let debounceTimer: ReturnType<typeof setTimeout> | null = null
 let blurTimer: ReturnType<typeof setTimeout> | null = null
-
 const hasAnySuggestions = computed(() =>
   matchingSchools.value.length > 0 ||
   matchingCities.value.length > 0 ||

@@ -1,4 +1,4 @@
-﻿# geocoding_service.py — 多引擎地理编码服务
+# geocoding_service.py — 多引擎地理编码服务
 # 中国大陆 → 高德地图（主），OSM Nominatim（备用）
 # 海外 → Overpass / OSM（主），Nominatim（备用）
 

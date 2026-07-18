@@ -9,6 +9,7 @@ from app.schemas.property import PropertyCreate, PropertyListResponse, PropertyR
 from app.schemas.property_image import PropertyImageRead
 from app.services.property_service import PropertyService
 from app.services.user_service import UserService
+from app.models.property import Property
 from app.tasks.poi_tasks import generate_map_pois_for_property
 
 router = APIRouter()
@@ -98,6 +99,7 @@ async def list_properties(
     property_type: str | None = Query(default=None),
     price_min: float | None = Query(default=None, ge=0),
     price_max: float | None = Query(default=None, ge=0),
+    institute_id: int | None = Query(default=None),
 ) -> PropertyListResponse:
     skip = (page - 1) * page_size
     result = await PropertyService(session).list(
@@ -106,6 +108,7 @@ async def list_properties(
         landlord_id=landlord_id, keyword=keyword,
         property_type=property_type,
         price_min=price_min, price_max=price_max,
+        institute_id=institute_id,
     )
     return PropertyListResponse(**result)
 
@@ -137,19 +140,79 @@ async def list_deleted_properties(
     )
 
 
-@router.post("/{property_id}/restore", response_model=PropertyRead)
-async def restore_property(
-    property_id: int,
+@router.get("/audit/recent")
+async def list_recent_property_audit(
     session: AsyncSession = Depends(get_db_session),
     current_user: User = Depends(require_landlord),
-) -> PropertyRead:
-    prop = await PropertyService(session).restore(property_id)
-    if not prop:
-        raise HTTPException(status_code=404, detail="Property not found in recycle bin")
-    return prop
+    limit: int = Query(default=20, ge=1, le=100),
+) -> list[dict]:
+    """获取当前房东所有房源的最新操作记录（按时间倒序）
+
+    用于发布房源首页下方的修改记录展示。
+    管理员可看全部；普通房东仅看自己的房源记录。
+    """
+    from sqlalchemy import select, or_
+    from app.models.audit_log import AuditLog
+    from app.models.institute import Institute
+    from app.models.user import User as UserModel
+
+    base_select = (
+        select(
+            AuditLog,
+            Property.title.label("property_title"),
+            Property.address.label("property_address"),
+            Institute.name.label("institute_name"),
+            UserModel.username.label("username"),
+        )
+        .outerjoin(Property, AuditLog.resource_id == Property.id)
+        .outerjoin(Institute, Property.institute_id == Institute.id)
+        .outerjoin(UserModel, AuditLog.user_id == UserModel.id)
+    )
+
+    if current_user.role.value == "admin":
+        stmt = (
+            base_select
+            .where(AuditLog.resource_type == "property")
+            .order_by(AuditLog.created_at.desc())
+            .limit(limit)
+        )
+    else:
+        prop_ids_stmt = select(Property.id).where(Property.landlord_id == current_user.id)
+        stmt = (
+            base_select
+            .where(
+                AuditLog.resource_type == "property",
+                or_(
+                    AuditLog.resource_id.in_(prop_ids_stmt),
+                    AuditLog.user_id == current_user.id,
+                ),
+            )
+            .order_by(AuditLog.created_at.desc())
+            .limit(limit)
+        )
+
+    result = await session.execute(stmt)
+    rows = result.all()
+    return [
+        {
+            "id": log.id,
+            "user_id": log.user_id,
+            "username": username,
+            "action": log.action,
+            "resource_id": log.resource_id,
+            "details": log.details,
+            "ip_address": log.ip_address,
+            "created_at": log.created_at.isoformat(),
+            # 优先取 JOIN 的实时数据；若房源已删除则回退到审计日志 details 中的快照
+            "property_title": property_title or (log.details or {}).get("property_title") or (log.details or {}).get("title"),
+            "property_address": property_address or (log.details or {}).get("property_address"),
+            "institute_name": institute_name or (log.details or {}).get("institute_name"),
+        }
+        for log, property_title, property_address, institute_name, username in rows
+    ]
 
 
-# ── 批量操作 ──
+# ── 批量操作（必须在 /{property_id} 路由之前注册，否则会被拦截）──
 @router.post("/batch/status")
 async def batch_update_status(
     body: dict,
@@ -175,18 +238,6 @@ async def batch_delete_properties(
     return await PropertyService(session).batch_delete(ids, current_user.id)
 
 
-# ── 回收站操作 ──
-@router.delete("/{property_id}/hard", status_code=204)
-async def hard_delete_property(
-    property_id: int,
-    session: AsyncSession = Depends(get_db_session),
-    current_user: User = Depends(require_landlord),
-) -> None:
-    ps = PropertyService(session)
-    deleted = await ps.hard_delete(property_id)
-    if not deleted:
-        raise HTTPException(status_code=404, detail="Property not found in recycle bin")
-
 @router.post("/batch/restore")
 async def batch_restore_properties(
     body: dict,
@@ -208,6 +259,101 @@ async def batch_hard_delete_properties(
     if not ids:
         raise HTTPException(status_code=400, detail='ids is required')
     return await PropertyService(session).batch_hard_delete(ids, current_user.id)
+
+
+# ── 回收站操作 ──
+@router.delete("/{property_id}/hard", status_code=204)
+async def hard_delete_property(
+    property_id: int,
+    session: AsyncSession = Depends(get_db_session),
+    current_user: User = Depends(require_landlord),
+) -> None:
+    ps = PropertyService(session)
+    deleted = await ps.hard_delete(property_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Property not found in recycle bin")
+
+
+@router.post("/{property_id}/restore", response_model=PropertyRead)
+async def restore_property(
+    property_id: int,
+    session: AsyncSession = Depends(get_db_session),
+    current_user: User = Depends(require_landlord),
+) -> PropertyRead:
+    prop = await PropertyService(session).restore(property_id)
+    if not prop:
+        raise HTTPException(status_code=404, detail="Property not found in recycle bin")
+    return prop
+
+
+@router.post("/{property_id}/revert/{audit_log_id}")
+async def revert_property_audit(
+    property_id: int,
+    audit_log_id: int,
+    session: AsyncSession = Depends(get_db_session),
+    current_user: User = Depends(require_landlord),
+) -> dict:
+    """撤销某条审计日志对应的房源操作
+
+    支持撤销: property_create, property_update, property_delete, property_restore
+    不支持: property_hard_delete, property_batch_*
+    """
+    ps = PropertyService(session)
+    try:
+        result = await ps.revert_audit(property_id, audit_log_id, current_user.id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return result
+
+
+@router.delete("/audit/{audit_log_id}", status_code=204)
+async def delete_audit_log(
+    audit_log_id: int,
+    session: AsyncSession = Depends(get_db_session),
+    current_user: User = Depends(require_landlord),
+) -> None:
+    """删除单条审计日志（仅限自己的房源）"""
+    from app.services.audit_service import AuditService
+    audit_svc = AuditService(session)
+    log = await audit_svc.get_log(audit_log_id)
+    if not log:
+        raise HTTPException(status_code=404, detail="审计记录不存在")
+    # 校验归属：只有日志所属房源的房东或 admin 可以删除
+    if current_user.role.value != "admin":
+        from app.services.property_service import PropertyService as _PS
+        prop = await _PS(session)._get_property_any(log.resource_id)
+        if not prop or prop.landlord_id != current_user.id:
+            raise HTTPException(status_code=403, detail="无权删除此记录")
+    await audit_svc.delete_log(audit_log_id)
+
+
+@router.post("/audit/batch-delete")
+async def batch_delete_audit_logs(
+    body: dict,
+    session: AsyncSession = Depends(get_db_session),
+    current_user: User = Depends(require_landlord),
+) -> dict:
+    """批量删除审计日志"""
+    from app.services.audit_service import AuditService
+    ids = body.get("ids", [])
+    if not ids:
+        raise HTTPException(status_code=400, detail="ids is required")
+    deleted = await AuditService(session).batch_delete_logs(ids)
+    return {"deleted": deleted}
+
+
+@router.post("/audit/clear")
+async def clear_audit_logs(
+    session: AsyncSession = Depends(get_db_session),
+    current_user: User = Depends(require_landlord),
+) -> dict:
+    """一键清空当前房东所有房源的审计日志"""
+    from app.services.audit_service import AuditService
+    deleted = await AuditService(session).clear_logs(current_user.id)
+    return {"deleted": deleted}
+
+
+
 
 # ── CRUD ──
 @router.get("/{property_id}", response_model=PropertyRead)
@@ -257,3 +403,43 @@ async def delete_property(
     deleted = await ps.delete(property_id)
     if not deleted:
         raise HTTPException(status_code=404, detail="Property not found")
+
+
+@router.get("/{property_id}/history")
+async def get_property_history(
+    property_id: int,
+    session: AsyncSession = Depends(get_db_session),
+    current_user: User = Depends(require_landlord),
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=100, ge=1, le=500),
+) -> list[dict]:
+    """获取某房源的修改历史（操作审计日志）
+
+    仅返回 resource_type='property' AND resource_id=property_id 的记录。
+    房东只能查看自己房源的历史；管理员可查看全部。
+    """
+    from app.services.audit_service import AuditService
+    from app.services.property_service import PropertyService as _PS
+
+    # 校验房源存在 + 归属
+    prop = await _PS(session).get(property_id)
+    if not prop:
+        raise HTTPException(status_code=404, detail="Property not found")
+    if current_user.role.value != "admin" and prop.landlord_id != current_user.id:
+        raise HTTPException(status_code=403, detail="无权限查看此房源的修改历史")
+
+    logs = await AuditService(session).list_logs(
+        skip=skip, limit=limit,
+        resource_type="property", resource_id=property_id,
+    )
+    return [
+        {
+            "id": log.id,
+            "user_id": log.user_id,
+            "action": log.action,
+            "details": log.details,
+            "ip_address": log.ip_address,
+            "created_at": log.created_at.isoformat(),
+        }
+        for log in logs
+    ]

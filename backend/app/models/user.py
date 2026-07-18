@@ -1,4 +1,4 @@
-﻿"""用户模型 - 租客、房东、BD经理、系统管理员"""
+"""用户模型 - 租客、房东、BD经理、系统管理员"""
 import enum
 
 from sqlalchemy import Enum, String
