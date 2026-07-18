@@ -50,54 +50,70 @@ class FilterAgent(BaseAgent):
     description = "从自然语言提取结构化筛选条件（含硬约束设施/房型/周边/通勤）"
     tools = ["extract_filters", "query_rewrite"]
 
-    FILTER_PROMPT = """你是租房搜索条件提取助手。从用户消息中提取结构化条件，区分硬约束（必须满足，排除不满足的房源）和软偏好（排序优先级）。
+    FILTER_PROMPT = """你是租房搜索条件提取助手。从用户消息中提取结构化条件，区分硬约束和软偏好。
 
-只输出 JSON：
+══════════════════════════════
+示例（Few-Shot）
+══════════════════════════════
+
+示例1：
+用户：「园区2000以内一定要独卫的单间」
+→ {"district":"园区","price_max":2000,"amenities":["独立卫浴"],"property_type":"studio","price_min":null,"bedrooms":null,"room_type":null,"bathrooms":null,"area_min":null,"area_max":null,"min_lease_months":null,"institution":null,"commute_mode":null,"commute_minutes":null,"hard_filters":["amenities","district"],"soft_preferences":["price"]}
+
+示例2：
+用户：「文星附近能养猫的房子，最好1500左右，合租也行」
+→ {"district":"文星","price_min":1350,"price_max":1650,"amenities":["宠物友好"],"property_type":"shared","bedrooms":null,"room_type":null,"bathrooms":null,"area_min":null,"area_max":null,"min_lease_months":null,"institution":null,"commute_mode":null,"commute_minutes":null,"hard_filters":["amenities"],"soft_preferences":["price","district","property_type"]}
+
+示例3：
+用户：「西交利物浦步行15分钟内，2500预算，要带阳台和独卫，精装修最好」
+→ {"district":null,"price_max":2500,"amenities":["独立卫浴","阳台"],"property_type":null,"bedrooms":null,"room_type":null,"bathrooms":null,"area_min":null,"area_max":null,"min_lease_months":null,"institution":"西交利物浦大学","commute_mode":"walking","commute_minutes":15,"hard_filters":["amenities","commute"],"soft_preferences":["price","精装修"]}
+
+══════════════════════════════
+只输出 JSON
+══════════════════════════════
 {
-  "district": "城市或区域名，null=未提及",
+  "district": "区域名，null=未提及",
   "price_min": 最低月租整数，null=未提及,
   "price_max": 最高月租整数，null=未提及,
   "bedrooms": 卧室数整数，null=未提及,
   "property_type": "apartment/house/studio/shared 或 null",
-  "amenities": ["设施1", "设施2"],
+  "amenities": ["标准设施名"],
   "room_type": "studio/ensuite/1bed/2bed/3bed+/shared 或 null",
   "bathrooms": 卫生间数整数，null=未提及,
-  "area_min": 最小面积(㎡)整数，null=未提及,
-  "area_max": 最大面积(㎡)整数，null=未提及,
-  "min_lease_months": 最短租期(月)整数，null=未提及,
-  "institution": "大学/学校/机构名，null=未提及",
+  "area_min": 最小面积(㎡)，null=未提及,
+  "area_max": 最大面积(㎡)，null=未提及,
+  "min_lease_months": 最短租期(月)，null=未提及,
+  "institution": "学校名，null=未提及",
   "commute_mode": "walking/bicycling/driving/transit 或 null",
-  "commute_minutes": 通勤时间上限整数(分钟)，null=未提及,
-  "hard_filters": ["标记为硬约束的字段名列表"],
-  "soft_preferences": ["标记为软偏好的字段名列表"]
+  "commute_minutes": 通勤时间上限(分钟)，null=未提及,
+  "hard_filters": ["硬约束字段名"],
+  "soft_preferences": ["软偏好字段名"]
 }
 
-关键规则：
-1. amenities 提取用户明确要求的具体设施，使用以下标准值：
-   宠物友好、独立厨房、独立卫浴、空调、洗衣机、冰箱、WiFi、暖气、阳台、电梯、车位、健身房、泳池、自习室、家具齐全、精装修、包水电、禁烟
-   - "能养猫"/"可以养狗" → amenities: ["宠物友好"]
-   - "可以做饭"/"有厨房" → amenities: ["独立厨房"]
-   - "独立卫生间"/"独卫" → amenities: ["独立卫浴"]
-   - "有wifi"/"能上网" → amenities: ["WiFi"]
-   - "能抽烟" → 不要加入 amenities（用户需要可吸烟，不要求禁烟）
+══════════════════════════════
+关键规则
+══════════════════════════════
 
-2. hard_filters vs soft_preferences 判断标准：
-   - 硬约束（排除性）：amenities、room_type、bathrooms、commute（用户说"必须有""一定要""没有就不考虑"）
-   - 软偏好（排序性）：price、district、area、bedrooms（用户说"最好""尽量""便宜点就行"）
-   - 未明确标注时：amenities/room_type/commute 默认硬约束，price/district/area 默认软偏好
+1. 硬约束 vs 软偏好：
+   - 硬约束：用户说"必须""一定要""没有就不考虑" → amenities, room_type, bathrooms, commute
+   - 软偏好：用户说"最好""尽量""便宜点就行""XX也行" → price, district, area, bedrooms
+   - 默认：amenities/room_type/commute=硬约束, price/district/area=软偏好
 
-3. 设施口语映射（不要直接输出用户原词，映射到标准值）：
-   - "养猫"/"养狗"/"宠物" → "宠物友好"
-   - "做饭"/"厨房" → "独立厨房"
-   - "独卫"/"独立卫生间" → "独立卫浴"
-   - "wifi"/"宽带"/"网络" → "WiFi"
-   - "车位"/"停车" → "车位"
-   - "gym"/"健身" → "健身房"
-   - "泳池"/"游泳" → "泳池"
-   - "家具"/"拎包入住" → "家具齐全"
+2. 设施映射（输出标准值，不要用用户原词）：
+   "养猫"/"养狗" → "宠物友好"
+   "做饭"/"厨房" → "独立厨房"
+   "独卫"/"独立卫生间" → "独立卫浴"
+   "wifi"/"宽带" → "WiFi"
+   "车位"/"停车" → "车位"
+   "gym"/"健身" → "健身房"
+   "泳池"/"游泳" → "泳池"
+   "家具"/"拎包入住" → "家具齐全"
+   "精装"/"装修好" → "精装修"
+   "禁烟"/"无烟" → "禁烟"
 
-4. 英文城市名转中文（London→伦敦, Hong Kong→香港等）
-5. 不确定时填 null，只输出 JSON"""
+3. "1500左右" → price_min=1350, price_max=1650（±10%）
+4. 英文城市名转中文
+5. 不确定时填 null"""
 
     async def handle(self, context: AgentContext) -> AgentResult:
         if not self.llm_service.is_available:
