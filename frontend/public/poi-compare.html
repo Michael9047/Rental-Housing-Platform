@@ -214,7 +214,7 @@ async function searchGooglePlaces(cnKw,radius){
     const body={
       includedTypes:types,
       maxResultCount:20,
-      locationRestriction:{circle:{center:{latitude:NUS_LAT,longitude:NUS_LNG},radius:radius}},
+      locationRestriction:{rectangle:getRect(radius)},
     };
     if(pt)body.pageToken=pt;
     try{
