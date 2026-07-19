@@ -203,6 +203,11 @@
       <tbody id="catTbody"><tr><td colspan="4" style="color:#555;padding:20px">点击上方按钮开始搜索</td></tr></tbody>
     </table>
 
+    <!-- Google Places 错误诊断 -->
+    <div id="gmErrors" style="display:none;background:#e9456015;border:1px solid #e9456040;border-radius:8px;padding:10px 14px;font-size:12px;max-height:160px;overflow-y:auto">
+      <div style="color:#e94560;font-weight:600;margin-bottom:4px">⚠ Google Places API 错误</div>
+    </div>
+
     <!-- 关键词明细表 -->
     <h3>🔍 关键词明细</h3>
     <table class="kw-table" id="kwTable">
@@ -395,8 +400,20 @@ async function searchGooglePlaces(keyword, radius) {
       } else if (status === google.maps.places.PlacesServiceStatus.ZERO_RESULTS) {
         resolve([]);
       } else {
-        console.warn(`Google Places "${keyword}" failed: ${status}`);
-        resolve(allResults); // 返回已收集的结果
+        // 把错误展现在页面上便于诊断
+        const errEl = document.getElementById('gmErrors');
+        const statusText = {
+          'OVER_QUERY_LIMIT': '超出配额',
+          'REQUEST_DENIED': 'API Key 无权限或 Places API 未启用',
+          'INVALID_REQUEST': '请求参数错误',
+          'UNKNOWN_ERROR': '未知错误（网络/GFW）',
+        }[status] || status;
+        if (errEl) {
+          errEl.style.display = 'block';
+          errEl.innerHTML += `<div>❌ "${keyword}": ${statusText} <small style="color:#888">(${status})</small></div>`;
+        }
+        console.error(`Google Places "${keyword}" failed: ${status} (${statusText})`);
+        resolve(allResults);
       }
     }
 
@@ -646,6 +663,9 @@ function resetAll() {
   markerLayers.osm.forEach(m => map.removeLayer(m));
   markerLayers.google.forEach(m => map.removeLayer(m));
   markerLayers.osm = []; markerLayers.google = [];
+
+  const errEl = document.getElementById('gmErrors');
+  if (errEl) { errEl.style.display = 'none'; errEl.innerHTML = '<div style="color:#e94560;font-weight:600;margin-bottom:4px">⚠ Google Places API 错误</div>'; }
 
   $('btn3km').disabled = $('btn5km').disabled = false;
   $('statusHint').innerHTML = '<span class="badge waiting">就绪</span>';
