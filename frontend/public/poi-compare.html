@@ -114,16 +114,12 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 
   <!-- 右侧面板 -->
   <div class="side-panel" id="sidePanel">
-    <!-- 分类 Tab -->
+    <!-- 关键词 Tab（精细对比，每个关键词独立） -->
     <div class="cat-tabs" id="catTabs">
       <button data-cat="overview" class="active">📊 总览</button>
-      <button data-cat="交通">🚇 交通</button>
-      <button data-cat="医疗">🏥 医疗</button>
-      <button data-cat="购物">🛒 购物</button>
-      <button data-cat="餐饮">🍽 餐饮</button>
-      <button data-cat="生活">🏪 生活</button>
-      <button data-cat="clusters">📍 聚集</button>
+      <button data-cat="clusters">🍽 聚集</button>
     </div>
+    <div class="cat-tabs" id="kwTabs" style="flex-wrap:wrap"></div>
 
     <!-- 过滤行 -->
     <div class="filter-row" id="filterRow">
@@ -296,7 +292,6 @@ function findClusters(pois){
 }
 
 // ==================== OSM 去重 ====================
-// 对同一关键词的结果做 proximity clustering：距离 < thresholdM 视为同一设施
 function dedupOsmKeyword(keyword,thresholdM){
   const pois=osmR[keyword];if(!pois||!pois.length)return;
   const sorted=[...pois].sort((a,b)=>a.distance_m-b.distance_m);
@@ -306,6 +301,17 @@ function dedupOsmKeyword(keyword,thresholdM){
     if(!tooClose)kept.push(p);
   }
   osmR[keyword]=kept;
+}
+// Google 结果去重（医院等大型设施的部门合并）
+function dedupGmKeyword(keyword,thresholdM){
+  const pois=gmR[keyword];if(!pois||!pois.length)return;
+  const sorted=[...pois].sort((a,b)=>a.distance_m-b.distance_m);
+  const kept=[];
+  for(const p of sorted){
+    const tooClose=kept.some(k=>havDistance(p.lat,p.lng,k.lat,k.lng)<thresholdM);
+    if(!tooClose)kept.push(p);
+  }
+  gmR[keyword]=kept;
 }
 
 // ==================== GM 错误显示 ====================
@@ -336,11 +342,12 @@ async function runTest(radius){
   const semGm=new Semaphore(6);
   await Promise.all(tasks.map(({cat,kw})=>semGm.run(()=>searchGooglePlaces(kw,radius).then(r=>{r.forEach(o=>{o.category=cat});gmR[kw]=r;renderProgress()}))));
   const gmTime=performance.now()-gmStart;
-  // ── OSM 去重：地铁站入口/公交站/火车站/医院 proximity dedup ──
+  // ── OSM 去重 ──
   dedupOsmKeyword("地铁站",150);
   dedupOsmKeyword("公交站",80);
   dedupOsmKeyword("火车站",200);
-  dedupOsmKeyword("医院",200);
+  // ── Google 去重（医院部门合并为一个医院）──
+  dedupGmKeyword("医院",200);
 
   // 完成
   running=false;
@@ -398,7 +405,12 @@ function addMarkersForFilter(){
 }
 
 function getFilteredPois(){
-  if(currentCat==='overview')return Object.values(osmR).flat().concat(Object.values(gmR).flat());
+  if(currentCat==='overview'||currentCat==='clusters')return Object.values(osmR).flat().concat(Object.values(gmR).flat());
+  // 单个关键词
+  if(Object.values(CATEGORIES).some(kws=>kws.includes(currentCat))){
+    return (osmR[currentCat]||[]).concat(gmR[currentCat]||[]);
+  }
+  // 旧版分类
   const pois=[];
   const kws=CATEGORIES[currentCat]||[];
   for(const kw of kws){if(osmR[kw])pois.push(...osmR[kw]);if(gmR[kw])pois.push(...gmR[kw])}
@@ -432,6 +444,37 @@ function flyToPoi(poi){
   if(highlightedMarker)map.removeLayer(highlightedMarker);
   highlightedMarker=L.marker([poi.lat,poi.lng],{icon:hlIcon}).addTo(map).bindPopup(`<b>${poi.name}</b><br>${poi.keyword} · ${poi.distance_m}m<br><small>${poi.source==='osm'?'🟢 OSM':'🔵 Google'}${poi.vicinity?' · '+poi.vicinity:''}</small>`).openPopup();
   map.flyTo([poi.lat,poi.lng],17,{duration:.5});
+}
+
+// ==================== 单个关键词精细对比渲染 ====================
+function renderKeywordView(kw,filter){
+  const scroll=$('resultsScroll');
+  const oPo=osmR[kw]||[],gPo=gmR[kw]||[];
+  const enKw=GM_KW[kw]||kw;
+  let h=`<div style="font-size:13px;font-weight:700;color:#ccc;margin-bottom:10px">🔍 ${kw} <span style="font-size:11px;color:#888;font-weight:400">(Google: ${enKw})</span></div>`;
+  // OSM
+  h+=`<div class="source-label">🟢 OSM (${oPo.length})</div>`;
+  for(const p of oPo.slice(0,50))h+=poiItemHTML(p);
+  if(oPo.length>50)h+=`<div style="color:#888;font-size:10px;padding:2px 8px">… 还有 ${oPo.length-50} 个</div>`;
+  // Google
+  h+=`<div class="source-label">🔵 Google (${gPo.length})</div>`;
+  for(const p of gPo.slice(0,50))h+=poiItemHTML(p);
+  if(gPo.length>50)h+=`<div style="color:#888;font-size:10px;padding:2px 8px">… 还有 ${gPo.length-50} 个</div>`;
+  scroll.innerHTML=h||'<div class="empty-hint">该关键词下无搜索结果</div>';
+}
+
+function renderCategoryView(cat,filter){
+  const scroll=$('resultsScroll');
+  const kws=CATEGORIES[cat]||[];let h='';
+  for(const kw of kws){
+    const oPo=osmR[kw]||[],gPo=gmR[kw]||[];
+    if(!oPo.length&&!gPo.length)continue;
+    h+=`<div class="kw-group"><div class="kw-header open" onclick="toggleKw(this)"><span class="arrow">▶</span><span class="kw-name">${kw}</span><span class="counts"><span class="c-osm">🟢 ${oPo.length}</span> <span class="c-gm">🔵 ${gPo.length}</span></span></div><div class="kw-body open">`;
+    if(oPo.length&&filter!=='google'){h+=`<div class="source-label">OSM (${oPo.length})</div>`;for(const p of oPo.slice(0,50))h+=poiItemHTML(p)}
+    if(gPo.length&&filter!=='osm'){h+=`<div class="source-label">Google (${gPo.length})</div>`;for(const p of gPo.slice(0,50))h+=poiItemHTML(p)}
+    h+='</div></div>';
+  }
+  scroll.innerHTML=h||'<div class="empty-hint">该分类下无搜索结果</div>';
 }
 
 // ==================== 渲染结果列表 ====================
@@ -471,10 +514,13 @@ function renderResults(){
       </div>`;
     }
     // GM 关键词对照
-    h+='<div style="margin-top:10px;padding:8px;background:#1a1a2e;border-radius:6px;font-size:11px;color:#888;line-height:1.6"><b style="color:#aaa">🔤 Google 英文搜索词对照</b><br>';
+    h+='<div style="margin-top:10px;padding:8px;background:#1a1a2e;border-radius:6px;font-size:11px;color:#888;line-height:1.6"><b style="color:#aaa">🔤 Google 英文搜索词对照（API 上限 60条/词）</b><br>';
     for(const[kw,en]of Object.entries(GM_KW))h+=`<span style="color:#ccc">${kw}</span> → <span style="color:#4285f4">${en}</span> &nbsp;`;
     h+='</div>';
     scroll.innerHTML=h;
+  }else if(CATEGORIES[cat]){
+    // 旧版分类视图（已弃用，但保留兼容）
+    renderCategoryView(cat,filter);
   }else if(cat==='clusters'){
     // 餐厅聚集分析 — 用 Google 餐厅数据做 DBSCAN 聚类
     const allRestaurants=[...(gmR['餐厅']||[]),...(gmR['美食']||[]),...(gmR['快餐']||[])];
@@ -501,35 +547,15 @@ function renderResults(){
         renderClusterCircles(clusters,colors);
       }
     }
+  }else if(Object.values(CATEGORIES).some(kws=>kws.includes(cat))){
+    // 单个关键词精细对比
+    renderKeywordView(cat,filter);
   }else{
-    // 具体分类
-    const kws=CATEGORIES[cat]||[];
-    let h='';
-    for(const kw of kws){
-      const oPo=osmR[kw]||[],gPo=gmR[kw]||[];
-      if(!oPo.length&&!gPo.length)continue;
-      const oLen=oPo.length,gLen=gPo.length;
-      h+=`<div class="kw-group"><div class="kw-header open" onclick="toggleKw(this)"><span class="arrow">▶</span><span class="kw-name">${kw}</span><span class="counts"><span class="c-osm">🟢 ${oLen}</span> <span class="c-gm">🔵 ${gLen}</span></span></div><div class="kw-body open">`;
-      // OSM
-      if(oLen&&filter!=='google'){
-        h+=`<div class="source-label">OSM (${oLen})</div>`;
-        for(const p of oPo.slice(0,50))h+=poiItemHTML(p);
-        if(oLen>50)h+=`<div style="color:#888;font-size:10px;padding:2px 8px">… 还有 ${oLen-50} 个</div>`;
-      }
-      // Google
-      if(gLen&&filter!=='osm'){
-        h+=`<div class="source-label">Google (${gLen})</div>`;
-        for(const p of gPo.slice(0,50))h+=poiItemHTML(p);
-        if(gLen>50)h+=`<div style="color:#888;font-size:10px;padding:2px 8px">… 还有 ${gLen-50} 个</div>`;
-      }
-      h+='</div></div>';
-    }
-    if(!h)h='<div class="empty-hint">该分类下无搜索结果</div>';
-    scroll.innerHTML=h;
+    renderCategoryView(cat,filter);
   }
 
   // 地图标记
-  if(cat==='餐饮'){
+  if(cat==='餐饮'||cat==='餐厅'||cat==='美食'||cat==='快餐'){
     // 餐饮 tab 叠加餐厅聚集可视化（半透明大圆）
     const allRestaurants=[...(gmR['餐厅']||[]),...(gmR['美食']||[]),...(gmR['快餐']||[])];
     if(allRestaurants.length>=MIN_CLUSTER_SIZE){
@@ -565,16 +591,29 @@ function toggleKw(el){el.classList.toggle('open');el.nextElementSibling.classLis
 // ==================== Tab 切换 ====================
 function switchTab(cat){
   currentCat=cat;
-  document.querySelectorAll('#catTabs button').forEach(b=>b.classList.toggle('active',b.dataset.cat===cat));
+  updateActiveTab();
   renderResults();
   addMarkersForFilter();
 }
-// 初始化 tab 事件
+// 生成关键词级 Tab（精细对比）
+const kwTabs=document.getElementById('kwTabs');
+for(const[cat,kws]of Object.entries(CATEGORIES))for(const kw of kws){
+  const btn=document.createElement('button');btn.dataset.kw=kw;btn.textContent=kw;kwTabs.appendChild(btn);
+}
+// 点击事件：cat-tabs 处理总览/聚集，kw-tabs 处理具体关键词
 document.getElementById('catTabs').addEventListener('click',e=>{if(e.target.tagName==='BUTTON')switchTab(e.target.dataset.cat)});
+kwTabs.addEventListener('click',e=>{if(e.target.tagName==='BUTTON'){currentCat=e.target.dataset.kw;updateActiveTab();renderResults();addMarkersForFilter()}});
+
+function updateActiveTab(){
+  document.querySelectorAll('#catTabs button,#kwTabs button').forEach(b=>{
+    const active=(b.dataset.cat===currentCat||b.dataset.kw===currentCat);
+    b.classList.toggle('active',active);
+  });
+}
 
 // ==================== 报告 ====================
 function copyReport(){
-  let r=[];r.push('═══════════════════════════════════');r.push('  POI 周边搜索对比测试报告');r.push('═══════════════════════════════════');r.push('');r.push(`测试位置: NUS (${NUS_LAT}, ${NUS_LNG})`);r.push(`搜索范围: ${currentRadius?currentRadius/1000+'km 矩形（searchText rectangle + Overpass bbox）':'N/A'}`);r.push(`测试时间: ${new Date().toLocaleString('zh-CN')}`);r.push('');r.push('── 搜索耗时 ──');r.push(`  OSM (Overpass): ${lastOsmTime.toFixed(0)}ms`);r.push(`  Google (searchText): ${lastGmTime.toFixed(0)}ms`);r.push('');r.push('── Google 英文搜索词对照 ──');
+  let r=[];r.push('═══════════════════════════════════');r.push('  POI 周边搜索对比测试报告');r.push('═══════════════════════════════════');r.push('');r.push(`测试位置: NUS (${NUS_LAT}, ${NUS_LNG})`);r.push(`搜索范围: ${currentRadius?currentRadius/1000+'km 矩形（searchText rectangle + Overpass bbox）':'N/A'}`);r.push(`测试时间: ${new Date().toLocaleString('zh-CN')}`);r.push('');r.push('── 搜索耗时 ──');r.push(`  OSM (Overpass): ${lastOsmTime.toFixed(0)}ms`);r.push(`  Google (searchText): ${lastGmTime.toFixed(0)}ms`);r.push('');r.push('── Google 英文搜索词对照（API 上限 60条/词）──');
   for(const[kw,en]of Object.entries(GM_KW))r.push(`  ${kw} → ${en}`);
   r.push('');r.push('── 分类对比 ──');r.push('  分类 | OSM | Google');
   for(const[cat,kws]of Object.entries(CATEGORIES)){const o=kws.reduce((s,kw)=>s+(osmR[kw]?.length||0),0);const g=kws.reduce((s,kw)=>s+(gmR[kw]?.length||0),0);r.push(`  ${cat} | ${o} | ${g}`)}
@@ -591,7 +630,7 @@ function resetAll(){
   if(searchRect){map.removeLayer(searchRect);searchRect=null}
   $('radiusLabel').textContent='—';
   currentCat='overview';
-  document.querySelectorAll('#catTabs button').forEach(b=>b.classList.toggle('active',b.dataset.cat==='overview'));
+  updateActiveTab();
   document.querySelector('input[name="sourceFilter"][value="all"]').checked=true;
   $('resultsScroll').innerHTML='<div class="empty-hint"><div class="icon">📍</div>点击上方 1km / 2km / 5km 开始搜索</div>';
   document.querySelectorAll('.toolbar button[id^="btn"]').forEach(b=>{if(b.id!=='btnCopy')b.disabled=false});
