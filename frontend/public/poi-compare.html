@@ -354,14 +354,18 @@ async function searchOverpass(keyword, radius) {
 }
 
 // ===================== Google Places 搜索 =====================
-// 使用 Google Maps JS PlacesService（需要 visibile map div 但不需要真实渲染）
 let placesService = null;
 
 function initPlacesService() {
+  // ★ 不能用 display:none（尺寸为0，Google Maps 拒绝初始化）
+  // 改用 off-screen 方式，给明确宽高
   const dummy = document.createElement('div');
-  dummy.style.display = 'none';
+  dummy.style.cssText = 'position:fixed;left:-9999px;top:-9999px;width:200px;height:200px;';
   document.body.appendChild(dummy);
-  const dummyMap = new google.maps.Map(dummy, { center: { lat: NUS_LAT, lng: NUS_LNG }, zoom: 14 });
+  const dummyMap = new google.maps.Map(dummy, {
+    center: { lat: NUS_LAT, lng: NUS_LNG },
+    zoom: 14,
+  });
   placesService = new google.maps.places.PlacesService(dummyMap);
 }
 
@@ -369,9 +373,30 @@ async function searchGooglePlaces(keyword, radius) {
   return new Promise((resolve) => {
     const allResults = [];
     let pageCount = 0;
-    const MAX_PAGES = 3; // Google Places 最多返回 3 页 × 20 = 60 个结果
+    const MAX_PAGES = 3;
+    let settled = false; // 防止 resolve 两次
+
+    function done() {
+      if (!settled) { settled = true; resolve(allResults); }
+    }
+
+    // 超时保护：15s 后如果回调一直没触发，至少 resolve
+    const timeout = setTimeout(() => {
+      const errEl = document.getElementById('gmErrors');
+      if (errEl) {
+        errEl.style.display = 'block';
+        errEl.innerHTML += `<div>⏱ "${keyword}": 超时无响应 <small style="color:#888">(PlacesService 回调未触发，API 可能被墙)</small></div>`;
+      }
+      console.error(`Google Places "${keyword}": timeout (callback never fired)`);
+      done();
+    }, 15000);
 
     function callback(results, status, pagination) {
+      if (settled) return;
+
+      // 调试：把所有 status 都打印出来
+      console.log(`[Google Places] "${keyword}" → status="${status}", results=${results?.length || 0}`);
+
       if (status === google.maps.places.PlacesServiceStatus.OK && results) {
         for (const r of results) {
           const lat = r.geometry?.location?.lat();
@@ -392,36 +417,61 @@ async function searchGooglePlaces(keyword, radius) {
 
         pageCount++;
         if (pagination && pagination.hasNextPage && pageCount < MAX_PAGES) {
-          // nextPage 会再次触发本 callback
           setTimeout(() => pagination.nextPage(), 300);
         } else {
-          resolve(allResults);
+          clearTimeout(timeout);
+          done();
         }
       } else if (status === google.maps.places.PlacesServiceStatus.ZERO_RESULTS) {
-        resolve([]);
+        clearTimeout(timeout);
+        done();
       } else {
-        // 把错误展现在页面上便于诊断
+        // 错误 → 显示在页面
+        clearTimeout(timeout);
         const errEl = document.getElementById('gmErrors');
         const statusText = {
           'OVER_QUERY_LIMIT': '超出配额',
-          'REQUEST_DENIED': 'API Key 无权限或 Places API 未启用',
+          'REQUEST_DENIED': 'API Key 无权限 / Places API 未启用',
           'INVALID_REQUEST': '请求参数错误',
-          'UNKNOWN_ERROR': '未知错误（网络/GFW）',
+          'UNKNOWN_ERROR': '未知错误（网络不通 / GFW）',
         }[status] || status;
         if (errEl) {
           errEl.style.display = 'block';
           errEl.innerHTML += `<div>❌ "${keyword}": ${statusText} <small style="color:#888">(${status})</small></div>`;
         }
         console.error(`Google Places "${keyword}" failed: ${status} (${statusText})`);
-        resolve(allResults);
+        done();
       }
     }
 
-    placesService.nearbySearch({
-      location: new google.maps.LatLng(NUS_LAT, NUS_LNG),
-      radius: radius,
-      keyword: keyword,
-    }, callback);
+    // 确保 placesService 已初始化
+    if (!placesService) {
+      const errEl = document.getElementById('gmErrors');
+      if (errEl) {
+        errEl.style.display = 'block';
+        errEl.innerHTML += `<div>❌ placesService 未初始化 — Google Maps API 可能尚未加载</div>`;
+      }
+      clearTimeout(timeout);
+      done();
+      return;
+    }
+
+    try {
+      placesService.nearbySearch({
+        location: new google.maps.LatLng(NUS_LAT, NUS_LNG),
+        radius: radius,
+        keyword: keyword,
+      }, callback);
+    } catch (e) {
+      const errEl = document.getElementById('gmErrors');
+      if (errEl) {
+        errEl.style.display = 'block';
+        errEl.innerHTML += `<div>❌ "${keyword}": JS 异常 — ${e.message}</div>`;
+      }
+      console.error(`Google Places "${keyword}" threw:`, e);
+      clearTimeout(timeout);
+      done();
+    }
   });
 }
 
