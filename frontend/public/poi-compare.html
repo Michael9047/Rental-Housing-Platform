@@ -149,7 +149,7 @@ async function searchGM(cnKw,radius){
     for(const cell of cells){
       let pt=null,pc=0;
       while(pc<3){
-        const body={textQuery:enKw,maxResultCount:20,locationRestriction:{rectangle:cell}};
+        const body={textQuery:enKw,pageSize:20,locationRestriction:{rectangle:cell}};
         if(pt)body.pageToken=pt;
         try{
           const r=await fetch('https://places.googleapis.com/v1/places:searchText',{method:'POST',headers:{'Content-Type':'application/json','X-Goog-Api-Key':GM_KEY,'X-Goog-FieldMask':'places.displayName,places.location,places.formattedAddress,places.rating,places.id,nextPageToken'},body:JSON.stringify(body)});
@@ -166,7 +166,7 @@ async function searchGM(cnKw,radius){
   // searchNearby: 结构化类型，自动去重
   const types=GM_NS[cnKw];if(!types||!types.length){showGmError(`${cnKw}: 无 includedTypes`);return[]}
   try{
-    const r=await fetch('https://places.googleapis.com/v1/places:searchNearby',{method:'POST',headers:{'Content-Type':'application/json','X-Goog-Api-Key':GM_KEY,'X-Goog-FieldMask':'places.id,places.displayName,places.location,places.formattedAddress,places.rating'},body:JSON.stringify({includedTypes:types,maxResultCount:20,locationRestriction:{circle:{center:{latitude:Clementi_LAT,longitude:Clementi_LNG},radius:radius}}})});
+    const r=await fetch('https://places.googleapis.com/v1/places:searchNearby',{method:'POST',headers:{'Content-Type':'application/json','X-Goog-Api-Key':GM_KEY,'X-Goog-FieldMask':'places.id,places.displayName,places.location,places.formattedAddress,places.rating'},body:JSON.stringify({includedTypes:types,pageSize:20,locationRestriction:{circle:{center:{latitude:Clementi_LAT,longitude:Clementi_LNG},radius:radius}}})});
     if(!r.ok){const t=await r.text();let msg=t;try{msg=JSON.parse(t).error?.message||t}catch(_){}showGmError(`${cnKw}(${types}): HTTP ${r.status} — ${msg.substring(0,150)}`);return[]}
     const d=await r.json();const ps=d.places||[];
     console.log(`[GM-NS] ${cnKw} ${types} → ${ps.length}`);
