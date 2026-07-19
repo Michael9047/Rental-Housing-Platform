@@ -126,26 +126,41 @@ function circleToRect(lat,lng,r){const dLat=r/111320,dLng=r/(111320*Math.cos(lat
 function showGmError(msg){const el=$('gmErrors');if(el){el.style.display='block';el.innerHTML+='<div>❌ '+msg+'</div>'}console.error('[GM]',msg)}
 function clearGmErrors(){const el=$('gmErrors');if(el){el.style.display='none';el.innerHTML=''}}
 
+// ==================== 区域分割 ====================
+// 把矩形分成 grid×grid 个子格，每格独立搜 60 条突破总量上限
+function splitRect(rect,grid){
+  const dLat=(rect.high.latitude-rect.low.latitude)/grid;
+  const dLng=(rect.high.longitude-rect.low.longitude)/grid;
+  const cells=[];
+  for(let r=0;r<grid;r++)for(let c=0;c<grid;c++){
+    cells.push({low:{latitude:rect.low.latitude+r*dLat,longitude:rect.low.longitude+c*dLng},high:{latitude:rect.low.latitude+(r+1)*dLat,longitude:rect.low.longitude+(c+1)*dLng}});
+  }
+  return cells;
+}
+
 // ==================== Google 搜索 ====================
-// 高密度词(searchText 翻页60条) + 一般词(searchNearby 20条)
+// 高密度词(区域分割 searchText 最高240条) + 一般词(searchNearby 20条)
 async function searchGM(cnKw,radius){
   if(HIGH_DENSITY.has(cnKw)){
-    // searchText: 支持翻页，最多 60 条
     const enKw=({餐厅:"restaurant",美食:"restaurant",快餐:"fast food"})[cnKw];
-    const rect=circleToRect(Clementi_LAT,Clementi_LNG,radius);const all=[];let pt=null,pc=0;
-    while(pc<3){
-      const body={textQuery:enKw,maxResultCount:20,locationRestriction:{rectangle:rect}};
-      if(pt)body.pageToken=pt;
-      try{
-        const r=await fetch('https://places.googleapis.com/v1/places:searchText',{method:'POST',headers:{'Content-Type':'application/json','X-Goog-Api-Key':GM_KEY,'X-Goog-FieldMask':'places.displayName,places.location,places.formattedAddress,places.rating,places.id,nextPageToken'},body:JSON.stringify(body)});
-        if(!r.ok){const t=await r.text();let msg=t;try{msg=JSON.parse(t).error?.message||t}catch(_){}showGmError(`${cnKw}→${enKw}: HTTP ${r.status} — ${msg.substring(0,120)}`);break}
-        const d=await r.json();const ps=d.places||[];pc++;
-        console.log(`[GM-ST] ${cnKw}→${enKw} p${pc}: ${ps.length}`);
-        for(const p of ps){const lat=p.location?.latitude,lng=p.location?.longitude;if(lat==null||lng==null)continue;all.push({name:p.displayName?.text||enKw,lat,lng,distance_m:Math.round(havDistance(Clementi_LAT,Clementi_LNG,lat,lng)),keyword:cnKw,source:'google',vicinity:p.formattedAddress||'',rating:p.rating||null,place_id:p.id||''})}
-        if(d.nextPageToken){pt=d.nextPageToken;await new Promise(r=>setTimeout(r,400))}else break;
-      }catch(e){showGmError(`${cnKw}: 网络错误`);break}
+    const fullRect=circleToRect(Clementi_LAT,Clementi_LNG,radius);
+    const cells=splitRect(fullRect,2); // 2×2=4 个子格
+    const seen=new Set();const all=[];
+    for(const cell of cells){
+      let pt=null,pc=0;
+      while(pc<3){
+        const body={textQuery:enKw,maxResultCount:20,locationRestriction:{rectangle:cell}};
+        if(pt)body.pageToken=pt;
+        try{
+          const r=await fetch('https://places.googleapis.com/v1/places:searchText',{method:'POST',headers:{'Content-Type':'application/json','X-Goog-Api-Key':GM_KEY,'X-Goog-FieldMask':'places.displayName,places.location,places.formattedAddress,places.rating,places.id,nextPageToken'},body:JSON.stringify(body)});
+          if(!r.ok){const t=await r.text();let msg=t;try{msg=JSON.parse(t).error?.message||t}catch(_){}showGmError(`${cnKw}→${enKw}: HTTP ${r.status} — ${msg.substring(0,100)}`);break}
+          const d=await r.json();const ps=d.places||[];pc++;
+          for(const p of ps){const pid=p.id;if(seen.has(pid))continue;seen.add(pid);const lat=p.location?.latitude,lng=p.location?.longitude;if(lat==null||lng==null)continue;all.push({name:p.displayName?.text||enKw,lat,lng,distance_m:Math.round(havDistance(Clementi_LAT,Clementi_LNG,lat,lng)),keyword:cnKw,source:'google',vicinity:p.formattedAddress||'',rating:p.rating||null,place_id:pid})}
+          if(d.nextPageToken){pt=d.nextPageToken;await new Promise(r=>setTimeout(r,400))}else break;
+        }catch(e){showGmError(`${cnKw}: 网络错误`);break}
+      }
     }
-    console.log(`[GM-ST] ${cnKw} TOTAL: ${all.length}`);
+    console.log(`[GM-ST] ${cnKw}→${enKw} TOTAL: ${all.length} (4格去重)`);
     return all;
   }
   // searchNearby: 结构化类型，自动去重
