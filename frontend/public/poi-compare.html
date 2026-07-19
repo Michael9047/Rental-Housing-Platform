@@ -1,0 +1,685 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OSM vs Google Maps — POI 周边搜索对比 · NUS</title>
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: #1a1a2e;
+    color: #e0e0e0;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* ===== 顶栏 ===== */
+  .toolbar {
+    display: flex; align-items: center; gap: 12px;
+    padding: 10px 20px;
+    background: #16213e; border-bottom: 1px solid #0f3460;
+    flex-shrink: 0; flex-wrap: wrap;
+  }
+  .toolbar h1 {
+    font-size: 18px; font-weight: 700;
+    background: linear-gradient(135deg, #e94560, #0f3460 70%);
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  .toolbar button {
+    padding: 7px 16px; border: 1px solid #0f3460; border-radius: 8px;
+    background: #0f3460; color: #e0e0e0; font-size: 13px; cursor: pointer;
+    transition: all .2s; white-space: nowrap;
+  }
+  .toolbar button:hover { background: #1a4a8a; }
+  .toolbar button.primary { background: #e94560; border-color: #e94560; color: #fff; font-weight: 600; }
+  .toolbar button.primary:hover { background: #d63850; }
+  .toolbar button:disabled { opacity: 0.4; cursor: not-allowed; }
+  .toolbar .sep { width: 1px; height: 20px; background: #0f3460; }
+  .toolbar .hint { font-size: 12px; color: #888; margin-left: auto; }
+  .badge {
+    display: inline-block; padding: 2px 10px; border-radius: 10px;
+    font-size: 11px; font-weight: 600;
+  }
+  .badge.waiting { background: #8883; color: #888; }
+  .badge.loading { background: #e9a23b33; color: #e9a23b; }
+  .badge.done    { background: #7ebc8933; color: #7ebc89; }
+  .badge.error   { background: #e9456033; color: #e94560; }
+
+  /* ===== 地图 + 统计面板 ===== */
+  .main-wrap {
+    display: flex; flex: 1; min-height: 400px; gap: 2px; background: #0f3460;
+  }
+  .map-panel {
+    flex: 1; position: relative;
+  }
+  .map-panel .label {
+    position: absolute; top: 10px; left: 50%; transform: translateX(-50%);
+    z-index: 1000; padding: 5px 14px; border-radius: 20px;
+    font-size: 12px; font-weight: 600; pointer-events: none;
+    backdrop-filter: blur(6px);
+    background: rgba(26,26,46,0.85); color: #ccc;
+  }
+  #map { flex: 1; width: 100%; height: 100%; }
+
+  /* 侧边结果面板 */
+  .side-panel {
+    width: 480px; flex-shrink: 0; overflow-y: auto;
+    background: #16213e; padding: 16px;
+    display: flex; flex-direction: column; gap: 12px;
+  }
+  .side-panel h3 {
+    font-size: 14px; color: #aaa; text-transform: uppercase; letter-spacing: .5px;
+    border-bottom: 1px solid #0f3460; padding-bottom: 8px;
+  }
+
+  /* 总览行 */
+  .overview-row {
+    display: flex; gap: 8px;
+  }
+  .overview-card {
+    flex: 1; padding: 12px; border-radius: 10px;
+    background: #1a1a2e; text-align: center;
+  }
+  .overview-card .count {
+    font-size: 32px; font-weight: 700; font-variant-numeric: tabular-nums;
+  }
+  .overview-card .sub {
+    font-size: 11px; color: #888; margin-top: 2px;
+  }
+  .overview-card.osm  { border-left: 3px solid #7ebc89; }
+  .overview-card.google { border-left: 3px solid #4285f4; }
+  .overview-card.combined { border-left: 3px solid #e9a23b; }
+  .osm-color  { color: #7ebc89; }
+  .google-color { color: #4285f4; }
+  .combined-color { color: #e9a23b; }
+
+  /* 分类明细表 */
+  .cat-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  .cat-table th, .cat-table td {
+    padding: 6px 10px; text-align: center; border-bottom: 1px solid #0f3460;
+  }
+  .cat-table th { color: #888; font-weight: 500; font-size: 11px; text-transform: uppercase; }
+  .cat-table td.cat-name { text-align: left; font-weight: 600; color: #ccc; }
+  .cat-table td.zero { color: #555; }
+
+  /* 进度条 */
+  .progress-wrap { height: 4px; background: #2a2a3e; border-radius: 2px; overflow: hidden; margin-top: 6px; }
+  .progress-fill { height: 100%; border-radius: 2px; transition: width .3s; }
+  .progress-fill.osm  { background: #7ebc89; }
+  .progress-fill.google { background: #4285f4; }
+
+  /* Leaflet 暗色 */
+  .leaflet-container { background: #1a1a2e !important; }
+  .leaflet-control-zoom a { background: #16213e !important; color: #e0e0e0 !important; border-color: #0f3460 !important; }
+
+  /* 响应式 */
+  @media (max-width: 900px) {
+    .main-wrap { flex-direction: column; }
+    .side-panel { width: 100%; max-height: 50vh; }
+    .map-panel { min-height: 300px; }
+  }
+
+  /* 耗时微件 */
+  .timing-row {
+    display: flex; gap: 8px; align-items: center; font-size: 13px;
+  }
+  .timing-row .label-text { color: #888; min-width: 50px; }
+  .timing-row .value { font-weight: 700; font-variant-numeric: tabular-nums; }
+
+  /* 搜索中动画 */
+  .spinner { display: inline-block; width: 12px; height: 12px; border: 2px solid #888; border-top-color: #fff; border-radius: 50%; animation: spin .6s linear infinite; margin-right: 4px; vertical-align: middle; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* 关键词明细小表 */
+  .kw-table { width: 100%; border-collapse: collapse; font-size: 11px; margin-top: 4px; }
+  .kw-table th, .kw-table td { padding: 4px 6px; border-bottom: 1px solid #0f346020; text-align: center; }
+  .kw-table th { color: #888; font-size: 10px; }
+  .kw-table td.kw-name { text-align: left; color: #aaa; }
+</style>
+</head>
+<body>
+
+<!-- 顶栏 -->
+<div class="toolbar">
+  <h1>POI 周边搜索对比 · NUS 新加坡国立大学</h1>
+  <button id="btn3km" class="primary" onclick="runTest(3000)">▶ 搜索 3km</button>
+  <button id="btn5km" onclick="runTest(5000)">▶ 搜索 5km</button>
+  <button onclick="resetAll()">↺ 重置</button>
+  <span class="sep"></span>
+  <span class="hint" id="statusHint"><span class="badge waiting">等待 Google Maps API…</span></span>
+</div>
+
+<!-- 主体 -->
+<div class="main-wrap">
+  <!-- 地图 -->
+  <div class="map-panel">
+    <div class="label">NUS · Radius: <span id="radiusLabel">—</span></div>
+    <div id="map"></div>
+  </div>
+
+  <!-- 结果面板 -->
+  <div class="side-panel" id="sidePanel">
+    <h3>📊 搜索结果</h3>
+
+    <!-- 耗时条 -->
+    <div class="timing-row" id="timingRow" style="display:none">
+      <span class="label-text">Overpass</span>
+      <span class="value osm-color" id="osmTime">—</span>
+      <span style="color:#888">ms</span>
+      <div class="progress-wrap" style="flex:1"><div class="progress-fill osm" id="osmTimeBar" style="width:0%"></div></div>
+      <span class="label-text">Google</span>
+      <span class="value google-color" id="gmTime">—</span>
+      <span style="color:#888">ms</span>
+      <div class="progress-wrap" style="flex:1"><div class="progress-fill google" id="gmTimeBar" style="width:0%"></div></div>
+    </div>
+
+    <!-- 总览卡片 -->
+    <div class="overview-row">
+      <div class="overview-card osm">
+        <div class="count osm-color" id="osmTotal">—</div>
+        <div class="sub">Overpass (OSM)</div>
+      </div>
+      <div class="overview-card google">
+        <div class="count google-color" id="gmTotal">—</div>
+        <div class="sub">Google Places</div>
+      </div>
+      <div class="overview-card combined">
+        <div class="count combined-color" id="overlapTotal">—</div>
+        <div class="sub">两者共有</div>
+      </div>
+    </div>
+
+    <!-- 分类汇总表 -->
+    <h3>📋 分类对比</h3>
+    <table class="cat-table" id="catTable">
+      <thead><tr><th>分类</th><th>OSM</th><th>Google</th><th>重叠</th></tr></thead>
+      <tbody id="catTbody"><tr><td colspan="4" style="color:#555;padding:20px">点击上方按钮开始搜索</td></tr></tbody>
+    </table>
+
+    <!-- 关键词明细表 -->
+    <h3>🔍 关键词明细</h3>
+    <table class="kw-table" id="kwTable">
+      <thead><tr><th>分类</th><th>关键词</th><th>OSM</th><th>Google</th></tr></thead>
+      <tbody id="kwTbody"><tr><td colspan="4" style="color:#555;padding:16px">点击上方按钮开始搜索</td></tr></tbody>
+    </table>
+  </div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+<script>
+// ===================== 常量 =====================
+const NUS_CENTER = [1.2966, 103.7764];
+const NUS_LAT = 1.2966;
+const NUS_LNG = 103.7764;
+
+// 与 backend/app/services/poi_service.py NEARBY_SEARCH_PLAN 完全对齐
+const CATEGORIES = {
+  "交通":    ["地铁站", "公交站", "火车站"],
+  "医疗":    ["医院", "诊所", "药店"],
+  "教育":    ["学校", "大学", "幼儿园"],
+  "购物":    ["超市", "商场", "便利店"],
+  "餐饮":    ["餐厅", "美食", "快餐"],
+  "生活服务": ["银行", "菜市场", "快递", "洗衣店"],
+};
+
+// 与 backend/app/services/geocoding_service.py _OVERPASS_CATEGORY_QUERIES 对齐
+const OVERPASS_QUERIES = {
+  "地铁站": `node["railway"="station"]["station"="subway"];node["station"="subway"];node["railway"="subway_entrance"];`,
+  "公交站": `node["highway"="bus_stop"];node["amenity"="bus_station"];`,
+  "火车站": `node["railway"="station"];`,
+  "医院":    `node["amenity"="hospital"];way["amenity"="hospital"];`,
+  "诊所":    `node["amenity"="clinic"];node["amenity"="doctors"];`,
+  "药店":    `node["amenity"="pharmacy"];way["amenity"="pharmacy"];`,
+  "学校":    `node["amenity"="school"];way["amenity"="school"];`,
+  "大学":    `node["amenity"="university"];node["amenity"="college"];way["amenity"="university"];`,
+  "幼儿园":  `node["amenity"="kindergarten"];`,
+  "超市":    `node["shop"~"supermarket|convenience"];way["shop"~"supermarket|convenience"];`,
+  "商场":    `node["shop"="mall"];node["shop"="department_store"];way["shop"="mall"];`,
+  "便利店":  `node["shop"="convenience"];`,
+  "餐厅":    `node["amenity"="restaurant"];way["amenity"="restaurant"];`,
+  "美食":    `node["amenity"~"restaurant|fast_food|cafe"];way["amenity"~"restaurant|fast_food|cafe"];`,
+  "快餐":    `node["amenity"="fast_food"];`,
+  "银行":    `node["amenity"="bank"];way["amenity"="bank"];`,
+  "菜市场":  `node["amenity"="marketplace"];way["amenity"="marketplace"];`,
+  "快递":    `node["amenity"="post_office"];node["shop"="shipping"];`,
+  "洗衣店":  `node["shop"="laundry"];`,
+};
+
+// Overpass 镜像（与后端一致）
+const OVERPASS_ENDPOINTS = [
+  "https://maps.mail.ru/osm/tools/overpass/api/interpreter",
+  "https://overpass-api.de/api/interpreter",
+  "https://overpass.kumi.systems/api/interpreter",
+];
+
+// Haversine 公式
+function havDistance(lat1, lng1, lat2, lng2) {
+  const R = 6371000;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLng = (lng2 - lng1) * Math.PI / 180;
+  const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLng/2)**2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+}
+
+// ===================== 全局状态 =====================
+let map;
+let radiusCircle;
+let currentRadius = 0;
+let running = false;
+
+// 存储结果
+let osmResults = {};    // { keyword: [{name, lat, lng, distance_m, category}] }
+let gmResults = {};     // 同上
+
+function $(id) { return document.getElementById(id); }
+
+// ===================== 地图 =====================
+function initMap() {
+  map = L.map('map', {
+    center: NUS_CENTER,
+    zoom: 14,
+    zoomControl: true,
+    attributionControl: true,
+  });
+
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '&copy; OSM',
+    maxZoom: 19,
+  }).addTo(map);
+
+  // NUS 标记
+  L.marker(NUS_CENTER, {
+    icon: L.divIcon({
+      className: '',
+      html: '<div style="background:#e94560;color:#fff;padding:4px 10px;border-radius:12px;font-size:12px;font-weight:700;white-space:nowrap;box-shadow:0 2px 8px rgba(0,0,0,.4)">🎓 NUS</div>',
+      iconAnchor: [20, 14],
+    }),
+  }).addTo(map);
+}
+
+// ===================== Overpass 搜索 =====================
+async function searchOverpass(keyword, radius) {
+  const queryFrag = OVERPASS_QUERIES[keyword];
+  if (!queryFrag) return [];
+
+  // Overpass QL 格式: node["key"="val"](around:R,lat,lng);
+  // 在每个查询单元末尾追加 (around:R,lat,lng)
+  const withAround = queryFrag
+    .replace(/;/g, `(around:${radius},${NUS_LAT},${NUS_LNG});`)
+    // 修复可能产生的连续括号
+    .replace(/\)\(/g, '(');
+
+  const overpassQuery = `[out:json][timeout:20];(${withAround});out center 100;`;
+
+  for (const endpoint of OVERPASS_ENDPOINTS) {
+    try {
+      const resp = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain' },
+        body: overpassQuery,
+      });
+      if (!resp.ok) continue;
+      const data = await resp.json();
+      const elements = data.elements || [];
+      if (!elements.length) continue;
+
+      return elements.map(el => {
+        const tags = el.tags || {};
+        const name = (tags['name:zh'] || tags.name || tags['name:en'] || tags.official_name || tags.brand || tags.operator || keyword).trim();
+        const elLat = el.lat || (el.center?.lat);
+        const elLng = el.lon || (el.center?.lon);
+        if (!elLat || !elLng || !name) return null;
+        const dist = havDistance(NUS_LAT, NUS_LNG, elLat, elLng);
+        return { name, lat: elLat, lng: elLng, distance_m: Math.round(dist), keyword, source: 'osm' };
+      }).filter(Boolean);
+    } catch (e) {
+      continue;
+    }
+  }
+
+  return [];
+}
+
+// ===================== Google Places 搜索 =====================
+// 使用 Google Maps JS PlacesService（需要 visibile map div 但不需要真实渲染）
+let placesService = null;
+
+function initPlacesService() {
+  const dummy = document.createElement('div');
+  dummy.style.display = 'none';
+  document.body.appendChild(dummy);
+  const dummyMap = new google.maps.Map(dummy, { center: { lat: NUS_LAT, lng: NUS_LNG }, zoom: 14 });
+  placesService = new google.maps.places.PlacesService(dummyMap);
+}
+
+async function searchGooglePlaces(keyword, radius) {
+  return new Promise((resolve) => {
+    const allResults = [];
+    let pageCount = 0;
+    const MAX_PAGES = 3; // Google Places 最多返回 3 页 × 20 = 60 个结果
+
+    function callback(results, status, pagination) {
+      if (status === google.maps.places.PlacesServiceStatus.OK && results) {
+        for (const r of results) {
+          const lat = r.geometry?.location?.lat();
+          const lng = r.geometry?.location?.lng();
+          if (lat == null || lng == null) continue;
+          const dist = havDistance(NUS_LAT, NUS_LNG, lat, lng);
+          allResults.push({
+            name: r.name,
+            lat, lng,
+            distance_m: Math.round(dist),
+            keyword,
+            source: 'google',
+            vicinity: r.vicinity || '',
+            rating: r.rating || null,
+            place_id: r.place_id || '',
+          });
+        }
+
+        pageCount++;
+        if (pagination && pagination.hasNextPage && pageCount < MAX_PAGES) {
+          // nextPage 会再次触发本 callback
+          setTimeout(() => pagination.nextPage(), 300);
+        } else {
+          resolve(allResults);
+        }
+      } else if (status === google.maps.places.PlacesServiceStatus.ZERO_RESULTS) {
+        resolve([]);
+      } else {
+        console.warn(`Google Places "${keyword}" failed: ${status}`);
+        resolve(allResults); // 返回已收集的结果
+      }
+    }
+
+    placesService.nearbySearch({
+      location: new google.maps.LatLng(NUS_LAT, NUS_LNG),
+      radius: radius,
+      keyword: keyword,
+    }, callback);
+  });
+}
+
+// ===================== 主测试流程 =====================
+async function runTest(radius) {
+  if (running) return;
+  running = true;
+
+  $('btn3km').disabled = $('btn5km').disabled = true;
+  currentRadius = radius;
+  $('radiusLabel').textContent = `${radius / 1000}km`;
+  $('statusHint').innerHTML = '<span class="badge loading"><span class="spinner"></span>搜索中…</span>';
+
+  // 更新地图圆圈
+  if (radiusCircle) map.removeLayer(radiusCircle);
+  radiusCircle = L.circle(NUS_CENTER, { radius, color: '#e94560', weight: 1, fillColor: '#e9456033', fillOpacity: 0.15 }).addTo(map);
+  map.fitBounds(radiusCircle.getBounds(), { padding: [30, 30] });
+
+  // 重置结果
+  osmResults = {}; gmResults = {};
+  renderResults(); // 清空 UI
+
+  // 展开所有关键词
+  const allKeywords = [];
+  for (const [cat, kws] of Object.entries(CATEGORIES)) {
+    for (const kw of kws) {
+      allKeywords.push({ category: cat, keyword: kw });
+    }
+  }
+
+  // ===== Overpass 搜索（并发 6 个，与后端一致）=====
+  const osmStart = performance.now();
+  const semaphore = new Semaphore(6);
+  const osmTasks = allKeywords.map(({ category, keyword }) =>
+    semaphore.run(() => searchOverpass(keyword, radius).then(results => {
+      results.forEach(r => { r.category = category; });
+      osmResults[keyword] = results;
+      renderProgress();
+    }))
+  );
+  await Promise.all(osmTasks);
+  const osmTime = performance.now() - osmStart;
+
+  // ===== Google Places 搜索（并发 6 个）=====
+  const gmStart = performance.now();
+  const gmSemaphore = new Semaphore(6);
+  const gmTasks = allKeywords.map(({ category, keyword }) =>
+    gmSemaphore.run(() => searchGooglePlaces(keyword, radius).then(results => {
+      results.forEach(r => { r.category = category; });
+      gmResults[keyword] = results;
+      renderProgress();
+    }))
+  );
+  await Promise.all(gmTasks);
+  const gmTime = performance.now() - gmStart;
+
+  // 渲染最终结果
+  renderResults(osmTime, gmTime);
+  running = false;
+  $('btn3km').disabled = $('btn5km').disabled = false;
+  $('statusHint').innerHTML = '<span class="badge done">✓ 搜索完成</span>';
+}
+
+// ===================== 简易信号量 =====================
+class Semaphore {
+  constructor(limit) {
+    this.limit = limit;
+    this.running = 0;
+    this.queue = [];
+  }
+  async run(fn) {
+    while (this.running >= this.limit) {
+      await new Promise(r => this.queue.push(r));
+    }
+    this.running++;
+    try {
+      return await fn();
+    } finally {
+      this.running--;
+      const next = this.queue.shift();
+      if (next) next();
+    }
+  }
+}
+
+// ===================== 渲染 =====================
+function renderResults(osmTime, gmTime) {
+  // 耗时
+  if (osmTime != null && gmTime != null) {
+    $('timingRow').style.display = 'flex';
+    $('osmTime').textContent = osmTime.toFixed(0);
+    $('gmTime').textContent = gmTime.toFixed(0);
+    const maxTime = Math.max(osmTime, gmTime, 1);
+    $('osmTimeBar').style.width = (osmTime / maxTime * 100) + '%';
+    $('gmTimeBar').style.width = (gmTime / maxTime * 100) + '%';
+  }
+
+  // 总览卡片
+  const osmTotal = Object.values(osmResults).flat().length;
+  const gmTotal = Object.values(gmResults).flat().length;
+
+  // 计算重叠（基于名称近似匹配）
+  let overlapCount = 0;
+  const osmAll = Object.values(osmResults).flat();
+  const gmAll = Object.values(gmResults).flat();
+  const gmNames = new Set(gmAll.map(p => p.name.toLowerCase().trim()));
+  for (const p of osmAll) {
+    const normalized = p.name.toLowerCase().trim();
+    if (gmNames.has(normalized)) overlapCount++;
+    else {
+      // 模糊匹配：包含关系
+      for (const gn of gmNames) {
+        if (normalized.includes(gn) || gn.includes(normalized)) {
+          overlapCount++;
+          break;
+        }
+      }
+    }
+  }
+
+  $('osmTotal').textContent = osmTotal;
+  $('gmTotal').textContent = gmTotal;
+  $('overlapTotal').textContent = overlapCount;
+
+  // 分类汇总表
+  const tbody = $('catTbody');
+  tbody.innerHTML = '';
+  for (const [cat, kws] of Object.entries(CATEGORIES)) {
+    const osmCat = kws.reduce((s, kw) => s + (osmResults[kw]?.length || 0), 0);
+    const gmCat = kws.reduce((s, kw) => s + (gmResults[kw]?.length || 0), 0);
+
+    // 该分类的重叠
+    const catOsmAll = kws.flatMap(kw => osmResults[kw] || []);
+    const catGmAll = kws.flatMap(kw => gmResults[kw] || []);
+    const catGmNames = new Set(catGmAll.map(p => p.name.toLowerCase().trim()));
+    let catOverlap = 0;
+    for (const p of catOsmAll) {
+      const n = p.name.toLowerCase().trim();
+      if (catGmNames.has(n)) { catOverlap++; continue; }
+      for (const gn of catGmNames) {
+        if (n.includes(gn) || gn.includes(n)) { catOverlap++; break; }
+      }
+    }
+
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td class="cat-name">${cat}</td>
+      <td class="${osmCat > 0 ? 'osm-color' : 'zero'}"><strong>${osmCat}</strong></td>
+      <td class="${gmCat > 0 ? 'google-color' : 'zero'}"><strong>${gmCat}</strong></td>
+      <td class="${catOverlap > 0 ? 'combined-color' : 'zero'}">${catOverlap}</td>
+    `;
+    tbody.appendChild(tr);
+  }
+
+  // 关键词明细表
+  const kwTbody = $('kwTbody');
+  kwTbody.innerHTML = '';
+  for (const [cat, kws] of Object.entries(CATEGORIES)) {
+    for (let i = 0; i < kws.length; i++) {
+      const kw = kws[i];
+      const osmC = osmResults[kw]?.length || 0;
+      const gmC = gmResults[kw]?.length || 0;
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td class="cat-name" style="font-weight:400">${i === 0 ? cat : ''}</td>
+        <td class="kw-name">${kw}</td>
+        <td class="${osmC > 0 ? 'osm-color' : 'zero'}">${osmC}</td>
+        <td class="${gmC > 0 ? 'google-color' : 'zero'}">${gmC}</td>
+      `;
+      kwTbody.appendChild(tr);
+    }
+  }
+
+  // POI 打点到地图
+  renderMapMarkers();
+}
+
+function renderProgress() {
+  // 实时更新计数（不需要完整 render）
+  const osmTotal = Object.values(osmResults).flat().length;
+  const gmTotal = Object.values(gmResults).flat().length;
+  $('osmTotal').textContent = osmTotal;
+  $('gmTotal').textContent = gmTotal;
+}
+
+// ===================== 地图标记 =====================
+const markerLayers = { osm: [], google: [] };
+
+function renderMapMarkers() {
+  // 清除旧标记
+  markerLayers.osm.forEach(m => map.removeLayer(m));
+  markerLayers.google.forEach(m => map.removeLayer(m));
+  markerLayers.osm = [];
+  markerLayers.google = [];
+
+  const osmIcon = L.divIcon({
+    className: '',
+    html: '<div style="width:6px;height:6px;border-radius:50%;background:#7ebc89;border:1px solid #fff;box-shadow:0 0 3px rgba(0,0,0,.5)"></div>',
+    iconSize: [6, 6], iconAnchor: [3, 3],
+  });
+  const gmIcon = L.divIcon({
+    className: '',
+    html: '<div style="width:6px;height:6px;border-radius:50%;background:#4285f4;border:1px solid #fff;box-shadow:0 0 3px rgba(0,0,0,.5)"></div>',
+    iconSize: [6, 6], iconAnchor: [3, 3],
+  });
+
+  for (const poi of Object.values(osmResults).flat()) {
+    const m = L.circleMarker([poi.lat, poi.lng], {
+      radius: 3, color: '#7ebc89', fillColor: '#7ebc89', fillOpacity: 0.8, weight: 1,
+    }).bindTooltip(`<b>${poi.name}</b><br>${poi.keyword} · ${poi.distance_m}m<br><small>OSM</small>`, { direction: 'top' });
+    m.addTo(map);
+    markerLayers.osm.push(m);
+  }
+
+  for (const poi of Object.values(gmResults).flat()) {
+    const m = L.circleMarker([poi.lat, poi.lng], {
+      radius: 3, color: '#4285f4', fillColor: '#4285f4', fillOpacity: 0.8, weight: 1,
+    }).bindTooltip(`<b>${poi.name}</b><br>${poi.keyword} · ${poi.distance_m}m<br><small>Google</small>`, { direction: 'top' });
+    m.addTo(map);
+    markerLayers.google.push(m);
+  }
+}
+
+// ===================== 重置 =====================
+function resetAll() {
+  running = false;
+  osmResults = {}; gmResults = {};
+  currentRadius = 0;
+  $('radiusLabel').textContent = '—';
+  if (radiusCircle) { map.removeLayer(radiusCircle); radiusCircle = null; }
+
+  $('osmTime').textContent = $('gmTime').textContent = '—';
+  $('osmTimeBar').style.width = $('gmTimeBar').style.width = '0%';
+  $('timingRow').style.display = 'none';
+  $('osmTotal').textContent = $('gmTotal').textContent = $('overlapTotal').textContent = '—';
+  $('catTbody').innerHTML = '<tr><td colspan="4" style="color:#555;padding:20px">点击上方按钮开始搜索</td></tr>';
+  $('kwTbody').innerHTML = '<tr><td colspan="4" style="color:#555;padding:16px">点击上方按钮开始搜索</td></tr>';
+
+  markerLayers.osm.forEach(m => map.removeLayer(m));
+  markerLayers.google.forEach(m => map.removeLayer(m));
+  markerLayers.osm = []; markerLayers.google = [];
+
+  $('btn3km').disabled = $('btn5km').disabled = false;
+  $('statusHint').innerHTML = '<span class="badge waiting">就绪</span>';
+  map.setView(NUS_CENTER, 14);
+}
+
+// ===================== 启动 =====================
+initMap();
+
+// Google Maps 回调
+let googleReady = false;
+
+window.initMap = function() {
+  googleReady = true;
+  initPlacesService();
+  $('statusHint').innerHTML = '<span class="badge waiting">就绪 — 选择搜索半径</span>';
+  $('btn3km').disabled = $('btn5km').disabled = false;
+};
+
+window.gm_authFailure = function() {
+  $('statusHint').innerHTML = '<span class="badge error">❌ Google API Key 无效</span>';
+};
+
+// 动态注入 Google Maps
+(function loadGoogleMaps() {
+  const script = document.createElement('script');
+  script.src = 'https://maps.googleapis.com/maps/api/js?key=AIzaSyA2TFWRlLOG72sJLckOBa2zWq9L-rDotzc&libraries=places&callback=initMap';
+  script.async = true; script.defer = true;
+  script.onerror = () => {
+    $('statusHint').innerHTML = '<span class="badge error">❌ 无法加载 Google Maps API</span>';
+  };
+  document.head.appendChild(script);
+})();
+</script>
+
+</body>
+</html>
