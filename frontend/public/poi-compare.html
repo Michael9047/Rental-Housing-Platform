@@ -242,43 +242,28 @@ const CLUSTER_DISTANCE=150; // 米，小于此距离视为同一聚集地
 const MIN_CLUSTER_SIZE=3;   // 最少餐厅数才算有效聚集地
 
 function findClusters(pois){
-  // 并查集 Union-Find
   const parent=pois.map((_,i)=>i);
   function find(i){while(parent[i]!==i){parent[i]=parent[parent[i]];i=parent[i]}return i}
   function union(a,b){const ra=find(a),rb=find(b);if(ra!==rb)parent[rb]=ra}
-
-  // 两两计算距离，150m 内合并
-  for(let i=0;i<pois.length;i++){
-    for(let j=i+1;j<pois.length;j++){
-      if(havDistance(pois[i].lat,pois[i].lng,pois[j].lat,pois[j].lng)<CLUSTER_DISTANCE){
-        union(i,j);
-      }
-    }
-  }
-
-  // 按根节点分组
-  const groups={};
-  pois.forEach((p,i)=>{const r=find(i);if(!groups[r])groups[r]=[];groups[r].push(p)});
-
-  // 过滤 + 排序 + 命名 + 分级
-  return Object.values(groups)
-    .filter(g=>g.length>=MIN_CLUSTER_SIZE)
-    .map(g=>{
-      // 质心
-      const clat=g.reduce((s,p)=>s+p.lat,0)/g.length;
-      const clng=g.reduce((s,p)=>s+p.lng,0)/g.length;
-      // 名称：出现最多的 vicinity 短语
-      const vicinityCounts={};
-      g.forEach(p=>{const v=(p.vicinity||'').split(',')[0].trim();if(v)vicinityCounts[v]=(vicinityCounts[v]||0)+1});
-      const topName=Object.entries(vicinityCounts).sort((a,b)=>b[1]-a[1])[0]?.[0]||'未知区域';
-      // 平均评分
-      const ratings=g.filter(p=>p.rating).map(p=>p.rating);
-      const avgRating=ratings.length?ratings.reduce((s,r)=>s+r,0)/ratings.length:0;
-      // 分级
-      let grade;if(g.length>=20)grade='A';else if(g.length>=10)grade='B';else if(g.length>=5)grade='C';else grade='D';
-      return{name:topName,lat:clat,lng:clng,count:g.length,grade,avgRating,members:g};
-    })
-    .sort((a,b)=>b.count-a.count);
+  for(let i=0;i<pois.length;i++)for(let j=i+1;j<pois.length;j++)if(havDistance(pois[i].lat,pois[i].lng,pois[j].lat,pois[j].lng)<CLUSTER_DISTANCE)union(i,j);
+  const groups={};pois.forEach((p,i)=>{const r=find(i);if(!groups[r])groups[r]=[];groups[r].push(p)});
+  return Object.values(groups).filter(g=>g.length>=MIN_CLUSTER_SIZE).map(g=>{
+    const clat=g.reduce((s,p)=>s+p.lat,0)/g.length,clng=g.reduce((s,p)=>s+p.lng,0)/g.length;
+    // ★ 命名策略：优先检测附近已知地标
+    let name=null;
+    const malls=[...(gmR['商场']||[]),...(osmR['商场']||[])];
+    const stations=[...(gmR['地铁站']||[]),...(osmR['地铁站']||[])];
+    // 1) 商场：距离质心 < 250m → 用商场名
+    const nearMall=malls.filter(m=>havDistance(clat,clng,m.lat,m.lng)<250).sort((a,b)=>a.distance_m-b.distance_m);
+    if(nearMall.length>0)name=nearMall[0].name;
+    // 2) 地铁站：距离 < 400m → "near XXX MRT"
+    if(!name){const nearSt=stations.filter(s=>havDistance(clat,clng,s.lat,s.lng)<400).sort((a,b)=>a.distance_m-b.distance_m);if(nearSt.length>0)name='Near '+nearSt[0].name.replace(/Exit \w|Entrance \w|出口|入口/gi,'').trim()}
+    // 3) 兜底：Google 结果中出现最多的 vicinity
+    if(!name){const vc={};g.forEach(p=>{const v=(p.vicinity||'').split(',')[0].trim();if(v)vc[v]=(vc[v]||0)+1});name=Object.entries(vc).sort((a,b)=>b[1]-a[1])[0]?.[0]||'未知区域'}
+    const ratings=g.filter(p=>p.rating).map(p=>p.rating);const avgRating=ratings.length?ratings.reduce((s,r)=>s+r,0)/ratings.length:0;
+    let grade;if(g.length>=20)grade='A';else if(g.length>=10)grade='B';else if(g.length>=5)grade='C';else grade='D';
+    return{name,lat:clat,lng:clng,count:g.length,grade,avgRating,members:g};
+  }).sort((a,b)=>b.count-a.count);
 }
 
 // ==================== OSM 去重 ====================
@@ -335,8 +320,9 @@ async function runTest(radius){
   dedupOsmKeyword("地铁站",150);
   dedupOsmKeyword("公交站",80);
   dedupOsmKeyword("火车站",200);
-  // ── Google 去重（医院部门合并为一个医院）──
+  // ── Google 去重 ──
   dedupGmKeyword("医院",200);
+  dedupGmKeyword("商场",150);
 
   // 完成
   running=false;
