@@ -353,126 +353,80 @@ async function searchOverpass(keyword, radius) {
   return [];
 }
 
-// ===================== Google Places 搜索 =====================
-let placesService = null;
+// ===================== Google Places 搜索（Places API New）=====================
+// 旧版 PlacesService.nearbySearch 调用的是已废弃的 legacy API
+// 新项目只能启用 Places API (New) → 必须走 REST 端点 places.googleapis.com
 
-function initPlacesService() {
-  // ★ 不能用 display:none（尺寸为0，Google Maps 拒绝初始化）
-  // 改用 off-screen 方式，给明确宽高
-  const dummy = document.createElement('div');
-  dummy.style.cssText = 'position:fixed;left:-9999px;top:-9999px;width:200px;height:200px;';
-  document.body.appendChild(dummy);
-  const dummyMap = new google.maps.Map(dummy, {
-    center: { lat: NUS_LAT, lng: NUS_LNG },
-    zoom: 14,
-  });
-  placesService = new google.maps.places.PlacesService(dummyMap);
-}
+const GM_API_KEY = 'AIzaSyA2TFWRlLOG72sJLckOBa2zWq9L-rDotzc';
 
 async function searchGooglePlaces(keyword, radius) {
-  return new Promise((resolve) => {
-    const allResults = [];
-    let pageCount = 0;
-    const MAX_PAGES = 3;
-    let settled = false; // 防止 resolve 两次
+  const url = 'https://places.googleapis.com/v1/places:searchText';
 
-    function done() {
-      if (!settled) { settled = true; resolve(allResults); }
-    }
-
-    // 超时保护：15s 后如果回调一直没触发，至少 resolve
-    const timeout = setTimeout(() => {
-      const errEl = document.getElementById('gmErrors');
-      if (errEl) {
-        errEl.style.display = 'block';
-        errEl.innerHTML += `<div>⏱ "${keyword}": 超时无响应 <small style="color:#888">(PlacesService 回调未触发，API 可能被墙)</small></div>`;
-      }
-      console.error(`Google Places "${keyword}": timeout (callback never fired)`);
-      done();
-    }, 15000);
-
-    function callback(results, status, pagination) {
-      if (settled) return;
-
-      // 调试：把所有 status 都打印出来
-      console.log(`[Google Places] "${keyword}" → status="${status}", results=${results?.length || 0}`);
-
-      if (status === google.maps.places.PlacesServiceStatus.OK && results) {
-        for (const r of results) {
-          const lat = r.geometry?.location?.lat();
-          const lng = r.geometry?.location?.lng();
-          if (lat == null || lng == null) continue;
-          const dist = havDistance(NUS_LAT, NUS_LNG, lat, lng);
-          allResults.push({
-            name: r.name,
-            lat, lng,
-            distance_m: Math.round(dist),
-            keyword,
-            source: 'google',
-            vicinity: r.vicinity || '',
-            rating: r.rating || null,
-            place_id: r.place_id || '',
-          });
-        }
-
-        pageCount++;
-        if (pagination && pagination.hasNextPage && pageCount < MAX_PAGES) {
-          setTimeout(() => pagination.nextPage(), 300);
-        } else {
-          clearTimeout(timeout);
-          done();
-        }
-      } else if (status === google.maps.places.PlacesServiceStatus.ZERO_RESULTS) {
-        clearTimeout(timeout);
-        done();
-      } else {
-        // 错误 → 显示在页面
-        clearTimeout(timeout);
-        const errEl = document.getElementById('gmErrors');
-        const statusText = {
-          'OVER_QUERY_LIMIT': '超出配额',
-          'REQUEST_DENIED': 'API Key 无权限 / Places API 未启用',
-          'INVALID_REQUEST': '请求参数错误',
-          'UNKNOWN_ERROR': '未知错误（网络不通 / GFW）',
-        }[status] || status;
-        if (errEl) {
-          errEl.style.display = 'block';
-          errEl.innerHTML += `<div>❌ "${keyword}": ${statusText} <small style="color:#888">(${status})</small></div>`;
-        }
-        console.error(`Google Places "${keyword}" failed: ${status} (${statusText})`);
-        done();
-      }
-    }
-
-    // 确保 placesService 已初始化
-    if (!placesService) {
-      const errEl = document.getElementById('gmErrors');
-      if (errEl) {
-        errEl.style.display = 'block';
-        errEl.innerHTML += `<div>❌ placesService 未初始化 — Google Maps API 可能尚未加载</div>`;
-      }
-      clearTimeout(timeout);
-      done();
-      return;
-    }
-
-    try {
-      placesService.nearbySearch({
-        location: new google.maps.LatLng(NUS_LAT, NUS_LNG),
+  const body = {
+    textQuery: keyword,
+    maxResultCount: 20,
+    locationBias: {
+      circle: {
+        center: { latitude: NUS_LAT, longitude: NUS_LNG },
         radius: radius,
-        keyword: keyword,
-      }, callback);
-    } catch (e) {
+      },
+    },
+  };
+
+  try {
+    const resp = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Goog-Api-Key': GM_API_KEY,
+        // Field mask: 只请求我们需要的字段
+        'X-Goog-FieldMask': 'places.displayName,places.location,places.formattedAddress,places.rating,places.id',
+      },
+      body: JSON.stringify(body),
+    });
+
+    if (!resp.ok) {
+      const errText = await resp.text();
+      let errMsg = errText;
+      try { const j = JSON.parse(errText); errMsg = j.error?.message || errText; } catch (_) {}
       const errEl = document.getElementById('gmErrors');
       if (errEl) {
         errEl.style.display = 'block';
-        errEl.innerHTML += `<div>❌ "${keyword}": JS 异常 — ${e.message}</div>`;
+        errEl.innerHTML += `<div>❌ "${keyword}": HTTP ${resp.status} — ${errMsg.substring(0, 120)}</div>`;
       }
-      console.error(`Google Places "${keyword}" threw:`, e);
-      clearTimeout(timeout);
-      done();
+      console.error(`[Places New] "${keyword}" HTTP ${resp.status}:`, errMsg);
+      return [];
     }
-  });
+
+    const data = await resp.json();
+    const places = data.places || [];
+    console.log(`[Places New] "${keyword}" → ${places.length} results`);
+
+    return places.map(p => {
+      const lat = p.location?.latitude;
+      const lng = p.location?.longitude;
+      if (lat == null || lng == null) return null;
+      const dist = havDistance(NUS_LAT, NUS_LNG, lat, lng);
+      return {
+        name: p.displayName?.text || keyword,
+        lat, lng,
+        distance_m: Math.round(dist),
+        keyword,
+        source: 'google',
+        vicinity: p.formattedAddress || '',
+        rating: p.rating || null,
+        place_id: p.id || '',
+      };
+    }).filter(Boolean);
+  } catch (e) {
+    const errEl = document.getElementById('gmErrors');
+    if (errEl) {
+      errEl.style.display = 'block';
+      errEl.innerHTML += `<div>❌ "${keyword}": 网络错误 — ${e.message.substring(0, 100)}</div>`;
+    }
+    console.error(`[Places New] "${keyword}" fetch error:`, e);
+    return [];
+  }
 }
 
 // ===================== 主测试流程 =====================
@@ -730,7 +684,6 @@ let googleReady = false;
 
 window.initMap = function() {
   googleReady = true;
-  initPlacesService();
   $('statusHint').innerHTML = '<span class="badge waiting">就绪 — 选择搜索半径</span>';
   $('btn3km').disabled = $('btn5km').disabled = false;
 };
@@ -742,7 +695,7 @@ window.gm_authFailure = function() {
 // 动态注入 Google Maps
 (function loadGoogleMaps() {
   const script = document.createElement('script');
-  script.src = 'https://maps.googleapis.com/maps/api/js?key=AIzaSyA2TFWRlLOG72sJLckOBa2zWq9L-rDotzc&libraries=places&callback=initMap';
+  script.src = 'https://maps.googleapis.com/maps/api/js?key=AIzaSyA2TFWRlLOG72sJLckOBa2zWq9L-rDotzc&callback=initMap';
   script.async = true; script.defer = true;
   script.onerror = () => {
     $('statusHint').innerHTML = '<span class="badge error">❌ 无法加载 Google Maps API</span>';
