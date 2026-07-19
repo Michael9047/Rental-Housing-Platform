@@ -147,7 +147,9 @@ const GM_KEY='AIzaSyA2TFWRlLOG72sJLckOBa2zWq9L-rDotzc';
 
 const CATEGORIES={交通:["地铁站","公交站","火车站"],医疗:["医院","诊所","药店"],教育:["学校","大学","幼儿园"],购物:["超市","商场","便利店"],餐饮:["餐厅","美食","快餐"],生活服务:["银行","菜市场","快递","洗衣店"]};
 
-const GM_KW={地铁站:"MRT station",公交站:"bus stop",火车站:"railway station",医院:"hospital",诊所:"clinic",药店:"pharmacy",学校:"school",大学:"university",幼儿园:"kindergarten",超市:"supermarket",商场:"shopping mall",便利店:"convenience store",餐厅:"restaurant",美食:"restaurant",快餐:"fast food",银行:"bank",菜市场:"market",快递:"post office",洗衣店:"laundry"};
+// Google searchNearby 用 includedTypes（结构化分类，自动去重）
+// 没有对应类型的词直接跳过 Google（如"美食"=餐厅，"菜市场"=market 类型覆盖弱→跳过）
+const GM_TYPES={地铁站:["subway_station"],公交站:["bus_stop","bus_station"],火车站:["train_station"],医院:["hospital"],诊所:["doctor"],药店:["pharmacy"],学校:["school"],大学:["university"],幼儿园:["preschool"],超市:["supermarket"],商场:["shopping_mall"],便利店:["convenience_store"],餐厅:["restaurant"],美食:["restaurant"],快餐:["meal_takeaway"],银行:["bank"],菜市场:["market"],快递:["post_office"],洗衣店:["laundry"]};
 
 const OVERPASS_Q={地铁站:`node["railway"="station"]["station"="subway"];node["station"="subway"];node["railway"="subway_entrance"];`,公交站:`node["highway"="bus_stop"];node["amenity"="bus_station"];`,火车站:`node["railway"="station"];`,医院:`node["amenity"="hospital"];way["amenity"="hospital"];`,诊所:`node["amenity"="clinic"];node["amenity"="doctors"];`,药店:`node["amenity"="pharmacy"];way["amenity"="pharmacy"];`,学校:`node["amenity"="school"];way["amenity"="school"];`,大学:`node["amenity"="university"];node["amenity"="college"];way["amenity"="university"];`,幼儿园:`node["amenity"="kindergarten"];`,超市:`node["shop"~"supermarket|convenience"];way["shop"~"supermarket|convenience"];`,商场:`node["shop"="mall"];node["shop"="department_store"];way["shop"="mall"];`,便利店:`node["shop"="convenience"];`,餐厅:`node["amenity"="restaurant"];way["amenity"="restaurant"];`,美食:`node["amenity"~"restaurant|fast_food|cafe"];way["amenity"~"restaurant|fast_food|cafe"];`,快餐:`node["amenity"="fast_food"];`,银行:`node["amenity"="bank"];way["amenity"="bank"];`,菜市场:`node["amenity"="marketplace"];way["amenity"="marketplace"];`,快递:`node["amenity"="post_office"];node["shop"="shipping"];`,洗衣店:`node["shop"="laundry"];`};
 
@@ -178,10 +180,9 @@ class Semaphore{constructor(limit){this.limit=limit;this.running=0;this.queue=[]
 // ==================== Overpass 搜索 ====================
 async function searchOverpass(keyword,radius){
   const q=OVERPASS_Q[keyword];if(!q)return[];
-  const rect=getRect(radius);
-  const bbox=`${rect.low.latitude},${rect.low.longitude},${rect.high.latitude},${rect.high.longitude}`;
-  const withBbox=q.replace(/;/g,`(${bbox});`).replace(/\)\(/g,'(');
-  const query=`[out:json][timeout:10];(${withBbox});out center 100;`;
+  // circle: around:RADIUS,LAT,LNG — 与 Google searchNearby 的 circle 一致
+  const withAround=q.replace(/;/g,`(around:${radius},${NUS_LAT},${NUS_LNG});`).replace(/\)\(/g,'(');
+  const query=`[out:json][timeout:10];(${withAround});out center 100;`;
   for(const ep of OVERPASS_EP){
     try{
       const ctrl=new AbortController();const t=setTimeout(()=>ctrl.abort(),12000);
@@ -200,41 +201,62 @@ async function searchOverpass(keyword,radius){
   return [];
 }
 
-// ==================== Google Places 搜索 ====================
+// ==================== Google Places 搜索（searchNearby + includedTypes）====================
 async function searchGooglePlaces(cnKw,radius){
-  const enKw=GM_KW[cnKw]||cnKw;
-  const rect=getRect(radius);
+  const types=GM_TYPES[cnKw];
+  if(!types||!types.length)return []; // 无对应类型 → 跳过 Google
+
   const all=[];let pt=null,pc=0;
-  while(pc<3){
-    const body={textQuery:enKw,maxResultCount:20,locationRestriction:{rectangle:rect}};
+  while(pc<2){ // searchNearby 每页最多 20，2 页 = 40 足以覆盖 2km
+    const body={
+      includedTypes:types,
+      maxResultCount:20,
+      locationRestriction:{circle:{center:{latitude:NUS_LAT,longitude:NUS_LNG},radius:radius}},
+    };
     if(pt)body.pageToken=pt;
     try{
-      const r=await fetch('https://places.googleapis.com/v1/places:searchText',{method:'POST',headers:{'Content-Type':'application/json','X-Goog-Api-Key':GM_KEY,'X-Goog-FieldMask':'places.displayName,places.location,places.formattedAddress,places.rating,places.id,nextPageToken'},body:JSON.stringify(body)});
-      if(!r.ok){const t=await r.text();console.error(`[GM] ${cnKw}→${enKw} HTTP ${r.status}`,t.substring(0,200));break}
+      const r=await fetch('https://places.googleapis.com/v1/places:searchNearby',{
+        method:'POST',
+        headers:{'Content-Type':'application/json','X-Goog-Api-Key':GM_KEY,'X-Goog-FieldMask':'places.displayName,places.location,places.formattedAddress,places.rating,places.id,nextPageToken'},
+        body:JSON.stringify(body),
+      });
+      if(!r.ok){const t=await r.text();console.error(`[GM] ${cnKw} types=${types} HTTP ${r.status}`,t.substring(0,200));break}
       const d=await r.json();const ps=d.places||[];pc++;
+      console.log(`[GM] ${cnKw} types=${types} page ${pc}: ${ps.length} results`);
       for(const p of ps){
         const lat=p.location?.latitude,lng=p.location?.longitude;
         if(lat==null||lng==null)continue;
-        all.push({name:p.displayName?.text||enKw,lat,lng,distance_m:Math.round(havDistance(NUS_LAT,NUS_LNG,lat,lng)),keyword:cnKw,source:'google',vicinity:p.formattedAddress||'',rating:p.rating||null,place_id:p.id||''});
+        all.push({name:p.displayName?.text||cnKw,lat,lng,distance_m:Math.round(havDistance(NUS_LAT,NUS_LNG,lat,lng)),keyword:cnKw,source:'google',vicinity:p.formattedAddress||'',rating:p.rating||null,place_id:p.id||''});
       }
       if(d.nextPageToken){pt=d.nextPageToken;await new Promise(r=>setTimeout(r,400))}else break;
-    }catch(e){console.error(`[GM] ${cnKw}→${enKw} fetch error`,e);break}
+    }catch(e){console.error(`[GM] ${cnKw} fetch error`,e);break}
   }
   return all;
+}
+
+// ==================== OSM 去重 ====================
+// 对同一关键词的结果做 proximity clustering：距离 < thresholdM 视为同一设施
+function dedupOsmKeyword(keyword,thresholdM){
+  const pois=osmR[keyword];if(!pois||!pois.length)return;
+  const sorted=[...pois].sort((a,b)=>a.distance_m-b.distance_m);
+  const kept=[];
+  for(const p of sorted){
+    const tooClose=kept.some(k=>havDistance(p.lat,p.lng,k.lat,k.lng)<thresholdM);
+    if(!tooClose)kept.push(p);
+  }
+  osmR[keyword]=kept;
 }
 
 // ==================== 主搜索流程 ====================
 async function runTest(radius){
   if(running)return;running=true;currentRadius=radius;
   document.querySelectorAll('.toolbar button[id^="btn"]').forEach(b=>{if(b.id.startsWith('btn')&&b.id!=='btnCopy')b.disabled=true});
-  $('radiusLabel').textContent=`${radius/1000}km 矩形`;
+  $('radiusLabel').textContent=`${radius/1000}km 圆形`;
   $('statusHint').innerHTML='<span class="badge loading"><span class="spinner"></span>搜索中…</span>';
-  // 矩形
-  const rect=getRect(radius);
-  const bounds=[[rect.low.latitude,rect.low.longitude],[rect.high.latitude,rect.high.longitude]];
+  // 圆形 — searchNearby + OSM around 都用 circle
   if(searchRect)map.removeLayer(searchRect);
-  searchRect=L.rectangle(bounds,{color:'#e94560',weight:2,fillColor:'#e9456033',fillOpacity:.12,dashArray:'6 3'}).addTo(map);
-  map.fitBounds(bounds,{padding:[30,30]});
+  searchRect=L.circle(NUS,{radius,color:'#e94560',weight:2,fillColor:'#e9456033',fillOpacity:.12,dashArray:'6 3'}).addTo(map);
+  map.fitBounds(searchRect.getBounds(),{padding:[30,30]});
   // 重置
   osmR={};gmR={};_poiIndex=0;for(const k of Object.keys(_poiMap))delete _poiMap[k];clearMarkers();renderResults();
   // 展开所有关键词
@@ -249,6 +271,11 @@ async function runTest(radius){
   const semGm=new Semaphore(6);
   await Promise.all(tasks.map(({cat,kw})=>semGm.run(()=>searchGooglePlaces(kw,radius).then(r=>{r.forEach(o=>{o.category=cat});gmR[kw]=r;renderProgress()}))));
   const gmTime=performance.now()-gmStart;
+  // ── OSM 去重：地铁站入口/公交站 proximity dedup ──
+  dedupOsmKeyword("地铁站",150);
+  dedupOsmKeyword("公交站",80);
+  dedupOsmKeyword("火车站",200);
+
   // 完成
   running=false;
   document.querySelectorAll('.toolbar button[id^="btn"]').forEach(b=>{if(b.id!=='btnCopy')b.disabled=false});
@@ -363,8 +390,8 @@ function renderResults(){
       </div>`;
     }
     // GM 关键词对照
-    h+='<div style="margin-top:10px;padding:8px;background:#1a1a2e;border-radius:6px;font-size:11px;color:#888;line-height:1.6"><b style="color:#aaa">🔤 Google 搜索词对照</b><br>';
-    for(const[kw,en]of Object.entries(GM_KW))h+=`<span style="color:#ccc">${kw}</span> → <span style="color:#4285f4">${en}</span> &nbsp;`;
+    h+='<div style="margin-top:10px;padding:8px;background:#1a1a2e;border-radius:6px;font-size:11px;color:#888;line-height:1.6"><b style="color:#aaa">🔤 Google searchNearby includedTypes 对照</b><br>';
+    for(const[kw,types]of Object.entries(GM_TYPES))h+=`<span style="color:#ccc">${kw}</span> → <span style="color:#4285f4">${types.join(', ')}</span> &nbsp;`;
     h+='</div>';
     scroll.innerHTML=h;
   }else{
@@ -431,12 +458,12 @@ document.getElementById('catTabs').addEventListener('click',e=>{if(e.target.tagN
 
 // ==================== 报告 ====================
 function copyReport(){
-  let r=[];r.push('═══════════════════════════════════');r.push('  POI 周边搜索对比测试报告');r.push('═══════════════════════════════════');r.push('');r.push(`测试位置: NUS (${NUS_LAT}, ${NUS_LNG})`);r.push(`搜索范围: ${currentRadius?currentRadius/1000+'km 矩形边界框':'N/A'}`);r.push(`测试时间: ${new Date().toLocaleString('zh-CN')}`);r.push('');r.push('── 搜索耗时 ──');r.push(`  OSM (Overpass): ${lastOsmTime.toFixed(0)}ms`);r.push(`  Google (Places): ${lastGmTime.toFixed(0)}ms`);r.push('');r.push('── Google 搜索词对照 ──');
-  for(const[kw,en]of Object.entries(GM_KW))r.push(`  ${kw} → ${en}`);
+  let r=[];r.push('═══════════════════════════════════');r.push('  POI 周边搜索对比测试报告');r.push('═══════════════════════════════════');r.push('');r.push(`测试位置: NUS (${NUS_LAT}, ${NUS_LNG})`);r.push(`搜索范围: ${currentRadius?currentRadius/1000+'km 圆形（searchNearby circle + Overpass around）':'N/A'}`);r.push(`测试时间: ${new Date().toLocaleString('zh-CN')}`);r.push('');r.push('── 搜索耗时 ──');r.push(`  OSM (Overpass): ${lastOsmTime.toFixed(0)}ms`);r.push(`  Google (searchNearby): ${lastGmTime.toFixed(0)}ms`);r.push('');r.push('── Google includedTypes 对照 ──');
+  for(const[kw,types]of Object.entries(GM_TYPES))r.push(`  ${kw} → ${types.join(', ')}`);
   r.push('');r.push('── 分类对比 ──');r.push('  分类 | OSM | Google');
   for(const[cat,kws]of Object.entries(CATEGORIES)){const o=kws.reduce((s,kw)=>s+(osmR[kw]?.length||0),0);const g=kws.reduce((s,kw)=>s+(gmR[kw]?.length||0),0);r.push(`  ${cat} | ${o} | ${g}`)}
   r.push('');r.push('── 关键词明细 ──');
-  for(const[cat,kws]of Object.entries(CATEGORIES))for(const kw of kws){const o=(osmR[kw]||[]).length,g=(gmR[kw]||[]).length;const en=GM_KW[kw]||kw;r.push(`  ${cat}·${kw} (GM:${en}) | OSM:${o} | Google:${g}`)}
+  for(const[cat,kws]of Object.entries(CATEGORIES))for(const kw of kws){const o=(osmR[kw]||[]).length,g=(gmR[kw]||[]).length;const types=(GM_TYPES[kw]||[]).join(',')||'(无对应类型)';r.push(`  ${cat}·${kw} | OSM:${o} | Google(${types}):${g}`)}
   r.push('');r.push('═══════════════════════════════════');
   const txt=r.join('\n');
   navigator.clipboard.writeText(txt).then(()=>{const h=$('statusHint');h.innerHTML='<span class="badge done">✅ 报告已复制！</span>';setTimeout(()=>{h.innerHTML=`<span class="badge done">✓ OSM ${lastOsmTime.toFixed(0)}ms · Google ${lastGmTime.toFixed(0)}ms</span>`},3000)}).catch(()=>{const ta=document.createElement('textarea');ta.value=txt;ta.style.cssText='position:fixed;left:-9999px';document.body.appendChild(ta);ta.select();document.execCommand('copy');document.body.removeChild(ta)});
