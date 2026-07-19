@@ -273,7 +273,29 @@ const OVERPASS_ENDPOINTS = [
   "https://maps.mail.ru/osm/tools/overpass/api/interpreter", // 可能从中国访问慢，放最后
 ];
 
-// Haversine 公式
+// Google Places 在新加坡等英语环境下需要用英文关键词做文本搜索
+// OSM/Overpass 不受影响（查的是 OSM 标签，语言无关）
+const GM_KEYWORD_MAP = {
+  "地铁站": "MRT station",
+  "公交站": "bus stop",
+  "火车站": "train station",
+  "医院":   "hospital",
+  "诊所":   "clinic",
+  "药店":   "pharmacy",
+  "学校":   "school",
+  "大学":   "university",
+  "幼儿园": "kindergarten",
+  "超市":   "supermarket",
+  "商场":   "shopping mall",
+  "便利店": "convenience store",
+  "餐厅":   "restaurant",
+  "美食":   "restaurant",
+  "快餐":   "fast food",
+  "银行":   "bank",
+  "菜市场": "market",
+  "快递":   "post office",
+  "洗衣店": "laundry",
+};
 function havDistance(lat1, lng1, lat2, lng2) {
   const R = 6371000;
   const dLat = (lat2 - lat1) * Math.PI / 180;
@@ -381,7 +403,10 @@ function circleToRect(lat, lng, radiusM) {
   };
 }
 
-async function searchGooglePlaces(keyword, radius) {
+async function searchGooglePlaces(cnKeyword, radius) {
+  // 用英文关键词做搜索（新加坡英语环境），中文关键词仅用于结果标记
+  const enKeyword = GM_KEYWORD_MAP[cnKeyword] || cnKeyword;
+
   const url = 'https://places.googleapis.com/v1/places:searchText';
   const headers = {
     'Content-Type': 'application/json',
@@ -399,7 +424,7 @@ async function searchGooglePlaces(keyword, radius) {
 
   while (pageCount < MAX_PAGES) {
     const body = {
-      textQuery: keyword,
+      textQuery: enKeyword,  // ← 英文关键词
       maxResultCount: 20,
       locationRestriction: { rectangle: rect },
     };
@@ -419,16 +444,16 @@ async function searchGooglePlaces(keyword, radius) {
         const errEl = document.getElementById('gmErrors');
         if (errEl) {
           errEl.style.display = 'block';
-          errEl.innerHTML += `<div>❌ "${keyword}": HTTP ${resp.status} — ${errMsg.substring(0, 120)}</div>`;
+          errEl.innerHTML += `<div>❌ "${cnKeyword}"→"${enKeyword}": HTTP ${resp.status} — ${errMsg.substring(0, 120)}</div>`;
         }
-        console.error(`[Places New] "${keyword}" HTTP ${resp.status}:`, errMsg);
+        console.error(`[Places New] "${cnKeyword}"→"${enKeyword}" HTTP ${resp.status}:`, errMsg);
         break;
       }
 
       const data = await resp.json();
       const places = data.places || [];
       pageCount++;
-      console.log(`[Places New] "${keyword}" page ${pageCount}: ${places.length} results (nextPageToken: ${data.nextPageToken ? 'yes' : 'no'})`);
+      console.log(`[Places New] "${cnKeyword}"→"${enKeyword}" page ${pageCount}: ${places.length} results (nextPageToken: ${data.nextPageToken ? 'yes' : 'no'})`);
 
       for (const p of places) {
         const lat = p.location?.latitude;
@@ -436,10 +461,10 @@ async function searchGooglePlaces(keyword, radius) {
         if (lat == null || lng == null) continue;
         const dist = havDistance(NUS_LAT, NUS_LNG, lat, lng);
         allResults.push({
-          name: p.displayName?.text || keyword,
+          name: p.displayName?.text || enKeyword,
           lat, lng,
           distance_m: Math.round(dist),
-          keyword,
+          keyword: cnKeyword,  // 用中文关键词标记，保持与 OSM 结果对齐
           source: 'google',
           vicinity: p.formattedAddress || '',
           rating: p.rating || null,
@@ -459,14 +484,14 @@ async function searchGooglePlaces(keyword, radius) {
       const errEl = document.getElementById('gmErrors');
       if (errEl) {
         errEl.style.display = 'block';
-        errEl.innerHTML += `<div>❌ "${keyword}": 网络错误 — ${e.message.substring(0, 100)}</div>`;
+        errEl.innerHTML += `<div>❌ "${cnKeyword}"→"${enKeyword}": 网络错误 — ${e.message.substring(0, 100)}</div>`;
       }
-      console.error(`[Places New] "${keyword}" fetch error:`, e);
+      console.error(`[Places New] "${cnKeyword}"→"${enKeyword}" fetch error:`, e);
       break;
     }
   }
 
-  console.log(`[Places New] "${keyword}" TOTAL: ${allResults.length} results across ${pageCount} pages`);
+  console.log(`[Places New] "${cnKeyword}"→"${enKeyword}" TOTAL: ${allResults.length} results across ${pageCount} pages`);
   return allResults;
 }
 
