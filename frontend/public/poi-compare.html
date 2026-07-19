@@ -123,6 +123,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
       <button data-cat="购物">🛒 购物</button>
       <button data-cat="餐饮">🍽 餐饮</button>
       <button data-cat="生活服务">🏪 生活</button>
+      <button data-cat="clusters">📍 聚集</button>
     </div>
 
     <!-- 过滤行 -->
@@ -254,6 +255,50 @@ async function searchGooglePlaces(cnKw,radius){
   }catch(e){showGmError(`${cnKw}: 网络错误 — ${e.message.substring(0,100)}`);return[]}
 }
 
+// ==================== 餐厅聚集分析 ====================
+const CLUSTER_DISTANCE=150; // 米，小于此距离视为同一聚集地
+const MIN_CLUSTER_SIZE=3;   // 最少餐厅数才算有效聚集地
+
+function findClusters(pois){
+  // 并查集 Union-Find
+  const parent=pois.map((_,i)=>i);
+  function find(i){while(parent[i]!==i){parent[i]=parent[parent[i]];i=parent[i]}return i}
+  function union(a,b){const ra=find(a),rb=find(b);if(ra!==rb)parent[rb]=ra}
+
+  // 两两计算距离，150m 内合并
+  for(let i=0;i<pois.length;i++){
+    for(let j=i+1;j<pois.length;j++){
+      if(havDistance(pois[i].lat,pois[i].lng,pois[j].lat,pois[j].lng)<CLUSTER_DISTANCE){
+        union(i,j);
+      }
+    }
+  }
+
+  // 按根节点分组
+  const groups={};
+  pois.forEach((p,i)=>{const r=find(i);if(!groups[r])groups[r]=[];groups[r].push(p)});
+
+  // 过滤 + 排序 + 命名 + 分级
+  return Object.values(groups)
+    .filter(g=>g.length>=MIN_CLUSTER_SIZE)
+    .map(g=>{
+      // 质心
+      const clat=g.reduce((s,p)=>s+p.lat,0)/g.length;
+      const clng=g.reduce((s,p)=>s+p.lng,0)/g.length;
+      // 名称：出现最多的 vicinity 短语
+      const vicinityCounts={};
+      g.forEach(p=>{const v=(p.vicinity||'').split(',')[0].trim();if(v)vicinityCounts[v]=(vicinityCounts[v]||0)+1});
+      const topName=Object.entries(vicinityCounts).sort((a,b)=>b[1]-a[1])[0]?.[0]||'未知区域';
+      // 平均评分
+      const ratings=g.filter(p=>p.rating).map(p=>p.rating);
+      const avgRating=ratings.length?ratings.reduce((s,r)=>s+r,0)/ratings.length:0;
+      // 分级
+      let grade;if(g.length>=20)grade='A';else if(g.length>=10)grade='B';else if(g.length>=5)grade='C';else grade='D';
+      return{name:topName,lat:clat,lng:clng,count:g.length,grade,avgRating,members:g};
+    })
+    .sort((a,b)=>b.count-a.count);
+}
+
 // ==================== OSM 去重 ====================
 // 对同一关键词的结果做 proximity clustering：距离 < thresholdM 视为同一设施
 function dedupOsmKeyword(keyword,thresholdM){
@@ -317,6 +362,20 @@ function renderProgress(){
   const gmTotal=Object.values(gmR).flat().length;
   $('statusHint').innerHTML=`<span class="badge loading"><span class="spinner"></span>OSM ${osmTotal} · Google ${gmTotal}</span>`;
 }
+
+// ==================== 聚集地地图可视化 ====================
+let clusterCircles=[];
+function renderClusterCircles(clusters,colors){
+  clusterCircles.forEach(c=>map.removeLayer(c));clusterCircles=[];
+  for(const c of clusters){
+    const r=Math.min(c.count*8,200); // 半径与餐厅数正相关，上限200m
+    const circle=L.circle([c.lat,c.lng],{radius:r,color:colors[c.grade],weight:2,fillColor:colors[c.grade],fillOpacity:.15}).addTo(map);
+    const label=L.marker([c.lat,c.lng],{icon:L.divIcon({className:'',html:`<div style="background:${colors[c.grade]};color:#fff;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700;white-space:nowrap;box-shadow:0 2px 6px rgba(0,0,0,.4)">🅰${c.grade} ${c.name} (${c.count})</div>`,iconAnchor:[40,12]}),zIndexOffset:1000}).addTo(map);
+    clusterCircles.push(circle,label);
+  }
+}
+function flyToCluster(lat,lng,zoom){map.flyTo([lat,lng],zoom,{duration:.5})}
+function clearClusterCircles(){clusterCircles.forEach(c=>map.removeLayer(c));clusterCircles=[]}
 
 // ==================== 地图标记 ====================
 function clearMarkers(){osmMarkers.forEach(m=>map.removeLayer(m));gmMarkers.forEach(m=>map.removeLayer(m));osmMarkers=[];gmMarkers=[];if(highlightedMarker){map.removeLayer(highlightedMarker);highlightedMarker=null}}
@@ -383,6 +442,7 @@ function renderResults(){
   const cat=currentCat;
   const filter=document.querySelector('input[name="sourceFilter"]:checked')?.value||'all';
 
+  if(cat!=='clusters')clearClusterCircles();
   if(!Object.keys(osmR).length&&!Object.keys(gmR).length){
     scroll.innerHTML='<div class="empty-hint"><div class="icon">📍</div>点击上方 1km / 2km / 5km 开始搜索</div>';
     return;
@@ -417,6 +477,32 @@ function renderResults(){
     for(const[kw,en]of Object.entries(GM_TYPES))h+=`<span style="color:#ccc">${kw}</span> → <span style="color:#4285f4">${en}</span> &nbsp;`;
     h+='</div>';
     scroll.innerHTML=h;
+  }else if(cat==='clusters'){
+    // 餐厅聚集分析 — 用 Google 餐厅数据做 DBSCAN 聚类
+    const allRestaurants=[...(gmR['餐厅']||[]),...(gmR['美食']||[]),...(gmR['快餐']||[])];
+    if(!allRestaurants.length){
+      scroll.innerHTML='<div class="empty-hint"><div class="icon">🍽</div>暂无 Google 餐厅数据，请先搜索</div>';
+    }else{
+      const clusters=findClusters(allRestaurants);
+      if(!clusters.length){
+        scroll.innerHTML='<div class="empty-hint"><div class="icon">📍</div>未发现有效聚集地（需≥3家餐厅聚集）</div>';
+      }else{
+        const colors={A:'#e94560',B:'#e9a23b',C:'#4285f4',D:'#7ebc89'};
+        let h='<div style="font-size:12px;color:#aaa;margin-bottom:8px">📍 餐厅聚集地分析（Google 数据 · 150m 聚类）</div>';
+        h+='<div style="font-size:10px;color:#888;margin-bottom:10px">🅰 20+家 &nbsp; 🅱 10-19家 &nbsp; 🅲 5-9家 &nbsp; 🅳 3-4家</div>';
+        for(const c of clusters){
+          h+=`<div class="kw-group"><div class="kw-header open" onclick="toggleKw(this);flyToCluster(${c.lat},${c.lng},16)"><span class="arrow">▶</span><span class="kw-name" style="color:${colors[c.grade]}">🅰${c.grade} ${c.name}</span><span class="counts"><span style="color:${colors[c.grade]}">${c.count}家</span>${c.avgRating?' <span style="font-size:10px;color:#888">⭐'+c.avgRating.toFixed(1)+'</span>':''}</span></div><div class="kw-body open" style="font-size:11px;color:#aaa">`;
+          for(const m of c.members.slice(0,10)){
+            h+=`<div class="poi-item" data-poi-id="cluster_${m.place_id||m.name}" onclick="event.stopPropagation()"><span class="dot gm"></span><span class="poi-name">${m.name}</span><span class="poi-dist">${m.distance_m}m${m.rating?' ⭐'+m.rating:''}</span></div>`;
+          }
+          if(c.members.length>10)h+=`<div style="color:#888;font-size:10px;padding:2px 8px">… 还有 ${c.members.length-10} 家</div>`;
+          h+='</div></div>';
+        }
+        scroll.innerHTML=h;
+        // 画聚集地圆圈到地图
+        renderClusterCircles(clusters,colors);
+      }
+    }
   }else{
     // 具体分类
     const kws=CATEGORIES[cat]||[];
@@ -494,7 +580,7 @@ function copyReport(){
 
 function resetAll(){
   running=false;osmR={};gmR={};lastOsmTime=0;lastGmTime=0;currentRadius=0;
-  clearMarkers();clearGmErrors();
+  clearMarkers();clearClusterCircles();clearGmErrors();
   if(searchRect){map.removeLayer(searchRect);searchRect=null}
   $('radiusLabel').textContent='—';
   currentCat='overview';
