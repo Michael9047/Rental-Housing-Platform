@@ -153,6 +153,7 @@
   <button id="btn3km" onclick="runTest(3000)">▶ 搜索 3km</button>
   <button id="btn5km" onclick="runTest(5000)">▶ 搜索 5km</button>
   <button onclick="resetAll()">↺ 重置</button>
+  <button id="btnCopy" onclick="copyReport()" disabled style="background:#e9a23b20;border-color:#e9a23b40;color:#e9a23b">📋 复制报告</button>
   <span class="sep"></span>
   <span class="hint" id="statusHint"><span class="badge waiting">等待 Google Maps API…</span></span>
 </div>
@@ -383,7 +384,7 @@ async function searchGooglePlaces(keyword, radius) {
     const body = {
       textQuery: keyword,
       maxResultCount: 20,
-      locationBias: {
+      locationRestriction: {
         circle: {
           center: { latitude: NUS_LAT, longitude: NUS_LNG },
           radius: radius,
@@ -514,7 +515,8 @@ async function runTest(radius) {
   renderResults(osmTime, gmTime);
   running = false;
   $('btn1km').disabled = $('btn3km').disabled = $('btn5km').disabled = false;
-  $('statusHint').innerHTML = '<span class="badge done">✓ 搜索完成</span>';
+  $('btnCopy').disabled = false;
+  $('statusHint').innerHTML = '<span class="badge done">✓ 搜索完成 — 点击「📋 复制报告」分享结果</span>';
 }
 
 // ===================== 简易信号量 =====================
@@ -745,6 +747,112 @@ function renderMapMarkers() {
   }
 }
 
+// ===================== 报告生成 =====================
+function generateReport() {
+  const osmTime = parseInt($('osmTime').textContent) || 0;
+  const gmTime = parseInt($('gmTime').textContent) || 0;
+  const osmTotal = parseInt($('osmTotal').textContent) || 0;
+  const gmTotal = parseInt($('gmTotal').textContent) || 0;
+  const overlapTotal = parseInt($('overlapTotal').textContent) || 0;
+
+  let report = [];
+  report.push('═══════════════════════════════════');
+  report.push('  POI 周边搜索对比测试报告');
+  report.push('═══════════════════════════════════');
+  report.push('');
+  report.push(`测试位置: NUS 新加坡国立大学 (1.2966, 103.7764)`);
+  report.push(`搜索半径: ${currentRadius ? currentRadius / 1000 + 'km' : 'N/A'}`);
+  report.push(`测试时间: ${new Date().toLocaleString('zh-CN')}`);
+  report.push('');
+  report.push('── 搜索耗时 ──');
+  report.push(`  OSM (Overpass): ${osmTime}ms`);
+  report.push(`  Google (Places): ${gmTime}ms`);
+  report.push(`  差异: ${osmTime > gmTime ? 'Google 快 ' + (osmTime - gmTime).toFixed(0) : 'OSM 快 ' + (gmTime - osmTime).toFixed(0)}ms`);
+  report.push('');
+  report.push('── 总览 ──');
+  report.push(`  OSM: ${osmTotal} 个 POI`);
+  report.push(`  Google: ${gmTotal} 个 POI`);
+  report.push(`  两者重叠: ${overlapTotal} 个`);
+
+  // 分类明细
+  report.push('');
+  report.push('── 分类对比 ──');
+  report.push('  分类        | OSM   | Google | 重叠');
+  report.push('  ----------- | ----- | ------ | -----');
+  const catRows = $('catTbody').querySelectorAll('tr');
+  for (const row of catRows) {
+    const cells = row.querySelectorAll('td');
+    if (cells.length >= 4) {
+      const cat = cells[0].textContent.trim();
+      const osm = cells[1].textContent.trim();
+      const gm = cells[2].textContent.trim();
+      const ol = cells[3].textContent.trim();
+      report.push(`  ${cat.padEnd(12)}| ${osm.padEnd(5)} | ${gm.padEnd(6)} | ${ol}`);
+    }
+  }
+
+  // 关键词明细
+  report.push('');
+  report.push('── 关键词明细 ──');
+  report.push('  分类     | 关键词   | OSM   | Google');
+  report.push('  -------- | -------- | ----- | ------');
+  const kwRows = $('kwTbody').querySelectorAll('tr');
+  for (const row of kwRows) {
+    const cells = row.querySelectorAll('td');
+    if (cells.length >= 4) {
+      const cat = cells[0].textContent.trim();
+      const kw = cells[1].textContent.trim();
+      const osm = cells[2].textContent.trim();
+      const gm = cells[3].textContent.trim();
+      report.push(`  ${cat.padEnd(8)} | ${kw.padEnd(8)} | ${osm.padEnd(5)} | ${gm}`);
+    }
+  }
+
+  // 诊断
+  const diagPanel = document.getElementById('diagPanel');
+  if (diagPanel && diagPanel.style.display !== 'none') {
+    report.push('');
+    report.push('── 诊断信息 ──');
+    const diagText = diagPanel.textContent.replace(/\s+/g, ' ').trim();
+    report.push(`  ${diagText}`);
+  }
+
+  // Google 错误
+  const errEl = document.getElementById('gmErrors');
+  if (errEl && errEl.style.display !== 'none') {
+    report.push('');
+    report.push('── Google API 错误 ──');
+    const errText = errEl.textContent.replace(/\s+/g, ' ').trim();
+    report.push(`  ${errText}`);
+  }
+
+  report.push('');
+  report.push('═══════════════════════════════════');
+  return report.join('\n');
+}
+
+async function copyReport() {
+  const report = generateReport();
+  try {
+    await navigator.clipboard.writeText(report);
+    const hint = $('statusHint');
+    const orig = hint.innerHTML;
+    hint.innerHTML = '<span class="badge done">✅ 报告已复制到剪贴板！直接粘贴给我即可</span>';
+    setTimeout(() => { hint.innerHTML = orig; }, 3000);
+  } catch (e) {
+    // 降级方案：选中文本
+    const ta = document.createElement('textarea');
+    ta.value = report;
+    ta.style.cssText = 'position:fixed;left:-9999px';
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
+    $('statusHint').innerHTML = '<span class="badge done">✅ 报告已复制！</span>';
+    setTimeout(() => { $('statusHint').innerHTML = '<span class="badge done">✓ 搜索完成</span>'; }, 3000);
+  }
+}
+
 // ===================== 重置 =====================
 function resetAll() {
   running = false;
@@ -770,6 +878,7 @@ function resetAll() {
   if (diagPanel) diagPanel.style.display = 'none';
 
   $('btn1km').disabled = $('btn3km').disabled = $('btn5km').disabled = false;
+  $('btnCopy').disabled = true;
   $('statusHint').innerHTML = '<span class="badge waiting">就绪</span>';
   map.setView(NUS_CENTER, 14);
 }
