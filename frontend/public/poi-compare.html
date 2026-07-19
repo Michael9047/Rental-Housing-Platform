@@ -278,7 +278,19 @@ function addMarkers(){
   else if(currentCat==='clusters'){/* handled in renderResults */}
   else if(Object.values(CATEGORIES).some(kws=>kws.includes(currentCat)))pois=gmR[currentCat]||[];
   else{const kws=CATEGORIES[currentCat]||[];for(const kw of kws)if(gmR[kw])pois.push(...gmR[kw])}
-  for(const p of pois){const m=L.marker([p.lat,p.lng],{icon:gmIcon}).bindTooltip(`<b>${p.name}</b><br>${p.keyword} · ${p.distance_m}m${p.rating?' · ⭐'+p.rating:''}`,{direction:'top'});m._poiData=p;m.addTo(map);gmMarkers.push(m)}
+  const dedupRadii={医院:200,商场:150,市场:150};
+  for(const p of pois){
+    const m=L.marker([p.lat,p.lng],{icon:gmIcon});
+    const tip=`<b>${p.name}</b><br>${p.keyword} · ${p.distance_m}m${p.rating?' · ⭐'+p.rating:''}${dedupRadii[p.keyword]?'<br><small style="color:#e9a23b">去重半径: '+dedupRadii[p.keyword]+'m</small>':''}`;
+    m.bindTooltip(tip,{direction:'top'});
+    m._poiData=p;m.addTo(map);gmMarkers.push(m);
+    // 商场/医院/市场：hover 显示去重圈
+    if(dedupRadii[p.keyword]){
+      let hoverCircle=null;
+      m.on('mouseover',()=>{hoverCircle=L.circle([p.lat,p.lng],{radius:dedupRadii[p.keyword],color:'#e9a23b',weight:1,fillColor:'#e9a23b',fillOpacity:.1,dashArray:'4 2'}).addTo(map)});
+      m.on('mouseout',()=>{if(hoverCircle){map.removeLayer(hoverCircle);hoverCircle=null}});
+    }
+  }
   // 聚集圈
   if(currentCat==='美食'||currentCat==='餐厅'||currentCat==='cafe'||currentCat==='烘焙'||currentCat==='快餐'||currentCat==='食阁'||currentCat==='clusters'){
     const allR=[...(gmR['餐厅']||[]),...(gmR['cafe']||[]),...(gmR['烘焙']||[]),...(gmR['快餐']||[]),...(gmR['食阁']||[])];
