@@ -183,7 +183,7 @@ class Semaphore{constructor(limit){this.limit=limit;this.running=0;this.queue=[]
 // ==================== Overpass 搜索 ====================
 async function searchOverpass(keyword,radius){
   const q=OVERPASS_Q[keyword];if(!q)return[];
-  // circle: around:RADIUS,LAT,LNG — 与 Google searchNearby 的 circle 一致
+  // circle — 与 Google searchNearby 一致
   const withAround=q.replace(/;/g,`(around:${radius},${NUS_LAT},${NUS_LNG});`).replace(/\)\(/g,'(');
   const query=`[out:json][timeout:10];(${withAround});out center 100;`;
   for(const ep of OVERPASS_EP){
@@ -214,7 +214,7 @@ async function searchGooglePlaces(cnKw,radius){
     const body={
       includedTypes:types,
       maxResultCount:20,
-      locationRestriction:{rectangle:getRect(radius)},
+      locationRestriction:{circle:{center:{latitude:NUS_LAT,longitude:NUS_LNG},radius:radius}},
     };
     if(pt)body.pageToken=pt;
     try{
@@ -260,7 +260,6 @@ async function runTest(radius){
   document.querySelectorAll('.toolbar button[id^="btn"]').forEach(b=>{if(b.id.startsWith('btn')&&b.id!=='btnCopy')b.disabled=true});
   $('radiusLabel').textContent=`${radius/1000}km 圆形`;
   $('statusHint').innerHTML='<span class="badge loading"><span class="spinner"></span>搜索中…</span>';
-  // 圆形 — searchNearby + OSM around 都用 circle
   if(searchRect)map.removeLayer(searchRect);
   searchRect=L.circle(NUS,{radius,color:'#e94560',weight:2,fillColor:'#e9456033',fillOpacity:.12,dashArray:'6 3'}).addTo(map);
   map.fitBounds(searchRect.getBounds(),{padding:[30,30]});
