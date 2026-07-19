@@ -182,6 +182,7 @@ async function searchGM(cnKw,radius){
     console.log(`[GM-NS] ${cnKw} ${types} → ${ps.length}`);
     return ps.map(p=>{const lat=p.location?.latitude,lng=p.location?.longitude;if(lat==null||lng==null)return null;return{name:p.displayName?.text||cnKw,lat,lng,distance_m:Math.round(havDistance(Clementi_LAT,Clementi_LNG,lat,lng)),keyword:cnKw,source:'google',vicinity:p.formattedAddress||'',rating:p.rating||null,place_id:p.id||''}}).filter(Boolean);
   }catch(e){showGmError(`${cnKw}: 网络错误`);return[]}
+  }
 
 // ==================== 去重 ====================
 function dedupGm(keyword,thresholdM){
