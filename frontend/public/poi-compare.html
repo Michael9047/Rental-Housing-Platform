@@ -44,7 +44,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 .kw-body.open{display:block}
 .poi-item{display:flex;align-items:center;gap:5px;padding:3px 6px;margin:1px 0;border-radius:3px;cursor:pointer;font-size:10px;transition:background .1s}
 .poi-item:hover{background:#fff1}
-.poi-item .dot{width:11px;height:14px;flex-shrink:0;background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='11' height='14' viewBox='0 0 20 28'%3E%3Cpath d='M10 0C4.5 0 0 4.5 0 10c0 7 10 18 10 18s10-11 10-18C20 4.5 15.5 0 10 0z' fill='%23a855f7'/%3E%3C/svg%3E") no-repeat center/contain}
+.poi-item .dot{width:9px;height:12px;flex-shrink:0;border-radius:50%}
 .poi-item .poi-name{flex:1;color:#ccc;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .poi-item .poi-dist{color:#888;font-size:9px;flex-shrink:0}
 .poi-item.highlight{background:#e9456020!important}
@@ -265,9 +265,13 @@ function renderProgress(){
 }
 
 // ==================== 地图标记 ====================
-// 紫色水滴图标
-const gmIcon=L.divIcon({className:'',html:`<svg width="20" height="28" viewBox="0 0 20 28"><path d="M10 0C4.5 0 0 4.5 0 10c0 7 10 18 10 18s10-11 10-18C20 4.5 15.5 0 10 0z" fill="#a855f7" stroke="#7c3aed" stroke-width="1"/><circle cx="10" cy="9" r="4" fill="rgba(255,255,255,.6)"/></svg>`,iconSize:[20,28],iconAnchor:[10,28],popupAnchor:[0,-26]});
-const hlIcon=L.divIcon({className:'',html:`<svg width="26" height="36" viewBox="0 0 20 28"><path d="M10 0C4.5 0 0 4.5 0 10c0 7 10 18 10 18s10-11 10-18C20 4.5 15.5 0 10 0z" fill="#e94560" stroke="#fff" stroke-width="1.5"/><circle cx="10" cy="9" r="3" fill="#fff"/></svg>`,iconSize:[26,36],iconAnchor:[13,36],popupAnchor:[0,-34]});
+// 关键词颜色映射
+const KW_COLORS={餐厅:'#a855f7',cafe:'#92400e',烘焙:'#ea580c',快餐:'#dc2626',食阁:'#0d9488',地铁站:'#6366f1',公交站:'#3b82f6',医院:'#ef4444',药店:'#22c55e','超市/便利店':'#f59e0b',商场:'#ec4899',酒吧:'#a855f7',市场:'#84cc16',健身房:'#06b6d4'};
+
+// 水滴图标工厂
+function pinIcon(color,size){const w=size||14,h=w*1.4;return L.divIcon({className:'',html:`<svg width="${w}" height="${h}" viewBox="0 0 20 28"><path d="M10 0C4.5 0 0 4.5 0 10c0 7 10 18 10 18s10-11 10-18C20 4.5 15.5 0 10 0z" fill="${color}" stroke="#fff" stroke-width="1"/><circle cx="10" cy="9" r="3" fill="rgba(255,255,255,.5)"/></svg>`,iconSize:[w,h],iconAnchor:[w/2,h],popupAnchor:[0,-h+2]})}
+
+const hlIcon=L.divIcon({className:'',html:`<svg width="22" height="31" viewBox="0 0 20 28"><path d="M10 0C4.5 0 0 4.5 0 10c0 7 10 18 10 18s10-11 10-18C20 4.5 15.5 0 10 0z" fill="#e94560" stroke="#fff" stroke-width="2"/><circle cx="10" cy="9" r="3" fill="#fff"/></svg>`,iconSize:[22,31],iconAnchor:[11,31],popupAnchor:[0,-29]});
 
 function clearMarkers(){gmMarkers.forEach(m=>map.removeLayer(m));gmMarkers=[];clusterCircles.forEach(c=>map.removeLayer(c));clusterCircles=[];if(highlighted){map.removeLayer(highlighted);highlighted=null}}
 
@@ -280,7 +284,7 @@ function addMarkers(){
   else{const kws=CATEGORIES[currentCat]||[];for(const kw of kws)if(gmR[kw])pois.push(...gmR[kw])}
   const dedupRadii={医院:200,商场:150,市场:150};
   for(const p of pois){
-    const m=L.marker([p.lat,p.lng],{icon:gmIcon});
+    const m=L.marker([p.lat,p.lng],{icon:pinIcon(KW_COLORS[p.keyword]||'#a855f7')});
     const tip=`<b>${p.name}</b><br>${p.keyword} · ${p.distance_m}m${p.rating?' · ⭐'+p.rating:''}${dedupRadii[p.keyword]?'<br><small style="color:#e9a23b">去重半径: '+dedupRadii[p.keyword]+'m</small>':''}`;
     m.bindTooltip(tip,{direction:'top'});
     m._poiData=p;m.addTo(map);gmMarkers.push(m);
@@ -307,7 +311,7 @@ function flyToPoi(poi){
 }
 
 // ==================== 渲染 ====================
-function poiItemHTML(p){const id='poi_'+(_poiIndex++);_poiMap[id]=p;return`<div class="poi-item" data-poi-id="${id}"><span class="dot"></span><span class="poi-name">${p.name.replace(/&/g,'&amp;').replace(/</g,'&lt;')}</span><span class="poi-dist">${p.distance_m}m${p.rating?' ⭐'+p.rating:''}</span></div>`}
+function poiItemHTML(p){const id='poi_'+(_poiIndex++);_poiMap[id]=p;const c=KW_COLORS[p.keyword]||'#a855f7';return`<div class="poi-item" data-poi-id="${id}"><span class="dot" style="background:${c}"></span><span class="poi-name">${p.name.replace(/&/g,'&amp;').replace(/</g,'&lt;')}</span><span class="poi-dist">${p.distance_m}m${p.rating?' ⭐'+p.rating:''}</span></div>`}
 
 document.getElementById('resultsScroll').addEventListener('click',e=>{const item=e.target.closest('.poi-item');if(item){const p=_poiMap[item.dataset.poiId];if(p)flyToPoi(p)}});
 
