@@ -30,6 +30,20 @@
         <el-tag size="small" type="info" v-if="property.area_sqm">{{ property.area_sqm }}㎡</el-tag>
       </div>
 
+      <!-- ── 通勤时间（仅学校模式） ── -->
+      <div v-if="commute" class="commute-row">
+        <span class="commute-item" title="步行时间"><span class="commute-icon">🚶</span>{{ commute.walk_min }}分钟</span>
+        <span class="commute-sep">|</span>
+        <span class="commute-item" title="开车时间"><span class="commute-icon">🚗</span>{{ commute.drive_min }}分钟</span>
+        <span class="commute-sep">|</span>
+        <span class="commute-item" title="骑车时间"><span class="commute-icon">🚲</span>{{ commute.bike_min }}分钟</span>
+        <span class="commute-sep">|</span>
+        <span class="commute-item" title="公交地铁时间"><span class="commute-icon">🚌</span>{{ commute.transit_min }}分钟</span>
+      </div>
+      <div v-if="commute" class="commute-dist">
+        📍 步行约 <strong>{{ commute.dist_km }}km</strong> 到学校
+      </div>
+
       <div class="card-amenities" v-if="amenityTags.length > 0">
         <el-tag
           v-for="tag in amenityTags"
@@ -52,7 +66,6 @@
           <span class="price-unit">/月</span>
         </div>
         <div class="card-actions" @click.stop>
-          <el-button size="small" text type="primary" @click="goDetail">查看详情</el-button>
           <el-button
             v-if="showQuickBook"
             size="small"
@@ -87,13 +100,25 @@ import { useRouter } from 'vue-router'
 import { PictureFilled, LocationFilled, Plus, Check } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import type { Property, PropertySearchResult, PropertyType } from '@/types/property'
+import { getImageUrl } from '@/utils/image'
 import { useAuthStore } from '@/stores/auth'
 import { useCartStore } from '@/stores/cart'
+
+export interface CommuteInfo {
+  dist_km: number
+  walk_min: number
+  bike_min: number
+  drive_min: number
+  transit_min: number
+}
 
 const props = defineProps<{
   property: Property | PropertySearchResult
   showSimilarity?: boolean
   showQuickBook?: boolean
+  commute?: CommuteInfo | null
+  /** 跳转详情页时附加的 query 参数（如 school 信息） */
+  linkQuery?: Record<string, string>
 }>()
 
 const emit = defineEmits<{
@@ -136,7 +161,7 @@ const primaryImageUrl = computed(() => {
   const images = props.property.images
   if (!images || images.length === 0) return null
   const primary = images.find((img) => img.is_primary) || images[0]
-  return `/api/v1/uploads/${primary.filename}`
+  return getImageUrl(primary.filename)
 })
 
 // Smart amenity tags inferred from property attributes
@@ -194,7 +219,10 @@ const amenityTags = computed(() => {
 })
 
 function goDetail() {
-  router.push(`/property/${props.property.id}`)
+  router.push({
+    path: `/property/${props.property.id}`,
+    query: props.linkQuery || {},
+  })
 }
 
 function handleBook() {
@@ -296,6 +324,45 @@ function handleBook() {
   gap: 6px;
   flex-wrap: wrap;
   margin-bottom: 6px;
+}
+
+/* ── Commute Row ── */
+.commute-row {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  flex-wrap: wrap;
+  margin-bottom: 2px;
+  padding: 6px 8px;
+  background: #f0f9eb;
+  border-radius: 6px;
+  font-size: 12px;
+}
+
+.commute-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  color: #5d8a3c;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.commute-icon {
+  font-size: 13px;
+}
+
+.commute-sep {
+  color: #c0d9b0;
+  margin: 0 6px;
+  font-size: 11px;
+}
+
+.commute-dist {
+  font-size: 11px;
+  color: #8a9c7a;
+  padding: 0 8px 4px 8px;
+  margin-bottom: 4px;
 }
 
 .card-amenities {

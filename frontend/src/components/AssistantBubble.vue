@@ -1,6 +1,5 @@
 <template>
-  <!-- 浮动 AI 管家：登录用户可见，/agent 页自身不显示。
-       用 v-show 而非 v-if：切到 /agent 再回来时保留会话与消息 -->
+  <!-- 浮动 AI 管家：登录用户可见 -->
   <teleport to="body">
     <div v-show="visible" class="ab-root" :style="rootStyle">
       <!-- 气泡按钮（可拖动） -->
@@ -128,8 +127,8 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import {
   ChatDotRound,
   Check,
@@ -141,14 +140,16 @@ import {
 } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { agentService } from '@/services/agent'
+import { getImageUrl } from '@/utils/image'
 import { useAuthStore } from '@/stores/auth'
+import { useAgentChatStore } from '@/stores/agentChat'
 import { useCartStore } from '@/stores/cart'
 import type { AgentChatMessage, AgentRecommendation, FaqChip } from '@/types/agent'
 import type { PropertySearchResult } from '@/types/property'
 
-const route = useRoute()
 const router = useRouter()
 const authStore = useAuthStore()
+const agentChatStore = useAgentChatStore()
 const cartStore = useCartStore()
 
 const open = ref(false)
@@ -160,8 +161,8 @@ const sending = ref(false)
 const faqChips = ref<FaqChip[]>([])
 const listRef = ref<HTMLElement | null>(null)
 
-// /agent 页有完整管家，不重复显示气泡
-const visible = computed(() => authStore.isLoggedIn && route.path !== '/agent')
+// 登录可见
+const visible = computed(() => authStore.isLoggedIn)
 
 // ── 拖拽定位（位置存 localStorage，区分点击与拖动）─────────────
 const POS_KEY = 'assistant_bubble_pos'
@@ -239,11 +240,31 @@ onBeforeUnmount(() => {
   window.removeEventListener('pointerup', onDragEnd)
 })
 
+// 监听来自首页等外部页面的查询触发
+watch(() => agentChatStore.pendingQuery, async (q) => {
+  if (!q) return
+  // 消费查询（防止重复触发）
+  const query = agentChatStore.consumeQuery()
+  if (!query) return
+  // 打开面板并确保会话存在
+  open.value = true
+  if (sessionId.value === null) {
+    try {
+      const session = await agentService.createSession()
+      sessionId.value = session.session_id
+    } catch {
+      ElMessage.error('助手启动失败，请稍后重试')
+      return
+    }
+  }
+  await send(query)
+})
+
 function imageUrl(property: PropertySearchResult): string | null {
   const images = property.images
   if (!images || images.length === 0) return null
   const primary = images.find((img) => img.is_primary) || images[0]
-  return `/api/v1/uploads/${primary.filename}`
+  return getImageUrl(primary.filename)
 }
 
 async function scrollToBottom() {

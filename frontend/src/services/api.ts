@@ -42,10 +42,12 @@ api.interceptors.response.use(
   (response) => response,
   (error) => {
     const isLoginPage = window.location.pathname === '/login'
+    const hadToken = !!localStorage.getItem('access_token')
 
     if (error.response?.status === 401) {
-      // Don't redirect during login attempt - just show the error
-      if (!isLoginPage) {
+      // 仅在用户之前已登录（有过 token）的情况下才跳转登录页
+      // 未登录用户浏览公开内容时遇到 401 静默处理，不强制跳转
+      if (!isLoginPage && hadToken) {
         localStorage.removeItem('access_token')
         localStorage.removeItem('user')
         window.location.href = '/login'

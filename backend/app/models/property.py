@@ -104,6 +104,12 @@ class Property(TimestampMixin, Base):
     description: Mapped[str | None] = mapped_column(SAText)
     address: Mapped[str] = mapped_column(String(300), nullable=False)
     district: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+    country: Mapped[CountryCode] = mapped_column(
+        Enum(CountryCode, name="country_code"),
+        default=CountryCode.CN,
+        nullable=False,
+        index=True,
+    )
     price_monthly: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
     area_sqm: Mapped[Decimal | None] = mapped_column(Numeric(8, 2))
     bedrooms: Mapped[int] = mapped_column(default=0, nullable=False)
@@ -142,6 +148,16 @@ class Property(TimestampMixin, Base):
     version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
 
+    # ── 新增字段 ──
+    amenities: Mapped[list[str] | None] = mapped_column(ARRAY(String(30)), nullable=True)
+    available_from: Mapped[date | None] = mapped_column(Date, nullable=True)
+    min_stay_months: Mapped[int] = mapped_column(Integer, default=3, nullable=False)
+    deposit_type: Mapped[DepositType | None] = mapped_column(
+        Enum(DepositType, name="deposit_type"), nullable=True, default=None
+    )
+    version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+
     embedding: Mapped[list[float] | None] = mapped_column(VectorColumn)
 
     landlord: Mapped["User"] = relationship(back_populates="properties")
@@ -150,4 +166,8 @@ class Property(TimestampMixin, Base):
 
     images: Mapped[list["PropertyImage"]] = relationship(
         "PropertyImage", back_populates="property", cascade="all, delete-orphan", lazy="selectin"
+    )
+
+    room_types: Mapped[list["RoomType"]] = relationship(
+        "RoomType", back_populates="property", cascade="all, delete-orphan", lazy="selectin"
     )

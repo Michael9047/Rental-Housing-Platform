@@ -110,6 +110,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { ArrowLeft } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
+import { getImageUrl } from '@/utils/image'
 import { usePropertyStore } from '@/stores/property'
 import { bookingService } from '@/services/booking'
 
@@ -138,7 +139,7 @@ const primaryImage = computed(() => {
   const imgs = propertyInfo.value?.images
   if (!imgs?.length) return null
   const p = imgs.find((i: any) => i.is_primary) || imgs[0]
-  return `/api/v1/uploads/${p.filename}`
+  return getImageUrl(p.filename)
 })
 
 // Disable past dates

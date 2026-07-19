@@ -164,6 +164,52 @@ class LLMService:
         )
         return response.choices[0].message.content or ""
 
+    async def complete_with_tools(
+        self,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]] | None = None,
+        *,
+        temperature: float = 0.2,
+        max_tokens: int = 2000,
+    ) -> dict[str, Any]:
+        """带工具调用的补全——Agent ReAct 循环使用。
+
+        返回格式与 run_agent_loop 期望一致：
+        {
+            "content": str | None,
+            "tool_calls": [{"id": str, "function": {"name": str, "arguments": str}}]
+        }
+        """
+        kwargs: dict[str, Any] = {
+            "model": self._model,
+            "messages": messages,
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+        }
+        if tools:
+            kwargs["tools"] = tools
+            kwargs["tool_choice"] = "auto"
+
+        response = await self._client.chat.completions.create(**kwargs)
+        choice = response.choices[0]
+        msg = choice.message
+
+        tool_calls: list[dict[str, Any]] = []
+        if msg.tool_calls:
+            for tc in msg.tool_calls:
+                tool_calls.append({
+                    "id": tc.id,
+                    "function": {
+                        "name": tc.function.name,
+                        "arguments": tc.function.arguments,
+                    },
+                })
+
+        return {
+            "content": msg.content,
+            "tool_calls": tool_calls,
+        }
+
     async def parse_search_query(self, user_input: str) -> dict[str, Any]:
         """解析用户的自然语言搜房需求，返回结构化参数 + 完整性报告"""
         response = await self._client.chat.completions.create(

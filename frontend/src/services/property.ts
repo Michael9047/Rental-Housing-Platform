@@ -7,12 +7,30 @@ import type {
   PropertySearchParams,
   PropertyListResponse,
   PropertyImage,
+  RoomType,
 } from '@/types/property'
 
 export interface PropertyPOI {
   content: string
   poi_data: Record<string, { name: string; distance: string }[]>
   generated_at: string
+}
+
+/** 地图小卡片 POI 预生成数据 */
+export interface MapPOIItem {
+  id: number | string
+  name: string
+  lat: number
+  lng: number
+  distance: number | null
+  line: string | null
+}
+
+export interface MapPOIResponse {
+  property_id: number
+  generated_at: string | null
+  search_radius_m: number
+  categories: Record<string, MapPOIItem[]>
 }
 
 export interface GeocodeResult {
@@ -113,6 +131,11 @@ export const propertyService = {
     return api.get(`/pois/${propertyId}`).then((r) => r.data).catch(() => null)
   },
 
+  /** 地图小卡片 POI 预生成数据（6 大类，含 lat/lng） */
+  getMapPOIs(propertyId: number | string): Promise<MapPOIResponse | null> {
+    return api.get(`/pois/${propertyId}/map`).then((r) => r.data).catch(() => null)
+  },
+
   // ---- ML ----
   /** AI 深度解析房源描述 */
   parseDescription(rawText: string): Promise<import('@/types/admin').ParsedProperty> {
@@ -131,4 +154,54 @@ export const propertyService = {
   }): Promise<import('@/types/admin').RentEstimate> {
     return api.get('/ml/rent-estimate', { params }).then((r) => r.data)
   },
+
+  /** 获取某个楼栋下的所有房型 */
+  listRoomTypes(propertyId: number): Promise<RoomType[]> {
+    return api.get(`/properties/${propertyId}/room-types`).then((r) => r.data)
+  },
+
+  // ---- 修改历史 ----
+  /** 获取房源操作审计日志（修改历史） */
+  getHistory(propertyId: number | string, params?: { skip?: number; limit?: number }): Promise<PropertyHistoryItem[]> {
+    return api.get(`/properties/${propertyId}/history`, { params }).then((r) => r.data)
+  },
+
+  /** 获取当前房东所有房源的最新操作记录（按时间倒序） */
+  getRecentAudit(limit = 20): Promise<PropertyHistoryItem[]> {
+    return api.get('/properties/audit/recent', { params: { limit } }).then((r) => r.data)
+  },
+
+  /** 撤销某条审计日志对应的房源操作 */
+  revertAudit(propertyId: number, auditLogId: number): Promise<{ message: string; property_id: number; reverted_action: string }> {
+    return api.post(`/properties/${propertyId}/revert/${auditLogId}`).then((r) => r.data)
+  },
+
+  /** 删除单条审计日志 */
+  deleteAuditLog(auditLogId: number): Promise<void> {
+    return api.delete(`/properties/audit/${auditLogId}`)
+  },
+
+  /** 批量删除审计日志 */
+  batchDeleteAuditLogs(ids: number[]): Promise<{ deleted: number }> {
+    return api.post('/properties/audit/batch-delete', { ids }).then((r) => r.data)
+  },
+
+  /** 一键清空当前用户所有房源审计日志 */
+  clearAuditLogs(): Promise<{ deleted: number }> {
+    return api.post('/properties/audit/clear').then((r) => r.data)
+  },
+}
+
+export interface PropertyHistoryItem {
+  id: number
+  user_id: number | null
+  username?: string | null
+  action: string
+  resource_id: number | null
+  details: Record<string, any> | null
+  ip_address: string | null
+  created_at: string
+  property_title?: string | null
+  property_address?: string | null
+  institute_name?: string | null
 }

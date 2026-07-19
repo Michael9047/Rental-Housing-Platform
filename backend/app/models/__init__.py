@@ -21,9 +21,11 @@ from app.models.marketplace import (
 from app.models.news import NewsArticle, NewsArticleStatus
 from app.models.notification import Notification, NotificationType
 from app.models.payment import Payment, PaymentStatus
+from app.models.pms_connection import PMSConnection, PMSSyncStatus, PMSType
 from app.models.poi import PropertyPOI
 from app.models.property import Property, PropertyStatus, PropertyType
 from app.models.property_image import PropertyImage
+from app.models.room_type import RoomType, RoomTypeEnum, RoomTypeStatus
 from app.models.repair import (
     RepairIssueType,
     RepairRequest,
@@ -72,6 +74,9 @@ __all__ = [
     "NotificationType",
     "Payment",
     "PaymentStatus",
+    "PMSConnection",
+    "PMSSyncStatus",
+    "PMSType",
     "Property",
     "PropertyImage",
     "PropertyPOI",
@@ -83,6 +88,9 @@ __all__ = [
     "RepairWorker",
     "Review",
     "ReviewStatus",
+    "RoomType",
+    "RoomTypeEnum",
+    "RoomTypeStatus",
     "SavedSearch",
     "User",
     "UserFavorite",

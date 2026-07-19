@@ -36,6 +36,9 @@ class ChatSession(TimestampMixin, Base):
         default=ChatSessionStatus.active,
         nullable=False,
     )
+    accumulated_filters: Mapped[dict | None] = mapped_column(
+        JSON, nullable=True, default=None
+    )
 
     messages: Mapped[list["ChatMessage"]] = relationship(
         back_populates="session", cascade="all, delete-orphan", lazy="selectin"

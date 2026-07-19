@@ -2,7 +2,7 @@
 import { ref, computed } from 'vue'
 import { authService } from '@/services/auth'
 import type { User } from '@/types/user'
-import type { LoginRequest, RegisterRequest } from '@/types/auth'
+import type { LoginRequest, RegisterRequest, PhoneLoginRequest, PhoneRegisterRequest } from '@/types/auth'
 import router from '@/router'
 
 export const useAuthStore = defineStore('auth', () => {
@@ -67,6 +67,37 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
+  /** 手机号 + 短信验证码登录（已注册用户直接登录，新用户返回 is_new_user） */
+  async function phoneLogin(data: PhoneLoginRequest) {
+    loading.value = true
+    try {
+      const resp = await authService.phoneLogin(data)
+      if (!resp.is_new_user && resp.access_token) {
+        // 已注册用户：直接登录
+        setAuth(resp.access_token, {} as User)
+        const currentUser = await authService.getMe()
+        setAuth(resp.access_token, currentUser)
+      }
+      return resp
+    } finally {
+      loading.value = false
+    }
+  }
+
+  /** 新用户手机号注册（验证码验证后设置用户名密码） */
+  async function phoneRegister(data: PhoneRegisterRequest) {
+    loading.value = true
+    try {
+      const tokenResp = await authService.phoneRegister(data)
+      setAuth(tokenResp.access_token, {} as User)
+      const currentUser = await authService.getMe()
+      setAuth(tokenResp.access_token, currentUser)
+      return currentUser
+    } finally {
+      loading.value = false
+    }
+  }
+
   async function fetchCurrentUser() {
     try {
       const currentUser = await authService.getMe()
@@ -96,6 +127,8 @@ export const useAuthStore = defineStore('auth', () => {
     isBdManager,
     register,
     login,
+    phoneLogin,
+    phoneRegister,
     logout,
     fetchCurrentUser,
     loadFromStorage,

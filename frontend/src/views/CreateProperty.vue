@@ -162,6 +162,7 @@ import { useRouter, useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
 import { usePropertyStore } from '@/stores/property'
+import { getImageUrl } from '@/utils/image'
 import { useAuthStore } from '@/stores/auth'
 import { propertyService } from '@/services/property'
 import { buildingService, type Building } from '@/services/building'
@@ -342,7 +343,7 @@ async function populateForm(propertyId: number) {
     }
     rawText.value = p.description || ''
     uploadedImageUrls.value = (p.images?.length)
-      ? p.images.map(img => '/api/v1/uploads/' + img.filename)
+      ? p.images.map(img => getImageUrl(img.filename))
       : []
     formLoading.value = false
   } catch (e: any) {

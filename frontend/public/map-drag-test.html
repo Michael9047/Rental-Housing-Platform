@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>地图拖动流畅度测试</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, 'Microsoft YaHei', sans-serif; background: #1a1a2e; color: #e0e0e0; padding: 16px; }
+
+  h1 { font-size: 18px; margin-bottom: 2px; }
+  .subtitle { color: #888; font-size: 12px; margin-bottom: 12px; }
+
+  .layout { display: flex; gap: 12px; height: calc(100vh - 100px); }
+  .map-wrap { flex: 1; position: relative; border-radius: 10px; overflow: hidden; border: 2px solid #0f3460; background: #0a0a1a; }
+
+  .panel { width: 260px; background: #16213e; border-radius: 10px; padding: 14px; display: flex; flex-direction: column; gap: 10px; font-size: 13px; }
+
+  .panel h3 { font-size: 13px; color: #8899aa; margin-bottom: 2px; }
+
+  .btn-row { display: flex; gap: 6px; flex-wrap: wrap; }
+  button {
+    padding: 6px 14px; border: 1px solid #0f3460; border-radius: 6px;
+    background: #0f3460; color: #e0e0e0; cursor: pointer; font-size: 12px; font-weight: 500;
+    transition: all 0.15s;
+  }
+  button:hover { background: #1a4a7a; }
+  button.active { background: #e94560; border-color: #e94560; }
+
+  .stat { display: flex; justify-content: space-between; padding: 4px 0; border-bottom: 1px solid #0f3460; font-size: 12px; }
+  .stat .val { font-weight: 600; font-variant-numeric: tabular-nums; font-family: 'SF Mono', 'Cascadia Code', 'Consolas', monospace; }
+
+  .log { flex: 1; overflow-y: auto; font-size: 11px; font-family: 'SF Mono', 'Cascadia Code', 'Consolas', monospace;
+         background: #0a0a1a; border-radius: 6px; padding: 8px; line-height: 1.7; }
+  .log .warn { color: #fdcb6e; }
+  .log .good { color: #00b894; }
+  .log .info { color: #74b9ff; }
+
+  label { font-size: 11px; color: #8899aa; display: flex; align-items: center; gap: 6px; cursor: pointer; }
+  input[type="checkbox"] { accent-color: #e94560; }
+
+  .fps-badge {
+    position: absolute; top: 10px; right: 10px; z-index: 1000;
+    background: rgba(0,0,0,.75); color: #00b894; padding: 4px 10px;
+    border-radius: 12px; font-size: 13px; font-weight: 700;
+    font-family: 'SF Mono', 'Cascadia Code', 'Consolas', monospace;
+  }
+</style>
+</head>
+<body>
+
+<h1>🗺️ 地图拖动流畅度测试</h1>
+<p class="subtitle">
+  模拟房源小地图场景：瓦片 + 50 个 POI Marker，拖动观察是否有卡顿。
+  <br>测试页面通过 <code>/map-drag-test.html</code> 访问，或直接浏览器打开。
+</p>
+
+<div class="layout">
+  <div class="map-wrap" id="map">
+    <div class="fps-badge" id="fps">60 FPS</div>
+  </div>
+
+  <div class="panel">
+    <h3>🎯 模式</h3>
+    <div class="btn-row">
+      <button id="btnClean" class="active" onclick="setMode('clean')">纯拖动（无开销）</button>
+      <button id="btnMarkers" onclick="setMode('markers')">50 个 POI 静态</button>
+      <button id="btnRebuild" onclick="setMode('rebuild')">每次重建（旧方案）</button>
+    </div>
+
+    <h3>📊 性能统计</h3>
+    <div class="stat"><span>FPS</span><span class="val" id="statFps">—</span></div>
+    <div class="stat"><span>moveend 触发次数</span><span class="val" id="statMoves">0</span></div>
+    <div class="stat"><span>最近一次 handler 耗时</span><span class="val" id="statCost">—</span></div>
+    <div class="stat"><span>当前 Marker 数</span><span class="val" id="statMarkerCount">0</span></div>
+
+    <label>
+      <input type="checkbox" id="chkLog" checked>
+      显示事件日志
+    </label>
+
+    <div class="log" id="log"></div>
+  </div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+// ── 地图初始化 ──
+const CENTER = [31.2990, 120.5853] // 苏州
+
+const map = L.map('map', {
+  zoomControl: true,
+  attributionControl: false,
+}).setView(CENTER, 15)
+
+// 高德瓦片（国内测试最快）
+L.tileLayer('https://webrd0{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}', {
+  maxZoom: 18,
+  subdomains: ['1', '2', '3', '4'],
+}).addTo(map)
+
+// 房源标记
+L.circleMarker(CENTER, { radius: 6, color: '#EF4444', fillColor: '#EF4444', fillOpacity: 0.9 })
+  .bindTooltip('测试房源', { direction: 'top', offset: [0, -12] })
+  .addTo(map)
+
+// ── POI Marker 管理 ──
+let poiMarkers = []
+let mode = 'clean'
+let moveCount = 0
+let lastMoveTime = 0
+
+const POI_TYPES = ['🎓','🚌','🚇','🛒','🍽️','💊']
+const POI_COLORS = ['#3DA5A0','#E17055','#6C5CE7','#FDCB6E','#E94560','#00B894']
+
+function generatePOIs(count) {
+  const pois = []
+  for (let i = 0; i < count; i++) {
+    const angle = Math.random() * Math.PI * 2
+    const dist = 200 + Math.random() * 2800 // 200m ~ 3km
+    const lat = CENTER[0] + (dist * Math.cos(angle)) / 111320
+    const lng = CENTER[1] + (dist * Math.sin(angle)) / (111320 * Math.cos(CENTER[0] * Math.PI / 180))
+    const typeIdx = i % POI_TYPES.length
+    pois.push({
+      id: i,
+      lat, lng,
+      name: `${POI_TYPES[typeIdx]} POI-${i + 1}`,
+      typeIdx,
+    })
+  }
+  return pois
+}
+
+const ALL_POIS = generatePOIs(50)
+
+function makePoiIcon(typeIdx) {
+  return L.divIcon({
+    className: '',
+    html: `<div style="
+      background:${POI_COLORS[typeIdx]};width:22px;height:22px;
+      border-radius:50%;border:2px solid #fff;
+      box-shadow:0 1px 4px rgba(0,0,0,.3);
+      display:flex;align-items:center;justify-content:center;
+      font-size:11px;line-height:1;
+    ">${POI_TYPES[typeIdx]}</div>`,
+    iconSize: [22, 22],
+    iconAnchor: [11, 11],
+  })
+}
+
+function clearAllMarkers() {
+  poiMarkers.forEach(m => map.removeLayer(m))
+  poiMarkers = []
+}
+
+function addStaticMarkers() {
+  clearAllMarkers()
+  for (const p of ALL_POIS) {
+    const m = L.marker([p.lat, p.lng], { icon: makePoiIcon(p.typeIdx) })
+      .bindTooltip(p.name, { direction: 'top', offset: [0, -14] })
+      .addTo(map)
+    poiMarkers.push(m)
+  }
+  document.getElementById('statMarkerCount').textContent = poiMarkers.length
+}
+
+// ── 旧方案模拟：每次 moveend 重建所有 Marker ──
+let moveTimer = null
+function rebuildOnMoveEnd() {
+  if (mode !== 'rebuild') return
+
+  const t0 = performance.now()
+  clearAllMarkers()
+  // 筛选"视野内"的 POI（旧方案的真实逻辑）
+  const bounds = map.getBounds()
+  const visible = ALL_POIS.filter(p => bounds.contains(L.latLng(p.lat, p.lng)))
+  for (const p of visible) {
+    const m = L.marker([p.lat, p.lng], { icon: makePoiIcon(p.typeIdx) })
+      .bindTooltip(p.name, { direction: 'top', offset: [0, -14] })
+      .addTo(map)
+    poiMarkers.push(m)
+  }
+  const cost = (performance.now() - t0).toFixed(1)
+  document.getElementById('statCost').textContent = cost + 'ms'
+  document.getElementById('statMarkerCount').textContent = poiMarkers.length
+  if (document.getElementById('chkLog').checked) {
+    appendLog(`moveend #${moveCount} → 重建 ${poiMarkers.length} 个 Marker，耗时 ${cost}ms`, cost > 16 ? 'warn' : 'good')
+  }
+}
+
+// ── FPS 监测 ──
+let frameCount = 0, lastFpsTime = performance.now(), currentFps = 60
+function fpsLoop() {
+  frameCount++
+  const now = performance.now()
+  if (now - lastFpsTime >= 500) {
+    currentFps = Math.round(frameCount / ((now - lastFpsTime) / 1000))
+    frameCount = 0
+    lastFpsTime = now
+    const el = document.getElementById('fps')
+    el.textContent = currentFps + ' FPS'
+    el.style.color = currentFps >= 55 ? '#00b894' : currentFps >= 30 ? '#fdcb6e' : '#d63031'
+  }
+  requestAnimationFrame(fpsLoop)
+  document.getElementById('statFps').textContent = currentFps
+}
+requestAnimationFrame(fpsLoop)
+
+// ── 日志 ──
+function appendLog(msg, cls) {
+  const log = document.getElementById('log')
+  const line = document.createElement('div')
+  line.className = cls || 'info'
+  line.textContent = new Date().toLocaleTimeString() + '  ' + msg
+  log.prepend(line)
+  if (log.children.length > 100) log.lastChild.remove()
+}
+
+// ── 模式切换 ──
+function setMode(newMode) {
+  mode = newMode
+  moveCount = 0
+  document.getElementById('statMoves').textContent = '0'
+  document.getElementById('statCost').textContent = '—'
+
+  // 按钮状态
+  document.querySelectorAll('.btn-row button').forEach(b => b.classList.remove('active'))
+  document.getElementById('btnClean').classList.toggle('active', newMode === 'clean')
+  document.getElementById('btnMarkers').classList.toggle('active', newMode === 'markers')
+  document.getElementById('btnRebuild').classList.toggle('active', newMode === 'rebuild')
+
+  // 清理
+  clearAllMarkers()
+
+  if (newMode === 'markers') {
+    addStaticMarkers()
+    appendLog('📌 模式：50 个 POI 静态标记（拖动不处理）', 'good')
+  } else if (newMode === 'rebuild') {
+    rebuildOnMoveEnd()
+    appendLog('⚠️ 模式：每次 moveend 重建视野内 Marker（旧方案）', 'warn')
+  } else {
+    document.getElementById('statMarkerCount').textContent = '0'
+    appendLog('🧹 模式：纯拖动（无 POI 开销，作为流畅度基准）', 'info')
+  }
+}
+
+// ── moveend 监听（仅 rebuild 模式生效）──
+map.on('moveend', () => {
+  moveCount++
+  document.getElementById('statMoves').textContent = moveCount
+
+  if (mode === 'rebuild') {
+    if (moveTimer) clearTimeout(moveTimer)
+    moveTimer = setTimeout(rebuildOnMoveEnd, 150)
+  }
+})
+
+// ── 提示 ──
+appendLog('✅ 地图就绪。切换右方面板模式，拖动地图对比流畅度。', 'info')
+appendLog('💡 推荐先"纯拖动"感受 60fps，再切"每次重建"看差距。', 'info')
+
+// 默认加载静态标记以显示完整场景
+setMode('markers')
+</script>
+</body>
+</html>

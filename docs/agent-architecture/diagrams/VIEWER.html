@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Agent 架构图浏览器</title>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<script>mermaid.initialize({startOnLoad:false,theme:'default',securityLevel:'loose'});</script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,'Segoe UI',sans-serif;display:flex;height:100vh;overflow:hidden;background:#1a1a2e}
+#sidebar{width:270px;min-width:270px;background:#16213e;color:#eee;display:flex;flex-direction:column;overflow:hidden}
+#sidebar h1{padding:16px;font-size:16px;border-bottom:1px solid #0f3460}
+#sidebar ul{list-style:none;overflow-y:auto;flex:1}
+#sidebar li{padding:8px 16px;cursor:pointer;font-size:13px;border-bottom:1px solid #1a1a3e;transition:background .15s}
+#sidebar li:hover{background:#0f3460}
+#sidebar li.active{background:#e94560;font-weight:600}
+#sidebar .group{padding:10px 16px 4px;font-size:11px;text-transform:uppercase;color:#888;letter-spacing:.05em}
+#main{flex:1;display:flex;flex-direction:column;overflow:hidden}
+#toolbar{display:flex;align-items:center;gap:10px;padding:8px 16px;background:#16213e;border-bottom:1px solid #0f3460}
+#toolbar button{padding:6px 14px;border:1px solid #0f3460;border-radius:6px;background:#1a1a2e;color:#ccc;cursor:pointer;font-size:12px;transition:all .15s}
+#toolbar button:hover{background:#e94560;border-color:#e94560;color:#fff}
+#zoom-level{font-size:12px;color:#999;min-width:50px;text-align:center}
+#hint{font-size:11px;color:#666;margin-left:auto}
+#canvas{flex:1;overflow:hidden;position:relative;cursor:grab;background:#fff;display:flex;justify-content:center;align-items:center}
+#canvas.dark{background:#1e1e2e}
+#diagram-container{transform-origin:center center;pointer-events:none}
+#diagram-container svg{max-width:none!important;pointer-events:auto}
+</style>
+</head>
+<body>
+<nav id="sidebar">
+  <h1>📐 Agent 架构图<br><small style="color:#888;font-weight:400">19 张 · 点击切换</small></h1>
+  <ul id="nav-list"></ul>
+</nav>
+<div id="main">
+  <div id="toolbar">
+    <button onclick="zoomIn()">🔍 放大</button>
+    <button onclick="zoomOut()">🔍 缩小</button>
+    <button onclick="zoomFit()">📐 适合窗口</button>
+    <button onclick="zoomReset()">1:1</button>
+    <span id="zoom-level">100%</span>
+    <span id="hint">🖱 Ctrl+滚轮缩放 · 拖拽平移</span>
+  </div>
+  <div id="canvas">
+    <div id="diagram-container"></div>
+  </div>
+</div>
+<script>
+const DIAGRAMS = [
+  {
+    "group": "对比 Agent",
+    "title": "整体流程",
+    "source": "graph TD\n    Start([\"用户触发对比<br/>从 Cart 或对话中\"]) --> LoadCart[\"从 AgentCart 读取备选清单\"]\n    LoadCart --> CountCheck{\"房源数量?\"}\n    \n    CountCheck -->|\"< 2\"| TooFew[\"提示: 至少需要 2 套房源<br/>引导用户继续收集\"]\n    CountCheck -->|\"2~5\"| FullCompare[\"全量深度对比\"]\n    CountCheck -->|\"> 5\"| AskNarrow[\"提示: 最多对比 5 套<br/>请先筛选\"]\n    \n    TooFew --> Return1([\"返回\"])\n    AskNarrow --> Return2([\"返回\"])\n    \n    FullCompare --> FetchData[\"拉取全量关联数据\"]\n    \n    subgraph DataGathering[\"数据采集阶段\"]\n        FetchData --> PropData[\"房源基础数据<br/>价格 · 面积 · 户型 · 楼层 · 朝向 · 装修\"]\n        PropData --> CommuteData[\"通勤数据<br/>公交时间 · 骑车时间 · 步行距离\"]\n        CommuteData --> SafetyData[\"安全数据<br/>UK: Police.uk · SG: data.gov.sg\"]\n        SafetyData --> POIData[\"周边设施<br/>超市 · 餐厅 · 医院 · 药店\"]\n        POIData --> ReviewData[\"口碑数据<br/>评分 · 评价关键词 · 房东响应率\"]\n    end\n    \n    ReviewData --> Scoring[\"多维度确定性打分\"]\n    \n    subgraph ScoringEngine[\"打分引擎\"]\n        S_Price[\"💰 总拥有成本<br/>月租 + 押金 + 水电网估算\"]\n        S_Commute[\"🚌 通勤<br/>公交优先 · 骑车/开车参考 · 步行加分\"]\n        S_Safety[\"🛡️ 安全<br/>犯罪率 vs 城市均值\"]\n        S_Space[\"📐 空间<br/>面积 · 独卫 · 储物\"]\n        S_Amenity[\"🏪 周边配套<br/>设施密度 · 距离\"]\n        S_Quality[\"🏠 房屋品质<br/>装修 · 朝向 · 楼层\"]\n        S_Landlord[\"👤 房东口碑<br/>评分 · 响应速度\"]\n    end\n    \n    Scoring --> LLMAnalysis[\"LLM 综合分析\"]\n    \n    subgraph LLMRole[\"LLM 分析层 (只解释不打分)\"]\n        DimensionReport[\"逐维度分析<br/>每套房在各维度的优劣\"]\n        TradeOff[\"Trade-off 推理<br/>'A 贵 200 但通勤省 20 分钟'\"]\n        BestFor[\"Best For 推荐<br/>'追求性价比选 B，追求便利选 A'\"]\n        Caveats[\"风险提示<br/>'C 评分低但评价数少，需实地验证'\"]\n    end\n    \n    LLMAnalysis --> Output([\"输出对比报告<br/>雷达图 · 维度表 · 分析文字 · 追问入口\"])"
+  },
+  {
+    "group": "对比 Agent",
+    "title": "对比维度详解",
+    "source": "graph LR\n    subgraph Hard[\"硬指标 (确定性打分)\"]\n        H1[\"💰 总拥有成本<br/>──────<br/>月租金<br/>押金 (几周?)<br/>中介费<br/>水电网估算<br/>管理费/物业费<br/>──────<br/>数据: Property\"]\n        H2[\"🚌 通勤<br/>──────<br/>公交: 时间+换乘<br/>骑车: 时间<br/>开车: 时间<br/>步行: ≤15min 加分<br/>──────<br/>数据: 路由 API\"]\n        H3[\"📐 空间<br/>──────<br/>总面积<br/>卧室数<br/>是否有独卫<br/>储物空间<br/>人均面积<br/>──────<br/>数据: Property\"]\n        H4[\"🏪 周边配套<br/>──────<br/>超市 (距离+数量)<br/>餐厅 (类型+评分)<br/>医院/诊所<br/>药店<br/>健身房<br/>──────<br/>数据: PropertyPOI\"]\n    end\n\n    subgraph Soft[\"软指标 (数据辅助 + LLM 判断)\"]\n        S1[\"🛡️ 安全<br/>──────<br/>暴力犯罪率<br/>入室盗窃率<br/>vs 城市均值<br/>vs 对比组均值<br/>──────<br/>数据: Police.uk / data.gov.sg\"]\n        S2[\"🏠 房屋品质<br/>──────<br/>装修水平<br/>朝向/采光<br/>楼层<br/>隔音<br/>建筑年代<br/>──────<br/>数据: Property 描述 + Review\"]\n        S3[\"👤 房东口碑<br/>──────<br/>响应速度<br/>维修效率<br/>是否乱扣押金<br/>沟通语言<br/>──────<br/>数据: Review 聚合\"]\n    end\n\n    Hard --> ScoringEngine[\"确定性打分引擎<br/>每维度 0-100\"]\n    Soft --> ScoringEngine\n    ScoringEngine --> WeightedSum[\"用户权重加权<br/>balanced / budget / commute / safety / space\"]"
+  },
+  {
+    "group": "对比 Agent",
+    "title": "对比 Agent 对话流",
+    "source": "sequenceDiagram\n    actor User as 用户\n    participant API as /api/v1/compare\n    participant CA as ComparisonService\n    participant Cart as AgentCart\n    participant Property as PropertyService\n    participant Safety as SafetyScoring\n    participant POI as POIService\n    participant LLM as LLMService\n    participant DB as PostgreSQL\n\n    User->>API: POST /compare/sessions<br/>{property_ids: [1,3,5,7]}\n    API->>CA: start_comparison(user_id, property_ids)\n    CA->>Cart: 读取 Cart 确认备选清单\n    Cart-->>CA: [property_ids...]\n\n    CA->>Property: 拉取房源全量数据\n    Property->>DB: SELECT * + JOIN reviews + JOIN pois\n    DB-->>Property: 完整数据\n    Property-->>CA: PropertyMetrics[]\n\n    par 并行拉取外部数据\n        CA->>Safety: 评估每套房安全评分\n        Safety->>Safety: Police.uk / data.gov.sg\n        Safety-->>CA: safety_scores[]\n    and\n        CA->>POI: 周边设施聚合分析\n        POI-->>CA: amenity_scores[]\n    end\n\n    CA->>CA: 多维度确定性打分 (0-100)\n    CA->>CA: 按用户偏好权重计算加权总分\n\n    CA->>LLM: COMPARISON_SYSTEM_PROMPT<br/>+ 结构化评分数据\n    LLM-->>CA: 逐维度分析 + Trade-off + 推荐\n\n    CA->>DB: 持久化对比 Session\n\n    CA-->>API: CompareReport\n    API-->>User: {<br/>  radar_chart_data,<br/>  dimension_table,<br/>  tradeoff_analysis,<br/>  best_for_recommendation,<br/>  property_details[],<br/>  session_id (用于追问)<br/>}\n\n    Note over User,DB: 追问阶段\n\n    User->>API: POST /compare/sessions/{id}/messages<br/>\"A 的通勤比 B 好多少？\"\n    API->>CA: follow_up(session_id, message)\n    CA->>LLM: 基于已有评分数据追问\n    LLM-->>CA: 针对性分析\n    CA-->>User: \"A 公交 12 分钟直达校区，B 需换乘 1 次共 28 分钟...\""
+  },
+  {
+    "group": "对比 Agent",
+    "title": "前端对比页面结构",
+    "source": "graph TB\n    subgraph ComparePage[\"对比页面布局\"]\n        direction TB\n\n        subgraph Header[\"顶部操作栏\"]\n            PrioritySelector[\"偏好选择<br/>🏷️ 性价比优先 · 通勤优先 · 安全优先 · 面积优先\"]\n            ShareBtn[\"分享报告\"]\n            BookBtn[\"预约看房\"]\n        end\n\n        subgraph MainContent[\"主内容区\"]\n            direction LR\n\n            subgraph LeftCol[\"左侧: 可视化\"]\n                Radar[\"雷达图<br/>多维度叠加对比\"]\n                Ranking[\"综合排名<br/>1. A (82) · 2. B (76) · 3. C (71)\"]\n            end\n\n            subgraph RightCol[\"右侧: 详细对比\"]\n                DimensionTable[\"维度对比表<br/>每行一个维度 · 每列一套房<br/>✅ ❌ ⚡ 图标标识\"]\n                TradeOffText[\"Trade-off 分析<br/>LLM 生成的自然语言<br/>'A 虽然贵 ¥200/月...'\"]\n                BestForCards[\"Best For 卡片<br/>🏆 性价比之王: B<br/>🚌 通勤最优: A<br/>🛡️ 最安全: C\"]\n            end\n        end\n\n        subgraph ChatPanel[\"底部: 追问区\"]\n            ChatInput[\"追问输入框<br/>'如果我只考虑通勤和安全呢?'\"]\n            ChatHistory[\"分析对话记录\"]\n        end\n    end\n\n    PrioritySelector --> Radar\n    PrioritySelector --> DimensionTable\n    Radar --> Ranking\n    DimensionTable --> TradeOffText\n    TradeOffText --> BestForCards\n    ChatInput --> ChatHistory"
+  },
+  {
+    "group": "数据流",
+    "title": "Cart: 两个 Agent 的桥梁",
+    "source": "graph TB\n    subgraph Sources[\"备选清单来源\"]\n        DA_Cart[\"🤖 发现 Agent 对话中<br/>用户说 '加入备选'\"]\n        Search_Cart[\"🔍 手动检索页<br/>勾选房源 → 加入备选\"]\n        Fav_Cart[\"⭐ 收藏夹<br/>一键转入备选\"]\n    end\n\n    subgraph CartDB[\"AgentCart (PostgreSQL)\"]\n        Cart[\"agent_carts<br/>user_id · session_id\"]\n        CartItems[\"agent_cart_items<br/>cart_id · property_id · added_reason · added_at\"]\n    end\n\n    subgraph Consumers[\"备选清单消费者\"]\n        CA_Read[\"⚖️ 对比 Agent<br/>读取 → 深度对比\"]\n        DA_Read[\"🤖 发现 Agent<br/>读取 → 展示清单状态\"]\n        CompareView[\"📊 对比页面<br/>展示备选列表\"]\n    end\n\n    DA_Cart -->|\"POST /agent/sessions/{id}/messages<br/>{message: '加入备选'}\"| Cart\n    Search_Cart -->|\"POST /agent/cart/items\"| Cart\n    Fav_Cart -->|\"POST /agent/cart/items\"| Cart\n\n    Cart --> CartItems\n\n    CartItems --> CA_Read\n    CartItems --> DA_Read\n    CartItems --> CompareView\n\n    style Cart fill:#e8a838,color:#fff\n    style CartItems fill:#e8a838,color:#fff"
+  },
+  {
+    "group": "数据流",
+    "title": "双渠道入篮流程",
+    "source": "sequenceDiagram\n    actor User as 用户\n    participant AgentChat as 发现 Agent 对话\n    participant SearchPage as 手动检索页\n    participant CartAPI as Cart API\n    participant CartDB as Cart DB\n    participant AgentReply as Agent 回复\n\n    Note over User,AgentReply: 渠道 A — Agent 对话中入篮\n\n    User->>AgentChat: \"第二套和第三套加入备选\"\n    AgentChat->>AgentChat: 意图识别 → add_to_cart\n    AgentChat->>AgentChat: 解析引用: property_id=42, 57\n    AgentChat->>CartAPI: add_to_cart(user_id, 42, \"agent_recommend\")\n    CartAPI->>CartDB: UPSERT (去重)\n    AgentChat->>CartAPI: add_to_cart(user_id, 57, \"agent_recommend\")\n    AgentChat->>AgentReply: \"已将 2 套加入备选清单 ✅<br/>当前共 3 套 | 去对比 →\"\n\n    Note over User,AgentReply: 渠道 B — 检索页入篮\n\n    User->>SearchPage: 搜索 \"伦敦一区 studio\"\n    SearchPage-->>User: 20 条结果\n    User->>SearchPage: 勾选 3 套 → 点 \"加入备选\"\n    SearchPage->>CartAPI: batch_add_to_cart(user_id, [12,18,31], \"manual_search\")\n    CartAPI->>CartDB: 批量 UPSERT\n    SearchPage-->>User: \"已加入备选 ✅\"\n\n    Note over User,AgentReply: 汇合\n\n    User->>AgentChat: \"查看我的备选清单\"\n    AgentChat->>CartAPI: get_cart(user_id)\n    CartAPI->>CartDB: SELECT cart_items + JOIN properties\n    CartDB-->>CartAPI: 6 套 (3 agent + 3 search)\n    AgentChat->>AgentReply: 展示清单 + \"选 3-5 套开始深度对比\""
+  },
+  {
+    "group": "数据流",
+    "title": "Cart 数据模型",
+    "source": "erDiagram\n    AgentCart {\n        int id PK\n        int user_id FK \"唯一，一个用户一个 Cart\"\n        int latest_session_id FK \"关联最近对话 session\"\n        datetime created_at\n        datetime updated_at\n    }\n\n    AgentCartItem {\n        int id PK\n        int cart_id FK\n        int property_id FK\n        string added_reason \"agent_recommend | manual_search | favorites\"\n        datetime added_at\n    }\n\n    Property {\n        int id PK\n        string title\n        decimal price\n        float area\n        int bedrooms\n        string district\n        json description\n    }\n\n    AgentCart ||--o{ AgentCartItem : contains\n    AgentCartItem }o--|| Property : references"
+  },
+  {
+    "group": "数据流",
+    "title": "对比 Agent 的数据拉取",
+    "source": "graph TD\n    Start([\"对比 Agent 启动\"]) --> ReadCart[\"从 Cart 读取 property_ids\"]\n    ReadCart --> Parallel[\"并行数据拉取\"]\n\n    subgraph ParallelFetch[\"并行数据采集\"]\n        P1[\"PropertyService<br/>基础信息 + 描述\"]\n        P2[\"POIService<br/>周边设施聚合\"]\n        P3[\"SafetyScoring<br/>UK: Police.uk · SG: data.gov.sg\"]\n        P4[\"ReviewAggregation<br/>评分 · 关键词 · 房东响应率\"]\n        P5[\"RouteAPI<br/>公交路线时间 (外部 API)\"]\n    end\n\n    Parallel --> ParallelFetch\n    ParallelFetch --> Assemble[\"组装 PropertyMetrics[]\"]\n\n    subgraph PropertyMetrics[\"PropertyMetrics 数据结构\"]\n        direction TB\n        PM1[\"property_id\"]\n        PM2[\"price_breakdown<br/>{rent, deposit, agency_fee, utilities_est}\"]\n        PM3[\"commute<br/>{bus_time, bus_transfers, cycle_time, walk_time}\"]\n        PM4[\"safety<br/>{overall_score, violent_rate, burglary_rate, vs_city_avg}\"]\n        PM5[\"space<br/>{area, bedrooms, en_suite, storage, per_person_area}\"]\n        PM6[\"amenities<br/>{supermarket_count, restaurant_variety, hospital_distance...}\"]\n        PM7[\"quality<br/>{furnishing, orientation, floor, age_band}\"]\n        PM8[\"landlord<br/>{rating, response_speed, keywords}\"]\n    end\n\n    Assemble --> Scoring[\"进入打分引擎\"]"
+  },
+  {
+    "group": "数据流",
+    "title": "对比 Session 的生命周期",
+    "source": "sequenceDiagram\n    participant User\n    participant CA as 对比 Agent\n    participant CS as CompareSession (DB)\n    participant Cart as AgentCart\n\n    User->>CA: 开始对比 (触发)\n    CA->>Cart: 读取备选清单\n    CA->>CS: 创建 CompareSession<br/>{user_id, property_ids[], status=active}\n\n    loop 追问阶段 (可多轮)\n        User->>CA: 追问 (\"A 的通勤比 B 好多少\")\n        CA->>CS: 追加消息到 session\n        CS-->>CA: 已有评分数据 (不重新拉取)\n        CA->>CA: LLM 基于缓存数据回复\n        CA-->>User: 回答\n    end\n\n    User->>CA: 结束对比 / 预约看房\n    CA->>CS: status = completed<br/>保存最终报告快照\n    CS-->>CA: session_id (可回溯)\n    CA-->>User: 跳转预约 / 分享报告\n\n    Note over CS: CompareSession 持久化<br/>用户可在历史记录中回溯<br/>不依赖 Redis (不像 SearchState)"
+  },
+  {
+    "group": "发现 Agent",
+    "title": "意图路由总览",
+    "source": "graph TD\n    Start([\"用户消息到达\"]) --> LoadHistory[\"加载会话历史 (最近 10 条)\"]\n    LoadHistory --> ParseRefs[\"解析显式房源 ID (如 '房源 12')\"]\n    ParseRefs --> StageClassify[\"漏斗阶段分类<br/>LLM: explore / calibrate / narrow / compare / decide\"]\n    StageClassify --> FAQMatch[\"FAQ 规则匹配<br/>strong / weak / none\"]\n    FAQMatch --> HeuristicIntent[\"启发式意图识别<br/>(规则兜底)\"]\n    HeuristicIntent --> LLMIntent{\"LLM 意图分类\"}\n    \n    LLMIntent -->|\"faq (strong)\"| FAQDirect[\"直接 FAQ 回答<br/>+ 快捷选项 + 深度链接\"]\n    LLMIntent -->|\"faq (weak)\"| FAQConfirm[\"反问确认<br/>+ 选项按钮\"]\n    LLMIntent -->|\"recommend\"| Recommend[\"推荐管线<br/>⚠️ 核心流程\"]\n    LLMIntent -->|\"add_to_cart\"| AddCart[\"解析引用 → 加入 Cart\"]\n    LLMIntent -->|\"remove_from_cart\"| RemoveCart[\"解析引用 → 移除出 Cart\"]\n    LLMIntent -->|\"compare_cart\"| TriggerCompare[\"提示用户进入对比 Agent\"]\n    LLMIntent -->|\"general\"| GeneralChat[\"LLM 文本回复<br/>(最多 120 tokens)\"]\n\n    FAQDirect --> Persist\n    FAQConfirm --> Persist\n    Recommend --> Persist\n    AddCart --> Persist\n    RemoveCart --> Persist\n    TriggerCompare --> Persist\n    GeneralChat --> Persist\n\n    Persist[\"持久化消息到 DB\"] --> Return([\"返回响应\"])\n\n    style Recommend fill:#4a90d9,color:#fff\n    style TriggerCompare fill:#e8a838,color:#fff"
+  },
+  {
+    "group": "发现 Agent",
+    "title": "推荐管线",
+    "source": "graph TD\n    R1([\"用户说: 'UCL 附近 1200 以内 studio'\"]) --> S1[\"Step 1: LLM 提取结构化筛选条件<br/>district · price_min/max · bedrooms · property_type\"]\n    S1 --> S2{\"Step 2: 模糊度检查<br/>提取到 ≥ 2 个具体条件?\"}\n    \n    S2 -->|\"否\"| Refine[\"返回 needs_refinement=True<br/>前端展示内联筛选卡片\"]\n    S2 -->|\"是\"| S3[\"Step 3: 合并筛选条件<br/>前端筛选器 > LLM 提取 > 历史状态\"]\n    \n    S3 --> S4[\"Step 4: 搜索 + 渐进式放宽\"]\n    \n    subgraph SearchLoop[\"搜索放宽循环\"]\n        R1_S[\"全文匹配搜索\"] --> R1_C{\"结果 ≥ 5?\"}\n        R1_C -->|\"是\"| R1_Out[\"输出\"]\n        R1_C -->|\"否\"| R2_S[\"放宽 1: 去掉户型限制\"]\n        R2_S --> R2_C{\"结果 ≥ 5?\"}\n        R2_C -->|\"是\"| R1_Out\n        R2_C -->|\"否\"| R3_S[\"放宽 2: 去掉卧室数限制\"]\n        R3_S --> R3_C{\"结果 ≥ 5?\"}\n        R3_C -->|\"是\"| R1_Out\n        R3_C -->|\"否\"| R4_S[\"放宽 3: price_max +20%\"]\n        R4_S --> R1_Out\n    end\n\n    S4 --> SearchLoop\n    R1_Out --> S5[\"Step 5: 质量断层检测<br/>ScoreGap — 发现排名断崖\"]\n    S5 --> S6{\"Step 6: 安全兜底?<br/>结果 = 0 或 top_score < 0.3\"}\n    S6 -->|\"是\"| Fallback[\"模板回复<br/>'没有完全匹配的房源...'\"]\n    S6 -->|\"否\"| S7[\"Step 7: 确定性质量评分<br/>价格匹配 40% + 空间匹配 20%<br/>+ 设施完整 20% + 基础分 20%\"]\n    S7 --> Top3[\"选出 Top 3 + 高亮理由\"]\n    Top3 --> S8[\"Step 8: LLM 生成推荐文案<br/>仅可引用 candidate_snapshot 内的 ID\"]\n    S8 --> S9[\"Step 9: 后验证<br/>_validate_recommendations()<br/>丢弃幻觉 ID\"]\n    S9 --> S10[\"Step 10: 更新 SearchState<br/>candidate_snapshot · filters · search_trail\"]\n    S10 --> Return([\"返回: reply + recommendations + top_picks\"])\n    \n    Fallback --> Return\n\n    style S4 fill:#4a90d9,color:#fff\n    style S7 fill:#4a90d9,color:#fff\n    style S8 fill:#e8a838,color:#fff"
+  },
+  {
+    "group": "发现 Agent",
+    "title": "漏斗阶段状态机",
+    "source": "stateDiagram-v2\n    [*] --> explore: 用户进入对话\n    note right of explore: \"我想在伦敦租房\"<br/>模糊需求、浏览模式\n    \n    explore --> calibrate: 施加筛选条件\n    note right of calibrate: \"1200 以内，studio\"<br/>调整预算/需求\n    \n    calibrate --> explore: 放宽条件\n    calibrate --> narrow: 聚焦区域/户型\n    note right of narrow: \"Kings Cross 和 Camden<br/>哪个更适合学生?\"<br/>区域间对比\n    \n    narrow --> calibrate: 调整条件\n    narrow --> compare: 具体房源对比\n    note right of compare: \"房源 3 和房源 7<br/>帮我分析一下\"<br/>关注具体房源\n    \n    compare --> narrow: 回到区域层面\n    compare --> decide: 做出选择\n    note right of decide: \"就这套，约看房\"<br/>进入决策阶段\n    \n    decide --> [*]: 跳转预约/对比 Agent"
+  },
+  {
+    "group": "发现 Agent",
+    "title": "状态管理 (SearchState)",
+    "source": "graph LR\n    subgraph RedisState[\"Redis SearchState (TTL 2h)\"]\n        Stage[\"funnel_stage<br/>explore/calibrate/narrow/compare/decide\"]\n        Filters[\"active_filters<br/>{district, price, bedrooms...}\"]\n        Snapshot[\"candidate_snapshot<br/>[{property_id}...]\"]\n        Seen[\"seen_property_ids<br/>避免重复推荐\"]\n        Trail[\"search_trail<br/>每次搜索的条件+结果数\"]\n        Prefs[\"user_preferences<br/>{price_sensitivity...}\"]\n        Relax[\"last_relaxation_level<br/>0~3\"]\n        Gap[\"last_score_gap<br/>质量断层位置\"]\n    end\n\n    UserMsg[\"用户消息\"] --> Stage\n    Filters --> Merge[\"合并筛选条件\"]\n    Snapshot --> Validate[\"LLM 幻觉校验\"]\n    Trail --> History[\"下次搜索参考\"]"
+  },
+  {
+    "group": "总览",
+    "title": "系统全景图",
+    "source": "graph TB\n    subgraph Frontend[\"前端 (Vue 3)\"]\n        AgentView[\"AgentView<br/>发现 Agent 对话页\"]\n        CompareView[\"CompareView<br/>对比 Agent 分析页\"]\n        FavoritesView[\"Favorites<br/>收藏页\"]\n        SearchView[\"Search<br/>手动检索页\"]\n    end\n\n    subgraph API[\"API 层 (FastAPI)\"]\n        AgentRoutes[\"/api/v1/agent/*<br/>发现 Agent 路由\"]\n        CompareRoutes[\"/api/v1/compare/*<br/>对比 Agent 路由 (新)\"]\n        FavoriteRoutes[\"/api/v1/favorites/*\"]\n        SearchRoutes[\"/api/v1/properties/*\"]\n    end\n\n    subgraph Agents[\"Agent 层\"]\n        DiscoveryAgent[\"🔍 发现 Agent<br/>DiscoveryService<br/>意图路由 · 漏斗管理 · 推荐 · FAQ\"]\n        ComparisonAgent[\"⚖️ 对比 Agent<br/>ComparisonService (新)<br/>多维分析 · Trade-off · 报告\"]\n    end\n\n    subgraph Shared[\"共享服务层\"]\n        LLM[\"LLMService<br/>DeepSeek / OpenAI\"]\n        Property[\"PropertyService<br/>搜索 · pgvector · 关键词\"]\n        Cart[\"AgentCart<br/>备选清单 · 两 Agent 桥梁\"]\n        Embedding[\"EmbeddingService<br/>向量化\"]\n        POI[\"POIService<br/>周边设施\"]\n        Safety[\"SafetyScoring<br/>安全评分 (新)\"]\n        CompareEngine[\"CompareScoring<br/>打分引擎\"]\n        SearchState[\"SearchState<br/>Redis 会话状态\"]\n    end\n\n    subgraph Data[\"数据层\"]\n        PG[(\"PostgreSQL<br/>+ pgvector\")]\n        Redis[(\"Redis<br/>SearchState · 缓存\")]\n    end\n\n    subgraph External[\"外部数据源\"]\n        PoliceUK[\"Police.uk API<br/>英国犯罪数据\"]\n        DataGovSG[\"data.gov.sg<br/>新加坡犯罪数据\"]\n    end\n\n    AgentView --> AgentRoutes --> DiscoveryAgent\n    SearchView --> SearchRoutes\n    CompareView --> CompareRoutes --> ComparisonAgent\n    FavoritesView --> FavoriteRoutes\n\n    DiscoveryAgent --> LLM\n    DiscoveryAgent --> Property\n    DiscoveryAgent --> Cart\n    DiscoveryAgent --> Embedding\n    DiscoveryAgent --> POI\n    DiscoveryAgent --> CompareEngine\n    DiscoveryAgent --> SearchState\n\n    ComparisonAgent --> LLM\n    ComparisonAgent --> Property\n    ComparisonAgent --> Cart\n    ComparisonAgent --> CompareEngine\n    ComparisonAgent --> Safety\n    ComparisonAgent --> POI\n\n    Safety --> PoliceUK\n    Safety --> DataGovSG\n\n    Property --> PG\n    Cart --> PG\n    SearchState --> Redis\n    Property --> Redis"
+  },
+  {
+    "group": "总览",
+    "title": "用户完整旅程",
+    "source": "sequenceDiagram\n    actor User as 用户\n    participant DA as 发现 Agent\n    participant Cart as AgentCart\n    participant Search as 检索页\n    participant CA as 对比 Agent\n\n    Note over User,CA: 阶段 1 — 探索与发现\n\n    User->>DA: \"UCL 附近，月租 1200 以内\"\n    DA->>DA: 解析意图 → 提取筛选条件\n    DA->>DA: 搜索 → 质量评分 → LLM 推荐\n    DA-->>User: 推荐 3 套房 + 市场行情\n\n    User->>DA: \"通勤要 30 分钟以内\"\n    DA->>DA: 漏斗状态更新 → 重新搜索\n    DA-->>User: 筛选后推荐 2 套\n\n    User->>DA: \"第二套加入备选\"\n    DA->>Cart: add_to_cart(property_id=42)\n    DA-->>User: \"已加入备选清单 ✓\"\n\n    Note over User,CA: 阶段 2 — 多渠道收集\n\n    User->>Search: 手动检索 \"伦敦一区 studio\"\n    Search-->>User: 搜索结果列表\n    User->>Cart: 勾选收藏 → 加入备选\n\n    User->>DA: \"还有没有更便宜的？\"\n    DA-->>User: 推荐新结果\n    User->>Cart: 加入备选\n\n    Note over User,CA: 阶段 3 — 深度对比\n\n    User->>CA: \"开始对比我的备选清单\" (5 套)\n    CA->>Cart: 读取备选房源\n    CA->>CA: 拉取全量数据 (安全 · 通勤 · 周边 · 品质)\n    CA->>CA: 多维度打分\n    CA->>CA: LLM Trade-off 分析\n    CA-->>User: 雷达图 + 维度对比表 + 分析报告\n\n    User->>CA: \"帮我排除 C 和 E，重比 A B D\"\n    CA->>CA: 重新聚焦 3 套\n    CA-->>User: 更新后的对比结果\n\n    User->>CA: \"A 的通勤比 B 好多少？\"\n    CA-->>User: \"A 公交 12 分钟直达，B 需换乘共 28 分钟...\"\n\n    User->>CA: \"就 A 了，帮我约看房\"\n    CA-->>User: 跳转预约页面"
+  },
+  {
+    "group": "安全评分",
+    "title": "整体架构",
+    "source": "graph TB\n    subgraph Input[\"输入\"]\n        LatLng[\"房源坐标 (lat, lng)\"]\n        Country[\"国家标识 (UK / SG)\"]\n    end\n\n    subgraph SafetyScoring[\"SafetyScoring Service\"]\n        Router{\"国家路由\"}\n\n        subgraph UK[\"英国管线\"]\n            GeocodeUK[\"坐标 → Postcode<br/>(Postcodes.io)\"]\n            PoliceAPI[\"Police.uk API<br/>/crimes-street/all-crime<br/>1 英里半径\"]\n            UKAgg[\"聚合 14 类犯罪<br/>per 1000 residents\"]\n            UKBenchmark[\"与城市/LSOA 均值对比\"]\n        end\n\n        subgraph SG[\"新加坡管线\"]\n            GeocodeSG[\"坐标 → NPC 辖区<br/>(边界映射)\"]\n            DataGovAPI[\"data.gov.sg API<br/>Selected Major Offences<br/>by NPC, Annual\"]\n            SGAgg[\"聚合 5 类可防罪案<br/>per 1000 residents\"]\n            SGBenchmark[\"与全国/NPC 均值对比\"]\n        end\n    end\n\n    subgraph Output[\"统一输出\"]\n        Score[\"safety_score: 0-100\"]\n        Breakdown[\"category_breakdown<br/>{violent, burglary, theft...}\"]\n        Comparison[\"comparison<br/>vs_city_avg: 'below'/'average'/'above'\"]\n        Summary[\"summary_text<br/>'该区域暴力犯罪率低于伦敦均值...'\"]\n    end\n\n    LatLng --> Router\n    Country --> Router\n    Router --> UK\n    Router --> SG\n    UK --> Score\n    SG --> Score\n    UK --> Breakdown\n    SG --> Breakdown\n    UK --> Comparison\n    SG --> Comparison\n    Score --> Summary\n    Breakdown --> Summary\n    Comparison --> Summary"
+  },
+  {
+    "group": "安全评分",
+    "title": "英国: Police.uk API 对接",
+    "source": "sequenceDiagram\n    participant SS as SafetyScoring\n    participant PC as Postcodes.io\n    participant Police as data.police.uk API\n\n    SS->>SS: 输入: lat=51.5074, lng=-0.1278\n\n    Note over SS,Police: Step 1: 获取区域基准\n\n    SS->>PC: GET /postcodes?lat=51.5074&lon=-0.1278\n    PC-->>SS: {postcode: \"WC1B 4BA\", lsoa: \"Camden 028B\"}\n\n    Note over SS,Police: Step 2: 拉取街道级犯罪数据\n\n    SS->>Police: GET /api/crimes-street/all-crime<br/>?lat=51.5074&lng=-0.1278&date=2026-04\n    Police-->>SS: [{category, location, month, outcome}...]\n\n    Note over SS,Police: Step 3: 聚合分析\n\n    SS->>SS: 按 14 类聚合计数\n    SS->>SS: 计算 per-1000-residents 比率<br/>(基于 LSOA 人口)\n    SS->>SS: 与伦敦均值对比\n    SS->>SS: 生成 0-100 评分\n\n    Note over SS: 评分逻辑:\n    Note over SS: violent_crime 权重 35%\n    Note over SS: burglary 权重 25%\n    Note over SS: antisocial_behaviour 权重 15%\n    Note over SS: robbery 权重 15%\n    Note over SS: other 权重 10%"
+  },
+  {
+    "group": "安全评分",
+    "title": "新加坡: data.gov.sg 对接",
+    "source": "sequenceDiagram\n    participant SS as SafetyScoring\n    participant Gov as data.gov.sg API\n    participant Geo as NPC Boundary Lookup\n\n    SS->>SS: 输入: lat=1.3039, lng=103.8318\n\n    Note over SS,Geo: Step 1: 确定 NPC 辖区\n\n    SS->>Geo: 坐标 → NPC 辖区映射<br/>(预加载 35 个 NPC 边界多边形)\n    Geo-->>SS: {npc: \"Rochor NPC\", division: \"Central\"}\n\n    Note over SS,Gov: Step 2: 拉取 NPC 犯罪数据\n\n    SS->>Gov: GET /api/action/datastore_search<br/>?resource_id=d_5767147db6e5b4c4cfa874db132fef39\n    Gov-->>SS: {records: [{npc, year, robbery, snatch_theft,<br/>  housebreaking, outrage_of_modesty,<br/>  theft_of_motor_vehicle}]}\n\n    SS->>Gov: 同时拉取 Unlicensed Moneylending 数据<br/>resource_id=d_b6dc6308d208f668232b4f9e171af3a4\n    Gov-->>SS: {records: [{npc, year, uml_cases, harassment}]}\n\n    Note over SS: Step 3: 聚合分析\n\n    SS->>SS: 计算 per-1000-residents 比率<br/>(基于 NPC 辖区人口)\n    SS->>SS: 与全国均值对比\n    SS->>SS: 生成 0-100 评分\n\n    Note over SS: 评分逻辑:\n    Note over SS: housebreaking 权重 35%\n    Note over SS: outrage_of_modesty 权重 30%\n    Note over SS: robbery + snatch_theft 权重 20%\n    Note over SS: theft_of_motor_vehicle 权重 10%\n    Note over SS: uml_harassment 权重 5%"
+  },
+  {
+    "group": "安全评分",
+    "title": "缓存策略",
+    "source": "graph LR\n    Request[\"评分请求<br/>(lat, lng)\"] --> Cache{\"Redis 缓存<br/>key: safety:{uk|sg}:{coord_hash}\"}\n    Cache -->|\"命中 (24h 内)\"| Return[\"直接返回\"]\n    Cache -->|\"未命中\"| Fetch[\"调用外部 API\"]\n    Fetch --> Store[\"存入 Redis<br/>TTL: 24h (犯罪数据月更)\"]\n    Store --> Return"
+  }
+];
+let scale = 1, offsetX = 0, offsetY = 0, currentIdx = 0;
+let panning = false, panStartX = 0, panStartY = 0, panOrigX = 0, panOrigY = 0;
+
+const nav = document.getElementById('nav-list');
+const container = document.getElementById('diagram-container');
+const zoomLabel = document.getElementById('zoom-level');
+const canvasEl = document.getElementById('canvas');
+
+let lastGroup = '';
+DIAGRAMS.forEach((d, i) => {
+  if (d.group !== lastGroup) {
+    nav.innerHTML += '<li class="group">' + d.group + '</li>';
+    lastGroup = d.group;
+  }
+  nav.innerHTML += '<li data-idx="' + i + '">' + d.title + '</li>';
+});
+
+function applyTransform() {
+  container.style.transform = 'translate(' + offsetX + 'px, ' + offsetY + 'px) scale(' + scale + ')';
+  zoomLabel.textContent = Math.round(scale * 100) + '%';
+}
+
+async function loadDiagram(idx) {
+  currentIdx = idx;
+  scale = 1; offsetX = 0; offsetY = 0;
+  applyTransform();
+  try {
+    const { svg } = await mermaid.render('mermaid-svg-' + idx, DIAGRAMS[idx].source);
+    container.innerHTML = svg;
+    applyTransform();
+  } catch(e) {
+    container.innerHTML = '<pre style="color:red;padding:20px;white-space:pre-wrap">Render Error:\n' + e.message + '\n\nSource:\n' + DIAGRAMS[idx].source + '</pre>';
+  }
+  document.querySelectorAll('#nav-list li:not(.group)').forEach((el, i) => {
+    el.classList.toggle('active', i === idx);
+  });
+}
+
+function zoomIn()  { scale = Math.min(scale * 1.3, 5); applyTransform(); }
+function zoomOut() { scale = Math.max(scale / 1.3, 0.15); applyTransform(); }
+function zoomFit() { scale = 1; offsetX = 0; offsetY = 0; applyTransform(); }
+function zoomReset() { scale = 1; applyTransform(); }
+
+canvasEl.addEventListener('wheel', (e) => {
+  if (e.ctrlKey) {
+    e.preventDefault();
+    scale = Math.max(0.15, Math.min(5, scale * (e.deltaY > 0 ? 0.9 : 1.1)));
+    applyTransform();
+  }
+}, { passive: false });
+
+// Pan: click + drag
+canvasEl.addEventListener('mousedown', (e) => {
+  if (e.target.tagName === 'BUTTON') return;
+  panning = true;
+  panStartX = e.clientX; panStartY = e.clientY;
+  panOrigX = offsetX; panOrigY = offsetY;
+  canvasEl.style.cursor = 'grabbing';
+});
+window.addEventListener('mousemove', (e) => {
+  if (!panning) return;
+  offsetX = panOrigX + (e.clientX - panStartX);
+  offsetY = panOrigY + (e.clientY - panStartY);
+  applyTransform();
+});
+window.addEventListener('mouseup', () => {
+  panning = false;
+  canvasEl.style.cursor = 'grab';
+});
+
+// Touch pan
+canvasEl.addEventListener('touchstart', (e) => {
+  if (e.touches.length === 1) {
+    panning = true;
+    panStartX = e.touches[0].clientX; panStartY = e.touches[0].clientY;
+    panOrigX = offsetX; panOrigY = offsetY;
+  }
+}, { passive: false });
+window.addEventListener('touchmove', (e) => {
+  if (!panning || e.touches.length !== 1) return;
+  e.preventDefault();
+  offsetX = panOrigX + (e.touches[0].clientX - panStartX);
+  offsetY = panOrigY + (e.touches[0].clientY - panStartY);
+  applyTransform();
+}, { passive: false });
+window.addEventListener('touchend', () => { panning = false; });
+
+nav.addEventListener('click', (e) => {
+  const li = e.target.closest('li:not(.group)');
+  if (!li) return;
+  loadDiagram(parseInt(li.dataset.idx));
+});
+
+window.addEventListener('keydown', (e) => {
+  if (e.key === '+' || e.key === '=') zoomIn();
+  if (e.key === '-') zoomOut();
+  if (e.key === '0') zoomFit();
+  if (e.key === 'ArrowDown' || e.key === 'j') { e.preventDefault(); loadDiagram(Math.min(currentIdx + 1, DIAGRAMS.length - 1)); }
+  if (e.key === 'ArrowUp' || e.key === 'k') { e.preventDefault(); loadDiagram(Math.max(currentIdx - 1, 0)); }
+});
+
+loadDiagram(0);
+</script>
+</body>
+</html>
