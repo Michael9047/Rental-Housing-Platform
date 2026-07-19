@@ -162,7 +162,7 @@
 <div class="main-wrap">
   <!-- 地图 -->
   <div class="map-panel">
-    <div class="label">NUS · Radius: <span id="radiusLabel">—</span></div>
+    <div class="label">NUS · 搜索范围: <span id="radiusLabel">—</span></div>
     <div id="map"></div>
   </div>
 
@@ -306,7 +306,7 @@ function havDistance(lat1, lng1, lat2, lng2) {
 
 // ===================== 全局状态 =====================
 let map;
-let radiusCircle;
+let searchRect;     // 地图上的矩形搜索范围
 let currentRadius = 0;
 let running = false;
 
@@ -341,18 +341,25 @@ function initMap() {
 }
 
 // ===================== Overpass 搜索 =====================
+// 使用与 Google 一致的矩形边界框（bbox）
+function getSearchRect(radius) {
+  return circleToRect(NUS_LAT, NUS_LNG, radius);
+}
+
 async function searchOverpass(keyword, radius) {
   const queryFrag = OVERPASS_QUERIES[keyword];
   if (!queryFrag) return [];
 
-  // Overpass QL 格式: node["key"="val"](around:R,lat,lng);
-  // 在每个查询单元末尾追加 (around:R,lat,lng)
-  const withAround = queryFrag
-    .replace(/;/g, `(around:${radius},${NUS_LAT},${NUS_LNG});`)
-    // 修复可能产生的连续括号
+  // 使用 bbox 语法: (south,west,north,east) — 与 Google rectangle 一致
+  const rect = getSearchRect(radius);
+  const bbox = `${rect.low.latitude},${rect.low.longitude},${rect.high.latitude},${rect.high.longitude}`;
+
+  // Overpass QL bbox 格式: node["key"="val"](south,west,north,east);
+  const withBbox = queryFrag
+    .replace(/;/g, `(${bbox});`)
     .replace(/\)\(/g, '(');
 
-  const overpassQuery = `[out:json][timeout:10];(${withAround});out center 100;`;
+  const overpassQuery = `[out:json][timeout:10];(${withBbox});out center 100;`;
 
   for (const endpoint of OVERPASS_ENDPOINTS) {
     try {
@@ -505,10 +512,15 @@ async function runTest(radius) {
   $('radiusLabel').textContent = `${radius / 1000}km`;
   $('statusHint').innerHTML = '<span class="badge loading"><span class="spinner"></span>搜索中…</span>';
 
-  // 更新地图圆圈
-  if (radiusCircle) map.removeLayer(radiusCircle);
-  radiusCircle = L.circle(NUS_CENTER, { radius, color: '#e94560', weight: 1, fillColor: '#e9456033', fillOpacity: 0.15 }).addTo(map);
-  map.fitBounds(radiusCircle.getBounds(), { padding: [30, 30] });
+  // 画矩形搜索范围（OSM 和 Google 现在一致用 bbox）
+  const rect = getSearchRect(radius);
+  const bounds = [[rect.low.latitude, rect.low.longitude], [rect.high.latitude, rect.high.longitude]];
+  if (searchRect) map.removeLayer(searchRect);
+  searchRect = L.rectangle(bounds, {
+    color: '#e94560', weight: 2, fillColor: '#e9456033', fillOpacity: 0.12,
+    dashArray: '6 3',
+  }).addTo(map);
+  map.fitBounds(bounds, { padding: [30, 30] });
 
   // 重置结果
   osmResults = {}; gmResults = {};
@@ -798,7 +810,7 @@ function generateReport() {
   report.push('═══════════════════════════════════');
   report.push('');
   report.push(`测试位置: NUS 新加坡国立大学 (1.2966, 103.7764)`);
-  report.push(`搜索半径: ${currentRadius ? currentRadius / 1000 + 'km' : 'N/A'}`);
+  report.push(`搜索范围: ${currentRadius ? currentRadius / 1000 + 'km 半径 → 矩形边界框（OSM & Google 一致）' : 'N/A'}`);
   report.push(`测试时间: ${new Date().toLocaleString('zh-CN')}`);
   report.push('');
   report.push('── 搜索耗时 ──');
@@ -896,7 +908,7 @@ function resetAll() {
   osmResults = {}; gmResults = {};
   currentRadius = 0;
   $('radiusLabel').textContent = '—';
-  if (radiusCircle) { map.removeLayer(radiusCircle); radiusCircle = null; }
+  if (searchRect) { map.removeLayer(searchRect); searchRect = null; }
 
   $('osmTime').textContent = $('gmTime').textContent = '—';
   $('osmTimeBar').style.width = $('gmTimeBar').style.width = '0%';
