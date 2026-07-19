@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Google Maps POI 搜索测试 · NUS</title>
+<title>Google Maps POI 搜索测试 · Clementi</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
@@ -61,7 +61,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 <body>
 
 <div class="toolbar">
-  <h1>Google Maps POI 搜索 · NUS</h1>
+  <h1>Google Maps POI 搜索 · Clementi</h1>
   <button id="btn1km" onclick="runTest(1000)">1km</button>
   <button id="btn2km" class="primary" onclick="runTest(2000)">2km</button>
   <button id="btn5km" onclick="runTest(5000)">5km</button>
@@ -74,7 +74,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 
 <div class="main-wrap">
   <div class="map-panel">
-    <div class="map-label">NUS (1.2966, 103.7764) · <span id="radiusLabel">—</span></div>
+    <div class="map-label">Clementi (1.2966, 103.7764) · <span id="radiusLabel">—</span></div>
     <div id="map"></div>
   </div>
   <div class="side-panel" id="sidePanel">
@@ -93,7 +93,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
 // ==================== 常量 ====================
-const NUS_LAT=1.2966,NUS_LNG=103.7764,NUS=[NUS_LAT,NUS_LNG],GM_KEY='AIzaSyA2TFWRlLOG72sJLckOBa2zWq9L-rDotzc';
+const Clementi_LAT=1.3153,Clementi_LNG=103.7648,Clementi=[Clementi_LAT,Clementi_LNG],GM_KEY='AIzaSyA2TFWRlLOG72sJLckOBa2zWq9L-rDotzc';
 const CATEGORIES={交通:["地铁站","公交站","火车站"],医疗:["医院","药店"],购物:["超市/便利店","商场","酒吧"],餐饮:["餐厅","美食","快餐"],生活:["市场","健身房"]};
 
 // searchNearby includedTypes（默认，每类最多 20 条）
@@ -111,11 +111,11 @@ let gmMarkers=[],clusterCircles=[],highlighted=null,lastGmTime=0;
 let osmTile,gmTile,tileIsOsm=true;
 
 function initMap(){
-  map=L.map('map',{center:NUS,zoom:14,zoomControl:true,attributionControl:false});
+  map=L.map('map',{center:Clementi,zoom:14,zoomControl:true,attributionControl:false});
   osmTile=L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'&copy; OSM'}).addTo(map);
   gmTile=L.tileLayer('https://mt{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}',{maxZoom:19,attribution:'&copy; Google',subdomains:['0','1','2','3']});
   updateTileBtn();
-  L.marker(NUS,{icon:L.divIcon({className:'',html:'<div style="background:#e94560;color:#fff;padding:2px 7px;border-radius:8px;font-size:10px;font-weight:700;white-space:nowrap">🎓 NUS</div>',iconAnchor:[15,10]})}).addTo(map);
+  L.marker(Clementi,{icon:L.divIcon({className:'',html:'<div style="background:#e94560;color:#fff;padding:2px 7px;border-radius:8px;font-size:10px;font-weight:700;white-space:nowrap">🎓 Clementi</div>',iconAnchor:[15,10]})}).addTo(map);
 }
 function toggleTile(){tileIsOsm=!tileIsOsm;(tileIsOsm?osmTile:gmTile).addTo(map);(tileIsOsm?gmTile:osmTile).remove();updateTileBtn()}
 function updateTileBtn(){const b=$('btnTile');if(b){b.textContent=tileIsOsm?'🗺 OSM':'🛰 Google';b.style.background=tileIsOsm?'#0f3460':'#1a4a8a'}}
@@ -132,7 +132,7 @@ async function searchGM(cnKw,radius){
   if(HIGH_DENSITY.has(cnKw)){
     // searchText: 支持翻页，最多 60 条
     const enKw=({餐厅:"restaurant",美食:"restaurant",快餐:"fast food"})[cnKw];
-    const rect=circleToRect(NUS_LAT,NUS_LNG,radius);const all=[];let pt=null,pc=0;
+    const rect=circleToRect(Clementi_LAT,Clementi_LNG,radius);const all=[];let pt=null,pc=0;
     while(pc<3){
       const body={textQuery:enKw,maxResultCount:20,locationRestriction:{rectangle:rect}};
       if(pt)body.pageToken=pt;
@@ -141,7 +141,7 @@ async function searchGM(cnKw,radius){
         if(!r.ok){const t=await r.text();let msg=t;try{msg=JSON.parse(t).error?.message||t}catch(_){}showGmError(`${cnKw}→${enKw}: HTTP ${r.status} — ${msg.substring(0,120)}`);break}
         const d=await r.json();const ps=d.places||[];pc++;
         console.log(`[GM-ST] ${cnKw}→${enKw} p${pc}: ${ps.length}`);
-        for(const p of ps){const lat=p.location?.latitude,lng=p.location?.longitude;if(lat==null||lng==null)continue;all.push({name:p.displayName?.text||enKw,lat,lng,distance_m:Math.round(havDistance(NUS_LAT,NUS_LNG,lat,lng)),keyword:cnKw,source:'google',vicinity:p.formattedAddress||'',rating:p.rating||null,place_id:p.id||''})}
+        for(const p of ps){const lat=p.location?.latitude,lng=p.location?.longitude;if(lat==null||lng==null)continue;all.push({name:p.displayName?.text||enKw,lat,lng,distance_m:Math.round(havDistance(Clementi_LAT,Clementi_LNG,lat,lng)),keyword:cnKw,source:'google',vicinity:p.formattedAddress||'',rating:p.rating||null,place_id:p.id||''})}
         if(d.nextPageToken){pt=d.nextPageToken;await new Promise(r=>setTimeout(r,400))}else break;
       }catch(e){showGmError(`${cnKw}: 网络错误`);break}
     }
@@ -151,11 +151,11 @@ async function searchGM(cnKw,radius){
   // searchNearby: 结构化类型，自动去重
   const types=GM_NS[cnKw];if(!types||!types.length){showGmError(`${cnKw}: 无 includedTypes`);return[]}
   try{
-    const r=await fetch('https://places.googleapis.com/v1/places:searchNearby',{method:'POST',headers:{'Content-Type':'application/json','X-Goog-Api-Key':GM_KEY,'X-Goog-FieldMask':'places.id,places.displayName,places.location,places.formattedAddress,places.rating'},body:JSON.stringify({includedTypes:types,maxResultCount:20,locationRestriction:{circle:{center:{latitude:NUS_LAT,longitude:NUS_LNG},radius:radius}}})});
+    const r=await fetch('https://places.googleapis.com/v1/places:searchNearby',{method:'POST',headers:{'Content-Type':'application/json','X-Goog-Api-Key':GM_KEY,'X-Goog-FieldMask':'places.id,places.displayName,places.location,places.formattedAddress,places.rating'},body:JSON.stringify({includedTypes:types,maxResultCount:20,locationRestriction:{circle:{center:{latitude:Clementi_LAT,longitude:Clementi_LNG},radius:radius}}})});
     if(!r.ok){const t=await r.text();let msg=t;try{msg=JSON.parse(t).error?.message||t}catch(_){}showGmError(`${cnKw}(${types}): HTTP ${r.status} — ${msg.substring(0,150)}`);return[]}
     const d=await r.json();const ps=d.places||[];
     console.log(`[GM-NS] ${cnKw} ${types} → ${ps.length}`);
-    return ps.map(p=>{const lat=p.location?.latitude,lng=p.location?.longitude;if(lat==null||lng==null)return null;return{name:p.displayName?.text||cnKw,lat,lng,distance_m:Math.round(havDistance(NUS_LAT,NUS_LNG,lat,lng)),keyword:cnKw,source:'google',vicinity:p.formattedAddress||'',rating:p.rating||null,place_id:p.id||''}}).filter(Boolean);
+    return ps.map(p=>{const lat=p.location?.latitude,lng=p.location?.longitude;if(lat==null||lng==null)return null;return{name:p.displayName?.text||cnKw,lat,lng,distance_m:Math.round(havDistance(Clementi_LAT,Clementi_LNG,lat,lng)),keyword:cnKw,source:'google',vicinity:p.formattedAddress||'',rating:p.rating||null,place_id:p.id||''}}).filter(Boolean);
   }catch(e){showGmError(`${cnKw}: 网络错误`);return[]}
 }
 
@@ -197,7 +197,7 @@ async function runTest(radius){
   $('radiusLabel').textContent=`${radius/1000}km 圆形`;
   $('statusHint').innerHTML='<span class="badge loading"><span class="spinner"></span>搜索中…</span>';
   if(searchRect)map.removeLayer(searchRect);
-  searchRect=L.circle(NUS,{radius,color:'#e94560',weight:2,fillColor:'#e9456033',fillOpacity:.12,dashArray:'6 3'}).addTo(map);
+  searchRect=L.circle(Clementi,{radius,color:'#e94560',weight:2,fillColor:'#e9456033',fillOpacity:.12,dashArray:'6 3'}).addTo(map);
   map.fitBounds(searchRect.getBounds(),{padding:[30,30]});
 
   gmR={};_poiIndex=0;for(const k of Object.keys(_poiMap))delete _poiMap[k];clearMarkers();clearGmErrors();renderResults();
@@ -314,7 +314,7 @@ function updateActiveTab(){document.querySelectorAll('#catTabs button,#kwTabs bu
 
 // ==================== 报告 ====================
 function copyReport(){
-  let r=[];r.push('═══════════════════════');r.push(' Google Maps POI 测试报告');r.push('═══════════════════════');r.push(`位置: NUS (${NUS_LAT}, ${NUS_LNG})`);r.push(`范围: ${currentRadius?currentRadius/1000+'km 圆形':'N/A'}`);r.push(`耗时: ${lastGmTime.toFixed(0)}ms`);r.push('');
+  let r=[];r.push('═══════════════════════');r.push(' Google Maps POI 测试报告');r.push('═══════════════════════');r.push(`位置: Clementi (${Clementi_LAT}, ${Clementi_LNG})`);r.push(`范围: ${currentRadius?currentRadius/1000+'km 圆形':'N/A'}`);r.push(`耗时: ${lastGmTime.toFixed(0)}ms`);r.push('');
   for(const[cat,kws]of Object.entries(CATEGORIES)){r.push(`── ${cat} ──`);for(const kw of kws){const cnt=(gmR[kw]||[]).length;const types=(GM_NS[kw]||[]).join(',');r.push(`  ${kw} (${types}): ${cnt}`)}}
   r.push('');r.push('═══════════════════════');
   navigator.clipboard.writeText(r.join('\n')).then(()=>{$('statusHint').innerHTML='<span class="badge done">✅ 已复制</span>';setTimeout(()=>{$('statusHint').innerHTML=`<span class="badge done">✓ ${lastGmTime.toFixed(0)}ms</span>`},2000)}).catch(()=>{const ta=document.createElement('textarea');ta.value=r.join('\n');document.body.appendChild(ta);ta.select();document.execCommand('copy');document.body.removeChild(ta)});
@@ -326,7 +326,7 @@ function resetAll(){
   currentCat='overview';updateActiveTab();$('radiusLabel').textContent='—';
   $('resultsScroll').innerHTML='<div class="empty-hint">📍 选择搜索半径开始</div>';
   document.querySelectorAll('.toolbar button[id^="btn"]').forEach(b=>{if(b.id!=='btnCopy'&&b.id!=='btnTile')b.disabled=false});
-  $('btnCopy').disabled=true;$('statusHint').innerHTML='<span class="badge waiting">就绪</span>';map.setView(NUS,14);
+  $('btnCopy').disabled=true;$('statusHint').innerHTML='<span class="badge waiting">就绪</span>';map.setView(Clementi,14);
 }
 
 // ==================== 启动 ====================
