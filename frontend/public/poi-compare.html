@@ -361,72 +361,93 @@ const GM_API_KEY = 'AIzaSyA2TFWRlLOG72sJLckOBa2zWq9L-rDotzc';
 
 async function searchGooglePlaces(keyword, radius) {
   const url = 'https://places.googleapis.com/v1/places:searchText';
-
-  const body = {
-    textQuery: keyword,
-    maxResultCount: 20,
-    locationBias: {
-      circle: {
-        center: { latitude: NUS_LAT, longitude: NUS_LNG },
-        radius: radius,
-      },
-    },
+  const headers = {
+    'Content-Type': 'application/json',
+    'X-Goog-Api-Key': GM_API_KEY,
+    'X-Goog-FieldMask': 'places.displayName,places.location,places.formattedAddress,places.rating,places.id,nextPageToken',
   };
 
-  try {
-    const resp = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Goog-Api-Key': GM_API_KEY,
-        // Field mask: 只请求我们需要的字段
-        'X-Goog-FieldMask': 'places.displayName,places.location,places.formattedAddress,places.rating,places.id',
-      },
-      body: JSON.stringify(body),
-    });
+  const allResults = [];
+  let pageToken = null;
+  let pageCount = 0;
+  const MAX_PAGES = 3; // 最多翻 3 页，每页 20，共 60
 
-    if (!resp.ok) {
-      const errText = await resp.text();
-      let errMsg = errText;
-      try { const j = JSON.parse(errText); errMsg = j.error?.message || errText; } catch (_) {}
+  while (pageCount < MAX_PAGES) {
+    const body = {
+      textQuery: keyword,
+      maxResultCount: 20,
+      locationBias: {
+        circle: {
+          center: { latitude: NUS_LAT, longitude: NUS_LNG },
+          radius: radius,
+        },
+      },
+    };
+    if (pageToken) body.pageToken = pageToken;
+
+    try {
+      const resp = await fetch(url, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(body),
+      });
+
+      if (!resp.ok) {
+        const errText = await resp.text();
+        let errMsg = errText;
+        try { const j = JSON.parse(errText); errMsg = j.error?.message || errText; } catch (_) {}
+        const errEl = document.getElementById('gmErrors');
+        if (errEl) {
+          errEl.style.display = 'block';
+          errEl.innerHTML += `<div>❌ "${keyword}": HTTP ${resp.status} — ${errMsg.substring(0, 120)}</div>`;
+        }
+        console.error(`[Places New] "${keyword}" HTTP ${resp.status}:`, errMsg);
+        break;
+      }
+
+      const data = await resp.json();
+      const places = data.places || [];
+      pageCount++;
+      console.log(`[Places New] "${keyword}" page ${pageCount}: ${places.length} results (nextPageToken: ${data.nextPageToken ? 'yes' : 'no'})`);
+
+      for (const p of places) {
+        const lat = p.location?.latitude;
+        const lng = p.location?.longitude;
+        if (lat == null || lng == null) continue;
+        const dist = havDistance(NUS_LAT, NUS_LNG, lat, lng);
+        allResults.push({
+          name: p.displayName?.text || keyword,
+          lat, lng,
+          distance_m: Math.round(dist),
+          keyword,
+          source: 'google',
+          vicinity: p.formattedAddress || '',
+          rating: p.rating || null,
+          place_id: p.id || '',
+        });
+      }
+
+      // 下一页
+      if (data.nextPageToken) {
+        pageToken = data.nextPageToken;
+        // nextPageToken 有短暂延迟才能使用
+        await new Promise(r => setTimeout(r, 400));
+      } else {
+        break;
+      }
+    } catch (e) {
       const errEl = document.getElementById('gmErrors');
       if (errEl) {
         errEl.style.display = 'block';
-        errEl.innerHTML += `<div>❌ "${keyword}": HTTP ${resp.status} — ${errMsg.substring(0, 120)}</div>`;
+        errEl.innerHTML += `<div>❌ "${keyword}": 网络错误 — ${e.message.substring(0, 100)}</div>`;
       }
-      console.error(`[Places New] "${keyword}" HTTP ${resp.status}:`, errMsg);
-      return [];
+      console.error(`[Places New] "${keyword}" fetch error:`, e);
+      break;
     }
-
-    const data = await resp.json();
-    const places = data.places || [];
-    console.log(`[Places New] "${keyword}" → ${places.length} results`);
-
-    return places.map(p => {
-      const lat = p.location?.latitude;
-      const lng = p.location?.longitude;
-      if (lat == null || lng == null) return null;
-      const dist = havDistance(NUS_LAT, NUS_LNG, lat, lng);
-      return {
-        name: p.displayName?.text || keyword,
-        lat, lng,
-        distance_m: Math.round(dist),
-        keyword,
-        source: 'google',
-        vicinity: p.formattedAddress || '',
-        rating: p.rating || null,
-        place_id: p.id || '',
-      };
-    }).filter(Boolean);
-  } catch (e) {
-    const errEl = document.getElementById('gmErrors');
-    if (errEl) {
-      errEl.style.display = 'block';
-      errEl.innerHTML += `<div>❌ "${keyword}": 网络错误 — ${e.message.substring(0, 100)}</div>`;
-    }
-    console.error(`[Places New] "${keyword}" fetch error:`, e);
-    return [];
   }
+
+  console.log(`[Places New] "${keyword}" TOTAL: ${allResults.length} results across ${pageCount} pages`);
+  return allResults;
 }
 
 // ===================== 主测试流程 =====================
