@@ -474,7 +474,7 @@ function copyReport(){
 
 function resetAll(){
   running=false;osmR={};gmR={};lastOsmTime=0;lastGmTime=0;currentRadius=0;
-  clearMarkers();
+  clearMarkers();clearGmErrors();
   if(searchRect){map.removeLayer(searchRect);searchRect=null}
   $('radiusLabel').textContent='—';
   currentCat='overview';
