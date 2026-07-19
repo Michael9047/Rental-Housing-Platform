@@ -209,11 +209,17 @@ function findClusters(pois){
 async function runTest(radius){
   if(running)return;running=true;currentRadius=radius;
   document.querySelectorAll('.toolbar button[id^="btn"]').forEach(b=>{if(b.id!=='btnCopy'&&b.id!=='btnTile')b.disabled=true});
-  $('radiusLabel').textContent=`${radius/1000}km 圆形`;
+  $('radiusLabel').textContent=`${radius/1000}km 矩形(2×2格)`;
   $('statusHint').innerHTML='<span class="badge loading"><span class="spinner"></span>搜索中…</span>';
+  const rrect=circleToRect(Clementi_LAT,Clementi_LNG,radius);
+  const rbounds=[[rrect.low.latitude,rrect.low.longitude],[rrect.high.latitude,rrect.high.longitude]];
   if(searchRect)map.removeLayer(searchRect);
-  searchRect=L.circle(Clementi,{radius,color:'#e94560',weight:2,fillColor:'#e9456033',fillOpacity:.12,dashArray:'6 3'}).addTo(map);
-  map.fitBounds(searchRect.getBounds(),{padding:[30,30]});
+  searchRect=L.rectangle(rbounds,{color:'#e94560',weight:2,fillColor:'#e9456033',fillOpacity:.12,dashArray:'6 3'}).addTo(map);
+  map.fitBounds(rbounds,{padding:[30,30]});
+  // 2×2 网格虚线
+  const dLat=(rrect.high.latitude-rrect.low.latitude)/2,dLng=(rrect.high.longitude-rrect.low.longitude)/2;
+  L.polyline([[rrect.low.latitude+dLat,rrect.low.longitude],[rrect.low.latitude+dLat,rrect.high.longitude]],{color:'#e9456040',weight:1,dashArray:'3 6'}).addTo(map);
+  L.polyline([[rrect.low.latitude,rrect.low.longitude+dLng],[rrect.high.latitude,rrect.low.longitude+dLng]],{color:'#e9456040',weight:1,dashArray:'3 6'}).addTo(map);
 
   gmR={};_poiIndex=0;for(const k of Object.keys(_poiMap))delete _poiMap[k];clearMarkers();clearGmErrors();renderResults();
 
@@ -329,7 +335,7 @@ function updateActiveTab(){document.querySelectorAll('#catTabs button,#kwTabs bu
 
 // ==================== 报告 ====================
 function copyReport(){
-  let r=[];r.push('═══════════════════════');r.push(' Google Maps POI 测试报告');r.push('═══════════════════════');r.push(`位置: Clementi (${Clementi_LAT}, ${Clementi_LNG})`);r.push(`范围: ${currentRadius?currentRadius/1000+'km 圆形':'N/A'}`);r.push(`耗时: ${lastGmTime.toFixed(0)}ms`);r.push('');
+  let r=[];r.push('═══════════════════════');r.push(' Google Maps POI 测试报告');r.push('═══════════════════════');r.push(`位置: Clementi (${Clementi_LAT}, ${Clementi_LNG})`);r.push(`范围: ${currentRadius?currentRadius/1000+'km 矩形(2×2格)':'N/A'}`);r.push(`耗时: ${lastGmTime.toFixed(0)}ms`);r.push('');
   for(const[cat,kws]of Object.entries(CATEGORIES)){r.push(`── ${cat} ──`);for(const kw of kws){const cnt=(gmR[kw]||[]).length;const types=(GM_NS[kw]||[]).join(',');r.push(`  ${kw} (${types}): ${cnt}`)}}
   r.push('');r.push('═══════════════════════');
   navigator.clipboard.writeText(r.join('\n')).then(()=>{$('statusHint').innerHTML='<span class="badge done">✅ 已复制</span>';setTimeout(()=>{$('statusHint').innerHTML=`<span class="badge done">✓ ${lastGmTime.toFixed(0)}ms</span>`},2000)}).catch(()=>{const ta=document.createElement('textarea');ta.value=r.join('\n');document.body.appendChild(ta);ta.select();document.execCommand('copy');document.body.removeChild(ta)});
