@@ -1,0 +1,632 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OSM vs Google Maps 加载速度对比</title>
+
+<!-- Leaflet CSS -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: #1a1a2e;
+    color: #e0e0e0;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  /* ===== 顶栏 ===== */
+  .toolbar {
+    display: flex; align-items: center; gap: 12px;
+    padding: 10px 20px;
+    background: #16213e;
+    border-bottom: 1px solid #0f3460;
+    flex-shrink: 0;
+    flex-wrap: wrap;
+  }
+  .toolbar h1 {
+    font-size: 18px; font-weight: 700;
+    background: linear-gradient(135deg, #e94560, #0f3460 70%);
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  .toolbar button {
+    padding: 7px 16px;
+    border: 1px solid #0f3460; border-radius: 8px;
+    background: #0f3460; color: #e0e0e0;
+    font-size: 13px; cursor: pointer;
+    transition: all .2s; white-space: nowrap;
+  }
+  .toolbar button:hover { background: #1a4a8a; border-color: #1a4a8a; }
+  .toolbar button.primary { background: #e94560; border-color: #e94560; color: #fff; font-weight: 600; }
+  .toolbar button.primary:hover { background: #d63850; }
+  .toolbar button:disabled { opacity: 0.4; cursor: not-allowed; }
+  .toolbar .sep { width: 1px; height: 20px; background: #0f3460; }
+  .toolbar .hint { font-size: 12px; color: #888; margin-left: auto; }
+
+  /* ===== 地图容器 ===== */
+  .maps-wrap {
+    display: flex; flex: 1; min-height: 0;
+    gap: 2px; background: #0f3460;
+  }
+  .map-panel {
+    flex: 1; display: flex; flex-direction: column;
+    position: relative; background: #1a1a2e;
+  }
+  .map-panel .label {
+    position: absolute; top: 10px; left: 50%; transform: translateX(-50%);
+    z-index: 1000; padding: 6px 16px;
+    border-radius: 20px;
+    font-size: 13px; font-weight: 600;
+    pointer-events: none;
+    backdrop-filter: blur(6px);
+  }
+  .label.osm  { background: rgba(126,188,137,0.85); color: #fff; }
+  .label.google { background: rgba(66,133,244,0.85); color: #fff; }
+  .map-instance { flex: 1; width: 100%; }
+
+  /* 占位文字 */
+  .placeholder {
+    position: absolute; inset: 0; display: flex;
+    align-items: center; justify-content: center;
+    color: #555; font-size: 14px; z-index: 0;
+  }
+
+  /* ===== 底部仪表盘 ===== */
+  .dashboard {
+    display: flex; gap: 2px;
+    background: #16213e; border-top: 1px solid #0f3460;
+    flex-shrink: 0;
+  }
+  .metric-card {
+    flex: 1; padding: 12px 14px;
+    background: #1a1a2e; text-align: center;
+  }
+  .metric-card .value {
+    font-size: 26px; font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    transition: color .3s;
+  }
+  .metric-card .label-text {
+    font-size: 11px; color: #888; margin-top: 2px;
+    text-transform: uppercase; letter-spacing: .5px;
+  }
+  .osm-color  { color: #7ebc89; }
+  .google-color { color: #4285f4; }
+  .neutral-color { color: #e0e0e0; }
+
+  /* 进度条 */
+  .bar-widget { display: flex; align-items: center; gap: 6px; margin-top: 4px; }
+  .bar-widget .bar-track {
+    flex: 1; height: 5px; border-radius: 3px;
+    background: #2a2a3e; overflow: hidden;
+  }
+  .bar-widget .bar-fill {
+    height: 100%; border-radius: 3px;
+    transition: width .4s ease;
+  }
+  .bar-fill.osm  { background: #7ebc89; }
+  .bar-fill.google { background: #4285f4; }
+
+  /* 状态徽章 */
+  .badge {
+    display: inline-block; padding: 2px 10px;
+    border-radius: 10px; font-size: 11px; font-weight: 600;
+  }
+  .badge.waiting { background: #8883; color: #888; }
+  .badge.loading { background: #e9a23b33; color: #e9a23b; }
+  .badge.done    { background: #7ebc8933; color: #7ebc89; }
+  .badge.error   { background: #e9456033; color: #e94560; }
+
+  /* Leaflet 暗色 */
+  .leaflet-container { background: #1a1a2e !important; }
+  .leaflet-control-zoom a { background: #16213e !important; color: #e0e0e0 !important; border-color: #0f3460 !important; }
+
+  /* 历史记录 */
+  .history-row {
+    display: flex; align-items: center; gap: 8px;
+    padding: 4px 16px; font-size: 12px;
+    background: #1a1a2e33;
+  }
+  .history-row .round-num { color: #888; min-width: 40px; }
+  .history-row .winner-tag { min-width: 70px; font-weight: 600; }
+  .history-row .detail { color: #888; font-size: 11px; }
+
+  /* 响应式 */
+  @media (max-width: 768px) {
+    .maps-wrap { flex-direction: column; }
+    .dashboard { flex-wrap: wrap; }
+    .metric-card { flex: 1 1 45%; }
+    .toolbar h1 { font-size: 14px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- 顶栏 -->
+<div class="toolbar">
+  <h1>OSM vs Google Maps · 加载速度对比</h1>
+  <button id="btnRun" class="primary" onclick="runBenchmark()">▶ 开始测试</button>
+  <button id="btnRun3" onclick="runMultiRound(3)">⏱ 3轮</button>
+  <button onclick="resetAll()">↺ 重置</button>
+  <span class="sep"></span>
+  <label style="font-size:12px;color:#aaa;display:flex;align-items:center;gap:4px;cursor:pointer">
+    <input type="checkbox" id="cacheBust" onchange="onCacheBustChange()"> 忽略缓存
+  </label>
+  <span class="hint" id="statusHint"><span class="badge waiting">等待 Google Maps API…</span></span>
+</div>
+
+<!-- 双地图 -->
+<div class="maps-wrap">
+  <div class="map-panel">
+    <div class="label osm">OpenStreetMap (Leaflet)</div>
+    <div id="osmMap" class="map-instance"><div class="placeholder">点击「开始测试」加载地图</div></div>
+  </div>
+  <div class="map-panel">
+    <div class="label google">Google Maps</div>
+    <div id="googleMap" class="map-instance"><div class="placeholder">点击「开始测试」加载地图</div></div>
+  </div>
+</div>
+
+<!-- 指标仪表盘 -->
+<div class="dashboard">
+
+  <div class="metric-card">
+    <div class="value osm-color"  id="osmFirstFrame">—</div>
+    <div class="label-text">OSM 首帧 (ms)</div>
+    <div class="bar-widget"><div class="bar-track"><div class="bar-fill osm" id="osmFirstFrameBar" style="width:0%"></div></div></div>
+  </div>
+  <div class="metric-card">
+    <div class="value google-color" id="googleFirstFrame">—</div>
+    <div class="label-text">Google 首帧 (ms)</div>
+    <div class="bar-widget"><div class="bar-track"><div class="bar-fill google" id="googleFirstFrameBar" style="width:0%"></div></div></div>
+  </div>
+
+  <div class="metric-card">
+    <div class="value osm-color"  id="osmAllTiles">—</div>
+    <div class="label-text">OSM 全部瓦片 (ms)</div>
+    <div class="bar-widget"><div class="bar-track"><div class="bar-fill osm" id="osmAllTilesBar" style="width:0%"></div></div></div>
+  </div>
+  <div class="metric-card">
+    <div class="value google-color" id="googleAllTiles">—</div>
+    <div class="label-text">Google 全部瓦片 (ms)</div>
+    <div class="bar-widget"><div class="bar-track"><div class="bar-fill google" id="googleAllTilesBar" style="width:0%"></div></div></div>
+  </div>
+
+  <div class="metric-card">
+    <div class="value osm-color"  id="osmTileCount">—</div>
+    <div class="label-text">OSM 瓦片数</div>
+  </div>
+  <div class="metric-card">
+    <div class="value google-color" id="googleTileCount">—</div>
+    <div class="label-text">Google 瓦片数</div>
+  </div>
+
+  <div class="metric-card" style="flex:1.3">
+    <div class="value" id="winnerText" style="font-size:18px">—</div>
+    <div class="label-text">🏆 本局结果</div>
+  </div>
+
+</div>
+
+<!-- 历史记录条 -->
+<div id="historyBar" style="display:none;">
+  <div style="padding:6px 16px;font-size:11px;color:#888;border-top:1px solid #0f3460;background:#16213e">📋 测试记录</div>
+  <div id="historyList"></div>
+</div>
+
+<!-- Leaflet JS -->
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+<script>
+// ===================== 常量 =====================
+const CENTER = [1.3521, 103.8198]; // 新加坡市中心
+const ZOOM   = 14;
+const TILE_STABLE_MS = 400;        // N ms 无新瓦片视为"全部加载完毕"
+
+// ===================== 全局状态 =====================
+const metrics = {
+  osm:    { firstFrame: null, allTiles: null, tileCount: 0, tileLoaded: 0, startTime: 0, done: false },
+  google: { firstFrame: null, allTiles: null, tileCount: 0, tileLoaded: 0, startTime: 0, done: false },
+};
+
+let osmMap       = null;
+let googleMap    = null;
+let osmTileLayer = null;
+let googlePerfObs = null;
+let benchRunning = false;
+let roundNumber  = 0;
+const history    = [];  // { round, osmAllTiles, googleAllTiles, osmFirst, googleFirst, winner }
+
+// ===================== 辅助函数 =====================
+function $(id) { return document.getElementById(id); }
+
+function cacheBustParam() {
+  return $('cacheBust').checked ? ('?t=' + Date.now()) : '';
+}
+
+// ===================== OSM 地图 =====================
+function initOSM() {
+  if (osmMap) { osmMap.remove(); osmMap = null; }
+
+  osmMap = L.map('osmMap', {
+    center: CENTER,
+    zoom: ZOOM,
+    zoomControl: true,
+    attributionControl: false,
+    fadeAnimation: false,
+  });
+
+  // 缓存破坏：动态切换 tile URL
+  const tileUrl = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png' + cacheBustParam();
+
+  osmTileLayer = L.tileLayer(tileUrl, {
+    attribution: '&copy; OSM',
+    maxZoom: 19,
+    tileSize: 256,
+  }).addTo(osmMap);
+
+  hookOSMTiles(osmTileLayer);
+}
+
+function hookOSMTiles(tileLayer) {
+  const origCreateTile = tileLayer.createTile.bind(tileLayer);
+
+  tileLayer.createTile = function(coords, done) {
+    const tile = origCreateTile(coords, done);
+    const img = tile.tagName === 'IMG' ? tile : tile.querySelector('img');
+
+    if (img && !img.dataset.osmHooked) {
+      img.dataset.osmHooked = '1';
+      metrics.osm.tileCount++;
+
+      const onDone = () => {
+        if (metrics.osm.done) return;
+        metrics.osm.tileLoaded++;
+
+        if (metrics.osm.firstFrame === null) {
+          metrics.osm.firstFrame = performance.now() - metrics.osm.startTime;
+          refreshUI('osm');
+        }
+
+        scheduleAllDone('osm');
+      };
+
+      img.addEventListener('load', onDone, { once: true });
+      img.addEventListener('error', onDone, { once: true });
+
+      // 缓存命中兜底
+      if (img.complete) {
+        requestAnimationFrame(() => onDone());
+      }
+    }
+
+    return tile;
+  };
+}
+
+// ===================== Google Maps =====================
+function initGoogleMap() {
+  const el = $('googleMap');
+  el.innerHTML = '';
+
+  // ★ 关键：先设 Observer，再建 Map（避免漏掉同步触发的 tile 请求）
+  googlePerfObs = new PerformanceObserver((list) => {
+    for (const entry of list.getEntries()) {
+      if (metrics.google.done) break;
+
+      const url = entry.name;
+      // Google 矢量/栅格瓦片 URL 特征
+      if (!url.includes('googleapis.com') && !url.includes('google.com') && !url.includes('gstatic.com')) continue;
+      if (!/\/vt\?|lyrs=|maps\/vt|khms\d*\.google/.test(url)) continue;
+
+      // transferSize=0 且 responseEnd=0 → 缓存命中；仍然计数
+      metrics.google.tileCount++;
+
+      if (metrics.google.firstFrame === null) {
+        // 首帧：取 responseEnd（网络）或当前时间（缓存）
+        const now = performance.now();
+        const frameTime = entry.responseEnd > 0
+          ? entry.responseEnd - metrics.google.startTime
+          : now - metrics.google.startTime;
+        metrics.google.firstFrame = Math.max(0, frameTime);
+        refreshUI('google');
+      }
+
+      metrics.google.tileLoaded++;
+      scheduleAllDone('google');
+    }
+  });
+
+  googlePerfObs.observe({ type: 'resource', buffered: false });
+
+  // 现在建 Map
+  googleMap = new google.maps.Map(el, {
+    center: { lat: CENTER[0], lng: CENTER[1] },
+    zoom: ZOOM,
+    disableDefaultUI: false,
+    zoomControl: true,
+    mapTypeControl: false,
+    streetViewControl: false,
+    fullscreenControl: false,
+    backgroundColor: '#f5f5f5',
+    // 不使用暗色 style，保持原生 Google Maps 外观便于排查瓦片加载
+  });
+
+  // 检测 Google Maps 瓦片是否全部加载失败（常见于中国大陆网络环境）
+  setTimeout(() => {
+    if (!metrics.google.done && metrics.google.tileLoaded === 0 && metrics.google.tileCount > 0) {
+      // 有请求但无成功加载 → GFW 阻断
+      $('statusHint').innerHTML = '<span class="badge error">⚠ Google 瓦片被墙 — 请开 VPN 后刷新</span>';
+    }
+  }, 8000);
+
+  // resize 触发首轮瓦片请求
+  setTimeout(() => {
+    if (googleMap) google.maps.event.trigger(googleMap, 'resize');
+  }, 50);
+}
+
+// ===================== 完成检测 =====================
+const allDoneTimers = { osm: null, google: null };
+
+function scheduleAllDone(which) {
+  clearTimeout(allDoneTimers[which]);
+  allDoneTimers[which] = setTimeout(() => {
+    if (metrics[which].done) return;
+    metrics[which].done = true;
+    metrics[which].allTiles = performance.now() - metrics[which].startTime;
+    refreshUI(which);
+    checkBothDone();
+  }, TILE_STABLE_MS);
+}
+
+function checkBothDone() {
+  if (metrics.osm.done && metrics.google.done) {
+    benchRunning = false;
+    finalizeRound();
+  }
+}
+
+// ===================== UI 刷新 =====================
+function refreshUI(which) {
+  const m = metrics[which];
+  const cls = which === 'osm' ? 'osm-color' : 'google-color';
+  const prefix = which === 'osm' ? 'osm' : 'google';
+
+  if (m.firstFrame !== null) {
+    setValue(prefix + 'FirstFrame', m.firstFrame.toFixed(0), cls);
+    setBar(prefix + 'FirstFrameBar', Math.min(m.firstFrame, 2000), 2000);
+  }
+  if (m.allTiles !== null) {
+    setValue(prefix + 'AllTiles', m.allTiles.toFixed(0), cls);
+    setBar(prefix + 'AllTilesBar', Math.min(m.allTiles, 5000), 5000);
+  }
+  setValue(prefix + 'TileCount', m.tileLoaded, cls);
+
+  // 状态行
+  const osmDone  = metrics.osm.done;
+  const gDone    = metrics.google.done;
+  const hint     = $('statusHint');
+  if (osmDone && gDone) {
+    hint.innerHTML = '<span class="badge done">✓ 本轮完成</span>';
+  } else {
+    let html = '';
+    html += osmDone ? '<span class="badge done">OSM ✓</span> ' : '<span class="badge loading">OSM ⏳</span> ';
+    html += gDone   ? '<span class="badge done">Google ✓</span>'   : '<span class="badge loading">Google ⏳</span>';
+    hint.innerHTML = html;
+  }
+}
+
+function setValue(id, val, cls) {
+  const el = $(id);
+  if (el) { el.textContent = val; el.className = 'value ' + (cls || ''); }
+}
+
+function setBar(id, val, max) {
+  const bar = $(id);
+  if (bar) bar.style.width = Math.min(100, Math.max(0, (val / max) * 100)) + '%';
+}
+
+// ===================== 结算 =====================
+function finalizeRound() {
+  roundNumber++;
+  const osmAll  = metrics.osm.allTiles    ?? Infinity;
+  const gAll    = metrics.google.allTiles ?? Infinity;
+  const osm1st  = metrics.osm.firstFrame  ?? Infinity;
+  const g1st    = metrics.google.firstFrame  ?? Infinity;
+
+  let winner, winnerCls;
+  if (osmAll < gAll)      { winner = 'OSM';   winnerCls = 'osm-color'; }
+  else if (gAll < osmAll) { winner = 'Google'; winnerCls = 'google-color'; }
+  else                     { winner = '平局';   winnerCls = 'neutral-color'; }
+
+  const rec = { round: roundNumber, osmAllTiles: osmAll, googleAllTiles: gAll, osmFirst: osm1st, googleFirst: g1st, winner };
+  history.push(rec);
+  renderHistory();
+
+  // 胜者展示
+  const el = $('winnerText');
+  let html = `<span class="${winnerCls}">${winner === '平局' ? '🤝 平局' : '🏆 ' + winner + ' 胜出'}</span>`;
+  if (winner !== '平局') {
+    const diff = Math.abs(gAll - osmAll).toFixed(0);
+    const faster = osmAll < gAll ? 'OSM' : 'Google';
+    html += `<br><small style="color:#888;font-size:11px">${faster} 快 ${diff} ms · 首帧: ${osm1st.toFixed(0)} vs ${g1st.toFixed(0)} ms</small>`;
+  } else {
+    html += `<br><small style="color:#888;font-size:11px">OSM ${osmAll.toFixed(0)} ms · Google ${gAll.toFixed(0)} ms</small>`;
+  }
+  el.innerHTML = html;
+}
+
+function renderHistory() {
+  const bar = $('historyBar');
+  const list = $('historyList');
+  bar.style.display = 'block';
+  list.innerHTML = history.map(r => {
+    let wTag = '';
+    if (r.winner === 'OSM')    wTag = '<span class="osm-color">OSM 胜</span>';
+    else if (r.winner === 'Google') wTag = '<span class="google-color">Google 胜</span>';
+    else                       wTag = '<span style="color:#e9a23b">平局</span>';
+    return `<div class="history-row">
+      <span class="round-num">#${r.round}</span>
+      <span class="winner-tag">${wTag}</span>
+      <span class="detail">OSM: ${r.osmAllTiles.toFixed(0)}ms / Google: ${r.googleAllTiles.toFixed(0)}ms | 首帧 OSM: ${r.osmFirst.toFixed(0)}ms Google: ${r.googleFirst.toFixed(0)}ms</span>
+    </div>`;
+  }).join('');
+}
+
+// ===================== 核心操作 =====================
+function runBenchmark() {
+  if (benchRunning) return;
+  benchRunning = true;
+
+  resetMetrics();
+  destroyMaps();
+
+  const t0 = performance.now();
+  metrics.osm.startTime    = t0;
+  metrics.google.startTime = t0;
+
+  $('statusHint').innerHTML = '<span class="badge loading">OSM ⏳</span> <span class="badge loading">Google ⏳</span>';
+  $('btnRun').disabled = true;
+  $('btnRun3').disabled = true;
+
+  initOSM();
+  initGoogleMap();
+}
+
+async function runMultiRound(n) {
+  for (let i = 0; i < n; i++) {
+    if (i > 0) {
+      // 轮间等待：让浏览器喘息 + 用户可看到每轮结果
+      await sleep(1500);
+    }
+    runBenchmark();
+    // 等待本轮完成
+    await waitForDone();
+  }
+  $('btnRun').disabled = false;
+  $('btnRun3').disabled = false;
+}
+
+function waitForDone() {
+  return new Promise(resolve => {
+    const check = () => {
+      if (!benchRunning) { resolve(); return; }
+      // 超时保护 30s
+      const elapsed = performance.now() - Math.max(metrics.osm.startTime, metrics.google.startTime);
+      if (elapsed > 30000) {
+        metrics.osm.done = true;
+        metrics.google.done = true;
+        if (metrics.osm.allTiles === null) metrics.osm.allTiles = elapsed;
+        if (metrics.google.allTiles === null) metrics.google.allTiles = elapsed;
+        benchRunning = false;
+        finalizeRound();
+        resolve();
+        return;
+      }
+      setTimeout(check, 200);
+    };
+    check();
+  });
+}
+
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+function destroyMaps() {
+  // 断开 PerformanceObserver
+  if (googlePerfObs) { googlePerfObs.disconnect(); googlePerfObs = null; }
+
+  // Leaflet
+  if (osmMap) { osmMap.remove(); osmMap = null; }
+  $('osmMap').innerHTML = '';
+
+  // Google Maps
+  if (googleMap) {
+    // 触发 destroy 事件释放内存
+    google.maps.event.clearInstanceListeners(googleMap);
+    googleMap = null;
+  }
+  $('googleMap').innerHTML = '';
+}
+
+function resetMetrics() {
+  ['osm', 'google'].forEach(w => {
+    metrics[w].firstFrame  = null;
+    metrics[w].allTiles    = null;
+    metrics[w].tileCount   = 0;
+    metrics[w].tileLoaded  = 0;
+    metrics[w].done        = false;
+    clearTimeout(allDoneTimers[w]);
+  });
+
+  const ids = ['osmFirstFrame','osmAllTiles','osmTileCount','googleFirstFrame','googleAllTiles','googleTileCount'];
+  ids.forEach(id => {
+    const el = $(id);
+    if (el) { el.textContent = '—'; el.className = 'value ' + (id.startsWith('osm') ? 'osm-color' : 'google-color'); }
+  });
+  ['osmFirstFrameBar','osmAllTilesBar','googleFirstFrameBar','googleAllTilesBar'].forEach(id => {
+    const el = $(id);
+    if (el) el.style.width = '0%';
+  });
+  $('winnerText').innerHTML = '—';
+  $('btnRun').disabled = false;
+  $('btnRun3').disabled = false;
+}
+
+function resetAll() {
+  benchRunning = false;
+  resetMetrics();
+  destroyMaps();
+  history.length = 0;
+  $('historyBar').style.display = 'none';
+  $('historyList').innerHTML = '';
+  $('statusHint').innerHTML = '<span class="badge waiting">就绪 — 点击「开始测试」</span>';
+}
+
+// ===================== 缓存开关 =====================
+function onCacheBustChange() {
+  if ($('cacheBust').checked) {
+    $('statusHint').innerHTML = '<span class="badge waiting">⚠ 缓存破坏已开启 — 每轮强制重新下载瓦片</span>';
+  } else {
+    $('statusHint').innerHTML = '<span class="badge waiting">就绪 — 点击「开始测试」（浏览器缓存生效中）</span>';
+  }
+}
+
+// ===================== Google Maps API 回调 =====================
+let googleReady = false;
+
+window.initMap = function() {
+  googleReady = true;
+  $('statusHint').innerHTML = '<span class="badge waiting">就绪 — 点击「开始测试」</span>';
+  $('btnRun').disabled = false;
+  $('btnRun3').disabled = false;
+};
+
+window.gm_authFailure = function() {
+  $('statusHint').innerHTML = '<span class="badge error">❌ Google Maps API Key 无效或被拒 — 请检查 Google Cloud Console</span>';
+};
+
+// 动态注入 Google Maps JS
+(function loadGoogleMaps() {
+  const script = document.createElement('script');
+  script.src = 'https://maps.googleapis.com/maps/api/js?key=AIzaSyA2TFWRlLOG72sJLckOBa2zWq9L-rDotzc&callback=initMap';
+  script.async = true;
+  script.defer = true;
+  script.onerror = () => {
+    $('statusHint').innerHTML = '<span class="badge error">❌ 无法加载 Google Maps API — 检查网络或 API Key</span>';
+  };
+  document.head.appendChild(script);
+})();
+
+// ★ 不再预加载 OSM —— 保证冷启动公平对比
+</script>
+
+</body>
+</html>
