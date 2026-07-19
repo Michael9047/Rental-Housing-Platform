@@ -149,7 +149,8 @@
 <!-- 顶栏 -->
 <div class="toolbar">
   <h1>POI 周边搜索对比 · NUS 新加坡国立大学</h1>
-  <button id="btn3km" class="primary" onclick="runTest(3000)">▶ 搜索 3km</button>
+  <button id="btn1km" class="primary" onclick="runTest(1000)">▶ 搜索 1km</button>
+  <button id="btn3km" onclick="runTest(3000)">▶ 搜索 3km</button>
   <button id="btn5km" onclick="runTest(5000)">▶ 搜索 5km</button>
   <button onclick="resetAll()">↺ 重置</button>
   <span class="sep"></span>
@@ -206,6 +207,12 @@
     <!-- Google Places 错误诊断 -->
     <div id="gmErrors" style="display:none;background:#e9456015;border:1px solid #e9456040;border-radius:8px;padding:10px 14px;font-size:12px;max-height:160px;overflow-y:auto">
       <div style="color:#e94560;font-weight:600;margin-bottom:4px">⚠ Google Places API 错误</div>
+    </div>
+
+    <!-- Google 关键词差异分析 -->
+    <div id="diagPanel" style="display:none;background:#e9a23b10;border:1px solid #e9a23b30;border-radius:8px;padding:10px 14px;font-size:12px">
+      <div style="color:#e9a23b;font-weight:600;margin-bottom:6px">🔬 Google 关键词诊断</div>
+      <div id="diagContent" style="color:#aaa;line-height:1.6"></div>
     </div>
 
     <!-- 关键词明细表 -->
@@ -455,7 +462,7 @@ async function runTest(radius) {
   if (running) return;
   running = true;
 
-  $('btn3km').disabled = $('btn5km').disabled = true;
+  $('btn1km').disabled = $('btn3km').disabled = $('btn5km').disabled = true;
   currentRadius = radius;
   $('radiusLabel').textContent = `${radius / 1000}km`;
   $('statusHint').innerHTML = '<span class="badge loading"><span class="spinner"></span>搜索中…</span>';
@@ -506,7 +513,7 @@ async function runTest(radius) {
   // 渲染最终结果
   renderResults(osmTime, gmTime);
   running = false;
-  $('btn3km').disabled = $('btn5km').disabled = false;
+  $('btn1km').disabled = $('btn3km').disabled = $('btn5km').disabled = false;
   $('statusHint').innerHTML = '<span class="badge done">✓ 搜索完成</span>';
 }
 
@@ -622,6 +629,9 @@ function renderResults(osmTime, gmTime) {
 
   // POI 打点到地图
   renderMapMarkers();
+
+  // 诊断分析：Google 零结果 vs OSM 有结果的关键词
+  runDiagnostics();
 }
 
 function renderProgress() {
@@ -630,6 +640,71 @@ function renderProgress() {
   const gmTotal = Object.values(gmResults).flat().length;
   $('osmTotal').textContent = osmTotal;
   $('gmTotal').textContent = gmTotal;
+}
+
+// ===================== 诊断分析 =====================
+function runDiagnostics() {
+  const panel = document.getElementById('diagPanel');
+  const content = document.getElementById('diagContent');
+  if (!panel || !content) return;
+
+  const lines = [];
+
+  // 1. 找出 Google 大幅落后于 OSM 的关键词
+  const gaps = [];
+  for (const [cat, kws] of Object.entries(CATEGORIES)) {
+    for (const kw of kws) {
+      const osmC = (osmResults[kw] || []).length;
+      const gmC = (gmResults[kw] || []).length;
+      if (osmC > 5 && gmC === 0) {
+        gaps.push({ cat, kw, osmC, gmC });
+      }
+    }
+  }
+
+  if (gaps.length > 0) {
+    lines.push('<div style="margin-bottom:6px"><strong>🚫 Google 零结果（OSM 有数据）：</strong></div>');
+    for (const g of gaps) {
+      // 判断原因
+      let reason = '';
+      const kw = g.kw;
+      if (kw === '公交站') {
+        reason = '— 新加坡公交站英文叫 "bus stop"，中文"公交站"不是本地用语；Google 做的是文本搜索而非标签匹配';
+      } else if (kw === '地铁站') {
+        reason = '— 新加坡叫 "MRT station"，"地铁站"是大陆用语，Google 文本搜索匹配不到';
+      } else if (kw === '火车站') {
+        reason = '— 新加坡火车站较少，且中文名不常见';
+      } else if (kw === '菜市场') {
+        reason = '— 新加坡称 "wet market" 或 "market"，"菜市场"是中国大陆用语';
+      } else if (kw === '快递') {
+        reason = '— 中文"快递"在英文环境中无匹配，应搜索 "courier" 或 "post office"';
+      } else if (kw === '洗衣店') {
+        reason = '— 中文"洗衣店"应映射到 "laundry" 或 "laundromat"';
+      } else {
+        reason = `— 中文关键词"${kw}"在新加坡英文环境中的文本搜索匹配度低`;
+      }
+      lines.push(`<div style="margin-left:8px">• <span style="color:#e9a23b">${g.kw}</span>: OSM ${g.osmC} vs Google ${g.gmC} <span style="color:#888">${reason}</span></div>`);
+    }
+  }
+
+  // 2. 总览对比
+  const osmTotal = Object.values(osmResults).flat().length;
+  const gmTotal = Object.values(gmResults).flat().length;
+  if (osmTotal > 0 && gmTotal > 0) {
+    lines.push(`<div style="margin-top:8px;border-top:1px solid #e9a23b20;padding-top:8px">`);
+    lines.push(`<strong>📊 核心差异原因：</strong><br>`);
+    lines.push(`<span style="color:#7ebc89">OSM (Overpass)</span> 使用 <strong>OSM 标签</strong> 搜索（如 <code>highway=bus_stop</code>）— 语言无关，直接匹配地理元数据<br>`);
+    lines.push(`<span style="color:#4285f4">Google Places</span> 使用 <strong>文本搜索</strong>（<code>textQuery</code>）— 依赖本地语言的店铺/地标名称<br>`);
+    lines.push(`<span style="color:#888">→ 在新加坡（英语环境），中文关键词命中率天然低。若改用英文关键词（bus stop / MRT / clinic），Google 结果会显著增加。</span>`);
+    lines.push(`</div>`);
+  }
+
+  if (lines.length > 0) {
+    content.innerHTML = lines.join('\n');
+    panel.style.display = 'block';
+  } else {
+    panel.style.display = 'none';
+  }
 }
 
 // ===================== 地图标记 =====================
@@ -691,8 +766,10 @@ function resetAll() {
 
   const errEl = document.getElementById('gmErrors');
   if (errEl) { errEl.style.display = 'none'; errEl.innerHTML = '<div style="color:#e94560;font-weight:600;margin-bottom:4px">⚠ Google Places API 错误</div>'; }
+  const diagPanel = document.getElementById('diagPanel');
+  if (diagPanel) diagPanel.style.display = 'none';
 
-  $('btn3km').disabled = $('btn5km').disabled = false;
+  $('btn1km').disabled = $('btn3km').disabled = $('btn5km').disabled = false;
   $('statusHint').innerHTML = '<span class="badge waiting">就绪</span>';
   map.setView(NUS_CENTER, 14);
 }
@@ -706,7 +783,7 @@ let googleReady = false;
 window.initMap = function() {
   googleReady = true;
   $('statusHint').innerHTML = '<span class="badge waiting">就绪 — 选择搜索半径</span>';
-  $('btn3km').disabled = $('btn5km').disabled = false;
+  $('btn1km').disabled = $('btn3km').disabled = $('btn5km').disabled = false;
 };
 
 window.gm_authFailure = function() {
