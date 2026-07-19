@@ -44,7 +44,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 .kw-body.open{display:block}
 .poi-item{display:flex;align-items:center;gap:5px;padding:3px 6px;margin:1px 0;border-radius:3px;cursor:pointer;font-size:10px;transition:background .1s}
 .poi-item:hover{background:#fff1}
-.poi-item .dot{width:6px;height:6px;border-radius:50%;flex-shrink:0;background:#4285f4}
+.poi-item .dot{width:11px;height:14px;flex-shrink:0;background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='11' height='14' viewBox='0 0 20 28'%3E%3Cpath d='M10 0C4.5 0 0 4.5 0 10c0 7 10 18 10 18s10-11 10-18C20 4.5 15.5 0 10 0z' fill='%23a855f7'/%3E%3C/svg%3E") no-repeat center/contain}
 .poi-item .poi-name{flex:1;color:#ccc;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .poi-item .poi-dist{color:#888;font-size:9px;flex-shrink:0}
 .poi-item.highlight{background:#e9456020!important}
@@ -184,6 +184,17 @@ function dedupGm(keyword,thresholdM){
   for(const p of sorted){if(!kept.some(k=>havDistance(p.lat,p.lng,k.lat,k.lng)<thresholdM))kept.push(p)}
   gmR[keyword]=kept;
 }
+// 同名+同区域去重（连锁店/重复条目）
+function dedupGmByName(keyword,thresholdM){
+  const pois=gmR[keyword];if(!pois||!pois.length)return;
+  const sorted=[...pois].sort((a,b)=>a.distance_m-b.distance_m);
+  const kept=[];
+  for(const p of sorted){
+    const norm=p.name.toLowerCase().replace(/[^a-z0-9一-鿿]/g,'');
+    if(!kept.some(k=>{const kn=k.name.toLowerCase().replace(/[^a-z0-9一-鿿]/g,'');return (norm===kn||norm.includes(kn)||kn.includes(norm))&&havDistance(p.lat,p.lng,k.lat,k.lng)<thresholdM}))kept.push(p);
+  }
+  gmR[keyword]=kept;
+}
 
 // ==================== 聚集分析 ====================
 const CLUSTER_DIST=150,MIN_CLUSTER=3;
@@ -238,6 +249,8 @@ async function runTest(radius){
   lastGmTime=performance.now()-t0;
 
   dedupGm("医院",200);dedupGm("商场",150);dedupGm("市场",150);
+  // 美食类关键词——同名同区域去重（连锁店/重复条目）
+  for(const kw of["餐厅","cafe","烘焙","快餐","食阁"])dedupGmByName(kw,100);
 
   running=false;
   document.querySelectorAll('.toolbar button[id^="btn"]').forEach(b=>{if(b.id!=='btnCopy'&&b.id!=='btnTile')b.disabled=false});
@@ -252,8 +265,9 @@ function renderProgress(){
 }
 
 // ==================== 地图标记 ====================
-const gmIcon=L.divIcon({className:'',html:'<div style="width:7px;height:7px;border-radius:50%;background:#4285f4;border:1px solid rgba(255,255,255,.6)"></div>',iconSize:[7,7],iconAnchor:[3,3]});
-const hlIcon=L.divIcon({className:'',html:'<div style="width:14px;height:14px;border-radius:50%;background:#e94560;border:3px solid #fff;box-shadow:0 0 8px rgba(233,69,96,.6);animation:pulse .8s infinite"></div>',iconSize:[14,14],iconAnchor:[7,7]});
+// 紫色水滴图标
+const gmIcon=L.divIcon({className:'',html:`<svg width="20" height="28" viewBox="0 0 20 28"><path d="M10 0C4.5 0 0 4.5 0 10c0 7 10 18 10 18s10-11 10-18C20 4.5 15.5 0 10 0z" fill="#a855f7" stroke="#7c3aed" stroke-width="1"/><circle cx="10" cy="9" r="4" fill="rgba(255,255,255,.6)"/></svg>`,iconSize:[20,28],iconAnchor:[10,28],popupAnchor:[0,-26]});
+const hlIcon=L.divIcon({className:'',html:`<svg width="26" height="36" viewBox="0 0 20 28"><path d="M10 0C4.5 0 0 4.5 0 10c0 7 10 18 10 18s10-11 10-18C20 4.5 15.5 0 10 0z" fill="#e94560" stroke="#fff" stroke-width="1.5"/><circle cx="10" cy="9" r="3" fill="#fff"/></svg>`,iconSize:[26,36],iconAnchor:[13,36],popupAnchor:[0,-34]});
 
 function clearMarkers(){gmMarkers.forEach(m=>map.removeLayer(m));gmMarkers=[];clusterCircles.forEach(c=>map.removeLayer(c));clusterCircles=[];if(highlighted){map.removeLayer(highlighted);highlighted=null}}
 
