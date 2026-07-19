@@ -250,7 +250,7 @@ async function runTest(radius){
 
   dedupGm("医院",200);dedupGm("商场",150);dedupGm("市场",150);
   // 美食类关键词——同名同区域去重（连锁店/重复条目）
-  for(const kw of["餐厅","cafe","烘焙","快餐","食阁"])dedupGmByName(kw,100);
+  for(const kw of["餐厅","cafe","烘焙","快餐","食阁"])dedupGmByName(kw,50);
 
   running=false;
   document.querySelectorAll('.toolbar button[id^="btn"]').forEach(b=>{if(b.id!=='btnCopy'&&b.id!=='btnTile')b.disabled=false});
