@@ -129,7 +129,7 @@
 import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
 import { Loading, Search } from '@element-plus/icons-vue'
 import { metersToKm, type OverpassPOI } from '@/services/overpass'
-import { loadOSMTiles, type TileHandle } from '@/services/tileDetector'
+import { loadTiles, type TileHandle } from '@/services/tileDetector'
 import { propertyService, type MapPOIItem } from '@/services/property'
 import api from '@/services/api'
 import L from 'leaflet'
@@ -321,25 +321,19 @@ const selectedPoiId = ref<number | null>(null)
 let prevHighlighted: L.Marker | null = null
 
 
-// 地图移动防抖定时器
-let moveTimer: ReturnType<typeof setTimeout> | null = null
-
-function initMap() {
+async function initMap() {
   if (!mapContainer.value || ready) return
   map = L.map(mapContainer.value, {
     zoomControl: false,
     attributionControl: false,
   }).setView([props.propertyLat, props.propertyLng], 15)
 
-  // 全球统一 OSM 瓦片，事件驱动回退（tileerror → 法国镜像）
-  tileHandle = loadOSMTiles(map)
+  // IP 地理位置选择最优瓦片源：国内→高德，海外→OSM+tileerror 回退
+  tileHandle = await loadTiles(map)
 
   propMarker = L.marker([props.propertyLat, props.propertyLng], { icon: propIcon })
     .bindTooltip(props.propertyTitle, { direction: 'top', offset: [0, -22] })
     .addTo(map)
-
-  // 视口变化时本地筛选 POI（150ms 防抖，即时响应，零网络请求）
-  map.on('moveend', onMapMoveEnd)
 
   // 确保容器尺寸正确后再刷新地图
   setTimeout(() => {
@@ -484,13 +478,6 @@ function filterLocalPOIs() {
   })
 }
 
-/** 视口变化时自动刷新（本地筛选，即时响应） */
-function onMapMoveEnd() {
-  if (!activeCategory.value) return
-  if (moveTimer) clearTimeout(moveTimer)
-  moveTimer = setTimeout(() => filterLocalPOIs(), 150) // 150ms 防抖，本地筛选很快
-}
-
 // ── 从后端加载预生成 POI ──
 
 async function loadAllMapPOIs() {
@@ -528,7 +515,6 @@ onMounted(() => {
   })
 })
 onUnmounted(() => {
-  if (moveTimer) clearTimeout(moveTimer)
   if (schoolSearchTimer) clearTimeout(schoolSearchTimer)
   tileHandle?.destroy()
   if (map) { map.remove(); map = null; ready = false }

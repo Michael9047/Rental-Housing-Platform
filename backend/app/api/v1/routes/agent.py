@@ -134,7 +134,10 @@ async def _handle_with_supervisor(
     # 提取筛选条件
     filters = body.filters.model_dump(exclude_none=True) if body.filters else None
 
-    supervisor = Supervisor(session=session, registry=registry, tool_registry=tool_registry)
+    supervisor = Supervisor(
+        session=session, registry=registry, tool_registry=tool_registry,
+        chat_session=chat_session,
+    )
     result = await supervisor.handle_message(
         message=body.message,
         history=history,

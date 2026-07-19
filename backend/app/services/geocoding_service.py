@@ -15,7 +15,7 @@ from app.core.config import get_settings
 
 logger = logging.getLogger(__name__)
 
-# 中国大陆使用高德作为主引擎
+# 中国大陆房源走 高德（OSM 国内数据稀疏），其余默认 Overpass
 _AMAP_PRIMARY_COUNTRIES: frozenset[str] = frozenset({"CN"})
 
 
@@ -691,9 +691,9 @@ class NominatimGeocodingService(BaseGeocodingService):
 
 
 def _is_amap_primary(country: str | None) -> bool:
-    """判断是否以高德为主引擎"""
+    """判断是否以高德为主引擎（仅中国大陆房源，其余默认 Overpass/OSM）"""
     if not country:
-        return True  # 默认中国大陆
+        return False  # 默认海外（主要市场是留学生租房）
     return country.upper() in _AMAP_PRIMARY_COUNTRIES
 
 

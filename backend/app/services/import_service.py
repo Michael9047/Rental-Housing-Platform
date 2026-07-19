@@ -1,4 +1,3 @@
-import asyncio
 import csv
 import io
 import json
@@ -1073,36 +1072,17 @@ class ImportService:
         thread.start()
 
     def _dispatch_batch_poi_generation(self, property_ids: list[int]) -> None:
+        """批量导入后异步生成地图 POI（Celery 任务，不阻塞）"""
         if not property_ids:
             return
 
         def _run() -> None:
             try:
-                from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
-
-                from app.core.config import get_settings
-                from app.models.property import Property
-                from app.services.poi_service import POIService
-
-                async def _generate() -> None:
-                    engine = create_async_engine(get_settings().database_url)
-                    try:
-                        maker = async_sessionmaker(engine, expire_on_commit=False)
-                        async with maker() as session:
-                            poi_service = POIService(session)
-                            for property_id in property_ids:
-                                try:
-                                    prop = await session.get(Property, property_id)
-                                    if prop:
-                                        await poi_service.generate_poi_for_property(prop, force=True)
-                                except Exception:
-                                    logger.exception("Failed to generate POI for imported property %s", property_id)
-                    finally:
-                        await engine.dispose()
-
-                asyncio.run(_generate())
+                from app.tasks.poi_tasks import generate_map_pois_for_property
+                for property_id in property_ids:
+                    generate_map_pois_for_property.delay(property_id)
             except Exception:
-                logger.exception("Failed to dispatch batch POI generation")
+                logger.exception("Failed to dispatch batch map POI generation")
 
         thread = threading.Thread(target=_run, daemon=True)
         thread.start()

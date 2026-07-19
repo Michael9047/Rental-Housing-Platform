@@ -100,6 +100,7 @@ class Supervisor:
         search_state: Any = None,
         registry: AgentRegistry | None = None,
         tool_registry: ToolRegistry | None = None,
+        chat_session: Any = None,
     ) -> None:
         self.session = session
         self.search_state = search_state
@@ -107,6 +108,7 @@ class Supervisor:
         self.tool_registry = tool_registry or ToolRegistry.get_instance()
         self.routing = RoutingStrategy()
         self.handoff = HandoffManager(self.registry)
+        self.chat_session = chat_session  # 跨轮上下文记忆
         self._llm_service = None
 
     @property
@@ -814,11 +816,21 @@ class Supervisor:
 
         FilterAgent.handle() 直接调用 llm_service.complete_json() 做单次 JSON 提取，
         含完整的设施口语映射表 + 硬约束/软偏好区分逻辑。不走 ReAct loop。
+
+        支持跨轮上下文记忆：从 chat_session.accumulated_filters 读取上轮条件，
+        传给 FilterAgent 做增量合并，结果写回 chat_session.accumulated_filters。
         """
         from app.services.agentic.agents.filter_agent import FilterAgent
         try:
             agent = FilterAgent()
-            return await agent.handle(context)
+            prev_filters = None
+            if self.chat_session is not None:
+                prev_filters = self.chat_session.accumulated_filters
+            result = await agent.handle(context, prev_filters=prev_filters)
+            # 写回合并后的 filters 到 session
+            if self.chat_session is not None and result.data and isinstance(result.data, dict):
+                self.chat_session.accumulated_filters = result.data
+            return result
         except Exception as exc:
             logger.exception("filter_agent 失败")
             return AgentResult(
@@ -937,13 +949,13 @@ class Supervisor:
         """兜底合成（LLM 不可用或全部 Agent 失败时使用）。"""
         if not self.llm_service.is_available:
             return AgentResult(
-                content="我是西交利物浦大学周边的租房助手。请告诉我你想找的区域、预算和户型，我帮你筛房源。",
+                content="我是面向留学生的海外租房助手。请告诉我你想去的学校、预算和户型，我帮你筛房源。",
                 success=True,
             )
 
         try:
-            prompt = """你是西交利物浦大学周边的租房顾问。用 1-2 句话简洁回答用户的问题。
-不要编造房源信息。如果用户输入不完整，礼貌引导补充关键信息（预算？区域？户型？通勤要求？）。"""
+            prompt = """你是面向留学生的海外租房顾问。用 1-2 句话简洁回答用户的问题。
+不要编造房源信息。如果用户输入不完整，礼貌引导补充关键信息（预算？学校？户型？通勤要求？）。"""
 
             reply = await self.llm_service.complete_text(
                 messages=[
