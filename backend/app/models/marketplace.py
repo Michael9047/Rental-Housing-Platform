@@ -1,4 +1,4 @@
-﻿"""二手交易市场模块 - 类闲鱼功能（v2）。"""
+"""二手交易市场模块 - 类闲鱼功能（v2）。"""
 import enum
 
 from sqlalchemy import Boolean, Enum, Float, ForeignKey, Integer, String, Text as SAText

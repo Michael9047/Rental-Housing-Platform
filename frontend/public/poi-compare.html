@@ -250,6 +250,10 @@ function dedupOsmKeyword(keyword,thresholdM){
   osmR[keyword]=kept;
 }
 
+// ==================== GM 错误显示 ====================
+function showGmError(msg){const el=document.getElementById('gmErrors');if(el){el.style.display='block';el.innerHTML+='<div>❌ '+msg+'</div>'}console.error('[GM]',msg)}
+function clearGmErrors(){const el=document.getElementById('gmErrors');if(el){el.style.display='none';el.innerHTML=''}}
+
 // ==================== 主搜索流程 ====================
 async function runTest(radius){
   if(running)return;running=true;currentRadius=radius;
@@ -474,7 +478,7 @@ function copyReport(){
 
 function resetAll(){
   running=false;osmR={};gmR={};lastOsmTime=0;lastGmTime=0;currentRadius=0;
-  clearMarkers();
+  clearMarkers();clearGmErrors();
   if(searchRect){map.removeLayer(searchRect);searchRect=null}
   $('radiusLabel').textContent='—';
   currentCat='overview';

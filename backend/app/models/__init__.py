@@ -1,4 +1,4 @@
-﻿from app.db.session import Base
+from app.db.session import Base
 from app.models.advertisement import AdImpression, Advertisement, AdvertisementStatus
 from app.models.agent_cart import AgentCart, AgentCartItem
 from app.models.audit_log import AuditLog

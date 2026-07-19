@@ -1,4 +1,4 @@
-﻿from sqlalchemy import func, select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.embedding_job import EmbeddingJob, EmbeddingJobStatus

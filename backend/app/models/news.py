@@ -1,4 +1,4 @@
-﻿"""本地新闻资讯模型（v2）。"""
+"""本地新闻资讯模型（v2）。"""
 import enum
 
 from sqlalchemy import DateTime, Enum, String, Text as SAText
