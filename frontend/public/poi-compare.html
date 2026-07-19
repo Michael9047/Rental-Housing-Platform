@@ -94,13 +94,15 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 <script>
 // ==================== 常量 ====================
 const Clementi_LAT=1.3153,Clementi_LNG=103.7648,Clementi=[Clementi_LAT,Clementi_LNG],GM_KEY='AIzaSyA2TFWRlLOG72sJLckOBa2zWq9L-rDotzc';
-const CATEGORIES={交通:["地铁站","公交站","火车站"],医疗:["医院","药店"],购物:["超市/便利店","商场","酒吧"],餐饮:["餐厅","美食","快餐"],生活:["市场","健身房"]};
+const CATEGORIES={交通:["地铁站","公交站","火车站"],医疗:["医院","药店"],购物:["超市/便利店","商场","酒吧"],餐饮:["餐厅","美食","快餐","食阁"],生活:["市场","健身房"]};
+
+// 食阁 = food centre/hawker centre（新加坡特色，无 includedTypes → 走 searchText）
 
 // searchNearby includedTypes（默认，每类最多 20 条）
-const GM_NS={地铁站:["subway_station"],公交站:["bus_stop","bus_station"],火车站:["train_station"],医院:["hospital"],药店:["pharmacy"],"超市/便利店":["supermarket","convenience_store"],商场:["shopping_mall"],酒吧:["bar"],餐厅:["restaurant"],美食:["restaurant"],快餐:["meal_takeaway"],市场:["market"],健身房:["gym"]};
+const GM_NS={地铁站:["subway_station"],公交站:["bus_stop","bus_station"],火车站:["train_station"],医院:["hospital"],药店:["pharmacy"],"超市/便利店":["supermarket","convenience_store"],商场:["shopping_mall"],酒吧:["bar"],餐厅:["restaurant"],美食:["restaurant"],快餐:["meal_takeaway"],食阁:["restaurant"],市场:["market"],健身房:["gym"]};
 
-// 高密度关键词走 searchText（支持翻页，最多 60 条）
-const HIGH_DENSITY=new Set(["餐厅","美食","快餐"]);
+// 高密度关键词走 searchText + 网格分割（支持翻页+分割，最高 240 条）
+const HIGH_DENSITY=new Set(["餐厅","美食","快餐","食阁"]);
 
 function $(id){return document.getElementById(id)}
 
@@ -142,7 +144,7 @@ function splitRect(rect,grid){
 // 高密度词(区域分割 searchText 最高240条) + 一般词(searchNearby 20条)
 async function searchGM(cnKw,radius){
   if(HIGH_DENSITY.has(cnKw)){
-    const enKw=({餐厅:"restaurant",美食:"restaurant",快餐:"fast food"})[cnKw];
+    const enKw=({餐厅:"restaurant",美食:"restaurant",快餐:"fast food",食阁:"food centre"})[cnKw];
     const fullRect=circleToRect(Clementi_LAT,Clementi_LNG,radius);
     const cells=splitRect(fullRect,2); // 2×2=4 个子格
     const seen=new Set();const all=[];
@@ -194,10 +196,15 @@ function findClusters(pois){
   return Object.values(groups).filter(g=>g.length>=MIN_CLUSTER).map(g=>{
     const clat=g.reduce((s,p)=>s+p.lat,0)/g.length,clng=g.reduce((s,p)=>s+p.lng,0)/g.length;
     let name=null;
-    const malls=gmR['商场']||[],stations=gmR['地铁站']||[];
-    const nearMall=malls.filter(m=>havDistance(clat,clng,m.lat,m.lng)<250).sort((a,b)=>a.distance_m-b.distance_m);
-    if(nearMall.length)name=nearMall[0].name;
+    const malls=gmR['商场']||[],stations=gmR['地铁站']||[],foodCentres=gmR['食阁']||[];
+    // 1) 食阁/小贩中心：距离质心 < 200m → 直接用食阁名（最优锚点）
+    const nearFC=foodCentres.filter(f=>havDistance(clat,clng,f.lat,f.lng)<200).sort((a,b)=>a.distance_m-b.distance_m);
+    if(nearFC.length)name=nearFC[0].name;
+    // 2) 商场 < 250m
+    if(!name){const nearMall=malls.filter(m=>havDistance(clat,clng,m.lat,m.lng)<250).sort((a,b)=>a.distance_m-b.distance_m);if(nearMall.length)name=nearMall[0].name}
+    // 3) 地铁站 < 400m
     if(!name){const nearSt=stations.filter(s=>havDistance(clat,clng,s.lat,s.lng)<400).sort((a,b)=>a.distance_m-b.distance_m);if(nearSt.length)name='Near '+nearSt[0].name.replace(/Exit \w|Entrance \w|出口|入口/gi,'').trim()}
+    // 4) 兜底
     if(!name){const vc={};g.forEach(p=>{const v=(p.vicinity||'').split(',')[0].trim();if(v)vc[v]=(vc[v]||0)+1});name=Object.entries(vc).sort((a,b)=>b[1]-a[1])[0]?.[0]||'未知区域'}
     const ratings=g.filter(p=>p.rating).map(p=>p.rating);const avgRating=ratings.length?ratings.reduce((s,r)=>s+r,0)/ratings.length:0;
     let grade;if(g.length>=20)grade='A';else if(g.length>=10)grade='B';else if(g.length>=5)grade='C';else grade='D';
@@ -259,8 +266,8 @@ function addMarkers(){
   else{const kws=CATEGORIES[currentCat]||[];for(const kw of kws)if(gmR[kw])pois.push(...gmR[kw])}
   for(const p of pois){const m=L.marker([p.lat,p.lng],{icon:gmIcon}).bindTooltip(`<b>${p.name}</b><br>${p.keyword} · ${p.distance_m}m${p.rating?' · ⭐'+p.rating:''}`,{direction:'top'});m._poiData=p;m.addTo(map);gmMarkers.push(m)}
   // 聚集圈
-  if(currentCat==='餐饮'||currentCat==='餐厅'||currentCat==='美食'||currentCat==='快餐'||currentCat==='clusters'){
-    const allR=[...(gmR['餐厅']||[]),...(gmR['美食']||[]),...(gmR['快餐']||[])];
+  if(currentCat==='餐饮'||currentCat==='餐厅'||currentCat==='美食'||currentCat==='快餐'||currentCat==='食阁'||currentCat==='clusters'){
+    const allR=[...(gmR['餐厅']||[]),...(gmR['美食']||[]),...(gmR['快餐']||[]),...(gmR['食阁']||[])];
     if(allR.length>=MIN_CLUSTER){const cs=findClusters(allR);const colors={A:'#e94560',B:'#e9a23b',C:'#4285f4',D:'#7ebc89'};for(const c of cs){const r=Math.min(c.count*8,200);const circle=L.circle([c.lat,c.lng],{radius:r,color:colors[c.grade],weight:2,fillColor:colors[c.grade],fillOpacity:.15}).addTo(map);const label=L.marker([c.lat,c.lng],{icon:L.divIcon({className:'',html:`<div style="background:${colors[c.grade]};color:#fff;padding:2px 7px;border-radius:8px;font-size:10px;font-weight:700;white-space:nowrap">${c.grade} ${c.name} (${c.count})</div>`,iconAnchor:[35,10]}),zIndexOffset:1000}).addTo(map);clusterCircles.push(circle,label)}}
   }
 }
@@ -299,7 +306,7 @@ function renderResults(){
     h+='</div>';
     scroll.innerHTML=h;
   }else if(cat==='clusters'){
-    const allR=[...(gmR['餐厅']||[]),...(gmR['美食']||[]),...(gmR['快餐']||[])];
+    const allR=[...(gmR['餐厅']||[]),...(gmR['美食']||[]),...(gmR['快餐']||[]),...(gmR['食阁']||[])];
     if(!allR.length){scroll.innerHTML='<div class="empty-hint">🍽 暂无餐厅数据</div>'}
     else{const cs=findClusters(allR);if(!cs.length){scroll.innerHTML='<div class="empty-hint">📍 未发现有效聚集（需≥3家）</div>'}
     else{const colors={A:'#e94560',B:'#e9a23b',C:'#4285f4',D:'#7ebc89'};let h='<div style="font-size:11px;color:#aaa;margin-bottom:6px">🍽 餐厅聚集（150m聚类）</div>';h+='<div style="font-size:9px;color:#888;margin-bottom:6px">A 20+家 B 10-19家 C 5-9家 D 3-4家</div>';
