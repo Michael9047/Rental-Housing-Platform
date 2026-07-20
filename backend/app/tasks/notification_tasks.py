@@ -184,9 +184,29 @@ def send_sms_notification(user_id: int, content: str) -> dict:
     retry_backoff=True,
     max_retries=3,
 )
-def send_email_notification(user_id: int, subject: str, html_body: str) -> dict:
-    """Send an email notification to a user."""
+def send_email_notification(
+    user_id: int,
+    subject: str,
+    html_body: str,
+    attachments: list[dict] | None = None,
+) -> dict:
+    """Send an email notification to a user.
+
+    attachments: 可选，[{"filename": "合同.pdf", "content_b64": "..."}]
+    """
     import asyncio
+    import base64
+
+    # Base64 解码附件（Celery 不支持直接传 bytes）
+    email_attachments = None
+    if attachments:
+        email_attachments = []
+        for att in attachments:
+            raw = base64.b64decode(att["content_b64"])
+            from app.services.email_service import Attachment
+            email_attachments.append(
+                Attachment(filename=att["filename"], content=raw)
+            )
 
     async def _run() -> dict:
         settings = get_settings()
@@ -209,6 +229,7 @@ def send_email_notification(user_id: int, subject: str, html_body: str) -> dict:
                 to_email=to_email,
                 subject=subject,
                 html_body=html_body,
+                attachments=email_attachments,
             )
             logger.info("Email sent to user %s: %s", user_id, result)
             return result
