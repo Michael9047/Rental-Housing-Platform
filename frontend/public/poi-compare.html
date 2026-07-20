@@ -95,11 +95,11 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 // ==================== 常量 ====================
 const Clementi_LAT=1.3153,Clementi_LNG=103.7648,Clementi=[Clementi_LAT,Clementi_LNG],GM_KEY='AIzaSyA2TFWRlLOG72sJLckOBa2zWq9L-rDotzc';
 // 关键词分类 + Tab 自定义顺序
-const CATEGORIES={交通:["地铁站","公交站"],医疗:["医院","药店"],购物:["超市/便利店","商场","酒吧"],美食:["餐厅","cafe","烘焙","快餐","食阁"],生活:["市场","健身房"],地标:["小贩中心"]};
-const KW_ORDER=["地铁站","公交站","医院","药店","超市/便利店","商场","酒吧","餐厅","cafe","烘焙","快餐","食阁","小贩中心","市场","健身房"];
+const CATEGORIES={交通:["地铁站","公交站"],医疗:["医院","药店"],购物:["超市","便利店","商场","酒吧"],美食:["餐厅","cafe","烘焙","快餐","食阁"],生活:["市场","健身房"],地标:["小贩中心"]};
+const KW_ORDER=["地铁站","公交站","医院","药店","超市","便利店","商场","酒吧","餐厅","cafe","烘焙","快餐","食阁","小贩中心","市场","健身房"];
 
 // searchNearby includedTypes
-const GM_NS={地铁站:["subway_station"],公交站:["bus_stop","bus_station"],医院:["hospital"],药店:["pharmacy"],"超市/便利店":["supermarket","convenience_store"],商场:["shopping_mall"],酒吧:["bar"],餐厅:["restaurant"],cafe:["cafe"],烘焙:["bakery"],快餐:["meal_takeaway"],食阁:["restaurant"],小贩中心:[],市场:["market"],健身房:["gym"]};
+const GM_NS={地铁站:["subway_station"],公交站:["bus_stop","bus_station"],医院:["hospital"],药店:["pharmacy"],超市:["supermarket"],便利店:["convenience_store"],商场:["shopping_mall"],酒吧:["bar"],餐厅:["restaurant"],cafe:["cafe"],烘焙:["bakery"],快餐:["meal_takeaway"],食阁:["restaurant"],小贩中心:[],市场:["market"],健身房:["gym"]};
 
 // 全部美食类走 searchText + 网格分割
 const HIGH_DENSITY=new Set(["餐厅","cafe","烘焙","快餐","食阁"]);
@@ -218,7 +218,7 @@ function findClusters(pois){
   for(let i=0;i<pois.length;i++)for(let j=i+1;j<pois.length;j++)if(havDistance(pois[i].lat,pois[i].lng,pois[j].lat,pois[j].lng)<CLUSTER_DIST)union(i,j);
   const groups={};pois.forEach((p,i)=>{const r=find(i);if(!groups[r])groups[r]=[];groups[r].push(p)});
   // 配套索引
-  const pharmacies=gmR['药店']||[],gyms=gmR['健身房']||[],bars=gmR['酒吧']||[],markets=gmR['市场']||[];
+  const pharmacies=gmR['药店']||[],gyms=gmR['健身房']||[],bars=gmR['酒吧']||[],markets=gmR['市场']||[],supermarkets=gmR['超市']||[];
   return Object.values(groups).filter(g=>g.length>=MIN_CLUSTER).map(g=>{
     const clat=g.reduce((s,p)=>s+p.lat,0)/g.length,clng=g.reduce((s,p)=>s+p.lng,0)/g.length;
     // 美食类型构成
@@ -226,6 +226,7 @@ function findClusters(pois){
     const typeCount=Object.keys(types).length;
     // 周边配套（300m 内）
     const nearAmenities=[];
+    if(supermarkets.some(a=>havDistance(clat,clng,a.lat,a.lng)<AMENITY_RADIUS))nearAmenities.push('🛒超市');
     if(pharmacies.some(a=>havDistance(clat,clng,a.lat,a.lng)<AMENITY_RADIUS))nearAmenities.push('💊药房');
     if(gyms.some(a=>havDistance(clat,clng,a.lat,a.lng)<AMENITY_RADIUS))nearAmenities.push('🏋️健身房');
     if(bars.some(a=>havDistance(clat,clng,a.lat,a.lng)<AMENITY_RADIUS))nearAmenities.push('🍸酒吧');
@@ -288,7 +289,7 @@ function renderProgress(){
 
 // ==================== 地图标记 ====================
 // 关键词颜色映射
-const KW_COLORS={餐厅:'#a855f7',cafe:'#92400e',烘焙:'#ea580c',快餐:'#dc2626',食阁:'#0d9488',地铁站:'#6366f1',公交站:'#3b82f6',医院:'#ef4444',药店:'#22c55e','超市/便利店':'#f59e0b',商场:'#ec4899',酒吧:'#a855f7',市场:'#84cc16',健身房:'#06b6d4'};
+const KW_COLORS={餐厅:'#a855f7',cafe:'#92400e',烘焙:'#ea580c',快餐:'#dc2626',食阁:'#0d9488',地铁站:'#6366f1',公交站:'#3b82f6',医院:'#ef4444',药店:'#22c55e',超市:'#f59e0b',便利店:'#eab308',商场:'#ec4899',酒吧:'#c084fc',市场:'#84cc16',健身房:'#06b6d4',小贩中心:'#14b8a6'};
 
 // 水滴图标工厂
 function pinIcon(color,size){const w=size||14,h=w*1.4;return L.divIcon({className:'',html:`<svg width="${w}" height="${h}" viewBox="0 0 20 28"><path d="M10 0C4.5 0 0 4.5 0 10c0 7 10 18 10 18s10-11 10-18C20 4.5 15.5 0 10 0z" fill="${color}" stroke="#fff" stroke-width="1"/><circle cx="10" cy="9" r="3" fill="rgba(255,255,255,.5)"/></svg>`,iconSize:[w,h],iconAnchor:[w/2,h],popupAnchor:[0,-h+2]})}
