@@ -232,7 +232,7 @@ function findClusters(pois){
     const nearMall=malls.filter(m=>havDistance(clat,clng,m.lat,m.lng)<250).sort((a,b)=>a.distance_m-b.distance_m);
     if(nearMall.length){name=nearMall[0].name;g._nearestMall=nearMall[0]}
     if(!name){const nearSt=stations.filter(s=>havDistance(clat,clng,s.lat,s.lng)<400).sort((a,b)=>a.distance_m-b.distance_m);if(nearSt.length){name='Near '+nearSt[0].name.replace(/Exit \w|Entrance \w|出口|入口/gi,'').trim();g._nearestSt=nearSt[0]}}
-    if(!name){const vc={};g.forEach(p=>{const v=(p.vicinity||'').split(',')[0].trim();if(v)vc[v]=(vc[v]||0)+1});name=Object.entries(vc).sort((a,b)=>b[1]-a[1])[0]?.[0]||'未知区域'}
+    if(!name){const vc={};g.forEach(p=>{let v=(p.vicinity||'').split(',')[0].trim();v=v.replace(/^\d+\s*[A-Z]?\s*/,'').trim();if(v)vc[v]=(vc[v]||0)+1});name=Object.entries(vc).sort((a,b)=>b[1]-a[1])[0]?.[0]||'未知区域'}
     // 评分
     const ratings=g.filter(p=>p.rating).map(p=>p.rating);const avgRating=ratings.length?ratings.reduce((s,r)=>s+r,0)/ratings.length:0;
     // 分级：纯数量
