@@ -1,5 +1,7 @@
+// Matches backend: app/models/property.py
 export type PropertyType = 'apartment' | 'house' | 'studio' | 'shared'
 export type PropertyStatus = 'available' | 'pending_review' | 'rented' | 'maintenance' | 'offline'
+export type RentType = 'monthly' | 'quarterly' | 'yearly'
 export type DepositType = 'one_month' | 'one_three' | 'two_month' | 'three_month' | 'half_month' | 'free' | 'custom'
 
 export interface Property {
@@ -11,6 +13,9 @@ export interface Property {
   description: string
   deposit_amount?: number
   service_fee_rate?: number | null
+  min_lease_months: number
+  max_lease_months?: number | null
+  rent_type: RentType
   room_number?: string | null
   floor?: number | null
   address: string
@@ -22,6 +27,8 @@ export interface Property {
   bathrooms: number
   property_type: PropertyType
   status: PropertyStatus
+  latitude: number | null
+  longitude: number | null
   amenities?: string[] | null
   available_from?: string | null
   min_stay_months?: number
@@ -97,10 +104,17 @@ export interface PropertySearchParams {
   country?: string
   district?: string
   overseas_area?: string
+  institute_id?: number
   price_min?: number
   price_max?: number
   bedrooms?: number
   property_type?: PropertyType
+  amenities?: string[]
+  available_from?: string
+  room_type?: string
+  min_lease_months?: number
+  max_lease_months?: number
+  sort_by?: string
   limit?: number
 }
 
@@ -122,4 +136,39 @@ export interface PropertyImage {
   sort_order: number
   is_primary: boolean
   created_at: string
+}
+
+// ── 房型类型 ──
+export type RoomTypeEnum = 'studio' | 'ensuite' | '1bed' | '2bed' | '3bed+' | 'shared'
+export type RoomTypeStatus = 'available' | 'rented' | 'maintenance'
+
+export const roomTypeLabels: Record<RoomTypeEnum, string> = {
+  studio: 'Studio 单人套间',
+  ensuite: 'Ensuite 独卫套间',
+  '1bed': '一室一厅',
+  '2bed': '两室一厅',
+  '3bed+': '三室及以上',
+  shared: '合租单间',
+}
+
+export interface RoomType {
+  id: number
+  property_id: number
+  name: string
+  room_type: RoomTypeEnum
+  bedrooms: number
+  bathrooms: number
+  price_monthly: number
+  area_sqm: number | null
+  floor: number | null
+  available_count: number
+  available_from: string | null
+  min_stay_months: number
+  deposit_amount: number | null
+  deposit_type: string | null
+  amenities: string[] | null
+  description: string | null
+  status: RoomTypeStatus
+  created_at: string
+  updated_at: string
 }

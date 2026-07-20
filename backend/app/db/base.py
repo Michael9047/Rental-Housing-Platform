@@ -30,6 +30,6 @@ __all__ = [
     "ChatMessage", "ChatSession", "Contract", "DataImport", "EmbeddingJob",
     "Institute", "MarketplaceComment", "MarketplaceItem", "MarketplaceItemImage",
     "MarketplaceMessage", "MarketplaceReport", "NewsArticle", "Notification",
-    "Payment", "Property", "PropertyImage", "PropertyPOI", "Review",
+    "Payment", "Room", "PropertyImage", "PropertyPOI", "Review",
     "SavedSearch", "User", "UserFavorite",
 ]

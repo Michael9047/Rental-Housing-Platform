@@ -3,10 +3,20 @@ from decimal import Decimal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.models.property import DepositType, PropertyStatus, PropertyType
+from app.models.property import RoomStatus as PropertyStatus
+from app.models.unit_type import DepositType
+# 以下枚举已废弃，保留兼容定义
+import enum as _enum
+class PropertyType(str, _enum.Enum):
+    apartment = "apartment"
+    house = "house"
+    studio = "studio"
+    shared = "shared"
+class RentType(str, _enum.Enum):
+    monthly = "monthly"
+    quarterly = "quarterly"
+    yearly = "yearly"
 from app.schemas.property_image import PropertyImageRead
-
-
 class PropertyBase(BaseModel):
     title: str = Field(min_length=1, max_length=200)
     description: str | None = None
@@ -23,6 +33,9 @@ class PropertyBase(BaseModel):
     longitude: Decimal | None = Field(default=None, ge=-180, le=180)
     deposit_amount: int | None = None
     service_fee_rate: float | None = None
+    min_lease_months: int = 12
+    max_lease_months: int | None = 60
+    rent_type: RentType = RentType.monthly
     room_number: str | None = Field(default=None, max_length=20)
     floor: int | None = Field(default=None, ge=0)
     # ── 新增字段 ──
@@ -30,7 +43,6 @@ class PropertyBase(BaseModel):
     available_from: date | None = None
     min_stay_months: int = Field(default=3, ge=1)
     deposit_type: DepositType | None = None
-
 
 class PropertyCreate(PropertyBase):
     landlord_id: int

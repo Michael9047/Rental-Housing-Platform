@@ -10,6 +10,7 @@ from app.schemas.property_image import PropertyImageRead
 from app.services.property_service import PropertyService
 from app.services.user_service import UserService
 from app.models.property import Property
+from app.tasks.poi_tasks import generate_map_pois_for_property
 
 router = APIRouter()
 
@@ -27,7 +28,10 @@ async def create_property(
     if current_user.role.value != "admin" and property_in.landlord_id != current_user.id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
                            detail="Landlords can only create properties for themselves")
-    return await PropertyService(session).create(property_in)
+    prop = await PropertyService(session).create(property_in)
+    # 异步生成地图 POI（Celery 任务，不阻塞响应）
+    generate_map_pois_for_property.delay(prop.id)
+    return prop
 
 
 @router.get("/search", response_model=list[PropertySearchResult])
@@ -39,12 +43,26 @@ async def search_properties(
     bedrooms: int | None = Query(default=None, ge=0),
     property_type: str | None = Query(default=None),
     limit: int = Query(default=20, ge=1, le=100),
+    institute_id: int | None = Query(default=None, ge=1),
+    amenities: list[str] | None = Query(default=None),
+    available_from: str | None = Query(default=None),
+    room_type: str | None = Query(default=None),
+    min_lease_months: int | None = Query(default=None, ge=0),
+    max_lease_months: int | None = Query(default=None, ge=0),
+    sort_by: str | None = Query(default=None),
     session: AsyncSession = Depends(get_db_session),
 ) -> list[PropertySearchResult]:
     results = await PropertyService(session).search(
         query=q, district=district, price_min=price_min,
         price_max=price_max, bedrooms=bedrooms,
         property_type=property_type, limit=limit,
+        institute_id=institute_id,
+        amenities=amenities,
+        available_from=available_from,
+        room_type=room_type,
+        min_lease_months=min_lease_months,
+        max_lease_months=max_lease_months,
+        sort_by=sort_by,
     )
     return [
         PropertySearchResult(
@@ -365,6 +383,8 @@ async def update_property(
         raise HTTPException(status_code=409, detail=str(e))
     if not prop:
         raise HTTPException(status_code=404, detail="Property not found")
+    # 异步刷新地图 POI（地址或坐标变更时 Celery 重新搜索）
+    generate_map_pois_for_property.delay(prop.id)
     return prop
 
 

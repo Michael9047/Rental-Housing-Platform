@@ -3,6 +3,8 @@ from app.models.advertisement import AdImpression, Advertisement, AdvertisementS
 from app.models.agent_cart import AgentCart, AgentCartItem
 from app.models.audit_log import AuditLog
 from app.models.booking import Booking, BookingStatus
+from app.models.building_image import BuildingImage
+from app.models.building_staff import BuildingStaff
 from app.models.chat import ChatMessage, ChatMessageRole, ChatSession, ChatSessionStatus
 from app.models.contract import Contract
 from app.models.data_import import DataImport, ImportSourceType, ImportStatus
@@ -20,10 +22,12 @@ from app.models.marketplace import (
 )
 from app.models.news import NewsArticle, NewsArticleStatus
 from app.models.notification import Notification, NotificationType
+from app.models.order import Order
 from app.models.payment import Payment, PaymentStatus
+from app.models.pms_connection import PMSConnection, PMSSyncStatus, PMSType
 from app.models.poi import PropertyPOI
-from app.models.property import Property, PropertyStatus, PropertyType
-from app.models.property_image import PropertyImage
+from app.models.property import Room, RoomStatus, Property, PropertyStatus
+from app.models.property_image import RoomImage, PropertyImage
 from app.models.repair import (
     RepairIssueType,
     RepairRequest,
@@ -32,7 +36,10 @@ from app.models.repair import (
     WorkerStatus,
 )
 from app.models.review import Review, ReviewStatus
+from app.models.room_transfer import RoomTransfer
 from app.models.saved_search import SavedSearch
+from app.models.tenant import Tenant
+from app.models.unit_type import DepositType, UnitType, UnitTypeStatus, RoomType, RoomTypeEnum, RoomTypeStatus
 from app.models.user import User, UserRole, UserStatus
 from app.models.user_favorite import UserFavorite
 
@@ -46,12 +53,14 @@ __all__ = [
     "Base",
     "Booking",
     "BookingStatus",
+    "BuildingStaff",
     "ChatMessage",
     "ChatMessageRole",
     "ChatSession",
     "ChatSessionStatus",
     "Contract",
     "DataImport",
+    "DepositType",
     "EmbeddingJob",
     "EmbeddingJobStatus",
     "ImportSourceType",
@@ -70,20 +79,27 @@ __all__ = [
     "NewsArticleStatus",
     "Notification",
     "NotificationType",
+    "Order",
     "Payment",
     "PaymentStatus",
-    "Property",
-    "PropertyImage",
+    "PMSConnection",
+    "PMSSyncStatus",
+    "PMSType",
     "PropertyPOI",
-    "PropertyStatus",
-    "PropertyType",
     "RepairIssueType",
     "RepairRequest",
     "RepairStatus",
     "RepairWorker",
     "Review",
     "ReviewStatus",
+    "Room",
+    "RoomImage",
+    "RoomStatus",
+    "RoomTransfer",
     "SavedSearch",
+    "Tenant",
+    "UnitType",
+    "UnitTypeStatus",
     "User",
     "UserFavorite",
     "UserRole",

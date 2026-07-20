@@ -47,7 +47,7 @@ class RepairRequest(TimestampMixin, Base):
 
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
     property_id: Mapped[int] = mapped_column(
-        ForeignKey("properties.id", ondelete="CASCADE"), index=True
+        ForeignKey("rooms.id", ondelete="CASCADE"), index=True
     )
     tenant_id: Mapped[int] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE"), index=True
@@ -78,7 +78,7 @@ class RepairRequest(TimestampMixin, Base):
     work_images: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
     # 关系
-    property: Mapped["Property"] = relationship()
+    property: Mapped["Room"] = relationship()
     tenant: Mapped["User"] = relationship(foreign_keys=[tenant_id])
     landlord: Mapped["User"] = relationship(foreign_keys=[landlord_id])
     assigned_worker: Mapped["User | None"] = relationship(foreign_keys=[assigned_worker_id])

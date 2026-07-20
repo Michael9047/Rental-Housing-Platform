@@ -53,6 +53,47 @@ def _predictor_required():
     return predictor
 
 
+@router.post("/parse")
+async def parse_property_text(
+    body: dict,
+    _: User = Depends(get_current_user),
+) -> dict:
+    """
+    AI 深度解析房源描述
+
+    接收自由文本，用 GPT-4o 提取结构化房源信息。
+    用于 CreateProperty 页面的"AI 深度解析"按钮。
+
+    请求体: {"raw_text": "独墅湖高教区翰林缘单身公寓，月租2200..."}
+    返回: ParsedProperty 结构化数据
+    """
+    raw_text = body.get("raw_text", "").strip()
+    if not raw_text:
+        raise HTTPException(status_code=400, detail="raw_text is required")
+    if len(raw_text) > 2000:
+        raise HTTPException(status_code=400, detail="raw_text too long (max 2000 chars)")
+
+    settings = get_settings()
+    if not settings.openai_api_key:
+        raise HTTPException(status_code=503, detail="OpenAI API key not configured")
+
+    try:
+        from openai import AsyncOpenAI
+
+        from app.services.llm_parser import LLMPropertyParser
+
+        client = AsyncOpenAI(
+            api_key=settings.openai_api_key,
+            base_url=getattr(settings, "openai_base_url", None),
+        )
+        parser = LLMPropertyParser(client)
+        result = await parser.parse(raw_text, model="gpt-4o-mini")
+        return result.to_dict()
+    except Exception as exc:
+        logger.exception("LLM parse failed")
+        raise HTTPException(status_code=500, detail=f"Parse failed: {exc}")
+
+
 @router.get("/rent-estimate")
 async def estimate_rent(
     area_sqm: float | None = Query(default=None, description="面积(㎡)"),

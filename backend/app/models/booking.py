@@ -1,6 +1,8 @@
 import enum
+import json
 
 from sqlalchemy import Enum, ForeignKey, Integer, String, Text as SAText
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.mixins import TimestampMixin
@@ -23,7 +25,7 @@ class Booking(TimestampMixin, Base):
         ForeignKey("users.id", ondelete="CASCADE"), index=True
     )
     property_id: Mapped[int] = mapped_column(
-        ForeignKey("properties.id", ondelete="CASCADE"), index=True
+        ForeignKey("rooms.id", ondelete="CASCADE"), index=True
     )
     landlord_id: Mapped[int] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE"), index=True
@@ -40,7 +42,10 @@ class Booking(TimestampMixin, Base):
     service_fee: Mapped[int | None] = mapped_column(Integer, nullable=True)
     deposit_status: Mapped[str] = mapped_column(String(20), default="unpaid")
     payment_transaction_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    lease_months: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    total_rent: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    application_data: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
 
     tenant: Mapped["User"] = relationship(foreign_keys=[tenant_id])
-    property: Mapped["Property"] = relationship()
+    property: Mapped["Room"] = relationship()
     landlord: Mapped["User"] = relationship(foreign_keys=[landlord_id])

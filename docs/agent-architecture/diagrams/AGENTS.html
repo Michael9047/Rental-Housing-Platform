@@ -1,0 +1,563 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>多 Agent 协作体系</title>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<script>mermaid.initialize({startOnLoad:false,theme:'default',securityLevel:'loose'});</script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,'Segoe UI',sans-serif;display:flex;height:100vh;overflow:hidden;background:#0f172a}
+#sidebar{width:290px;min-width:290px;background:#1e293b;color:#e2e8f0;display:flex;flex-direction:column;overflow:hidden}
+#sidebar h1{padding:16px;font-size:16px;border-bottom:1px solid #334155;color:#a78bfa}
+#sidebar ul{list-style:none;overflow-y:auto;flex:1}
+#sidebar li{padding:8px 16px;cursor:pointer;font-size:13px;border-bottom:1px solid #1e1e3e;transition:background .15s}
+#sidebar li:hover{background:#334155}
+#sidebar li.active{background:#8b5cf6;font-weight:600}
+#sidebar .group{padding:10px 16px 4px;font-size:11px;text-transform:uppercase;color:#64748b;letter-spacing:.05em}
+#main{flex:1;display:flex;flex-direction:column;overflow:hidden}
+#toolbar{display:flex;align-items:center;gap:10px;padding:8px 16px;background:#1e293b;border-bottom:1px solid #334155}
+#toolbar button{padding:6px 14px;border:1px solid #334155;border-radius:6px;background:#0f172a;color:#cbd5e1;cursor:pointer;font-size:12px;transition:all .15s}
+#toolbar button:hover{background:#8b5cf6;border-color:#8b5cf6;color:#fff}
+#zoom-level{font-size:12px;color:#94a3b8;min-width:50px;text-align:center}
+#hint{font-size:11px;color:#64748b;margin-left:auto}
+#canvas{flex:1;overflow:hidden;position:relative;cursor:grab;background:#fff;display:flex;justify-content:center;align-items:center}
+#canvas.dark{background:#0f172a}
+#diagram-container{transform-origin:center center;pointer-events:none}
+#diagram-container svg{max-width:none!important;pointer-events:auto;background:#fff;border-radius:8px}
+</style>
+</head>
+<body>
+<nav id="sidebar">
+  <h1>🤝 多 Agent 协作体系<br><small style="color:#94a3b8;font-weight:400">谁？做什么？怎么交接？</small></h1>
+  <ul id="nav-list"></ul>
+</nav>
+<div id="main">
+  <div id="toolbar">
+    <button onclick="zoomIn()">🔍 放大</button>
+    <button onclick="zoomOut()">🔍 缩小</button>
+    <button onclick="zoomFit()">📐 适合窗口</button>
+    <button onclick="zoomReset()">1:1</button>
+    <span id="zoom-level">100%</span>
+    <button onclick="toggleDark()">🌓 暗色</button>
+    <span id="hint">🖱 Ctrl+滚轮 · 拖拽 · ↑↓ 切换</span>
+  </div>
+  <div id="canvas">
+    <div id="diagram-container"></div>
+  </div>
+</div>
+<script>
+const DIAGRAMS = [
+
+  // ═══ 1. Agent 全家福 ═══
+  {
+    "group": "Agent 角色",
+    "title": "1. Agent 全家福 — 7 个 Agent 的分工",
+    "source": `graph TB
+    Supervisor["🎯 Supervisor<br/>──────<br/>总指挥官<br/>意图 → DAG → 调度<br/>不直接回答用户"]
+
+    Supervisor -->|"下发任务"| SearchAgent
+    Supervisor -->|"下发任务"| GraphAgent
+    Supervisor -->|"下发任务"| CommuteAgent
+    Supervisor -->|"下发任务"| SafetyAgent
+    Supervisor -->|"下发任务"| CompareAgent
+    Supervisor -->|"下发任务"| ReplyAgent
+    Supervisor -->|"Handoff"| BookingAgent
+
+    subgraph Agents["7 个专职 Agent (各有 ReAct Loop)"]
+        SearchAgent["🔍 SearchAgent<br/>──────<br/>搜索引擎<br/>搜房源 · 向量+全文<br/>MCP: property_search<br/>MCP: geo_search<br/>MCP: semantic_filter"]
+        GraphAgent["🕸️ GraphAgent<br/>──────<br/>知识图谱<br/>区域关系 · 学校覆盖<br/>MCP: neo4j_query<br/>MCP: entity_lookup<br/>MCP: path_find"]
+        CommuteAgent["🚌 CommuteAgent<br/>──────<br/>通勤分析<br/>多模式路线 · 时刻表<br/>MCP: commute_calc<br/>MCP: transit_schedule<br/>MCP: walk_score"]
+        SafetyAgent["🛡️ SafetyAgent<br/>──────<br/>安全评估<br/>犯罪率 · 社区画像<br/>MCP: crime_stats<br/>MCP: safety_score<br/>MCP: neighborhood_profile"]
+        CompareAgent["⚖️ CompareAgent<br/>──────<br/>对比分析<br/>多维对比 · Trade-off<br/>MCP: market_compare<br/>MCP: price_trend<br/>MCP: rental_yield"]
+        ReplyAgent["💬 ReplyAgent<br/>──────<br/>回复生成<br/>综合所有结果<br/>→ 自然语言 + 结构化"]
+        BookingAgent["📅 BookingAgent<br/>──────<br/>预约交易<br/>预约 · 合同 · 支付<br/>MCP: booking_create<br/>MCP: contract_review<br/>MCP: payment_init"]
+    end
+
+    ReplyAgent --> User(["用户"])
+    BookingAgent --> User
+
+    style Supervisor fill:#a78bfa,color:#fff,stroke:#8b5cf6,stroke-width:2px
+    style SearchAgent fill:#3b82f6,color:#fff
+    style GraphAgent fill:#8b5cf6,color:#fff
+    style CommuteAgent fill:#f59e0b,color:#fff
+    style SafetyAgent fill:#ef4444,color:#fff
+    style CompareAgent fill:#10b981,color:#fff
+    style ReplyAgent fill:#06b6d4,color:#fff
+    style BookingAgent fill:#ec4899,color:#fff`
+  },
+
+  // ═══ 2. 什么时候单 Agent，什么时候多 Agent ═══
+  {
+    "group": "Agent 角色",
+    "title": "2. 判据：单 Agent vs 多 Agent 协作",
+    "source": `graph TD
+    UserMsg(["用户消息"]) --> Classify["Supervisor 意图分类"]
+
+    Classify --> Q1{"需要多少种<br/>不同性质的能力?"}
+    Q1 -->|"1 种"| Single["🤖 单 Agent 就够了"]
+    Q1 -->|"≥2 种"| Q2{"这些能力之间<br/>有依赖关系吗?"}
+
+    Q2 -->|"无依赖<br/>可独立完成"| Parallel["🤖🤖 多 Agent 并行<br/>Supervisor 下发<br/>各自独立 ReAct<br/>结果汇聚"]
+    Q2 -->|"有依赖<br/>B 需要 A 的结果"| Q3{"是否只是临时<br/>接力一次?"}
+
+    Q3 -->|"是<br/>A做完了交给B就行"| Handoff["🤖→🤖 Handoff 接力<br/>A 完成 → 交给 B<br/>不回头"]
+    Q3 -->|"否<br/>复杂交织"| DAG["🤖⇄🤖 DAG 编排<br/>Supervisor 拓扑排序<br/>并行+串行混合调度"]
+
+    subgraph Examples["实战示例"]
+        E1["'押金什么时候退'<br/>→ 1种能力(FAQ)<br/>→ 单 Agent, Fast Track"]
+        E2["'UNC附近2000以内3b2b'<br/>→ 搜索+通勤, 无依赖<br/>→ SearchAgent ∥ CommuteAgent"]
+        E3["'帮我对比Top3'<br/>→ A搜索→B对比, 有依赖<br/>→ Handoff: Search→Compare"]
+        E4["'找房+对比+预约'<br/>→ 搜索→对比→预约, 链式依赖<br/>→ DAG: Search→Compare→Booking"]
+    end
+
+    Single -.-> E1
+    Parallel -.-> E2
+    Handoff -.-> E3
+    DAG -.-> E4
+
+    style Single fill:#10b981,color:#fff
+    style Parallel fill:#3b82f6,color:#fff
+    style Handoff fill:#f59e0b,color:#fff
+    style DAG fill:#8b5cf6,color:#fff`
+  },
+
+  // ═══ 3. Agent 协作模式 ═══
+  {
+    "group": "Agent 角色",
+    "title": "3. 三种协作模式对比",
+    "source": `graph TB
+    subgraph Mode1["模式1: 单 Agent — 独立作战"]
+        direction LR
+        M1_User["用户"] --> M1_Sup["Supervisor"]
+        M1_Sup --> M1_A["SearchAgent<br/>ReAct 3轮"]
+        M1_A --> M1_Out["回复"]
+    end
+
+    subgraph Mode2["模式2: Handoff 接力 — 任务传递"]
+        direction LR
+        M2_User["用户"] --> M2_Sup["Supervisor"]
+        M2_Sup --> M2_A["SearchAgent<br/>ReAct 3轮<br/>输出: 5套候选"]
+        M2_A -->|"Handoff"| M2_B["CompareAgent<br/>ReAct 2轮<br/>输出: 对比报告"]
+        M2_B --> M2_Out["回复"]
+    end
+
+    subgraph Mode3["模式3: DAG 编排 — 并行+串行"]
+        direction TB
+        M3_User["用户"] --> M3_Sup["Supervisor<br/>构建DAG"]
+        M3_Sup --> M3_Par["并行阶段"]
+        M3_Par --> M3_A1["SearchAgent"]
+        M3_Par --> M3_A2["GraphAgent"]
+        M3_A1 --> M3_Seq["串行阶段"]
+        M3_A2 --> M3_Seq
+        M3_Seq --> M3_B["CommuteAgent<br/>(依赖上面结果)"]
+        M3_B --> M3_C["ReplyAgent<br/>(汇聚)"]
+        M3_C --> M3_Out["回复"]
+    end
+
+    style Mode1 fill:#1e293b,color:#e2e8f0,stroke:#10b981
+    style Mode2 fill:#1e293b,color:#e2e8f0,stroke:#f59e0b
+    style Mode3 fill:#1e293b,color:#e2e8f0,stroke:#8b5cf6`
+  },
+
+  // ═══ 4. 单 Agent 内部分工 ═══
+  {
+    "group": "Agent 内部分工",
+    "title": "4. SearchAgent 内部 — ReAct 的决策空间",
+    "source": `graph TD
+    TaskIn(["Supervisor: 搜 UNC 附近 3b2b"]) --> Init
+
+    Init["初始化<br/>task + MCP工具列表<br/>+ system prompt"] --> T1
+
+    subgraph Loop["ReAct Loop — 每轮都是一个微决策"]
+        T1["Think 1<br/>'先搜房源'"] --> A1["Act 1<br/>property_search(UNC,3b2b)"]
+        A1 --> O1["Obs 1<br/>15条, 价格 $1400-2800"]
+
+        O1 --> T2["Think 2<br/>'用知识图谱理解区域'"]
+        T2 --> A2["Act 2<br/>neo4j_query(区域关系)"]
+        A2 --> O2["Obs 2<br/>Chapel Hill北区近学校, 南区便宜"]
+
+        O2 --> T3["Think 3<br/>'算通勤, 筛掉远的'"]
+        T3 --> A3["Act 3<br/>commute_calc(15条→UNC)"]
+        A3 --> O3["Obs 3<br/>7条≤20min, 8条>30min"]
+
+        O3 --> T4["Think 4<br/>'查安全'"]
+        T4 --> A4["Act 4<br/>crime_stats(7条区域)"]
+        A4 --> O4["Obs 4<br/>3条高安全, 2条中等, 2条偏低"]
+
+        O4 --> T5["Think 5<br/>'信息够了, 可以交付'"]
+        T5 --> Decision{"action?"}
+    end
+
+    Decision -->|"answer"| Deliver["交付: Top 5 + 通勤 + 安全 + 区域说明"]
+    Decision -->|"ask_clarify"| UserWait["反问用户, 等待补充信息"]
+    Decision -->|"call_tool"| Loop
+
+    Deliver --> Next(["→ Supervisor 决定下一步"])
+
+    style T1 fill:#a78bfa,color:#fff
+    style T2 fill:#a78bfa,color:#fff
+    style T3 fill:#a78bfa,color:#fff
+    style T4 fill:#a78bfa,color:#fff
+    style T5 fill:#a78bfa,color:#fff
+    style A1 fill:#f59e0b,color:#fff
+    style A2 fill:#f59e0b,color:#fff
+    style A3 fill:#f59e0b,color:#fff
+    style A4 fill:#f59e0b,color:#fff
+    style O1 fill:#10b981,color:#fff
+    style O2 fill:#10b981,color:#fff
+    style O3 fill:#10b981,color:#fff
+    style O4 fill:#10b981,color:#fff
+    style Deliver fill:#3b82f6,color:#fff`
+  },
+
+  // ═══ 5. Handoff 完整链路 ═══
+  {
+    "group": "Agent 协作链路",
+    "title": "5. Handoff 接力: Search → Compare → Booking",
+    "source": `sequenceDiagram
+    actor User
+    participant Sup as Supervisor
+    participant SA as 🔍 SearchAgent
+    participant CA as ⚖️ CompareAgent
+    participant BA as 📅 BookingAgent
+    participant HM as HandoffManager
+
+    User->>Sup: "UNC附近找房, 对比Top3, 约看最好的"
+
+    Note over Sup: 意图: search+compare+booking<br/>3种能力, 有链式依赖<br/>→ DAG模式
+
+    Sup->>SA: 分发任务: 搜索房源
+    Note over SA: ReAct Loop (4轮)
+    SA->>SA: property_search → commute → safety
+    SA-->>Sup: 5套候选 + 通勤 + 安全数据
+
+    Note over Sup,HM: ── Handoff 1: Search → Compare ──
+
+    Sup->>HM: handoff(from=SA, to=CA, task=对比Top3)
+    HM->>HM: depth=0 ✓<br/>环路检测 ✓
+    HM->>CA: 健康检查
+    CA-->>HM: ✅
+    HM->>CA: execute(对比5套)
+
+    Note over CA: ReAct Loop (2轮)
+    CA->>CA: 多维对比 → market_data
+    CA-->>Sup: 对比报告: A(82) > B(76) > C(71)
+
+    Note over Sup,HM: ── Handoff 2: Compare → Booking ──
+
+    Sup->>HM: handoff(from=CA, to=BA, task=预约A)
+    HM->>HM: depth=1 ✓<br/>环路检测 ✓
+    HM->>BA: 健康检查
+    BA-->>HM: ✅
+    HM->>BA: execute(预约 property A)
+
+    Note over BA: ReAct Loop (2轮)
+    BA->>BA: 检查availability → 创建预约
+    BA-->>Sup: 预约确认 #8823
+
+    Sup-->>User: 🎉 Top1: 456 Oak Ave (82分)<br/>已预约 7/18 下午3点看房`
+  },
+
+  // ═══ 6. DAG 并行 ═══
+  {
+    "group": "Agent 协作链路",
+    "title": "6. DAG 并行调度: 搜索+图谱同时跑",
+    "source": `graph TB
+    subgraph Timeline["时间线 →"]
+        subgraph T0["t=0s — Supervisor 决策"]
+            Sup["Supervisor<br/>意图: 找房 + 区域理解<br/>两者无依赖 → 并行"]
+        end
+
+        subgraph T1["t=1-6s — 并行阶段"]
+            direction LR
+            SA["🔍 SearchAgent<br/>──────<br/>ReAct 4轮<br/>property_search<br/>→ commute_calc<br/>→ safety_check<br/>→ deliver 5套"]
+            GA["🕸️ GraphAgent<br/>──────<br/>ReAct 2轮<br/>neo4j_query<br/>→ entity_lookup<br/>→ deliver 区域关系图"]
+        end
+
+        subgraph T2["t=6-8s — 串行阶段"]
+            ComA["🚌 CommuteAgent<br/>──────<br/>依赖: SearchAgent的坐标<br/>+ GraphAgent的区域边界<br/>ReAct 1轮<br/>→ deliver 通勤矩阵"]
+        end
+
+        subgraph T3["t=8-10s — 汇聚阶段"]
+            RepA["💬 ReplyAgent<br/>──────<br/>综合 3 个 Agent 结果<br/>→ 自然语言回复"]
+        end
+    end
+
+    Sup --> SA
+    Sup --> GA
+    SA --> ComA
+    GA --> ComA
+    ComA --> RepA
+    RepA --> Output(["用户看到:<br/>5套房 + 区域好坏 + 通勤时间"])
+
+    style Sup fill:#a78bfa,color:#fff
+    style SA fill:#3b82f6,color:#fff
+    style GA fill:#8b5cf6,color:#fff
+    style ComA fill:#f59e0b,color:#fff
+    style RepA fill:#06b6d4,color:#fff`
+  },
+
+  // ═══ 7. 完整请求 — 多 Agent 协作 ═══
+  {
+    "group": "Agent 协作链路",
+    "title": "7. 全景时序: 一次租房请求的所有 Agent 协作",
+    "source": `sequenceDiagram
+    actor User
+    participant Router as 🎯 路由层
+    participant Sup as 🧭 Supervisor
+    participant SA as 🔍 SearchAgent
+    participant GA as 🕸️ GraphAgent
+    participant ComA as 🚌 CommuteAgent
+    participant SafA as 🛡️ SafetyAgent
+    participant CA as ⚖️ CompareAgent
+    participant RepA as 💬 ReplyAgent
+    participant MCP as 🔌 MCP层
+
+    User->>Router: "UNC附近安全方便3b2b, 对比Top3, 约看"
+
+    Note over Router: 第1层: 路由决策
+    Router->>Router: 5信号评分=0.75 > 阈值
+    Router->>Sup: → agent-pipeline
+
+    Note over Sup: 第2层: Supervisor分解
+    Sup->>Sup: 意图→4个子任务<br/>1.搜索 2.通勤 3.对比 4.预约
+    Sup->>Sup: 构建DAG:<br/>搜索∥图谱→通勤→对比→预约
+
+    Note over SA,GA: 第3层: 并行阶段 (t=0-5s)
+
+    par 并行搜索
+        Sup->>SA: 搜索房源
+        loop ReAct: SearchAgent
+            SA->>MCP: property_search
+            MCP-->>SA: 候选列表
+            SA->>SA: Think→Act→Observe
+        end
+        SA-->>Sup: 12套原始候选
+    and 并行图谱
+        Sup->>GA: 区域分析
+        loop ReAct: GraphAgent
+            GA->>MCP: neo4j_query
+            MCP-->>GA: 区域关系图
+            GA->>GA: Think→Act→Observe
+        end
+        GA-->>Sup: 区域: 北区安全+近校, 南区便宜+远
+    end
+
+    Note over ComA,SafA: 串行阶段 (t=5-8s)
+
+    Sup->>ComA: 通勤计算(依赖上面结果)
+    ComA->>MCP: commute_calc(12套→UNC)
+    MCP-->>ComA: 通勤矩阵
+    ComA-->>Sup: 5套≤20min
+
+    Sup->>SafA: 安全评估
+    SafA->>MCP: crime_stats(5个区域)
+    MCP-->>SafA: 安全评分
+    SafA-->>Sup: 3套高安全
+
+    Note over CA: Handoff 阶段 (t=8-11s)
+
+    Sup->>CA: Handoff: 对比 Top 3
+    CA->>MCP: market_compare
+    MCP-->>CA: 市场数据
+    CA->>CA: ReAct: 多维分析
+    CA-->>Sup: 对比报告: A(82) > B(76) > C(71)
+
+    Note over RepA: 汇聚阶段 (t=11-13s)
+
+    Sup->>RepA: 综合所有结果
+    RepA->>RepA: LLM 生成回复
+    RepA-->>Sup: 完整回复文本
+
+    Sup-->>User: 📊 Top 3 推荐<br/>✅ A: 456 Oak Ave — $1,950 — 12min — 安全高<br/>✅ B: 123 Main St — $1,800 — 18min — 安全中<br/>✅ C: 234 Elm St  — $2,100 — 8min  — 安全高<br/><br/>推荐A: 性价比最优, 步行5min到UNC<br/>已为您预约 7/18 下午3点看房 📅`
+  },
+
+  // ═══ 8. Agent 能力矩阵 ═══
+  {
+    "group": "Agent 能力矩阵",
+    "title": "8. 每个 Agent 能干什么 · 不能干什么",
+    "source": `graph LR
+    subgraph SA_Scope["🔍 SearchAgent 的边界"]
+        direction TB
+        SA_Can["✅ 能做:<br/>· 向量/全文搜索房源<br/>· 理解搜索意图<br/>· 对搜索结果排序<br/>· 判断信息是否充分"]
+        SA_Cant["❌ 不做:<br/>· 不算通勤(交给CommuteAgent)<br/>· 不查安全(交给SafetyAgent)<br/>· 不做对比(交给CompareAgent)<br/>· 不直接回复用户(交给ReplyAgent)"]
+    end
+
+    subgraph CA_Scope["⚖️ CompareAgent 的边界"]
+        direction TB
+        CA_Can["✅ 能做:<br/>· 多维对比分析<br/>· Trade-off 推理<br/>· 市场数据参考<br/>· 推荐排序"]
+        CA_Cant["❌ 不做:<br/>· 不搜新房源<br/>· 不预约(交给BookingAgent)<br/>· 不回复非对比问题"]
+    end
+
+    subgraph BA_Scope["📅 BookingAgent 的边界"]
+        direction TB
+        BA_Can["✅ 能做:<br/>· 检查房源可用性<br/>· 创建预约<br/>· 合同审查辅助<br/>· 支付初始化"]
+        BA_Cant["❌ 不做:<br/>· 不推荐房源<br/>· 不分析通勤<br/>· 不对比"]
+    end
+
+    style SA_Can fill:#10b981,color:#fff
+    style SA_Cant fill:#ef4444,color:#fff
+    style CA_Can fill:#10b981,color:#fff
+    style CA_Cant fill:#ef4444,color:#fff
+    style BA_Can fill:#10b981,color:#fff
+    style BA_Cant fill:#ef4444,color:#fff`
+  },
+
+  // ═══ 9. 中间结果传递格式 ═══
+  {
+    "group": "Agent 能力矩阵",
+    "title": "9. Agent 之间传递什么 — 数据协议",
+    "source": `graph TB
+    subgraph Protocol["Agent 间数据协议 (Handoff / DAG 传递)"]
+        direction TB
+
+        subgraph SA_Out["SearchAgent → 输出"]
+            SAO1["property_candidates[]<br/>{id, title, price, bedrooms,<br/> lat, lng, description,<br/> relevance_score}"]
+        end
+
+        subgraph GA_Out["GraphAgent → 输出"]
+            GAO1["neighborhood_graph<br/>{area_name, nearby_schools[],<br/> transit_hubs[], safety_zone,<br/> price_trend}"]
+        end
+
+        subgraph ComA_Out["CommuteAgent → 输出"]
+            CO1["commute_matrix[]<br/>{property_id, bus_time,<br/> bus_transfers, cycle_time,<br/> walk_time, best_mode}"]
+        end
+
+        subgraph SafA_Out["SafetyAgent → 输出"]
+            SO1["safety_scores[]<br/>{property_id, overall_score,<br/> violent_rate, burglary_rate,<br/> vs_city_avg, summary}"]
+        end
+
+        subgraph CA_In["CompareAgent ← 输入"]
+            CI1["合并以上所有<br/>+ 用户偏好权重<br/>→ 开始对比分析"]
+        end
+    end
+
+    SA_Out --> CA_In
+    GA_Out --> CA_In
+    ComA_Out --> CA_In
+    SafA_Out --> CA_In
+
+    CA_In --> CA_Process["CompareAgent 拿到的是<br/>完整数据包, 不需要<br/>自己再调任何搜索工具"]
+
+    style SAO1 fill:#3b82f6,color:#fff
+    style GAO1 fill:#8b5cf6,color:#fff
+    style CO1 fill:#f59e0b,color:#fff
+    style SO1 fill:#ef4444,color:#fff
+    style CI1 fill:#10b981,color:#fff
+    style CA_Process fill:#a78bfa,color:#fff`
+  },
+
+];
+
+// ═══════════════ Viewer Logic ═══════════════
+let scale = 1, offsetX = 0, offsetY = 0, currentIdx = 0;
+let panning = false, panStartX = 0, panStartY = 0, panOrigX = 0, panOrigY = 0;
+let darkMode = false;
+
+const nav = document.getElementById('nav-list');
+const container = document.getElementById('diagram-container');
+const zoomLabel = document.getElementById('zoom-level');
+const canvasEl = document.getElementById('canvas');
+
+let lastGroup = '';
+DIAGRAMS.forEach((d, i) => {
+  if (d.group !== lastGroup) {
+    nav.innerHTML += '<li class="group">' + d.group + '</li>';
+    lastGroup = d.group;
+  }
+  nav.innerHTML += '<li data-idx="' + i + '">' + d.title + '</li>';
+});
+
+function applyTransform() {
+  container.style.transform = 'translate(' + offsetX + 'px, ' + offsetY + 'px) scale(' + scale + ')';
+  zoomLabel.textContent = Math.round(scale * 100) + '%';
+}
+
+async function loadDiagram(idx) {
+  currentIdx = idx;
+  scale = 1; offsetX = 0; offsetY = 0;
+  applyTransform();
+  try {
+    const { svg } = await mermaid.render('mermaid-svg-' + idx, DIAGRAMS[idx].source);
+    container.innerHTML = svg;
+    applyTransform();
+  } catch(e) {
+    container.innerHTML = '<pre style="color:#ef4444;padding:20px;white-space:pre-wrap;font-size:13px">Render Error:\n' + e.message + '\n\nSource:\n' + DIAGRAMS[idx].source + '</pre>';
+  }
+  document.querySelectorAll('#nav-list li:not(.group)').forEach((el, i) => {
+    el.classList.toggle('active', i === idx);
+  });
+}
+
+function zoomIn()  { scale = Math.min(scale * 1.3, 5); applyTransform(); }
+function zoomOut() { scale = Math.max(scale / 1.3, 0.15); applyTransform(); }
+function zoomFit() { scale = 1; offsetX = 0; offsetY = 0; applyTransform(); }
+function zoomReset() { scale = 1; applyTransform(); }
+
+function toggleDark() {
+  darkMode = !darkMode;
+  canvasEl.classList.toggle('dark', darkMode);
+}
+
+canvasEl.addEventListener('wheel', (e) => {
+  if (e.ctrlKey) {
+    e.preventDefault();
+    scale = Math.max(0.15, Math.min(5, scale * (e.deltaY > 0 ? 0.9 : 1.1)));
+    applyTransform();
+  }
+}, { passive: false });
+
+canvasEl.addEventListener('mousedown', (e) => {
+  if (e.target.tagName === 'BUTTON') return;
+  panning = true;
+  panStartX = e.clientX; panStartY = e.clientY;
+  panOrigX = offsetX; panOrigY = offsetY;
+  canvasEl.style.cursor = 'grabbing';
+});
+window.addEventListener('mousemove', (e) => {
+  if (!panning) return;
+  offsetX = panOrigX + (e.clientX - panStartX);
+  offsetY = panOrigY + (e.clientY - panStartY);
+  applyTransform();
+});
+window.addEventListener('mouseup', () => {
+  panning = false;
+  canvasEl.style.cursor = 'grab';
+});
+
+canvasEl.addEventListener('touchstart', (e) => {
+  if (e.touches.length === 1) {
+    panning = true;
+    panStartX = e.touches[0].clientX; panStartY = e.touches[0].clientY;
+    panOrigX = offsetX; panOrigY = offsetY;
+  }
+}, { passive: false });
+window.addEventListener('touchmove', (e) => {
+  if (!panning || e.touches.length !== 1) return;
+  e.preventDefault();
+  offsetX = panOrigX + (e.touches[0].clientX - panStartX);
+  offsetY = panOrigY + (e.touches[0].clientY - panStartY);
+  applyTransform();
+}, { passive: false });
+window.addEventListener('touchend', () => { panning = false; });
+
+nav.addEventListener('click', (e) => {
+  const li = e.target.closest('li:not(.group)');
+  if (!li) return;
+  loadDiagram(parseInt(li.dataset.idx));
+});
+
+window.addEventListener('keydown', (e) => {
+  if (e.key === '+' || e.key === '=') zoomIn();
+  if (e.key === '-') zoomOut();
+  if (e.key === '0') zoomFit();
+  if (e.key === 'ArrowDown' || e.key === 'j') { e.preventDefault(); loadDiagram(Math.min(currentIdx + 1, DIAGRAMS.length - 1)); }
+  if (e.key === 'ArrowUp' || e.key === 'k') { e.preventDefault(); loadDiagram(Math.max(currentIdx - 1, 0)); }
+});
+
+loadDiagram(0);
+</script>
+</body>
+</html>

@@ -20,6 +20,7 @@ export interface AgentFilters {
 export interface AgentMessageRequest {
   message: string
   filters?: AgentFilters | null
+  compare_property_ids?: number[]  // 候选清单勾选后传，触发对比意图
 }
 
 export type AgentIntent =
@@ -50,14 +51,25 @@ export interface FaqChip {
   chip: string
 }
 
+/** 专家模式：单个 Agent 执行步骤 */
+export interface ThinkingStep {
+  agent_id: string
+  agent_name: string
+  status: 'pending' | 'running' | 'success' | 'error'
+  summary: string
+  duration_ms: number
+}
+
 export interface AgentMessageResponse {
   reply: string
   intent: AgentIntent
-  recommendations: AgentRecommendation[]
+  recommendations: AgentRecommendation[]   // 全部匹配房源（"查看所有"展开使用）
+  top_picks: AgentRecommendation[]          // 精选 Top 3（首屏卡片）
   cart_changed: boolean
   ai_available: boolean
   quick_replies: string[]
   links: AgentLink[]
+  thinking_steps: ThinkingStep[]
 }
 
 export interface CartItem {
@@ -107,6 +119,10 @@ export interface CompareResponse {
 export interface AgentChatMessage {
   role: 'user' | 'assistant'
   content: string
+  /** 精选 Top 3 房源（首屏横向卡片） */
+  topPicks?: AgentRecommendation[]
+  /** 全部匹配房源（"查看所有"按钮跳转搜索页使用） */
+  allRecommendations?: AgentRecommendation[]
   /** 该条 AI 消息附带的推荐房源，内联渲染成横条 */
   recommendations?: AgentRecommendation[]
   /** 该轮是否有 AI 分析（用于横条上的降级提示） */
@@ -115,4 +131,6 @@ export interface AgentChatMessage {
   quickReplies?: string[]
   /** 站内页面深链按钮 */
   links?: AgentLink[]
+  /** 专家模式思考步骤 */
+  thinkingSteps?: ThinkingStep[]
 }

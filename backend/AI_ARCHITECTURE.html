@@ -1,0 +1,530 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>租房平台 AI Agent 架构全景图</title>
+<style>
+  :root {
+    --bg: #0f1117; --card: #161822; --border: #252836;
+    --text: #cdd6f4; --muted: #6c7086; --accent: #89b4fa;
+    --green: #a6e3a1; --red: #f38ba8; --yellow: #f9e2af;
+    --orange: #fab387; --purple: #cba6f7; --teal: #94e2d5;
+    --blue: #74c7ec; --pink: #f5c2e7;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { background:var(--bg); color:var(--text); font:14px/1.6 system-ui,sans-serif; padding:20px; }
+  h1 { font-size:28px; margin-bottom:4px; }
+  h2 { font-size:20px; margin:32px 0 12px; padding-bottom:8px; border-bottom:2px solid var(--border); }
+  h3 { font-size:16px; margin:16px 0 8px; color:var(--accent); }
+  .subtitle { color:var(--muted); margin-bottom:24px; }
+  .badge { display:inline-block; padding:2px 8px; border-radius:10px; font-size:11px; font-weight:600; }
+  .badge-done { background:#1a3824; color:var(--green); }
+  .badge-todo { background:#3a3a1a; color:var(--yellow); }
+
+  .grid { display:grid; gap:16px; }
+  .grid-2 { grid-template-columns:1fr 1fr; }
+  .grid-4 { grid-template-columns:repeat(4,1fr); }
+
+  .card { background:var(--card); border:1px solid var(--border); border-radius:10px; padding:16px; }
+  .card.green { border-color:#1a3824; }
+  .card.blue { border-color:#1a2a38; }
+  .card.teal { border-color:#1a3838; }
+  .card.yellow { border-color:#3a3a1a; }
+
+  table { width:100%; border-collapse:collapse; font-size:13px; }
+  th { text-align:left; padding:8px 6px; border-bottom:2px solid var(--border); color:var(--accent); font-size:11px; text-transform:uppercase; }
+  td { padding:6px; border-bottom:1px solid var(--border); vertical-align:top; }
+  tr:hover td { background:rgba(255,255,255,0.02); }
+
+  .flow { display:flex; align-items:center; gap:8px; flex-wrap:wrap; padding:12px 0; font-family:'JetBrains Mono','Fira Code',monospace; font-size:13px; }
+  .flow-node { padding:8px 14px; border-radius:8px; font-weight:600; white-space:nowrap; }
+  .flow-arrow { color:var(--muted); font-size:16px; }
+  .node-filter { background:#1a2a38; color:var(--blue); border:1px solid #1e3a5a; }
+  .node-search { background:#1a3828; color:var(--green); border:1px solid #1e4a3a; }
+  .node-synth { background:#2a2a1a; color:var(--yellow); border:1px solid #4a4a1e; }
+  .node-compare { background:#381a2a; color:var(--pink); border:1px solid #4a1e3a; }
+  .node-cart { background:#1a2838; color:var(--teal); border:1px solid #1e3a4a; }
+  .node-faq { background:#2a2a2a; color:var(--muted); border:1px solid #3a3a3a; }
+
+  .prompt-block { background:#0a0b10; border-radius:8px; padding:12px; font-size:12px; max-height:200px; overflow-y:auto; white-space:pre-wrap; font-family:'JetBrains Mono',monospace; color:var(--muted); margin-top:8px; }
+
+  .section-nav { position:sticky; top:8px; background:var(--card); border:1px solid var(--border); border-radius:10px; padding:12px 16px; margin-bottom:24px; display:flex; gap:16px; flex-wrap:wrap; z-index:10; }
+  .section-nav a { color:var(--accent); text-decoration:none; font-size:13px; }
+  .section-nav a:hover { text-decoration:underline; }
+
+  .count-big { font-size:48px; font-weight:800; line-height:1; }
+  .count-label { color:var(--muted); font-size:12px; }
+
+  .dag-diagram { margin:12px 0; padding:16px; background:#0a0b10; border-radius:8px; overflow-x:auto; }
+
+  .verdict-box { padding:12px 16px; border-radius:8px; margin:8px 0; font-weight:600; }
+  .verdict-yes { background:#1a3824; color:var(--green); border:1px solid #2a5840; }
+
+  /* ── Todo checkbox styles ── */
+  .todo-check { width:16px; height:16px; cursor:pointer; accent-color:var(--green); margin-right:4px; vertical-align:middle; }
+  tr.checked td { text-decoration:line-through; opacity:0.45; }
+  tr.checked td:first-child, tr.checked td:nth-child(2) { text-decoration:none; opacity:1; }
+  .attn-btn { width:22px; height:22px; border-radius:50%; border:2px solid var(--red); background:transparent; color:var(--red); cursor:pointer; font-size:12px; font-weight:700; line-height:1; padding:0; text-align:center; opacity:0.4; transition:all 0.2s; }
+  .attn-btn:hover { opacity:0.8; }
+  .attn-btn.active { opacity:1; background:var(--red); color:var(--bg); }
+  tr.attention td { color:var(--red) !important; }
+  tr.attention td .attn-btn { opacity:1; background:var(--red); color:var(--bg); }
+  tr.attention.checked td { color:var(--red) !important; text-decoration:line-through; opacity:0.65; }
+  .progress-bar { height:6px; border-radius:3px; background:var(--border); margin-top:8px; overflow:hidden; }
+  .progress-fill { height:100%; background:var(--green); border-radius:3px; transition:width 0.3s; }
+  .progress-text { font-size:12px; color:var(--muted); margin-top:4px; }
+  .attn-count { color:var(--red); }
+  .reset-btn { background:none; border:1px solid var(--border); color:var(--muted); border-radius:6px; padding:4px 12px; cursor:pointer; font-size:11px; margin-left:12px; }
+  .reset-btn:hover { border-color:var(--red); color:var(--red); }
+
+  @media (max-width:900px) {
+    .grid-2,.grid-4 { grid-template-columns:1fr; }
+    .flow { flex-direction:column; align-items:flex-start; }
+    .flow-arrow { transform:rotate(90deg); }
+  }
+</style>
+</head>
+<body>
+
+<div class="section-nav">
+  <strong>导航:</strong>
+  <a href="#overview">总览</a>
+  <a href="#request-flow">请求链路</a>
+  <a href="#agents">Agent 清单</a>
+  <a href="#tools">工具层</a>
+  <a href="#dag">DAG 管线</a>
+  <a href="#prompts">System Prompt</a>
+  <a href="#plan">执行计划</a>
+</div>
+
+<h1>🏠 租房平台 AI Agent 架构全景图</h1>
+<p class="subtitle">精简后架构 | 2026-07-18 | 6 Agent · 5 DAG · 16 工具 | ✅ P0 完成 + Few-Shot | 0 ReAct · 全部 Prompt 含示例 | 基于 AI_SCENARIOS.md</p>
+
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+<h2 id="overview">1. 架构总览</h2>
+
+<div class="grid grid-4" style="margin-bottom:16px;">
+  <div class="card green" style="text-align:center">
+    <div class="count-big" style="color:var(--green)">6</div>
+    <div class="count-label">Agent</div>
+  </div>
+  <div class="card blue" style="text-align:center">
+    <div class="count-big" style="color:var(--blue)">5</div>
+    <div class="count-label">DAG 模板</div>
+  </div>
+  <div class="card teal" style="text-align:center">
+    <div class="count-big" style="color:var(--teal)">16</div>
+    <div class="count-label">工具</div>
+  </div>
+  <div class="card" style="text-align:center">
+    <div class="count-big" style="color:var(--green)">0</div>
+    <div class="count-label">ReAct 开销</div>
+  </div>
+</div>
+
+<div class="card green">
+  <div class="verdict-box verdict-yes">✅ P0 完成（2026-07-18）。全部 Agent 改为直接执行，0 ReAct 开销。filter→单次 LLM JSON，search→成熟管线，synthesizer→单次 LLM 合成。</div>
+</div>
+
+<div class="card" style="margin-top:16px;text-align:center">
+  <strong style="font-size:14px">📋 进度追踪</strong>
+  <span class="progress-text" id="progress-label">Agent: 0/6 &nbsp;|&nbsp; 工具: 0/16 &nbsp;|&nbsp; <span class="attn-count" id="attn-label">⚠ 0</span></span>
+  <div class="progress-bar"><div class="progress-fill" id="progress-fill" style="width:0%"></div></div>
+  <button class="reset-btn" onclick="resetAll()">↺ 重置全部</button>
+</div>
+
+<div class="grid grid-2" style="margin-top:16px">
+  <div class="card green">
+    <h3>核心搜索链路（始终执行，3 次 LLM 调用）</h3>
+    <table>
+      <tr><td><strong>filter_agent</strong></td><td>单次 LLM JSON 提取，走 FilterAgent.handle() + FILTER_PROMPT（含设施口语映射+硬约束区分）</td></tr>
+      <tr><td><strong>search_agent</strong></td><td>AgentService.recommend_properties() 成熟管线（搜索+评分+推荐，含 LLM 生成回复）</td></tr>
+      <tr><td><strong>synthesizer_agent</strong></td><td>单次 LLM 合成，走 SynthesizerAgent.handle() + STAGE_TONES 漏斗语气适配</td></tr>
+    </table>
+  </div>
+  <div class="card blue">
+    <h3>条件任务 Agent（按意图触发，0 LLM）</h3>
+    <table>
+      <tr><td><strong>compare_agent</strong></td><td>多维度对比，委托 AgentService.compare_cart()，无 LLM</td></tr>
+      <tr><td><strong>cart_agent</strong></td><td>候选清单 CRUD，委托 AgentService，无 LLM</td></tr>
+      <tr><td><strong>faq_agent</strong></td><td>FAQ 规则匹配（关键字 + 模糊匹配），无 LLM</td></tr>
+    </table>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+<h2 id="request-flow">2. 请求真实链路</h2>
+
+<div class="card">
+  <h3>每次 POST /api/v1/agent/sessions/:id/messages 的完整执行路径</h3>
+  <pre style="font:13px monospace;line-height:2.2;color:var(--muted)">
+POST /api/v1/agent/sessions/:id/messages
+  │
+  ▼
+<span style="color:var(--accent)">agent.py:77</span>  _handle_with_supervisor()            <span style="color:var(--green)">← 无条件调用</span>
+  │
+  ├─ register_all_agents(registry)           ← 注册 6 个 Agent 定义
+  ├─ bind_tool_handlers(tool_registry)       ← 绑定 16 个工具 handler
+  ├─ supervisor.handle_message(message, ...)
+  │    │
+  │    ├─ <span style="color:var(--accent)">_classify(message)</span>                 ← LLM / 规则兜底 → intent
+  │    │
+  │    ├─ <span style="color:var(--accent)">ExecutionDAG.from_intent(intent)</span>
+  │    │    ├─ intent="search"     → <span style="color:var(--green)">filter → search → synthesizer</span>
+  │    │    ├─ intent="compare"    → <span style="color:var(--pink)">compare → synthesizer</span>
+  │    │    ├─ intent="manage_cart"→ <span style="color:var(--teal)">cart_agent</span>
+  │    │    ├─ intent="faq"        → <span style="color:var(--muted)">faq_agent</span>
+  │    │    └─ intent="general"    → <span style="color:var(--yellow)">synthesizer_agent</span>
+  │    │
+  │    ├─ <span style="color:var(--accent)">_execute_dag(dag, context)</span>         ← 拓扑排序，同层 asyncio.gather 并行
+  │    │    └─ _execute_agent(name, context)  ← <span style="color:var(--green)">全部直接执行，0 ReAct</span>
+  │    │         ├─ <span style="color:var(--blue)">filter_agent</span>      → FilterAgent.handle()
+  │    │         ├─ <span style="color:var(--green)">search_agent</span>      → AgentService.recommend_properties()
+  │    │         ├─ <span style="color:var(--yellow)">synthesizer_agent</span> → SynthesizerAgent.handle()
+  │    │         ├─ <span style="color:var(--teal)">cart_agent</span>        → AgentService CRUD
+  │    │         ├─ <span style="color:var(--muted)">faq_agent</span>         → agent_faq.match_faq()
+  │    │         └─ <span style="color:var(--pink)">compare_agent</span>      → AgentService.compare_cart()
+  │    │
+  │    └─ <span style="color:var(--accent)">_build_response(...)</span>               ← 组装返回
+  │
+  └─ 持久化消息到 ChatMessage 表</pre>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+<h2 id="agents">3. Agent 完整清单（6 个）</h2>
+
+<h3>3.1 核心搜索链路 — 全部直接执行，无 ReAct</h3>
+<table class="todo-table" data-group="agent-core">
+<thead><tr><th>✓</th><th>!</th><th>Agent ID</th><th>中文名</th><th>文件</th><th>执行方式</th><th>LLM 调用</th><th>工具</th></tr></thead>
+<tbody>
+<tr style="background:rgba(0,255,0,0.04)" data-id="filter_agent">
+  <td><input type="checkbox" class="todo-check" data-id="filter_agent" onchange="toggleCheck(this)"></td>
+  <td><button class="attn-btn" data-id="filter_agent" onclick="toggleAttn(this)" title="标记需关注">!</button></td>
+  <td><strong>filter_agent</strong></td><td>筛选条件提取</td><td><code>agents/filter_agent.py</code></td>
+  <td>Supervisor._run_filter_agent() → FilterAgent.handle() → llm.complete_json(FILTER_PROMPT)</td>
+  <td>1 次 JSON 提取</td>
+  <td>extract_filters, property_search, query_rewrite</td>
+</tr>
+<tr style="background:rgba(0,255,0,0.04)" data-id="search_agent">
+  <td><input type="checkbox" class="todo-check" data-id="search_agent" onchange="toggleCheck(this)"></td>
+  <td><button class="attn-btn" data-id="search_agent" onclick="toggleAttn(this)" title="标记需关注">!</button></td>
+  <td><strong>search_agent</strong></td><td>房源搜索</td><td><code>agents/search_agent.py</code></td>
+  <td>Supervisor._run_search_agent() → AgentService.recommend_properties()（搜索+评分+LLM推荐回复）</td>
+  <td>1 次推荐生成</td>
+  <td>9 tools</td>
+</tr>
+<tr style="background:rgba(0,255,0,0.04)" data-id="synthesizer_agent">
+  <td><input type="checkbox" class="todo-check" data-id="synthesizer_agent" onchange="toggleCheck(this)"></td>
+  <td><button class="attn-btn" data-id="synthesizer_agent" onclick="toggleAttn(this)" title="标记需关注">!</button></td>
+  <td><strong>synthesizer_agent</strong></td><td>回复合成</td><td><code>agents/synthesizer_agent.py</code></td>
+  <td>Supervisor._run_synthesizer_agent() → SynthesizerAgent.handle() → llm.complete_text(stage_prompt)</td>
+  <td>1 次文本合成</td>
+  <td>safe_fallback_check, build_fallback_reply</td>
+</tr>
+</tbody>
+</table>
+
+<h3>3.2 条件任务 Agent — 全部 0 LLM</h3>
+<table class="todo-table" data-group="agent-task">
+<thead><tr><th>✓</th><th>!</th><th>Agent ID</th><th>中文名</th><th>执行方式</th><th>LLM</th><th>触发意图</th></tr></thead>
+<tbody>
+<tr data-id="compare_agent"><td><input type="checkbox" class="todo-check" data-id="compare_agent" onchange="toggleCheck(this)"></td><td><button class="attn-btn" data-id="compare_agent" onclick="toggleAttn(this)" title="标记需关注">!</button></td><td><strong>compare_agent</strong></td><td>房源对比</td><td>委托 AgentService.compare_cart()</td><td>❌</td><td>compare</td></tr>
+<tr data-id="cart_agent"><td><input type="checkbox" class="todo-check" data-id="cart_agent" onchange="toggleCheck(this)"></td><td><button class="attn-btn" data-id="cart_agent" onclick="toggleAttn(this)" title="标记需关注">!</button></td><td><strong>cart_agent</strong></td><td>购物车管理</td><td>委托 AgentService CRUD</td><td>❌</td><td>manage_cart</td></tr>
+<tr data-id="faq_agent"><td><input type="checkbox" class="todo-check" data-id="faq_agent" onchange="toggleCheck(this)"></td><td><button class="attn-btn" data-id="faq_agent" onclick="toggleAttn(this)" title="标记需关注">!</button></td><td><strong>faq_agent</strong></td><td>FAQ 问答</td><td>agent_faq.match_faq() 规则匹配</td><td>❌</td><td>faq</td></tr>
+</tbody>
+</table>
+
+<h3>3.3 P0 修复的关键问题</h3>
+<div class="card green">
+  <table>
+    <tr><td style="color:var(--green);font-weight:600">✅ filter_agent prompt 修复</td><td>此前 Supervisor._build_system_prompt() 生成简化版 prompt，filter_agent 精心编写的 FILTER_PROMPT（含设施口语映射表+硬约束区分）被跳过。现在 _run_filter_agent() 直接调用 FilterAgent.handle()，使用完整 FILTER_PROMPT。</td></tr>
+    <tr><td style="color:var(--green);font-weight:600">✅ search_agent 双路径消除</td><td>此前先跑 ReAct loop 生成文本，再跑 AgentService.recommend_properties() 取结构化数据。现在直接走 recommend_properties() 成熟管线，无 ReAct 开销。</td></tr>
+    <tr><td style="color:var(--green);font-weight:600">✅ synthesizer 单次 LLM</td><td>此前走 ReAct loop 但实际无需多轮工具调用。现在直接调用 SynthesizerAgent.handle() 做单次 LLM 合成。</td></tr>
+  </table>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+<h2 id="tools">4. 工具层（16 个）</h2>
+
+<table class="todo-table" data-group="tool">
+<thead><tr><th>✓</th><th>!</th><th>#</th><th>工具名</th><th>可用 Agent</th><th>功能</th></tr></thead>
+<tbody>
+<tr data-id="tool-property_search"><td><input type="checkbox" class="todo-check" data-id="tool-property_search" onchange="toggleCheck(this)"></td><td><button class="attn-btn" data-id="tool-property_search" onclick="toggleAttn(this)" title="标记需关注">!</button></td><td>1</td><td><strong>property_search</strong></td><td>search_agent, filter_agent</td><td>核心房源搜索（渐进放宽）</td></tr>
+<tr data-id="tool-extract_filters"><td><input type="checkbox" class="todo-check" data-id="tool-extract_filters" onchange="toggleCheck(this)"></td><td><button class="attn-btn" data-id="tool-extract_filters" onclick="toggleAttn(this)" title="标记需关注">!</button></td><td>2</td><td><strong>extract_filters</strong></td><td>search_agent, filter_agent</td><td>NL → 结构化筛选条件（LLM JSON 提取）</td></tr>
+<tr data-id="tool-score_properties"><td><input type="checkbox" class="todo-check" data-id="tool-score_properties" onchange="toggleCheck(this)"></td><td><button class="attn-btn" data-id="tool-score_properties" onclick="toggleAttn(this)" title="标记需关注">!</button></td><td>3</td><td><strong>score_properties</strong></td><td>search_agent</td><td>确定性质量评分</td></tr>
+<tr data-id="tool-commute_calc"><td><input type="checkbox" class="todo-check" data-id="tool-commute_calc" onchange="toggleCheck(this)"></td><td><button class="attn-btn" data-id="tool-commute_calc" onclick="toggleAttn(this)" title="标记需关注">!</button></td><td>4</td><td><strong>commute_calc</strong></td><td>search_agent</td><td>通勤时间/距离计算（待改为 DB 查）</td></tr>
+<tr data-id="tool-poi_lookup"><td><input type="checkbox" class="todo-check" data-id="tool-poi_lookup" onchange="toggleCheck(this)"></td><td><button class="attn-btn" data-id="tool-poi_lookup" onclick="toggleAttn(this)" title="标记需关注">!</button></td><td>5</td><td><strong>poi_lookup</strong></td><td>search_agent</td><td>周边设施查询</td></tr>
+<tr data-id="tool-compare_dimensions"><td><input type="checkbox" class="todo-check" data-id="tool-compare_dimensions" onchange="toggleCheck(this)"></td><td><button class="attn-btn" data-id="tool-compare_dimensions" onclick="toggleAttn(this)" title="标记需关注">!</button></td><td>6</td><td><strong>compare_dimensions</strong></td><td>compare_agent, search_agent</td><td>多维度对比矩阵</td></tr>
+<tr data-id="tool-market_stats"><td><input type="checkbox" class="todo-check" data-id="tool-market_stats" onchange="toggleCheck(this)"></td><td><button class="attn-btn" data-id="tool-market_stats" onclick="toggleAttn(this)" title="标记需关注">!</button></td><td>7</td><td><strong>market_stats</strong></td><td>search_agent</td><td>价格/户型/区域分布统计（待增强分层聚类）</td></tr>
+<tr data-id="tool-query_rewrite"><td><input type="checkbox" class="todo-check" data-id="tool-query_rewrite" onchange="toggleCheck(this)"></td><td><button class="attn-btn" data-id="tool-query_rewrite" onclick="toggleAttn(this)" title="标记需关注">!</button></td><td>8</td><td><strong>query_rewrite</strong></td><td>search_agent, filter_agent</td><td>模糊描述 → 精确条件</td></tr>
+<tr data-id="tool-gap_detect"><td><input type="checkbox" class="todo-check" data-id="tool-gap_detect" onchange="toggleCheck(this)"></td><td><button class="attn-btn" data-id="tool-gap_detect" onclick="toggleAttn(this)" title="标记需关注">!</button></td><td>9</td><td><strong>gap_detect</strong></td><td>search_agent</td><td>分数断层检测（纯算法）</td></tr>
+<tr data-id="tool-safe_fallback_check"><td><input type="checkbox" class="todo-check" data-id="tool-safe_fallback_check" onchange="toggleCheck(this)"></td><td><button class="attn-btn" data-id="tool-safe_fallback_check" onclick="toggleAttn(this)" title="标记需关注">!</button></td><td>10</td><td><strong>safe_fallback_check</strong></td><td>search_agent, synthesizer_agent</td><td>检索质量不足 → 触发兜底</td></tr>
+<tr data-id="tool-build_fallback_reply"><td><input type="checkbox" class="todo-check" data-id="tool-build_fallback_reply" onchange="toggleCheck(this)"></td><td><button class="attn-btn" data-id="tool-build_fallback_reply" onclick="toggleAttn(this)" title="标记需关注">!</button></td><td>11</td><td><strong>build_fallback_reply</strong></td><td>synthesizer_agent</td><td>全部失败时兜底回复</td></tr>
+<tr data-id="tool-cart_crud"><td><input type="checkbox" class="todo-check" data-id="tool-cart_crud" onchange="toggleCheck(this)"></td><td><button class="attn-btn" data-id="tool-cart_crud" onclick="toggleAttn(this)" title="标记需关注">!</button></td><td>12-14</td><td><strong>cart_view / cart_add / cart_remove</strong></td><td>cart_agent, compare_agent</td><td>候选清单 CRUD</td></tr>
+<tr data-id="tool-faq_match"><td><input type="checkbox" class="todo-check" data-id="tool-faq_match" onchange="toggleCheck(this)"></td><td><button class="attn-btn" data-id="tool-faq_match" onclick="toggleAttn(this)" title="标记需关注">!</button></td><td>15</td><td><strong>faq_match</strong></td><td>faq_agent</td><td>FAQ 知识库匹配</td></tr>
+<tr data-id="tool-generate_embedding"><td><input type="checkbox" class="todo-check" data-id="tool-generate_embedding" onchange="toggleCheck(this)"></td><td><button class="attn-btn" data-id="tool-generate_embedding" onclick="toggleAttn(this)" title="标记需关注">!</button></td><td>16</td><td><strong>generate_embedding</strong></td><td>search_agent</td><td>文本向量生成（语义搜索）</td></tr>
+</tbody>
+</table>
+
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+<h2 id="dag">5. DAG 管线（5 种）</h2>
+
+<h3>5.1 SEARCH DAG — 核心搜索链路（3 节点，全部直接执行）</h3>
+<div class="card green">
+  <div class="dag-diagram">
+    <div class="flow">
+      <div class="flow-node node-filter">filter_agent<br><small>单次 LLM JSON 提取</small></div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-node node-search">search_agent<br><small>recommend_properties() 成熟管线</small></div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-node node-synth">synthesizer_agent<br><small>单次 LLM · 漏斗语气适配</small></div>
+    </div>
+  </div>
+  <p style="font-size:12px;color:var(--muted)">全程 3 次 LLM 调用（filter 1次 JSON + search 1次推荐 + synth 1次合成），0 ReAct 开销。<br>覆盖原 search / market_analysis / commute_info / poi_info 四种意图。</p>
+</div>
+
+<h3>5.2 全部 5 种 DAG</h3>
+<div class="grid grid-2" style="margin-top:12px">
+  <div class="card green"><strong>SEARCH</strong> (3): filter → search → synthesizer</div>
+  <div class="card"><strong>COMPARE</strong> (2): compare → synthesizer</div>
+  <div class="card"><strong>MANAGE_CART</strong> (1): cart_agent</div>
+  <div class="card"><strong>FAQ</strong> (1): faq_agent</div>
+  <div class="card"><strong>GENERAL</strong> (1): synthesizer_agent</div>
+</div>
+
+<h3>5.3 Intent 枚举</h3>
+<div class="card">
+  <pre style="font:13px monospace;color:var(--accent)">
+class Intent(str, Enum):
+    SEARCH = "search"           # 搜索/推荐（含通勤/POI/行情）
+    COMPARE = "compare"         # 房源对比
+    MANAGE_CART = "manage_cart" # 购物车管理
+    FAQ = "faq"                 # FAQ 政策咨询
+    GENERAL = "general"         # 闲聊/兜底</pre>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+<h2 id="prompts">6. System Prompt 现状</h2>
+
+<div class="grid grid-2">
+  <div class="card green">
+    <h3>filter_agent ✅ 完整 FILTER_PROMPT</h3>
+    <div class="prompt-block">你是租房搜索条件提取助手。从用户消息中提取结构化条件，区分硬约束和软偏好。
+
+只输出 JSON：{district, price_min, price_max, bedrooms, property_type, amenities, room_type, bathrooms, area_min, area_max, min_lease_months, institution, commute_mode, commute_minutes, hard_filters, soft_preferences}
+
+关键规则：
+1. amenities 使用标准值：宠物友好、独立厨房、独立卫浴、空调、洗衣机、冰箱、WiFi、暖气、阳台、电梯、车位、健身房、泳池、自习室、家具齐全、精装修、包水电、禁烟
+2. 设施口语映射："养猫"→"宠物友好"，"独卫"→"独立卫浴"，"wifi"→"WiFi"，"车位"→"车位"，"gym"→"健身房"，"家具"→"家具齐全"
+3. 硬约束(排除性)：amenities、room_type、bathrooms、commute
+   软偏好(排序性)：price、district、area、bedrooms</div>
+    <p style="color:var(--green);font-size:11px;margin-top:4px">✅ 现在通过 FilterAgent.handle() 直接使用完整 FILTER_PROMPT，不再被 Supervisor 覆盖。</p>
+  </div>
+  <div class="card">
+    <h3>search_agent — RECOMMEND_SYSTEM_PROMPT</h3>
+    <div class="prompt-block">你是西交利物浦大学周边的租房推荐助手。
+回复结构（三段式，自然口语化）：
+1. 开头一句话总结匹配情况
+2. 逐套介绍：亮点标签 — 小区/位置，户型 ¥价格/月，核心卖点
+3. 收尾引导下一步动作
+
+严格规则：
+- 只推荐候选列表里的 property_id，禁止编造
+- 价格用"¥"符号
+- 候选为空时建议放宽条件</div>
+    <p style="color:var(--muted);font-size:11px;margin-top:4px">由 AgentService.recommend_properties() 使用，search_agent 直接走此管线。</p>
+  </div>
+  <div class="card">
+    <h3>synthesizer_agent — STAGE_TONES</h3>
+    <div class="prompt-block">你是西交利物浦大学周边的租房顾问。
+
+阶段语气映射：
+- explore: 市场快照，引导细化条件
+- calibrate: 解释不同价位的房源差异，帮用户建立预算预期
+- narrow: 逐套分析匹配度，给出明确排序建议
+- compare: 直接推荐排序+理由，指出每套 trade-off
+- decide: 确认选择，引导下一步（预约看房、签约）
+- general: 口语化中文，简洁友好</div>
+    <p style="color:var(--muted);font-size:11px;margin-top:4px">SynthesizerAgent.handle() 单次 LLM 调用，按漏斗阶段选择语气。</p>
+  </div>
+  <div class="card">
+    <h3>compare_agent / cart_agent / faq_agent</h3>
+    <p style="color:var(--muted);font-size:13px">三个 Agent <strong>完全不使用 LLM</strong>，无需 System Prompt：</p>
+    <ul style="padding-left:16px;color:var(--muted);font-size:13px;margin-top:4px">
+      <li><strong>compare_agent</strong> → AgentService.compare_cart()</li>
+      <li><strong>cart_agent</strong> → AgentService CRUD</li>
+      <li><strong>faq_agent</strong> → agent_faq.match_faq() 规则匹配</li>
+    </ul>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<h2 id="plan">7. 执行计划</h2>
+
+<div class="card green" style="margin-bottom:16px">
+  <h3>✅ 已完成 — 第一阶段：Agent 精简（2026-07-18）</h3>
+  <table>
+    <tr><td>删除 16 个 Agent 文件（6 死代码 + 7 MoE + 3 低价值）</td><td>agents/*.py (16个), experts/ 目录</td></tr>
+    <tr><td>精简 registry.py：21→6 个 AgentDefinition</td><td>agents/registry.py</td></tr>
+    <tr><td>精简 execution_dag.py：8→5 DAG，删除 COMPLEX_SEARCH_DAG</td><td>execution_dag.py</td></tr>
+    <tr><td>supervisor.py 清理：删除 _run_amenity_expert、MoE、死引用、合并 intent</td><td>supervisor.py</td></tr>
+    <tr><td>tool_registry.py：更新 agent_names 指向 search_agent</td><td>tool_registry.py</td></tr>
+  </table>
+</div>
+
+<div class="card green" style="margin-bottom:16px">
+  <h3>✅ 已完成 — 第二阶段：移除 ReAct 开销（2026-07-18）</h3>
+  <table>
+    <tr><th>任务</th><th>改动</th></tr>
+    <tr><td>filter_agent 直接执行</td><td>新增 _run_filter_agent() → FilterAgent.handle()，使用完整 FILTER_PROMPT</td></tr>
+    <tr><td>search_agent 移除 ReAct</td><td>_execute_agent 中 search_agent 始终走 _run_search_agent() → AgentService.recommend_properties()</td></tr>
+    <tr><td>synthesizer_agent 单次 LLM</td><td>新增 _run_synthesizer_agent() → SynthesizerAgent.handle()，STAGE_TONES 漏斗适配</td></tr>
+    <tr><td>重写核心 prompt</td><td>RECOMMEND_SYSTEM_PROMPT（西交利物浦语境）、STAGE_TONES（阶段丰富）、FILTER_PROMPT（已使用）</td></tr>
+    <tr><td>_execute_agent 重构</td><td>6 个 Agent 全部走专用 handler，0 ReAct 调用</td></tr>
+  </table>
+</div>
+
+<div class="card green" style="margin-bottom:16px">
+  <h3>✅ 已完成 — 第三阶段：全部 Prompt 加入 Few-Shot Examples（2026-07-18）</h3>
+  <table>
+    <tr><th>Prompt</th><th>示例数</th><th>覆盖场景</th></tr>
+    <tr><td>EXTRACT_FILTERS_PROMPT</td><td>3</td><td>园区单间 / 文星合租 / 西交通勤推断</td></tr>
+    <tr><td>RECOMMEND_SYSTEM_PROMPT</td><td>3</td><td>结果充足 / 结果偏少 / 无结果</td></tr>
+    <tr><td>UNIFIED_CLASSIFIER_PROMPT</td><td>4</td><td>filter / faq / compare / greeting</td></tr>
+    <tr><td>GENERAL_SYSTEM_PROMPT</td><td>2</td><td>问候 / 区域推荐</td></tr>
+    <tr><td>COMPARE_SYSTEM_PROMPT</td><td>1</td><td>三套对比 + 通勤优先</td></tr>
+    <tr><td>FilterAgent.FILTER_PROMPT</td><td>3</td><td>硬约束 / 软偏好 / 通勤</td></tr>
+    <tr><td>SynthesizerAgent.STAGE_TONES</td><td>6</td><td>explore / calibrate / narrow / compare / decide / general 各含口语示例</td></tr>
+    <tr><td>SearchAgent.SEARCH_SYSTEM_PROMPT</td><td>1</td><td>完整推荐回复示例</td></tr>
+  </table>
+</div>
+
+<div class="card yellow" style="margin-bottom:16px">
+  <h3>🟡 P1 — 增强与清理</h3>
+  <table>
+    <tr><th>任务</th><th>涉及文件</th></tr>
+    <tr><td>SEARCH DAG 加入 commute+POI 并行层</td><td>execution_dag.py, supervisor.py</td></tr>
+    <tr><td>market_stats 加分层聚类，synthesizer 直接出分层描述</td><td>tool_registry.py, supervisor.py</td></tr>
+    <tr><td>删除 handoff 链代码（_run_react_agent + HandoffManager + handle_message_handoff）</td><td>supervisor.py, handoff.py</td></tr>
+    <tr><td>建 property_commutes 表 + 房源导入时异步计算</td><td>migration, commute_service.py</td></tr>
+  </table>
+</div>
+
+<div class="card" style="margin-bottom:16px">
+  <h3>🟢 P2</h3>
+  <table>
+    <tr><th>任务</th><th>涉及文件</th></tr>
+    <tr><td>写 Agent 层测试</td><td>tests/</td></tr>
+  </table>
+</div>
+
+<div class="card green" style="margin-top:16px;text-align:center;padding:32px">
+  <p style="font-size:18px;color:var(--accent)"><strong>核心结论</strong></p>
+  <p style="color:var(--green);margin-top:8px"><strong>✅ 6 Agent · 5 DAG · 16 工具 · 0 ReAct · 全部 Prompt 含 Few-Shot 示例</strong></p>
+  <p style="color:var(--text);margin-top:8px">全部 Agent 直接执行。所有 8 个 Prompt（7 个系统提示 + 6 个合成阶段语气）均加入 XJTLU 租房场景的真实示例。</p>
+  <p style="color:var(--yellow);margin-top:8px">下一步 P1：上下文记忆（跟踪已推荐+用户偏好）→ commute+POI 并行层 → 删除 handoff 死代码。</p>
+</div>
+
+<script>
+// ── Todo: localStorage persistence + progress tracking ──
+const STORAGE_KEY = 'ai_arch_checklist';
+const ATTN_KEY = 'ai_arch_attention';
+
+function loadState() {
+  try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || {}; }
+  catch { return {}; }
+}
+function saveState(state) {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+}
+function loadAttn() {
+  try { return JSON.parse(localStorage.getItem(ATTN_KEY)) || {}; }
+  catch { return {}; }
+}
+function saveAttn(state) {
+  localStorage.setItem(ATTN_KEY, JSON.stringify(state));
+}
+
+// ── 完成勾选 ──
+function toggleCheck(cb) {
+  const id = cb.dataset.id;
+  const state = loadState();
+  state[id] = cb.checked;
+  saveState(state);
+  applyState();
+  updateProgress();
+}
+
+// ── 关注标记（圆形按钮） ──
+function toggleAttn(btn) {
+  const id = btn.dataset.id;
+  const attn = loadAttn();
+  attn[id] = !attn[id];
+  saveAttn(attn);
+  btn.classList.toggle('active', attn[id]);
+  const tr = btn.closest('tr');
+  tr.classList.toggle('attention', attn[id]);
+  updateProgress();
+}
+
+function applyState() {
+  const state = loadState();
+  const attn = loadAttn();
+
+  document.querySelectorAll('.todo-check').forEach(cb => {
+    cb.checked = !!state[cb.dataset.id];
+    const tr = cb.closest('tr');
+    if (cb.checked) tr.classList.add('checked');
+    else tr.classList.remove('checked');
+  });
+
+  document.querySelectorAll('.attn-btn').forEach(btn => {
+    const active = !!attn[btn.dataset.id];
+    btn.classList.toggle('active', active);
+    const tr = btn.closest('tr');
+    tr.classList.toggle('attention', active);
+  });
+}
+
+function updateProgress() {
+  const state = loadState();
+  const attn = loadAttn();
+
+  const agentChecks = document.querySelectorAll('[data-group="agent-core"] .todo-check, [data-group="agent-task"] .todo-check');
+  const toolChecks = document.querySelectorAll('[data-group="tool"] .todo-check');
+  const agentBtns = document.querySelectorAll('[data-group="agent-core"] .attn-btn, [data-group="agent-task"] .attn-btn');
+  const toolBtns = document.querySelectorAll('[data-group="tool"] .attn-btn');
+
+  const agentDone = [...agentChecks].filter(cb => state[cb.dataset.id]).length;
+  const toolDone = [...toolChecks].filter(cb => state[cb.dataset.id]).length;
+  const agentAttn = [...agentBtns].filter(b => attn[b.dataset.id]).length;
+  const toolAttn = [...toolBtns].filter(b => attn[b.dataset.id]).length;
+  const agentTotal = agentChecks.length;
+  const toolTotal = toolChecks.length;
+  const totalDone = agentDone + toolDone;
+  const totalAttn = agentAttn + toolAttn;
+  const totalAll = agentTotal + toolTotal;
+
+  const label = document.getElementById('progress-label');
+  if (label) label.innerHTML = `Agent: ${agentDone}/${agentTotal}  |  工具: ${toolDone}/${toolTotal}  |  总计: ${totalDone}/${totalAll}  |  <span class="attn-count">⚠ ${totalAttn}</span>`;
+
+  const fill = document.getElementById('progress-fill');
+  if (fill) fill.style.width = totalAll > 0 ? (totalDone / totalAll * 100) + '%' : '0%';
+}
+
+function resetAll() {
+  if (confirm('确定要重置全部勾选和关注标记吗？')) {
+    localStorage.removeItem(STORAGE_KEY);
+    localStorage.removeItem(ATTN_KEY);
+    applyState();
+    updateProgress();
+  }
+}
+
+// Init on page load
+document.addEventListener('DOMContentLoaded', () => { applyState(); updateProgress(); });
+</script>
+
+</body>
+</html>

@@ -338,13 +338,17 @@ const batchProperties = computed<BatchProperty[]>(() => {
 /** 摘要图标 */
 const summaryIcon = computed(() => {
   const a = detailItem.value?.action || ''
+  if (a.includes('创建')) return '➕'
+  if (a.includes('编辑')) return '✏️'
+  if (a.includes('硬删除')) return '💥'
+  if (a.includes('删除')) return '🗑'
+  if (a.includes('恢复') || a.includes('撤销')) return '♻️'
+  if (a.includes('批量')) return '📋'
   if (a.includes('create')) return '➕'
   if (a.includes('update')) return '✏️'
-  if (a.includes('hard_delete')) return '💥'
   if (a.includes('delete')) return '🗑'
   if (a.includes('restore')) return '♻️'
   if (a.includes('revert')) return '↩'
-  if (a.includes('batch')) return '📋'
   return '📌'
 })
 
@@ -354,37 +358,19 @@ const operationSummary = computed(() => {
   if (!item) return ''
   const who = operatorName.value
   const when = formatTime(item.created_at)
+  // 优先使用 details 里的大白话描述
+  if (item.details?.描述) return `${who} 于 ${when} ${item.details.描述}`
   const name = item.property_title || item.details?.title || `#${item.resource_id || '?'}`
+  const resType = item.resource_type || '房源'
   switch (item.action) {
-    case 'property_create': return `${who} 于 ${when} 创建了房源「${name}」`
-    case 'property_update': {
-      const n = item.details?.changed_fields?.length || 0
-      return `${who} 于 ${when} 修改了房源「${name}」，共改动 ${n} 个字段`
+    case '创建公寓': case '创建户型': case '创建房间': return `${who} 于 ${when} 创建了${resType}「${name}」`
+    case '编辑公寓': case '编辑户型': case '编辑房间': {
+      const desc = item.details?.描述 || ''
+      return desc ? `${who} 于 ${when} ${desc}` : `${who} 于 ${when} 修改了${resType}「${name}」`
     }
-    case 'property_delete': return `${who} 于 ${when} 删除了房源「${name}」`
-    case 'property_restore': return `${who} 于 ${when} 恢复了房源「${name}」`
-    case 'property_hard_delete': return `${who} 于 ${when} 永久删除了房源「${name}」（不可恢复）`
-    case 'property_revert': {
-      const rev = actionLabel(item.details?.reverted_action || '')
-      return `${who} 于 ${when} 撤销了「${rev}」操作`
-    }
-    case 'property_batch_status': {
-      const n = item.details?.ids?.length || 0
-      return `${who} 于 ${when} 批量修改了 ${n} 个房源的状态为「${item.details?.new_status || '?'}」`
-    }
-    case 'property_batch_delete': {
-      const n = item.details?.ids?.length || 0
-      return `${who} 于 ${when} 批量删除了 ${n} 个房源`
-    }
-    case 'property_batch_restore': {
-      const n = item.details?.ids?.length || 0
-      return `${who} 于 ${when} 批量恢复了 ${n} 个房源`
-    }
-    case 'property_batch_hard_delete': {
-      const n = item.details?.ids?.length || 0
-      return `${who} 于 ${when} 批量永久删除了 ${n} 个房源（不可恢复）`
-    }
-    default: return `${who} 于 ${when} 执行了「${actionLabel(item.action)}」操作`
+    case '删除公寓': case '删除户型': case '删除房间': return `${who} 于 ${when} 删除了${resType}「${name}」`
+    case '撤销删除': case '撤销编辑': return `${who} 于 ${when} 撤销了对${resType}「${name}」的操作`
+    default: return `${who} 于 ${when} 执行了「${item.action}」操作，对象：${resType}「${name}」`
   }
 })
 
@@ -441,7 +427,10 @@ const showAllFields = ref(false)
 
 const changedFields = computed<FieldChange[]>(() => {
   const item = detailItem.value
-  if (!item || item.action !== 'property_update') return []
+  if (!item) return []
+  // 新格式：details.修改内容 = {field: {新值, 旧值}}
+  const changes = item.details?.修改内容 || item.details?.changed_fields || {}
+  if (typeof changes !== 'object' || Object.keys(changes).length === 0) return []
   const oldVals = item.details?.old_values as Record<string, any> | undefined
   const newVals = item.details?.new_values as Record<string, any> | undefined
   if (!oldVals || !newVals) return []
@@ -547,6 +536,9 @@ async function clearAll() {
 
 const revertableActions = new Set([
   'property_create', 'property_update', 'property_delete', 'property_restore',
+  '创建房间', '编辑房间', '删除房间',
+  '创建户型', '编辑户型', '删除户型',
+  '创建公寓', '编辑公寓', '删除公寓',
 ])
 
 function canRevert(row: PropertyHistoryItem): boolean {

@@ -44,9 +44,12 @@ class BookingService:
             landlord_id=landlord_id,
             message=booking_in.message,
             scheduled_date=booking_in.scheduled_date,
-            deposit_amount=deposit_amount,
-            service_fee=service_fee,
+            deposit_amount=booking_in.deposit_amount or deposit_amount,
+            service_fee=booking_in.service_fee or service_fee,
             deposit_status="unpaid",
+            lease_months=booking_in.lease_months,
+            total_rent=booking_in.total_rent,
+            application_data=booking_in.application_data,
         )
         self.session.add(booking)
         await self.session.commit()
