@@ -237,7 +237,7 @@ class Settings(BaseSettings):
         validation_alias="SMS_ENDPOINT",
     )
 
-    # Email (SMTP)
+    # Email (SMTP) — deprecated，DirectMail 稳定后移除
     smtp_host: str = Field(default="", validation_alias="SMTP_HOST")
     smtp_port: int = Field(default=587, validation_alias="SMTP_PORT")
     smtp_user: str = Field(default="", validation_alias="SMTP_USER")
@@ -250,6 +250,30 @@ class Settings(BaseSettings):
     smtp_use_tls: bool = Field(
         default=True,
         validation_alias="SMTP_USE_TLS",
+    )
+
+    # Email (Alibaba Cloud DirectMail) — 主引擎，支持附件
+    dm_access_key_id: str = Field(default="", validation_alias="DM_ACCESS_KEY_ID")
+    dm_access_key_secret: str = Field(default="", validation_alias="DM_ACCESS_KEY_SECRET")
+    dm_account_name: str = Field(
+        default="",
+        validation_alias="DM_ACCOUNT_NAME",
+    )
+    dm_from_alias: str = Field(
+        default="Rental Housing",
+        validation_alias="DM_FROM_ALIAS",
+    )
+    dm_region_id: str = Field(
+        default="cn-hangzhou",
+        validation_alias="DM_REGION_ID",
+    )
+    dm_endpoint: str = Field(
+        default="dm.aliyuncs.com",
+        validation_alias="DM_ENDPOINT",
+    )
+    dm_timeout_seconds: float = Field(
+        default=10.0,
+        validation_alias="DM_TIMEOUT_SECONDS",
     )
 
     # Rate limiting

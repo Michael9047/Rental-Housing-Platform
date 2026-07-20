@@ -1,0 +1,32 @@
+<h2 style="margin:0 0 16px;color:#1e293b;font-size:20px;">预约确认通知</h2>
+
+<p style="margin:0 0 12px;color:#475569;font-size:15px;line-height:1.7;">
+您好，{user_name}：
+</p>
+
+<p style="margin:0 0 24px;color:#475569;font-size:15px;line-height:1.7;">
+您的预约已成功提交，以下是预约详情：
+</p>
+
+<!-- Detail Card -->
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:20px;margin-bottom:24px;">
+<tr><td style="padding:8px 0;">
+<p style="margin:0 0 8px;color:#64748b;font-size:14px;"><strong>房源：</strong>{property_title}</p>
+<p style="margin:0 0 8px;color:#64748b;font-size:14px;"><strong>地址：</strong>{property_address}</p>
+<p style="margin:0 0 8px;color:#64748b;font-size:14px;"><strong>预约时间：</strong>{booking_time}</p>
+<p style="margin:0;color:#64748b;font-size:14px;"><strong>月租金：</strong>¥{monthly_price}</p>
+</td></tr>
+</table>
+
+<p style="margin:0 0 12px;color:#475569;font-size:15px;line-height:1.7;">
+房东将尽快审核您的预约，请耐心等待。您可以在个人中心查看预约状态。
+</p>
+
+<!-- CTA Button -->
+<table cellpadding="0" cellspacing="0" style="margin-bottom:24px;">
+<tr>
+<td style="background:#2563eb;border-radius:8px;text-align:center;">
+<a href="{frontend_url}/bookings" style="display:inline-block;padding:12px 32px;color:#ffffff;font-size:15px;font-weight:600;text-decoration:none;">查看我的预约</a>
+</td>
+</tr>
+</table>

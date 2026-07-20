@@ -68,10 +68,12 @@ class NotificationService:
         title: str,
         content: str,
         channels: Optional[list[str]] = None,
+        email_attachments: Optional[list[dict]] = None,
     ) -> Notification:
         """Create a DB notification record and dispatch to push channels.
 
         channels: list of "wechat", "sms", "email". Defaults to all three.
+        email_attachments: list of {"filename": str, "content_b64": str} for email.
         Channel dispatch failures are logged but do not block DB write.
         """
         notification = Notification(
@@ -85,7 +87,9 @@ class NotificationService:
         await self.session.refresh(notification)
 
         # Dispatch to push channels (fire-and-forget via Celery)
-        await self._dispatch_channels(user_id, type, title, content, channels)
+        await self._dispatch_channels(
+            user_id, type, title, content, channels, email_attachments,
+        )
 
         return notification
 
@@ -133,6 +137,7 @@ class NotificationService:
         title: str,
         content: str,
         channels: Optional[list[str]] = None,
+        email_attachments: Optional[list[dict]] = None,
     ) -> None:
         """Fire Celery tasks for each requested push channel."""
         if channels is None:
@@ -162,6 +167,7 @@ class NotificationService:
                         user_id=user_id,
                         subject=title,
                         html_body=f"<h3>{title}</h3><p>{content or ''}</p><p>点击查看详情。</p>",
+                        attachments=email_attachments,
                     )
                 except Exception as exc:
                     logger.warning("Failed to dispatch Email notification: %s", exc)
