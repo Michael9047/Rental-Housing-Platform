@@ -231,10 +231,11 @@ function findClusters(pois){
     if(gyms.some(a=>havDistance(clat,clng,a.lat,a.lng)<AMENITY_RADIUS))nearAmenities.push('🏋️健身房');
     if(bars.some(a=>havDistance(clat,clng,a.lat,a.lng)<AMENITY_RADIUS))nearAmenities.push('🍸酒吧');
     if(markets.some(a=>havDistance(clat,clng,a.lat,a.lng)<AMENITY_RADIUS))nearAmenities.push('🛒市场');
-    // 命名：小贩中心 → 商场 → 地铁站 → 兜底
+    // 命名：商场 → 地铁站 → 小贩中心 → 兜底
     let name=null;
     const hc=gmR['小贩中心']||[],malls=gmR['商场']||[],stations=gmR['地铁站']||[];
     const nearHC=hc.filter(h=>havDistance(clat,clng,h.lat,h.lng)<200).sort((a,b)=>a.distance_m-b.distance_m);
+    const nearMall=malls.filter(m=>havDistance(clat,clng,m.lat,m.lng)<250).sort((a,b)=>a.distance_m-b.distance_m);
     if(nearMall.length){name=nearMall[0].name;g._nearestMall=nearMall[0]}
     if(!name){const nearSt=stations.filter(s=>havDistance(clat,clng,s.lat,s.lng)<400).sort((a,b)=>a.distance_m-b.distance_m);if(nearSt.length){name='Near '+nearSt[0].name.replace(/Exit \w|Entrance \w|出口|入口/gi,'').trim();g._nearestSt=nearSt[0]}}
     if(!name&&nearHC.length){name=nearHC[0].name;g._nearestHC=nearHC[0]}
