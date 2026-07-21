@@ -180,7 +180,11 @@ class EmailService:
         """通过阿里云 DirectMail SDK 发送邮件。"""
         client = _get_dm_client()
         if client is None:
-            logger.warning("DirectMail 客户端不可用，跳过发送（to=%s）", to_email)
+            logger.warning("DirectMail 客户端不可用（to=%s）", to_email)
+            # DM 客户端不可用时自动降级到 SMTP
+            if self.settings.smtp_host:
+                logger.warning("DirectMail 不可用，降级到 SMTP（to=%s）", to_email)
+                return await self._send_via_smtp(to_email, subject, html_body)
             return {"status": "skipped", "reason": "directmail client unavailable"}
 
         from_name = from_alias or self.settings.dm_from_alias or "Rental Housing"

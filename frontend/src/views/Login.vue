@@ -61,6 +61,10 @@
         >
           登录
         </el-button>
+
+        <div class="forgot-row">
+          <router-link to="/forgot-password">忘记密码？</router-link>
+        </div>
       </el-form>
 
       <!-- ========== 手机登录表单 ========== -->
@@ -513,6 +517,21 @@ async function handleWechatLogin() {
 .submit-btn {
   width: 100%;
   font-weight: 600;
+}
+
+.forgot-row {
+  text-align: right;
+  margin-top: 10px;
+}
+
+.forgot-row a {
+  font-size: 13px;
+  color: var(--text-muted);
+  text-decoration: none;
+}
+
+.forgot-row a:hover {
+  color: var(--primary);
 }
 
 .wechat-btn {

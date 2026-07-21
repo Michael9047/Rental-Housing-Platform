@@ -225,7 +225,7 @@ class Settings(BaseSettings):
         validation_alias="WECHAT_TOKEN_URL",
     )
 
-    # SMS (Alibaba Cloud 号码认证 dypnsapi)
+    # SMS 验证码 (Alibaba Cloud 号码认证 dypnsapi)
     sms_provider: str = Field(default="aliyun", validation_alias="SMS_PROVIDER")
     sms_access_key_id: str = Field(default="", validation_alias="SMS_ACCESS_KEY_ID")
     sms_access_key_secret: str = Field(default="", validation_alias="SMS_ACCESS_KEY_SECRET")
@@ -235,6 +235,26 @@ class Settings(BaseSettings):
     sms_endpoint: str = Field(
         default="dypnsapi.aliyuncs.com",
         validation_alias="SMS_ENDPOINT",
+    )
+
+    # SMS 通知 (Alibaba Cloud 短信服务 dysmsapi)
+    sms_notify_access_key_id: str = Field(
+        default="", validation_alias="SMS_NOTIFY_ACCESS_KEY_ID",
+    )
+    sms_notify_access_key_secret: str = Field(
+        default="", validation_alias="SMS_NOTIFY_ACCESS_KEY_SECRET",
+    )
+    sms_notify_sign_name: str = Field(
+        default="", validation_alias="SMS_NOTIFY_SIGN_NAME",
+    )
+    sms_notify_endpoint: str = Field(
+        default="dysmsapi.aliyuncs.com",
+        validation_alias="SMS_NOTIFY_ENDPOINT",
+    )
+    # 通知类型 → 模板CODE 的映射，JSON 字符串格式：
+    # {"booking_created":"SMS_xxx","payment_received":"SMS_yyy",...}
+    sms_notify_template_map: str = Field(
+        default="{}", validation_alias="SMS_NOTIFY_TEMPLATE_MAP",
     )
 
     # Email (SMTP) — deprecated，DirectMail 稳定后移除

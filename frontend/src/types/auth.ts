@@ -54,3 +54,14 @@ export interface VerifySmsCodeRequest {
   phone: string
   code: string
 }
+
+/** 忘记密码 - 发送重置链接 */
+export interface ForgotPasswordRequest {
+  email: string
+}
+
+/** 重置密码 */
+export interface ResetPasswordRequest {
+  token: string
+  new_password: string
+}

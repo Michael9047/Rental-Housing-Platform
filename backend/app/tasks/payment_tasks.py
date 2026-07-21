@@ -69,18 +69,38 @@ async def _sync_single_payment(payment: Payment, session: AsyncSession) -> bool:
 
         # 邮件通知租客
         try:
-            from app.tasks.notification_tasks import send_email_notification
+            from app.tasks.notification_tasks import send_email_notification_with_template
+            from app.core.config import get_settings
+            settings = get_settings()
+            amount_str = f"{payment.amount / 100:.2f}"
             if payment.status == PaymentStatus.success:
-                subject = "支付完成"
-                content = f"您的支付 #{payment.id} 已成功处理，金额 ¥{payment.amount / 100:.2f}"
+                send_email_notification_with_template.delay(
+                    user_id=payment.user_id,
+                    subject="支付到账",
+                    template_name="payment_received",
+                    context={
+                        "user_name": "",  # Celery task 内查用户后填充，这里暂用空
+                        "booking_id": str(payment.booking_id),
+                        "amount": amount_str,
+                        "payment_id": payment.id,
+                        "paid_at": payment.paid_at.strftime("%Y-%m-%d %H:%M") if payment.paid_at else "",
+                        "frontend_url": settings.frontend_url,
+                    },
+                )
             else:
-                subject = "支付失败"
-                content = f"您的支付 #{payment.id} 未成功，原因：{payment.trade_state_desc or '未知错误'}"
-            send_email_notification.delay(
-                user_id=payment.user_id,
-                subject=subject,
-                html_body=f"<h3>{subject}</h3><p>{content}</p>",
-            )
+                send_email_notification_with_template.delay(
+                    user_id=payment.user_id,
+                    subject="支付失败",
+                    template_name="payment_failed",
+                    context={
+                        "user_name": "",
+                        "booking_id": str(payment.booking_id),
+                        "amount": amount_str,
+                        "payment_id": payment.id,
+                        "reason": payment.trade_state_desc or "未知错误",
+                        "frontend_url": settings.frontend_url,
+                    },
+                )
         except Exception:
             pass
 
@@ -181,11 +201,20 @@ def close_expired_payments() -> dict:
                     closed += 1
                     # 邮件通知租客支付已过期
                     try:
-                        from app.tasks.notification_tasks import send_email_notification
-                        send_email_notification.delay(
+                        from app.tasks.notification_tasks import send_email_notification_with_template
+                        from app.core.config import get_settings
+                        settings = get_settings()
+                        send_email_notification_with_template.delay(
                             user_id=payment.user_id,
                             subject="支付已过期",
-                            html_body=f"<h3>支付已过期</h3><p>您的支付 #{payment.id} 已过期，系统已自动关闭。请重新发起支付。</p>",
+                            template_name="payment_expired",
+                            context={
+                                "user_name": "",
+                                "booking_id": str(payment.booking_id),
+                                "amount": f"{payment.amount / 100:.2f}",
+                                "payment_id": payment.id,
+                                "frontend_url": settings.frontend_url,
+                            },
                         )
                     except Exception:
                         pass
