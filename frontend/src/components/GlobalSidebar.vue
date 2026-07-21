@@ -88,21 +88,9 @@
           <el-icon><Grid /></el-icon>
           <span>户型管理</span>
         </el-menu-item>
-        <el-menu-item index="/unit-type/create">
-          <el-icon><Plus /></el-icon>
-          <span>发布户型</span>
-        </el-menu-item>
         <el-menu-item index="/rooms/manage">
           <el-icon><OfficeBuilding /></el-icon>
           <span>房间管理</span>
-        </el-menu-item>
-        <el-menu-item index="/tenants">
-          <el-icon><User /></el-icon>
-          <span>房客管理</span>
-        </el-menu-item>
-        <el-menu-item index="/orders">
-          <el-icon><Document /></el-icon>
-          <span>订单记录</span>
         </el-menu-item>
         <el-menu-item index="/property/history">
           <el-icon><Clock /></el-icon>

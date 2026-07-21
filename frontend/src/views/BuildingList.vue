@@ -36,22 +36,56 @@
           <div style="color:#909399;font-size:12px;margin-top:4px">可点击地图直接选点，或拖拽标记微调位置</div>
         </el-form-item>
 
-        <el-divider>负责人</el-divider>
-        <el-form-item label="姓名"><el-input v-model="f.mgrName" placeholder="负责人姓名" /></el-form-item>
-        <el-form-item label="电话"><el-input v-model="f.mgrPhone" placeholder="负责人电话" /></el-form-item>
-        <el-form-item label="邮箱"><el-input v-model="f.mgrEmail" placeholder="负责人邮箱" /></el-form-item>
+        <el-divider>联系方式</el-divider>
+        <el-form-item label="负责人姓名"><el-input v-model="f.mgrName" /></el-form-item>
+        <el-form-item label="负责人电话"><el-input v-model="f.mgrPhone" /></el-form-item>
+        <el-form-item label="负责人邮箱"><el-input v-model="f.mgrEmail" /></el-form-item>
+        <el-form-item label="前台电话"><el-input v-model="f.contact_phone" /></el-form-item>
 
-        <el-divider>公寓信息</el-divider>
-        <el-form-item label="前台电话"><el-input v-model="f.contact_phone" placeholder="前台电话" /></el-form-item>
+        <el-divider>公寓介绍</el-divider>
+        <el-form-item>
+          <el-input v-model="f.description" type="textarea" :rows="10" maxlength="5000" show-word-limit />
+        </el-form-item>
 
-        <!-- 公寓配套 -->
-        <el-form-item label="公寓配套">
+        <!-- 公寓配套 — 四大板块 -->
+        <el-divider>🛡️ 安保</el-divider>
+        <el-form-item>
           <el-checkbox-group v-model="selectedAmenities" class="amenity-group">
-            <el-checkbox v-for="a in buildingAmenities" :key="a" :label="a" :value="a" border size="small" />
+            <el-checkbox v-for="a in securityAmenities" :key="a" :label="a" :value="a" border size="small" />
           </el-checkbox-group>
         </el-form-item>
 
-        <el-form-item label="描述"><el-input v-model="f.description" type="textarea" :rows="2" placeholder="公寓简介" /></el-form-item>
+        <el-divider>🛎️ 服务</el-divider>
+        <el-form-item>
+          <el-checkbox-group v-model="selectedAmenities" class="amenity-group">
+            <el-checkbox v-for="a in serviceAmenities" :key="a" :label="a" :value="a" border size="small" />
+          </el-checkbox-group>
+        </el-form-item>
+
+        <el-divider>🏠 公用设施</el-divider>
+        <el-form-item>
+          <el-checkbox-group v-model="selectedAmenities" class="amenity-group">
+            <el-checkbox v-for="a in facilityAmenities" :key="a" :label="a" :value="a" border size="small" />
+          </el-checkbox-group>
+        </el-form-item>
+
+        <el-divider>⚽ 运动娱乐</el-divider>
+        <el-form-item>
+          <el-checkbox-group v-model="selectedAmenities" class="amenity-group">
+            <el-checkbox v-for="a in sportAmenities" :key="a" :label="a" :value="a" border size="small" />
+          </el-checkbox-group>
+        </el-form-item>
+
+        <!-- 特殊标记 -->
+        <el-divider>🔖 特殊标记</el-divider>
+        <el-form-item label="女生独栋">
+          <el-switch v-model="f.femaleOnly" active-text="是" inactive-text="否" />
+          <span style="color:#909399;font-size:12px;margin-left:8px">存在仅限女性住户入住的公寓楼栋</span>
+        </el-form-item>
+        <el-form-item label="支持情侣">
+          <el-switch v-model="f.couplesAllowed" active-text="是" inactive-text="否" />
+          <span style="color:#909399;font-size:12px;margin-left:8px">存在允许情侣双人入住同一房间</span>
+        </el-form-item>
 
         <!-- 公寓公共图集 -->
         <el-divider>公寓公共图集</el-divider>
@@ -87,10 +121,13 @@ const editId = ref<number|null>(null)
 const selectedAmenities = ref<string[]>([])
 const uploadedImages = ref<string[]>([])
 const imageUploaderRef = ref<InstanceType<typeof ImageUploader>>()
-const f = reactive({ name:'', address:'', contact_phone:'', description:'', mgrName:'', mgrPhone:'', mgrEmail:'', lat:null as number|null, lng:null as number|null })
+const f = reactive({ name:'', address:'', contact_phone:'', description:'', mgrName:'', mgrPhone:'', mgrEmail:'', lat:null as number|null, lng:null as number|null, femaleOnly:false, couplesAllowed:false })
 
-// 公寓级配套（区别于户型配套）
-const buildingAmenities = ['健身房','游泳池','24小时自习室','前台服务','门禁系统','电梯','快递代收','公共厨房','洗衣房','停车场','自行车库','庭院/花园','BBQ区','影音室','会客厅']
+// 公寓级配套 — 四大板块（异乡好居风格）
+const securityAmenities = ['24小时安保','监控系统(CCTV)','智能门禁','电子门锁','前台/礼宾','消防系统','夜间巡逻']
+const serviceAmenities = ['代收包裹','维修服务','公共区域保洁','定期社交活动','接机服务','班车接驳','入住礼包','管家服务']
+const facilityAmenities = ['电梯','洗衣房','自行车库','停车场','公共厨房','快递柜/信箱','自习室','影音室','公共休闲区','屋顶露台','庭院/花园','会议室']
+const sportAmenities = ['健身房','游泳池','篮球场','瑜伽室','游戏室','BBQ区','乒乓球/台球']
 
 // ── Leaflet ──
 let map:any=null, marker:any=null, L:any=null
@@ -128,11 +165,13 @@ async function revGeo(lat:number,lng:number){try{const r=await fetch(`https://no
 
 // ── CRUD ──
 async function load(){loading.value=true;try{buildings.value=await buildingService.list({limit:200})}catch(e){console.error('load err',e)}finally{loading.value=false}}
-function openCreate(){editId.value=null;Object.assign(f,{name:'',address:'',contact_phone:'',description:'',mgrName:'',mgrPhone:'',mgrEmail:'',lat:null,lng:null});selectedAmenities.value=[];uploadedImages.value=[];show.value=true;nextTick(()=>initMap(null,null))}
+function openCreate(){editId.value=null;Object.assign(f,{name:'',address:'',contact_phone:'',description:'',mgrName:'',mgrPhone:'',mgrEmail:'',lat:null,lng:null,femaleOnly:false,couplesAllowed:false});selectedAmenities.value=[];uploadedImages.value=[];show.value=true;nextTick(()=>initMap(null,null))}
 async function openEdit(b:any){
   editId.value=b.id
   f.name=b.name||'';f.address=b.address||'';f.contact_phone=b.contact_phone||'';f.description=b.description||''
   f.lat=typeof b.latitude==='number'?b.latitude:null;f.lng=typeof b.longitude==='number'?b.longitude:null
+  f.femaleOnly=b.female_only===true
+  f.couplesAllowed=b.couples_allowed===true
   f.mgrName='';f.mgrPhone='';f.mgrEmail=''
   selectedAmenities.value=b.amenities||[]
   uploadedImages.value = (b.images||[]).map((img:any) => img.filename ? `/api/v1/uploads/${img.filename}` : '').filter(Boolean)
@@ -141,11 +180,11 @@ async function openEdit(b:any){
   await nextTick()
   await initMap(f.lat,f.lng)
 }
-function onClose(){Object.assign(f,{name:'',address:'',contact_phone:'',description:'',mgrName:'',mgrPhone:'',mgrEmail:'',lat:null,lng:null});selectedAmenities.value=[];uploadedImages.value=[];editId.value=null;if(map){map.remove();map=null;marker=null}}
+function onClose(){Object.assign(f,{name:'',address:'',contact_phone:'',description:'',mgrName:'',mgrPhone:'',mgrEmail:'',lat:null,lng:null,femaleOnly:false,couplesAllowed:false});selectedAmenities.value=[];uploadedImages.value=[];editId.value=null;if(map){map.remove();map=null;marker=null}}
 async function save(){
   if(!f.name.trim()){ElMessage.warning('请输入公寓名称');return}
   saving.value=true
-  const p:any={name:f.name.trim(),address:f.address.trim(),contact_phone:f.contact_phone.trim(),description:f.description.trim(),manager_name:f.mgrName.trim(),manager_phone:f.mgrPhone.trim(),manager_email:f.mgrEmail.trim(),amenities:selectedAmenities.value.length?selectedAmenities.value:null,image_urls:uploadedImages.value.length?uploadedImages.value.map((u:any)=>typeof u==='string'?u:u.url||u):null}
+  const p:any={name:f.name.trim(),address:f.address.trim(),contact_phone:f.contact_phone.trim(),description:f.description.trim(),manager_name:f.mgrName.trim(),manager_phone:f.mgrPhone.trim(),manager_email:f.mgrEmail.trim(),amenities:selectedAmenities.value.length?selectedAmenities.value:null,female_only:f.femaleOnly,couples_allowed:f.couplesAllowed,image_urls:uploadedImages.value.length?uploadedImages.value.map((u:any)=>typeof u==='string'?u:u.url||u):null}
   if(f.lat!=null)p.latitude=String(f.lat);if(f.lng!=null)p.longitude=String(f.lng)
   try{
     if(editId.value){await buildingService.update(editId.value,p);ElMessage.success('已保存')}

@@ -26,6 +26,8 @@ class UnitTypeService:
             bedrooms=data.bedrooms, bathrooms=data.bathrooms, hall_count=data.hall_count,
             area_sqm=data.area_sqm, base_rent=data.base_rent,
             deposit_amount=data.deposit_amount, deposit_type=data.deposit_type,
+            lease_start=data.lease_start, lease_end=data.lease_end,
+            currency=data.currency, special_offer=data.special_offer,
             floor_pricing=data.floor_pricing, amenities=data.amenities,
             image_urls=data.image_urls, description=data.description,
             available_from=data.available_from, min_stay_months=data.min_stay_months,
@@ -33,6 +35,7 @@ class UnitTypeService:
         )
         self.session.add(ut)
         await self.session.commit()
+        await self.session.refresh(ut)
         inst_name = ""
         try:
             from app.models.institute import Institute
@@ -42,7 +45,7 @@ class UnitTypeService:
         desc = f"在「{inst_name}」公寓下创建了户型「{ut.name}」"
         desc += f"（{ut.bedrooms}室{ut.hall_count}厅{ut.bathrooms}卫，{ut.area_sqm}㎡，¥{ut.base_rent}/月）"
         await self._audit("创建户型", ut.id, {"描述": desc, "户型名": ut.name, "公寓": inst_name, "月租": str(ut.base_rent)})
-        # 加载 institute 名称（避免 lazy load）
+        # 预加载 institute 名称（避免 _to_read 的 MissingGreenlet）
         from app.models.institute import Institute
         if ut.institute_id:
             inst = await self.session.get(Institute, ut.institute_id)
@@ -74,9 +77,15 @@ class UnitTypeService:
         ut = await self.get(unit_type_id)
         if not ut: return None
         update_data = data.model_dump(exclude_unset=True)
-        old_vals = {k: str(getattr(ut, k, '')) for k in update_data}
+        old_vals = {k: str(getattr(ut, k, '') or '') for k in update_data}
         for k, v in update_data.items(): setattr(ut, k, v)
         await self.session.commit()
+        # refresh 恢复所有列属性（避免 MissingGreenlet），然后手填 institute 关系
+        await self.session.refresh(ut)
+        from app.models.institute import Institute
+        inst = await self.session.get(Institute, ut.institute_id)
+        ut._institute_name = inst.name if inst else None
+        ut._institute_business_id = inst.business_id if inst else None
         changes = {k: {"新值": str(v), "旧值": old_vals.get(k, '')} for k, v in update_data.items()}
         await self._audit("编辑户型", ut.id, {"户型名": ut.name, "修改内容": changes})
         return ut

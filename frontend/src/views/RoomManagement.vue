@@ -57,8 +57,11 @@
 
                 <!-- 房间表格 -->
                 <div v-show="expandedUnits.has(ut.id)" style="margin:6px 0 0 16px">
-                  <el-table :data="getRooms(ut.id)" stripe size="small" @selection-change="onSelChange">
+                  <el-table :data="sortedRooms(ut.id)" stripe size="small" @selection-change="onSelChange">
                     <el-table-column type="selection" width="36" />
+                    <el-table-column prop="building_block" label="楼栋" width="80">
+                      <template #default="{ row }">{{ row.building_block || '-' }}</template>
+                    </el-table-column>
                     <el-table-column prop="room_number" label="房号" width="100">
                       <template #default="{ row }"><span :style="{color:row.room_number?'#303133':'#c0c4cc'}">{{ row.room_number || '-' }}</span></template>
                     </el-table-column>
@@ -66,7 +69,7 @@
                       <template #default="{ row }">{{ row.floor ?? '-' }}</template>
                     </el-table-column>
                     <el-table-column label="专属优惠" width="100">
-                      <template #default="{ row }">{{ row.special_discount ? '¥'+Number(row.special_discount).toLocaleString() : '-' }}</template>
+                      <template #default="{ row }">{{ row.special_discount || '-' }}</template>
                     </el-table-column>
                     <el-table-column label="可入住" width="110">
                       <template #default="{ row }">{{ row.available_from || '-' }}</template>
@@ -123,10 +126,13 @@
       <el-tabs v-model="dialogTab" v-if="!editingRoom">
         <el-tab-pane label="单个上传" name="single">
           <el-form :model="roomForm" label-width="90px">
-            <el-form-item label="房号" required><el-input v-model="roomForm.room_number" placeholder="如 1201" maxlength="20" /></el-form-item>
+            <el-row :gutter="12">
+              <el-col :span="12"><el-form-item label="房号" required><el-input v-model="roomForm.room_number" placeholder="如 1201" maxlength="20" /></el-form-item></el-col>
+              <el-col :span="12"><el-form-item label="楼栋号"><el-input v-model="roomForm.building_block" placeholder="如 Block A / A栋" maxlength="20" /></el-form-item></el-col>
+            </el-row>
             <el-row :gutter="12">
               <el-col :span="8"><el-form-item label="楼层"><el-input-number v-model="roomForm.floor" :min="0" controls-position="right" style="width:100%" placeholder="选填" /></el-form-item></el-col>
-              <el-col :span="8"><el-form-item label="专属优惠(¥)"><el-input-number v-model="roomForm.special_discount" :min="0" :precision="0" controls-position="right" style="width:100%" placeholder="选填" /></el-form-item></el-col>
+              <el-col :span="8"><el-form-item label="专属优惠"><el-input v-model="roomForm.special_discount" style="width:100%" placeholder="如 早鸟减100" maxlength="200" /></el-form-item></el-col>
               <el-col :span="8"><el-form-item label="状态"><el-select v-model="roomForm.status" style="width:100%"><el-option label="可租" value="available" /><el-option label="维护中" value="maintenance" /><el-option label="已下线" value="offline" /></el-select></el-form-item></el-col>
             </el-row>
             <el-form-item label="可入住日期"><el-date-picker v-model="roomForm.available_from" type="date" placeholder="选填" style="width:100%" value-format="YYYY-MM-DD" /></el-form-item>
@@ -150,11 +156,12 @@
           <div v-if="batchRows.length" style="margin-top:12px">
             <p style="font-weight:600;margin-bottom:4px">预览（前 5 行）：</p>
             <el-table :data="batchRows.slice(0,5)" border size="small" max-height="200">
-              <el-table-column prop="room_number" label="房号" width="100" />
-              <el-table-column prop="floor" label="楼层" width="70" />
-              <el-table-column prop="special_discount" label="专属优惠" width="100" />
-              <el-table-column prop="available_from" label="可入住日期" width="120" />
-              <el-table-column prop="status" label="状态" width="80" />
+              <el-table-column prop="room_number" label="房号" width="90" />
+              <el-table-column prop="building_block" label="楼栋" width="70" />
+              <el-table-column prop="floor" label="楼层" width="60" />
+              <el-table-column prop="special_discount" label="专属优惠" width="90" />
+              <el-table-column prop="available_from" label="可入住日期" width="110" />
+              <el-table-column prop="status" label="状态" width="70" />
               <el-table-column label="校验" min-width="150">
                 <template #default="{ row,$index }"><span :style="{color:row._error?'#f56c6c':'#67c23a'}">{{ row._error || '✓ 通过' }}</span></template>
               </el-table-column>
@@ -174,10 +181,13 @@
             <el-descriptions-item label="公寓">{{ dialogInstitute?.name || '—' }}</el-descriptions-item>
             <el-descriptions-item label="户型">{{ dialogUnitType?.name || '—' }}</el-descriptions-item>
           </el-descriptions>
-          <el-form-item label="房号" required><el-input v-model="roomForm.room_number" placeholder="如 1201" maxlength="20" /></el-form-item>
+          <el-row :gutter="12">
+            <el-col :span="12"><el-form-item label="房号" required><el-input v-model="roomForm.room_number" placeholder="如 1201" maxlength="20" /></el-form-item></el-col>
+            <el-col :span="12"><el-form-item label="楼栋号"><el-input v-model="roomForm.building_block" placeholder="如 Block A / A栋" maxlength="20" /></el-form-item></el-col>
+          </el-row>
           <el-row :gutter="12">
             <el-col :span="8"><el-form-item label="楼层"><el-input-number v-model="roomForm.floor" :min="0" controls-position="right" style="width:100%" /></el-form-item></el-col>
-            <el-col :span="8"><el-form-item label="专属优惠(¥)"><el-input-number v-model="roomForm.special_discount" :min="0" :precision="0" controls-position="right" style="width:100%" /></el-form-item></el-col>
+            <el-col :span="8"><el-form-item label="专属优惠"><el-input v-model="roomForm.special_discount" style="width:100%" maxlength="200" /></el-form-item></el-col>
             <el-col :span="8"><el-form-item label="状态"><el-select v-model="roomForm.status" style="width:100%"><el-option label="可租" value="available" /><el-option label="维护中" value="maintenance" /><el-option label="已下线" value="offline" /></el-select></el-form-item></el-col>
           </el-row>
           <el-form-item label="可入住日期"><el-date-picker v-model="roomForm.available_from" type="date" placeholder="选填" style="width:100%" value-format="YYYY-MM-DD" /></el-form-item>
@@ -241,8 +251,29 @@ function getUnitTypes(buildingId: number) {
   if (filterUnitTypeId.value) list = list.filter(u => u.id === filterUnitTypeId.value)
   return list
 }
-function getUtRoomCount(utId: number) { return getRooms(utId).length }
+function getUtRoomCount(utId: number) { return sortedRooms(utId).length }
 function getRooms(utId: number) { return allRooms.value.filter(r => r.unit_type_id === utId) }
+function sortedRooms(utId: number) {
+  const rooms = getRooms(utId)
+  return [...rooms].sort((a, b) => {
+    // 楼栋优先：空楼栋排最前
+    const ba = (a.building_block || '') as string
+    const bb = (b.building_block || '') as string
+    if (ba !== bb) {
+      if (!ba && bb) return -1
+      if (ba && !bb) return 1
+      return ba.localeCompare(bb, 'zh')
+    }
+    // 房间号：字母开头在前，数字开头在后（数字永远大于字母）
+    const ra = (a.room_number || '') as string
+    const rb = (b.room_number || '') as string
+    const aIsDigit = /^\d/.test(ra)
+    const bIsDigit = /^\d/.test(rb)
+    if (aIsDigit && !bIsDigit) return 1
+    if (!aIsDigit && bIsDigit) return -1
+    return ra.localeCompare(rb, undefined, { numeric: true })
+  })
+}
 
 function toggleB(id: number) { const s = new Set(expandedBuildings.value); s.has(id) ? s.delete(id) : s.add(id); expandedBuildings.value = s }
 function toggleU(id: number) { const s = new Set(expandedUnits.value); s.has(id) ? s.delete(id) : s.add(id); expandedUnits.value = s }
@@ -294,12 +325,12 @@ function onDialogUnitTypeChange() {
   dialogUnitType.value = dialogUnitTypes.value.find(u => u.id === roomForm.unit_type_id) || null
   dialogInstitute.value = buildings.value.find(b => b.id === dialogInstituteId.value) || null
 }
-const roomForm = reactive({ unit_type_id: 0, room_number: '', floor: undefined as number | undefined, special_discount: undefined as number | undefined, available_from: '' as string | undefined, status: 'available' })
+const roomForm = reactive({ unit_type_id: 0, room_number: '', building_block: '' as string | undefined, floor: undefined as number | undefined, special_discount: '' as string | undefined, available_from: '' as string | undefined, status: 'available' })
 
 function openAddDialog() {
   editingRoom.value = null; dialogTab.value = 'single'
   dialogInstitute.value = null; dialogUnitType.value = null
-  Object.assign(roomForm, { unit_type_id: 0, room_number: '', floor: undefined, special_discount: undefined, available_from: undefined, status: 'available' })
+  Object.assign(roomForm, { unit_type_id: 0, room_number: '', building_block: undefined, floor: undefined, special_discount: undefined, available_from: undefined, status: 'available' })
   dialogVisible.value = true
 }
 
@@ -307,8 +338,9 @@ function openEdit(row: any) {
   editingRoom.value = row
   roomForm.unit_type_id = row.unit_type_id
   roomForm.room_number = row.room_number || ''
+  roomForm.building_block = row.building_block || undefined
   roomForm.floor = row.floor ?? undefined
-  roomForm.special_discount = row.special_discount ? Number(row.special_discount) : undefined
+  roomForm.special_discount = row.special_discount || ''
   roomForm.available_from = row.available_from ?? undefined
   roomForm.status = row.status
   dialogInstitute.value = buildings.value.find(b => b.id === row.institute_id) || null
@@ -339,8 +371,9 @@ async function saveRoom() {
   roomSaving.value = true
   const data: any = {
     room_number: roomForm.room_number.trim() || null,
+    building_block: roomForm.building_block?.trim() || null,
     floor: roomForm.floor ?? null,
-    special_discount: roomForm.special_discount ? String(roomForm.special_discount) : null,
+    special_discount: roomForm.special_discount || null,
     available_from: roomForm.available_from || null,
     status: roomForm.status,
   }
@@ -390,10 +423,10 @@ async function downloadTemplate() {
   const X = await getXLSX()
   const wb = X.utils.book_new()
   const ws = X.utils.json_to_sheet([
-    { 房号: '1201', 楼层: 12, 专属优惠: '', 可入住时间: '2026-08-01', 状态: '可租' },
-    { 房号: '1202', 楼层: 12, 专属优惠: 100, 可入住时间: '', 状态: '可租' },
+    { 房号: 'A-1201', 楼栋号: 'A栋', 楼层: 12, 专属优惠: '', 可入住时间: '2026-08-01', 状态: '可租' },
+    { 房号: 'B-1202', 楼栋号: 'B栋', 楼层: 12, 专属优惠: '早鸟减100', 可入住时间: '', 状态: '可租' },
   ])
-  ws['!cols'] = [{ wch: 10 }, { wch: 8 }, { wch: 12 }, { wch: 14 }, { wch: 10 }]
+  ws['!cols'] = [{ wch: 10 }, { wch: 8 }, { wch: 8 }, { wch: 10 }, { wch: 14 }, { wch: 8 }]
   X.utils.book_append_sheet(wb, ws, '房间导入模板')
   X.writeFile(wb, '房间导入模板.xlsx')
   ElMessage.success('模板已下载')
@@ -405,9 +438,10 @@ function onFileChange(e: Event) { const f = (e.target as HTMLInputElement).files
 async function parseFile(file: File) {
   batchFile.value = file; batchRows.value = []
   try {
-    const data = await file.arrayBuffer()
+    const isCSV = file.name.endsWith('.csv')
+    const rawData = isCSV ? await file.text() : await file.arrayBuffer()
     const X = await getXLSX()
-    const wb = X.read(data, { type: 'array' })
+    const wb = X.read(rawData, { type: isCSV ? 'string' : 'array' })
     const ws = wb.Sheets[wb.SheetNames[0]]
     const rows: any[] = X.utils.sheet_to_json(ws, { defval: '' })
     if (!rows.length) { ElMessage.warning('文件无数据'); return }
@@ -422,7 +456,7 @@ async function parseFile(file: File) {
     }
 
     // 列名映射
-    const cols: Record<string, string> = { '房号': 'room_number', '楼层': 'floor', '专属优惠': 'special_discount', '可入住时间': 'available_from', '可入住日期': 'available_from', '状态': 'status', 'room_number': 'room_number', 'floor': 'floor', 'special_discount': 'special_discount', 'available_from': 'available_from', 'status': 'status' }
+    const cols: Record<string, string> = { '房号': 'room_number', '楼栋号': 'building_block', '楼层': 'floor', '专属优惠': 'special_discount', '可入住时间': 'available_from', '可入住日期': 'available_from', '状态': 'status', 'room_number': 'room_number', 'building_block': 'building_block', 'floor': 'floor', 'special_discount': 'special_discount', 'available_from': 'available_from', 'status': 'status' }
 
     // 必填列检查（专属优惠非必填）
     const firstRow = rows[0] || {}
@@ -450,7 +484,7 @@ async function parseFile(file: File) {
       if (!mapped.available_from) errors.push('缺少可入住时间')
       if (!mapped.status) errors.push('缺少状态')
       else if (!statusMap[mapped.status]) errors.push('状态值无效：' + mapped.status + '（可填：可租/维护中/已下线）')
-      if (mapped.special_discount && isNaN(Number(mapped.special_discount))) errors.push('专属优惠格式错误：' + mapped.special_discount)
+      // special_discount is free text, no validation needed
       mapped._rowIdx = i
       mapped._error = errors.length ? '第' + (i + 2) + '行: ' + errors.join('；') : null
       mapped._status = statusMap[mapped.status] || ''
@@ -503,8 +537,9 @@ async function doBatchImport() {
         unit_type_id: roomForm.unit_type_id,
         landlord_id: authStore.user?.id,
         room_number: String(r.room_number || '').trim(),
+        building_block: r.building_block != null && r.building_block !== '' ? String(r.building_block).trim() : null,
         floor: r.floor != null && r.floor !== '' ? Number(r.floor) : null,
-        special_discount: r.special_discount != null && r.special_discount !== '' ? String(r.special_discount) : null,
+        special_discount: r.special_discount || null,
         available_from: r.available_from && r.available_from !== '' && r.available_from !== 'None' ? String(r.available_from).slice(0, 10) : null,
         status: r._status || 'available',
       })

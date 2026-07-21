@@ -30,6 +30,7 @@ class RoomService:
             landlord_id=data.landlord_id,
             unit_type_id=data.unit_type_id,
             room_number=data.room_number,
+            building_block=data.building_block,
             floor=data.floor,
             special_discount=data.special_discount,
             available_from=data.available_from,
@@ -159,14 +160,17 @@ class RoomService:
             raise HTTPException(409, "数据已被他人修改，请刷新后重试")
 
         update_data = data.model_dump(exclude_unset=True, exclude={"version"})
+        # 先记录旧值，再应用修改
+        old_vals = {k: str(getattr(room, k, '')) for k in update_data}
         for k, v in update_data.items():
             setattr(room, k, v)
         room.version += 1
         await self.session.commit()
+        await self.session.refresh(room)
         # 生成大白话描述
         desc_parts = []
         for k, v in update_data.items():
-            old_val = getattr(room, k, None)
+            old_val = old_vals.get(k, '')
             if k == 'room_number': desc_parts.append(f"房号从「{old_val}」改为「{v}」")
             elif k == 'floor': desc_parts.append(f"楼层从「{old_val}」改为「{v}」")
             elif k == 'special_discount': desc_parts.append(f"专属优惠从「{old_val}」改为「{v}」")
@@ -174,7 +178,7 @@ class RoomService:
             elif k == 'status': desc_parts.append(f"状态从「{old_val}」改为「{v}」")
             else: desc_parts.append(f"「{k}」从「{old_val}」改为「{v}」")
         desc = f"修改了房间「{room.room_number}」：{'；'.join(desc_parts)}"
-        await self._audit("编辑房间", room.id, {"描述": desc, "房号": room.room_number, "修改内容": {k: {"新值": str(v), "旧值": str(getattr(room, k, ''))} for k, v in update_data.items()}})
+        await self._audit("编辑房间", room.id, {"描述": desc, "房号": room.room_number, "修改内容": {k: {"新值": str(v), "旧值": old_vals.get(k, '')} for k, v in update_data.items()}})
         # 预加载关联数据用于 _to_read
         from app.models.unit_type import UnitType
         from app.models.institute import Institute

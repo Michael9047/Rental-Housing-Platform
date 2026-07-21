@@ -51,6 +51,7 @@ def _to_read(room) -> RoomRead:
         landlord_id=room.landlord_id,
         unit_type_id=room.unit_type_id,
         room_number=room.room_number,
+        building_block=room.building_block,
         floor=room.floor,
         special_discount=room.special_discount,
         available_from=room.available_from,
@@ -83,6 +84,7 @@ def _to_read(room) -> RoomRead:
         return RoomRead(
             id=room.id, landlord_id=room.landlord_id,
             unit_type_id=room.unit_type_id, room_number=room.room_number,
+            building_block=room.building_block,
             floor=room.floor, special_discount=room.special_discount,
             available_from=room.available_from, min_stay_months=room.min_stay_months,
             status='available', version=room.version,
@@ -199,34 +201,83 @@ async def get_recent_audit(
 
 
 # ── 撤销操作 ──
-@router.post("/{room_id}/revert/{audit_id}")
-async def revert_room(
-    room_id: int, audit_id: int,
+@router.post("/{resource_id}/revert/{audit_id}")
+async def revert_audit(
+    resource_id: int, audit_id: int,
     session: AsyncSession = Depends(get_db_session),
     _current_user: User = Depends(require_landlord),
 ):
-    """撤销房间修改"""
+    """撤销审计记录 — 支持房间、户型、公寓三层"""
     from app.models.audit_log import AuditLog
+    from app.models.unit_type import UnitType
+    from app.models.institute import Institute, InstituteStatus
+
     log = await session.get(AuditLog, audit_id)
     if not log: raise HTTPException(404, "审计记录不存在")
-    room = await RoomService(session).get(room_id)
-    if not room: raise HTTPException(404, "房间不存在")
-    if log.action == "删除房间":
-        room.deleted_at = None; room.status = "available"
-        await session.commit()
-        return {"message": "已恢复删除的房间", "property_id": room_id, "reverted_action": "删除房间"}
-    elif log.action == "编辑房间" and log.details and "修改内容" in (log.details or {}):
-        changes = log.details["修改内容"]
-        for field, vals in changes.items():
-            old_val = vals.get("旧值") if isinstance(vals, dict) else None
-            if old_val is not None and old_val != "" and old_val != "None":
-                try:
-                    if hasattr(room, field): setattr(room, field, old_val)
-                except Exception: pass
-        room.version += 1; await session.commit()
-        return {"message": "已撤销修改", "property_id": room_id, "reverted_action": "编辑房间"}
-    else:
-        raise HTTPException(400, "此操作不支持撤销")
+
+    resource_type = log.resource_type or "room"
+
+    # ── 房间撤销 ──
+    if resource_type == "room":
+        room = await RoomService(session).get(resource_id)
+        if not room: raise HTTPException(404, "房间不存在")
+        if log.action == "删除房间":
+            room.deleted_at = None; room.status = "available"
+            await session.commit()
+            return {"message": "已恢复删除的房间", "property_id": resource_id, "reverted_action": "删除房间"}
+        elif log.action == "编辑房间" and log.details and "修改内容" in (log.details or {}):
+            changes = log.details["修改内容"]
+            for field, vals in changes.items():
+                old_val = vals.get("旧值") if isinstance(vals, dict) else None
+                if old_val is not None and old_val != "" and old_val != "None":
+                    try:
+                        if hasattr(room, field): setattr(room, field, old_val)
+                    except Exception: pass
+            room.version += 1; await session.commit()
+            return {"message": "已撤销修改", "property_id": resource_id, "reverted_action": "编辑房间"}
+        raise HTTPException(400, f"房间操作「{log.action}」暂不支持撤销")
+
+    # ── 户型撤销 ──
+    elif resource_type == "unit_type":
+        ut = await session.get(UnitType, resource_id)
+        if not ut: raise HTTPException(404, "户型不存在")
+        if log.action == "删除户型":
+            from sqlalchemy import text as sa_text
+            await session.execute(sa_text("UPDATE unit_types SET deleted_at = NULL WHERE id = :id"), {"id": resource_id})
+            await session.commit()
+            return {"message": "已恢复删除的户型", "property_id": resource_id, "reverted_action": "删除户型"}
+        elif log.action == "编辑户型" and log.details and "修改内容" in (log.details or {}):
+            changes = log.details["修改内容"]
+            for field, vals in changes.items():
+                old_val = vals.get("旧值") if isinstance(vals, dict) else None
+                if old_val is not None and old_val != "" and old_val != "None":
+                    try:
+                        if hasattr(ut, field):
+                            from decimal import Decimal
+                            if field in ('base_rent', 'area_sqm', 'deposit_amount'):
+                                try: setattr(ut, field, Decimal(str(old_val)))
+                                except: pass
+                            elif field in ('bedrooms', 'bathrooms', 'hall_count', 'min_stay_months'):
+                                try: setattr(ut, field, int(float(old_val)))
+                                except: pass
+                            else:
+                                setattr(ut, field, old_val)
+                    except Exception: pass
+            await session.commit()
+            return {"message": "已撤销修改", "property_id": resource_id, "reverted_action": "编辑户型"}
+        raise HTTPException(400, f"户型操作「{log.action}」暂不支持撤销")
+
+    # ── 公寓撤销 ──
+    elif resource_type == "building":
+        bld = await session.get(Institute, resource_id)
+        if not bld: raise HTTPException(404, "公寓不存在")
+        if log.action == "删除公寓":
+            bld.status = InstituteStatus.active
+            await session.commit()
+            return {"message": "已恢复删除的公寓", "property_id": resource_id, "reverted_action": "删除公寓"}
+        raise HTTPException(400, f"公寓操作「{log.action}」暂不支持撤销")
+
+    raise HTTPException(400, f"未知资源类型「{resource_type}」")
 
 
 # ── 审计日志管理 ──
@@ -301,7 +352,9 @@ async def update_room(
     try:
         return _to_read(room)
     except Exception:
-        return {"id": room.id, "room_number": room.room_number, "floor": room.floor,
+        return {"id": room.id, "room_number": room.room_number,
+                "building_block": getattr(room, 'building_block', None),
+                "floor": room.floor,
                 "status": "available", "version": room.version,
                 "unit_type_name": getattr(room, '_ut_name', '?'),
                 "institute_name": getattr(room, '_inst_name', '?')}

@@ -28,6 +28,10 @@
             <div class="card-tags" v-if="b.amenities?.length">
               <el-tag v-for="a in b.amenities.slice(0,4)" :key="a" size="small" type="info">{{ a }}</el-tag>
             </div>
+            <div class="card-special" v-if="b.female_only || b.couples_allowed">
+              <el-tag v-if="b.female_only" size="small" type="danger" effect="dark">👩 女生独栋</el-tag>
+              <el-tag v-if="b.couples_allowed" size="small" type="warning" effect="dark">💑 支持情侣</el-tag>
+            </div>
             <div class="card-footer">
               <span v-if="b.unit_type_count">{{ b.unit_type_count }} 种户型可选</span>
               <span v-else style="color:#c0c4cc">暂无户型</span>

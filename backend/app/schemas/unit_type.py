@@ -15,6 +15,10 @@ class UnitTypeCreate(BaseModel):
     base_rent: Decimal = Field(..., ge=0, description="标准月租金")
     deposit_amount: int | None = Field(default=None, description="押金")
     deposit_type: str | None = Field(default=None, description="押金类型")
+    lease_start: str | None = Field(default=None, description="起租时间(自由文本)")
+    lease_end: str | None = Field(default=None, description="止租时间(自由文本)")
+    currency: str | None = Field(default=None, description="货币代码(CNY/USD/GBP等)")
+    special_offer: str | None = Field(default=None, description="专属优惠(自由文本)")
     floor_pricing: list[dict] | None = Field(default=None, description="楼层差异化加价")
     amenities: list[str] | None = Field(default=None, description="配套设施")
     image_urls: list[str] | None = Field(default=None, description="户型平面图/效果图URL列表")
@@ -35,6 +39,8 @@ class UnitTypeUpdate(BaseModel):
     base_rent: Decimal | None = Field(default=None, ge=0)
     deposit_amount: int | None = None
     deposit_type: str | None = None
+    lease_start: str | None = None
+    lease_end: str | None = None
     floor_pricing: list[dict] | None = None
     amenities: list[str] | None = None
     image_urls: list[str] | None = None
@@ -42,6 +48,8 @@ class UnitTypeUpdate(BaseModel):
     available_from: date | None = None
     min_stay_months: int | None = Field(default=None, ge=1)
     status: str | None = None
+    currency: str | None = None
+    special_offer: str | None = None
 
 
 class UnitTypeRead(BaseModel):
@@ -58,6 +66,10 @@ class UnitTypeRead(BaseModel):
     base_rent: Decimal
     deposit_amount: int | None = None
     deposit_type: str | None = None
+    lease_start: str | None = None
+    lease_end: str | None = None
+    currency: str | None = None
+    special_offer: str | None = None
     floor_pricing: list[dict] | None = None
     amenities: list[str] | None = None
     image_urls: list[str] | None = None

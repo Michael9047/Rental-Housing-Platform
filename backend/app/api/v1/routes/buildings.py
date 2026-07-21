@@ -62,6 +62,8 @@ async def list_buildings(
         "longitude": float(b.longitude) if b.longitude else None,
         "business_id": b.business_id,
         "amenities": b.amenities,
+        "female_only": bool(b.female_only) if b.female_only is not None else False,
+        "couples_allowed": bool(b.couples_allowed) if b.couples_allowed is not None else False,
         "images": [{"id": img.id, "filename": img.filename, "original_name": img.original_name, "sort_order": img.sort_order, "is_primary": img.is_primary} for img in sorted(b.images or [], key=lambda x: x.sort_order)],
     } for b in result]
 
@@ -107,6 +109,8 @@ async def create_building(
         contact_email=contact_email,
         description=description,
         amenities=amenities,
+        female_only=bool(body.get("female_only", False)),
+        couples_allowed=bool(body.get("couples_allowed", False)),
         status=InstituteStatus.active,
         created_by=current_user.id,
     )
@@ -131,6 +135,21 @@ async def create_building(
         session.add(log); await session.commit()
     except Exception: pass
     await session.refresh(building)
+    # ── 负责人写入 building_staff ──
+    manager_name = (body.get("manager_name") or "").strip()
+    manager_phone = (body.get("manager_phone") or "").strip()
+    manager_email = (body.get("manager_email") or "").strip()
+    if manager_name:
+        from app.models.building_staff import BuildingStaff
+        staff = BuildingStaff(
+            institute_id=building.id,
+            name=manager_name,
+            role="manager",
+            phone=manager_phone or None,
+            notes=manager_email or None,
+        )
+        session.add(staff)
+        await session.commit()
     return {
         "id": building.id,
         "name": building.name,
@@ -142,6 +161,8 @@ async def create_building(
         "created_by": building.created_by,
         "created_at": building.created_at.isoformat() if building.created_at else None,
         "amenities": building.amenities,
+        "female_only": bool(building.female_only),
+        "couples_allowed": bool(building.couples_allowed),
     }
 
 
@@ -165,6 +186,8 @@ async def get_building(
         "longitude": float(b.longitude) if b.longitude else None,
         "business_id": b.business_id,
         "amenities": b.amenities,
+        "female_only": bool(b.female_only) if b.female_only is not None else False,
+        "couples_allowed": bool(b.couples_allowed) if b.couples_allowed is not None else False,
     }
 
 
@@ -204,6 +227,12 @@ async def update_building(
     # amenities 数组
     if "amenities" in body:
         b.amenities = body["amenities"] if body["amenities"] else None
+
+    # 特殊标记字段
+    if "female_only" in body:
+        b.female_only = bool(body["female_only"])
+    if "couples_allowed" in body:
+        b.couples_allowed = bool(body["couples_allowed"])
 
     # 经纬度
     lat = body.get("latitude")
@@ -272,6 +301,8 @@ async def update_building(
         "latitude": float(b.latitude) if b.latitude else None,
         "longitude": float(b.longitude) if b.longitude else None,
         "amenities": b.amenities,
+        "female_only": bool(b.female_only) if b.female_only is not None else False,
+        "couples_allowed": bool(b.couples_allowed) if b.couples_allowed is not None else False,
     }
 
 
@@ -344,6 +375,8 @@ async def list_public_buildings(
             "description": b.description, "amenities": b.amenities,
             "min_rent": min_rent, "primary_image": primary,
             "unit_type_count": len([ut for ut in (b.unit_types or []) if ut.status.value == "available"]),
+            "female_only": bool(b.female_only) if b.female_only is not None else False,
+            "couples_allowed": bool(b.couples_allowed) if b.couples_allowed is not None else False,
         })
     return {"items": items, "total": len(items)}
 
@@ -370,4 +403,4 @@ async def get_public_building(
             if r.deleted_at is None and r.status != RoomStatus.offline:
                 rooms.append({"id": r.id, "room_number": r.room_number, "floor": r.floor, "special_discount": r.special_discount, "available_from": r.available_from, "status": r.status.value if hasattr(r.status, 'value') else r.status})
         unit_types.append({"id": ut.id, "name": ut.name, "bedrooms": ut.bedrooms, "bathrooms": ut.bathrooms, "hall_count": ut.hall_count, "area_sqm": ut.area_sqm, "base_rent": ut.base_rent, "deposit_amount": ut.deposit_amount, "deposit_type": ut.deposit_type.value if ut.deposit_type and hasattr(ut.deposit_type, 'value') else ut.deposit_type, "amenities": ut.amenities, "image_urls": ut.image_urls, "description": ut.description, "min_stay_months": ut.min_stay_months, "status": ut.status.value if hasattr(ut.status, 'value') else ut.status, "room_count": len(rooms), "rooms": rooms})
-    return {"id": b.id, "name": b.name, "address": b.address, "latitude": float(b.latitude) if b.latitude else None, "longitude": float(b.longitude) if b.longitude else None, "description": b.description, "amenities": b.amenities, "contact_phone": b.contact_phone, "images": images, "unit_types": unit_types}
+    return {"id": b.id, "name": b.name, "address": b.address, "latitude": float(b.latitude) if b.latitude else None, "longitude": float(b.longitude) if b.longitude else None, "description": b.description, "amenities": b.amenities, "contact_phone": b.contact_phone, "images": images, "unit_types": unit_types, "female_only": bool(b.female_only) if b.female_only is not None else False, "couples_allowed": bool(b.couples_allowed) if b.couples_allowed is not None else False}

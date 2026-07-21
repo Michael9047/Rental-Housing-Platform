@@ -20,11 +20,38 @@
         <p class="phone" v-if="building.contact_phone">📞 前台：{{ building.contact_phone }}</p>
       </div>
 
-      <!-- 公寓配套 -->
+      <!-- 公寓特殊标记 -->
+      <div class="special-tags" v-if="building.female_only || building.couples_allowed">
+        <el-tag v-if="building.female_only" size="large" effect="dark" type="danger">👩 女生独栋</el-tag>
+        <el-tag v-if="building.couples_allowed" size="large" effect="dark" type="warning">💑 支持情侣入住</el-tag>
+      </div>
+
+      <!-- 公寓配套 — 四大板块 -->
       <div class="amenities-section" v-if="building.amenities?.length">
-        <h3>🏗️ 公寓公共配套</h3>
-        <div class="amenity-tags">
-          <el-tag v-for="a in building.amenities" :key="a" size="large" effect="plain" type="success">{{ a }}</el-tag>
+        <h3>🏗️ 公寓配套 & 服务</h3>
+        <div v-if="getCategoryAmenities(building.amenities, 'security').length" class="amenity-cat">
+          <span class="cat-label">🛡️ 安保</span>
+          <div class="amenity-tags">
+            <el-tag v-for="a in getCategoryAmenities(building.amenities, 'security')" :key="a" size="small" effect="plain" type="primary">{{ a }}</el-tag>
+          </div>
+        </div>
+        <div v-if="getCategoryAmenities(building.amenities, 'service').length" class="amenity-cat">
+          <span class="cat-label">🛎️ 服务</span>
+          <div class="amenity-tags">
+            <el-tag v-for="a in getCategoryAmenities(building.amenities, 'service')" :key="a" size="small" effect="plain" type="success">{{ a }}</el-tag>
+          </div>
+        </div>
+        <div v-if="getCategoryAmenities(building.amenities, 'facility').length" class="amenity-cat">
+          <span class="cat-label">🏠 公用设施</span>
+          <div class="amenity-tags">
+            <el-tag v-for="a in getCategoryAmenities(building.amenities, 'facility')" :key="a" size="small" effect="plain" type="info">{{ a }}</el-tag>
+          </div>
+        </div>
+        <div v-if="getCategoryAmenities(building.amenities, 'sport').length" class="amenity-cat">
+          <span class="cat-label">⚽ 运动娱乐</span>
+          <div class="amenity-tags">
+            <el-tag v-for="a in getCategoryAmenities(building.amenities, 'sport')" :key="a" size="small" effect="plain" type="warning">{{ a }}</el-tag>
+          </div>
         </div>
       </div>
 
@@ -45,7 +72,7 @@
             @click="selectUnitType(ut)">
             <div class="ut-name">{{ ut.name }}</div>
             <div class="ut-info">{{ ut.bedrooms }}室{{ ut.hall_count }}厅{{ ut.bathrooms }}卫 · {{ ut.area_sqm }}㎡</div>
-            <div class="ut-rent">¥{{ Number(ut.base_rent).toLocaleString() }}/月</div>
+            <div class="ut-rent">{{ cur(ut.currency) }}{{ Number(ut.base_rent).toLocaleString() }}/月</div>
             <el-tag size="small" :type="ut.room_count > 0 ? 'success' : 'warning'">
               {{ ut.room_count > 0 ? ut.room_count+'间可租' : '暂无可租' }}
             </el-tag>
@@ -70,8 +97,8 @@
         <el-descriptions :column="4" border size="small" style="margin:16px 0">
           <el-descriptions-item label="室/厅/卫">{{ selectedUnitType.bedrooms }}室{{ selectedUnitType.hall_count }}厅{{ selectedUnitType.bathrooms }}卫</el-descriptions-item>
           <el-descriptions-item label="面积">{{ selectedUnitType.area_sqm }}㎡</el-descriptions-item>
-          <el-descriptions-item label="标准月租">¥{{ Number(selectedUnitType.base_rent).toLocaleString() }}</el-descriptions-item>
-          <el-descriptions-item label="押金">{{ selectedUnitType.deposit_amount ? '¥'+selectedUnitType.deposit_amount : '-' }} / {{ depositLabel(selectedUnitType.deposit_type) }}</el-descriptions-item>
+          <el-descriptions-item label="标准月租">{{ cur(selectedUnitType.currency) }}{{ Number(selectedUnitType.base_rent).toLocaleString() }}</el-descriptions-item>
+          <el-descriptions-item label="押金">{{ selectedUnitType.deposit_amount ? cur(selectedUnitType.currency)+selectedUnitType.deposit_amount : '-' }} / {{ depositLabel(selectedUnitType.deposit_type) }}</el-descriptions-item>
           <el-descriptions-item label="最短租期">{{ selectedUnitType.min_stay_months }}个月</el-descriptions-item>
           <el-descriptions-item label="户型配套" :span="3">
             <el-tag v-for="a in (selectedUnitType.amenities||[])" :key="a" size="small" style="margin-right:4px">{{ a }}</el-tag>
@@ -84,7 +111,7 @@
         <el-table v-if="selectedUnitType.rooms?.length" :data="selectedUnitType.rooms" stripe size="small">
           <el-table-column prop="room_number" label="房号" width="100" />
           <el-table-column prop="floor" label="楼层" width="80"><template #default="{row}">{{ row.floor ?? '-' }}</template></el-table-column>
-          <el-table-column label="专属优惠" width="100"><template #default="{row}">{{ row.special_discount ? '¥'+Number(row.special_discount).toLocaleString() : '-' }}</template></el-table-column>
+          <el-table-column label="专属优惠" width="100"><template #default="{row}">{{ row.special_discount || '-' }}</template></el-table-column>
           <el-table-column prop="available_from" label="可入住" width="120" />
           <el-table-column prop="status" label="状态" width="80">
             <template #default="{row}"><el-tag size="small" :type="row.status==='available'?'success':'warning'">{{ row.status==='available'?'可租':'已租' }}</el-tag></template>
@@ -114,6 +141,18 @@ function depositLabel(t: string) {
 }
 
 function selectUnitType(ut: any) { selectedUnitType.value = ut }
+const curMap: Record<string,string> = { CNY:'¥', USD:'$', GBP:'£', EUR:'€', AUD:'A$', SGD:'S$', CAD:'C$', HKD:'HK$', JPY:'¥', KRW:'₩' }
+function cur(c?: string) { return curMap[c||'CNY'] || '¥' }
+
+// 四大板块 amenity 分类定义
+const secAmenities = ['24小时安保','监控系统(CCTV)','智能门禁','电子门锁','前台/礼宾','消防系统','夜间巡逻']
+const svcAmenities = ['代收包裹','维修服务','公共区域保洁','定期社交活动','接机服务','班车接驳','入住礼包','管家服务']
+const facAmenities = ['电梯','洗衣房','自行车库','停车场','公共厨房','快递柜/信箱','自习室','影音室','公共休闲区','屋顶露台','庭院/花园','会议室']
+const spAmenities  = ['健身房','游泳池','篮球场','瑜伽室','游戏室','BBQ区','乒乓球/台球']
+function getCategoryAmenities(all: string[], cat: string): string[] {
+  const map: Record<string, string[]> = { security: secAmenities, service: svcAmenities, facility: facAmenities, sport: spAmenities }
+  return (all || []).filter(a => (map[cat] || []).includes(a))
+}
 
 async function loadBuilding() {
   loading.value = true
@@ -173,9 +212,12 @@ onMounted(() => {
 .desc { color: #606266; margin: 8px 0 }
 .phone { color: #909399; font-size: 14px }
 
+.special-tags { display: flex; gap: 10px; margin: 12px 0 }
 .amenities-section { margin: 16px 0 }
 .amenities-section h3 { font-size: 16px; color: #303133; margin: 0 0 10px }
-.amenity-tags { display: flex; flex-wrap: wrap; gap: 8px }
+.amenity-cat { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 8px }
+.cat-label { font-size: 13px; color: #606266; font-weight: 600; white-space: nowrap; min-width: 80px; padding-top: 2px }
+.amenity-tags { display: flex; flex-wrap: wrap; gap: 6px }
 
 .map-section { margin: 20px 0 }
 .map-section h3 { font-size: 16px; color: #303133; margin: 0 0 10px }

@@ -9,8 +9,9 @@ class RoomCreate(BaseModel):
     unit_type_id: int = Field(..., description="所属户型ID")
     landlord_id: int = Field(..., description="房东ID")
     room_number: str | None = Field(default=None, description="房号")
+    building_block: str | None = Field(default=None, description="楼栋号(多栋公寓区场景)")
     floor: int | None = Field(default=None, description="楼层(选填)")
-    special_discount: Decimal | None = Field(default=None, ge=0, description="专属优惠")
+    special_discount: str | None = Field(default=None, description="专属优惠(自由文本)")
     available_from: date | None = Field(default=None)
     min_stay_months: int = Field(default=3, ge=1)
     status: str = Field(default="available")
@@ -19,8 +20,9 @@ class RoomCreate(BaseModel):
 class RoomUpdate(BaseModel):
     """更新房间"""
     room_number: str | None = None
+    building_block: str | None = None
     floor: int | None = None
-    special_discount: Decimal | None = Field(default=None, ge=0)
+    special_discount: str | None = None
     available_from: date | None = None
     min_stay_months: int | None = Field(default=None, ge=1)
     status: str | None = None
@@ -46,8 +48,9 @@ class RoomRead(BaseModel):
     landlord_id: int
     unit_type_id: int
     room_number: str | None = None
+    building_block: str | None = None
     floor: int | None = None
-    special_discount: Decimal | None = None
+    special_discount: str | None = None
     available_from: date | None = None
     min_stay_months: int
     status: str

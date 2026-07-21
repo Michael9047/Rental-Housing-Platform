@@ -65,10 +65,16 @@
               </el-table-column>
               <el-table-column prop="area_sqm" label="面积(㎡)" width="90" />
               <el-table-column label="标准租金" width="110">
-                <template #default="{ row }">¥{{ Number(row.base_rent).toLocaleString() }}/月</template>
+                <template #default="{ row }">{{ currencySym(row.currency) }}{{ Number(row.base_rent).toLocaleString() }}/月</template>
               </el-table-column>
               <el-table-column prop="deposit_amount" label="押金" width="100">
-                <template #default="{ row }">¥{{ row.deposit_amount ? Number(row.deposit_amount).toLocaleString() : '-' }}</template>
+                <template #default="{ row }">{{ row.deposit_amount ? currencySym(row.currency)+Number(row.deposit_amount).toLocaleString() : '-' }}</template>
+              </el-table-column>
+              <el-table-column label="起租时间" width="120">
+                <template #default="{ row }">{{ row.lease_start || '-' }}</template>
+              </el-table-column>
+              <el-table-column label="止租时间" width="120">
+                <template #default="{ row }">{{ row.lease_end || '-' }}</template>
               </el-table-column>
               <el-table-column prop="room_count" label="房间数" width="80" align="center" />
               <el-table-column prop="status" label="状态" width="80">
@@ -108,6 +114,8 @@ import api from '@/services/api'
 import { buildingService, type Building } from '@/services/building'
 
 const allUnitTypes = ref<any[]>([])
+const currencyMap: Record<string, string> = { CNY:'¥', USD:'$', GBP:'£', EUR:'€', AUD:'A$', SGD:'S$', CAD:'C$', HKD:'HK$', JPY:'¥', KRW:'₩' }
+function currencySym(code?: string) { return currencyMap[code || 'CNY'] || '¥' }
 const buildings = ref<Building[]>([])
 const loading = ref(false)
 const expandedIds = ref(new Set<number>())

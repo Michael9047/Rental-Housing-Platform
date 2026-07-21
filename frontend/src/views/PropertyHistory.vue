@@ -104,12 +104,6 @@
         <el-table-column label="操作" width="250" fixed="right">
           <template #default="{ row }">
             <el-button size="small" text type="primary" @click="showDetail(row)">查看详情</el-button>
-            <el-button
-              size="small" text type="warning"
-              :disabled="!canRevert(row)"
-              :loading="revertingId === row.id"
-              @click="confirmRevert(row)"
-            >撤销</el-button>
             <el-popconfirm
               title="确定删除该记录？"
               confirm-button-text="删除"
@@ -281,13 +275,6 @@
 
         <!-- 操作按钮 -->
         <div class="drawer-actions">
-          <el-button
-            type="warning"
-            :icon="RefreshLeft"
-            :disabled="!canRevert(detailItem)"
-            :loading="revertingId === detailItem.id"
-            @click="confirmRevert(detailItem)"
-          >撤销此操作</el-button>
           <el-button
             v-if="detailItem.resource_id"
             @click="goProperty(detailItem.resource_id); detailVisible = false"
@@ -534,11 +521,11 @@ async function clearAll() {
   finally { clearing.value = false }
 }
 
+// 撤销白名单：只允许撤销编辑和删除操作（创建不可撤销）
 const revertableActions = new Set([
-  'property_create', 'property_update', 'property_delete', 'property_restore',
-  '创建房间', '编辑房间', '删除房间',
-  '创建户型', '编辑户型', '删除户型',
-  '创建公寓', '编辑公寓', '删除公寓',
+  '编辑房间', '删除房间',
+  '编辑户型', '删除户型',
+  '编辑公寓', '删除公寓',
 ])
 
 function canRevert(row: PropertyHistoryItem): boolean {
@@ -551,7 +538,7 @@ async function confirmRevert(row: PropertyHistoryItem) {
   const actionName = actionLabelMap[row.action] || row.action
   try {
     await ElMessageBox.confirm(
-      `确定要撤销此操作吗？将撤消"${actionName}"对房源 #${row.resource_id} 的影响。`,
+      `确定要撤销此操作吗？将撤消"${actionName}"对 #${row.resource_id} 的影响。`,
       '确认撤销',
       { confirmButtonText: '确定撤销', cancelButtonText: '取消', type: 'warning' },
     )
@@ -562,7 +549,8 @@ async function confirmRevert(row: PropertyHistoryItem) {
     ElMessage.success(result.message || '撤销成功')
     await loadList()
   } catch (e: any) {
-    // 错误信息由 axios 拦截器自动展示
+    const msg = e?.response?.data?.detail || e?.message || '撤销失败，请稍后重试'
+    ElMessage.error(typeof msg === 'string' ? msg : '撤销失败')
   } finally {
     revertingId.value = null
   }

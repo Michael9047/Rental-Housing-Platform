@@ -57,8 +57,9 @@ class Room(TimestampMixin, Base):
     longitude: Mapped[Decimal | None] = mapped_column(Numeric(9, 6), nullable=True)
     city: Mapped[str | None] = mapped_column(String(100), nullable=True)
     # 三层架构真正字段
+    building_block: Mapped[str | None] = mapped_column(String(20), nullable=True)
     floor: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    special_discount: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
+    special_discount: Mapped[str | None] = mapped_column(String(200), nullable=True)
     available_from: Mapped[date | None] = mapped_column(Date, nullable=True)
 
     # ── 状态与版本 ──

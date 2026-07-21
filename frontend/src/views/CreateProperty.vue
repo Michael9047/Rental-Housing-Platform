@@ -60,14 +60,23 @@
 
           <el-divider content-position="left">租金信息</el-divider>
 
+          <el-form-item label="货币">
+            <el-select v-model="f.currency" placeholder="选择货币" style="width:260px">
+              <el-option v-for="c in currencies" :key="c.code" :label="`${c.name} ${c.symbol}`" :value="c.code">
+                <span>{{ c.name }}</span>
+                <span style="color:#909399;margin-left:8px">{{ c.symbol }}</span>
+              </el-option>
+            </el-select>
+          </el-form-item>
+
           <el-row :gutter="16">
             <el-col :span="8">
-              <el-form-item label="标准月租金(¥)" prop="base_rent">
+              <el-form-item :label="'标准月租金('+currencySymbol+')'" prop="base_rent">
                 <el-input-number v-model="f.base_rent" :min="0" :precision="0" controls-position="right" style="width:100%" />
               </el-form-item>
             </el-col>
             <el-col :span="8">
-              <el-form-item label="押金金额(¥)">
+              <el-form-item :label="'押金金额('+currencySymbol+')'">
                 <el-input-number v-model="f.deposit_amount" :min="0" :precision="0" controls-position="right" style="width:100%" />
               </el-form-item>
             </el-col>
@@ -85,6 +94,24 @@
               </el-form-item>
             </el-col>
           </el-row>
+
+          <el-row :gutter="16">
+            <el-col :span="12">
+              <el-form-item label="起租时间">
+                <el-input v-model="f.lease_start" placeholder="如 2026年9月 / 随时入住 / 即日起" maxlength="50" />
+              </el-form-item>
+            </el-col>
+            <el-col :span="12">
+              <el-form-item label="止租时间">
+                <el-input v-model="f.lease_end" placeholder="如 2027年6月 / 租满一年" maxlength="50" />
+              </el-form-item>
+            </el-col>
+          </el-row>
+
+          <el-divider content-position="left">专属优惠</el-divider>
+          <el-form-item>
+            <el-input v-model="f.special_offer" type="textarea" :rows="3" placeholder="如：早鸟优惠减200、老客户推荐返现100、包年免1个月租金、3人团购每人减50..." maxlength="500" show-word-limit />
+          </el-form-item>
 
           <el-divider content-position="left">楼层差异化加价</el-divider>
           <el-form-item label="楼层加价规则">
@@ -108,9 +135,28 @@
           </el-form-item>
 
           <el-divider content-position="left">配套设施</el-divider>
-          <el-form-item label="配套标签">
+
+          <el-form-item label="房间配置">
             <el-checkbox-group v-model="selectedAmenities" class="amenity-group">
-              <el-checkbox v-for="a in allAmenities" :key="a" :label="a" :value="a" border size="small" />
+              <el-checkbox v-for="a in roomConfigAmenities" :key="a" :label="a" :value="a" border size="small" />
+            </el-checkbox-group>
+          </el-form-item>
+
+          <el-form-item label="朝向/楼层">
+            <el-checkbox-group v-model="selectedAmenities" class="amenity-group">
+              <el-checkbox v-for="a in orientationAmenities" :key="a" :label="a" :value="a" border size="small" />
+            </el-checkbox-group>
+          </el-form-item>
+
+          <el-form-item label="租金包含">
+            <el-checkbox-group v-model="selectedAmenities" class="amenity-group">
+              <el-checkbox v-for="a in billsAmenities" :key="a" :label="a" :value="a" border size="small" />
+            </el-checkbox-group>
+          </el-form-item>
+
+          <el-form-item label="租住规则">
+            <el-checkbox-group v-model="selectedAmenities" class="amenity-group">
+              <el-checkbox v-for="a in ruleAmenities" :key="a" :label="a" :value="a" border size="small" />
             </el-checkbox-group>
           </el-form-item>
 
@@ -193,9 +239,26 @@ const showSuccessDialog = ref(false); const formLoading = ref(false)
 const uploadedImageUrls = ref<string[]>([])
 const imageUploaderRef = ref<InstanceType<typeof ImageUploader>>()
 
-// 配套标签（移除独立卫浴、精装修）
-// 户型特色（区别于公寓配套）
-const allAmenities = ['独立卫浴','阳台','朝南','精装修','带厨房','带客厅','落地窗','步入式衣柜','双层/复式','地毯','木地板','壁橱','中央空调','地暖','浴缸','智能门锁','包水电','可养宠物']
+// 货币列表
+const currencies = [
+  { code: 'CNY', name: '人民币', symbol: '¥' },
+  { code: 'USD', name: '美元', symbol: '$' },
+  { code: 'GBP', name: '英镑', symbol: '£' },
+  { code: 'EUR', name: '欧元', symbol: '€' },
+  { code: 'AUD', name: '澳元', symbol: 'A$' },
+  { code: 'SGD', name: '新币', symbol: 'S$' },
+  { code: 'CAD', name: '加元', symbol: 'C$' },
+  { code: 'HKD', name: '港币', symbol: 'HK$' },
+  { code: 'JPY', name: '日元', symbol: '¥' },
+  { code: 'KRW', name: '韩元', symbol: '₩' },
+]
+const currencySymbol = computed(() => {
+  const c = currencies.find(c => c.code === f.currency)
+  return c ? c.symbol : '¥'
+})
+const orientationAmenities = ['朝南','朝北','朝东','朝西','高楼层','顶层','底层/带院子']
+const billsAmenities = ['包水电','包网络','包取暖']
+const ruleAmenities = ['可养宠物','禁烟','禁派对','允许访客留宿','安静时段']
 const selectedAmenities = ref<string[]>([])
 
 const f = reactive({
@@ -206,6 +269,10 @@ const f = reactive({
   base_rent: undefined as number | undefined,
   deposit_amount: undefined as number | undefined,
   deposit_type: undefined as string | undefined,
+  lease_start: '' as string | undefined,
+  lease_end: '' as string | undefined,
+  currency: 'CNY' as string | undefined,
+  special_offer: '' as string | undefined,
   min_stay_months: 3,
   description: '',
 })
@@ -267,6 +334,10 @@ async function loadUnitType(id: number) {
     f.base_rent = ut.base_rent ? Number(ut.base_rent) : undefined
     f.deposit_amount = ut.deposit_amount ?? undefined
     f.deposit_type = ut.deposit_type ?? undefined
+    f.lease_start = ut.lease_start ?? ''
+    f.lease_end = ut.lease_end ?? ''
+    f.currency = ut.currency || 'CNY'
+    f.special_offer = ut.special_offer ?? ''
     f.min_stay_months = ut.min_stay_months ?? 3
     f.description = ut.description ?? ''
     selectedAmenities.value = ut.amenities ?? []
@@ -299,6 +370,10 @@ async function handleSubmit() {
     base_rent: f.base_rent ? String(f.base_rent) : '0',
     deposit_amount: f.deposit_amount ?? null,
     deposit_type: f.deposit_type || null,
+    lease_start: f.lease_start?.trim() || null,
+    lease_end: f.lease_end?.trim() || null,
+    currency: f.currency || null,
+    special_offer: f.special_offer?.trim() || null,
     min_stay_months: f.min_stay_months,
     floor_pricing: floorPricingTable.length ? [...floorPricingTable] : null,
     amenities: selectedAmenities.value.length ? [...selectedAmenities.value] : null,
