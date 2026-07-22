@@ -5,6 +5,8 @@ export interface Building {
   contact_phone?: string; contact_email?: string
   description?: string; status: string; created_by: number
   created_at?: string
+  latitude?: number | null; longitude?: number | null
+  business_id?: string
 }
 
 export const buildingService = {

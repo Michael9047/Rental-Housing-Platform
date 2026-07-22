@@ -5,6 +5,15 @@
       <div class="filter-title">
         <el-icon :size="18" color="#409eff"><ChatDotRound /></el-icon>
         <span>租房推荐管家</span>
+        <el-radio-group
+          v-model="agentMode"
+          size="small"
+          class="mode-switcher"
+        >
+          <el-radio-button value="auto">🤖 智能</el-radio-button>
+          <el-radio-button value="default">⚡ 快速</el-radio-button>
+          <el-radio-button value="handoff">🧠 深度</el-radio-button>
+        </el-radio-group>
         <el-tag v-if="!aiAvailable" size="small" type="warning">AI 分析暂不可用</el-tag>
       </div>
       <el-form :inline="true" class="filter-form">
@@ -116,12 +125,13 @@
               </button>
             </div>
 
+            <!-- 精选 Top 3 卡片 + "查看所有" 按钮 -->
             <div
-              v-if="msg.recommendations && msg.recommendations.length"
+              v-if="msg.role === 'assistant' && msg.topPicks && msg.topPicks.length"
               class="rec-carousel-wrap"
             >
               <div class="rec-carousel-head">
-                <span>为你找到 {{ msg.recommendations.length }} 套推荐</span>
+                <span>✨ 为你精选 {{ msg.topPicks.length }} 套</span>
                 <el-tag v-if="msg.aiAvailable === false" size="small" type="warning">
                   AI 分析暂不可用
                 </el-tag>
@@ -129,7 +139,7 @@
               </div>
               <div class="rec-carousel">
                 <div
-                  v-for="rec in msg.recommendations"
+                  v-for="rec in msg.topPicks"
                   :key="rec.property_id"
                   class="rec-card"
                   :class="{ selected: isSelected(rec.property_id) }"
@@ -188,6 +198,20 @@
                     </div>
                   </div>
                 </div>
+              </div>
+
+              <!-- "查看所有房源" 按钮 → 跳转搜索页面 -->
+              <div
+                v-if="msg.allRecommendations && msg.allRecommendations.length > (msg.topPicks?.length || 0)"
+                class="rec-expand-bar"
+              >
+                <el-button
+                  type="primary"
+                  size="small"
+                  @click="goToSearchFromAgent(msg)"
+                >
+                  查看所有房源（共 {{ msg.allRecommendations.length }} 套）→
+                </el-button>
               </div>
             </div>
           </div>
@@ -292,7 +316,6 @@
           <el-button
             type="primary"
             :disabled="!canCompare"
-            :loading="comparing"
             style="width: 100%"
             @click="handleCompare"
           >
@@ -302,90 +325,6 @@
         </div>
       </template>
     </el-drawer>
-
-    <!-- ═══ 对比结果弹窗 ═══ -->
-    <el-dialog v-model="compareVisible" title="房源对比分析" width="980px" top="5vh">
-      <template v-if="compareResult">
-        <!-- 优先级切换：切换即按新权重重新计算得分 -->
-        <div class="compare-priority-row">
-          <span class="compare-priority-label">我更看重</span>
-          <el-radio-group
-            v-model="comparePriority"
-            size="small"
-            :disabled="comparing"
-            @change="rerunCompare"
-          >
-            <el-radio-button value="balanced">均衡</el-radio-button>
-            <el-radio-button value="budget">预算优先</el-radio-button>
-            <el-radio-button value="commute">通勤优先</el-radio-button>
-            <el-radio-button value="space">空间优先</el-radio-button>
-          </el-radio-group>
-          <span class="compare-priority-hint">得分由真实数据按权重计算，AI 只负责解读</span>
-        </div>
-
-        <el-alert
-          :title="compareResult.summary"
-          :type="compareResult.ai_available ? 'success' : 'warning'"
-          :closable="false"
-          class="compare-summary"
-        />
-        <el-table v-loading="comparing" :data="compareResult.items" stripe class="compare-table">
-          <el-table-column label="房源" min-width="150">
-            <template #default="{ row }">
-              <el-link type="primary" @click="goDetail(row.property_id)">{{ row.title }}</el-link>
-            </template>
-          </el-table-column>
-          <el-table-column label="月租" width="95">
-            <template #default="{ row }">
-              <span v-if="row.property">¥{{ row.property.price_monthly }}</span>
-              <span v-else>—</span>
-            </template>
-          </el-table-column>
-          <el-table-column label="区域/面积" width="125">
-            <template #default="{ row }">
-              <span v-if="row.property">
-                {{ row.property.district }}<template v-if="row.property.area_sqm"> · {{ row.property.area_sqm }}㎡</template>
-              </span>
-              <span v-else>—</span>
-            </template>
-          </el-table-column>
-          <el-table-column label="通勤" min-width="120">
-            <template #default="{ row }">{{ row.commute || '暂无数据' }}</template>
-          </el-table-column>
-          <el-table-column label="评分" width="95">
-            <template #default="{ row }">
-              <span v-if="row.rating != null">★ {{ row.rating }}（{{ row.review_count }}条）</span>
-              <span v-else>暂无</span>
-            </template>
-          </el-table-column>
-          <el-table-column label="优势" min-width="140">
-            <template #default="{ row }">
-              <el-tag v-for="p in row.pros" :key="p" size="small" type="success" effect="plain" class="compare-tag">{{ p }}</el-tag>
-            </template>
-          </el-table-column>
-          <el-table-column label="劣势" min-width="120">
-            <template #default="{ row }">
-              <el-tag v-for="c in row.cons" :key="c" size="small" type="warning" effect="plain" class="compare-tag">{{ c }}</el-tag>
-              <span v-if="!row.cons.length">—</span>
-            </template>
-          </el-table-column>
-          <el-table-column label="适合人群" min-width="100">
-            <template #default="{ row }">{{ row.best_for || '—' }}</template>
-          </el-table-column>
-          <el-table-column label="综合得分" width="120" sortable prop="score">
-            <template #default="{ row }">
-              <el-tooltip placement="left" :content="breakdownText(row)">
-                <el-progress :percentage="row.score" :stroke-width="10" :color="scoreColor(row.score)" />
-              </el-tooltip>
-            </template>
-          </el-table-column>
-        </el-table>
-        <div class="compare-recommendation">
-          <el-icon color="#409eff"><Star /></el-icon>
-          {{ compareResult.recommendation }}
-        </div>
-      </template>
-    </el-dialog>
   </div>
 </template>
 
@@ -399,9 +338,9 @@ import {
   LocationFilled,
   PictureFilled,
   ShoppingCart,
-  Star,
 } from '@element-plus/icons-vue'
 import { storeToRefs } from 'pinia'
+import { getImageUrl } from '@/utils/image'
 import { agentService } from '@/services/agent'
 import { useAgentChatStore } from '@/stores/agentChat'
 import { useCartStore } from '@/stores/cart'
@@ -409,9 +348,6 @@ import type {
   AgentChatMessage,
   AgentFilters,
   AgentRecommendation,
-  CompareItem,
-  ComparePriority,
-  CompareResponse,
 } from '@/types/agent'
 import type { PropertySearchResult, PropertyType } from '@/types/property'
 
@@ -431,6 +367,8 @@ const typeLabels: Record<PropertyType, string> = {
 }
 
 // ── 状态 ────────────────────────────────────────────────────────
+// Agent 模式：auto=智能自动, default=快速(linear), handoff=深度(多Agent交接)
+const agentMode = ref<string>('auto')
 const filters = reactive<AgentFilters>({
   country: null,
   district: null,
@@ -441,12 +379,6 @@ const filters = reactive<AgentFilters>({
 })
 const inputText = ref('')
 const sending = ref(false)
-const comparing = ref(false)
-const compareVisible = ref(false)
-const compareResult = ref<CompareResponse | null>(null)
-const comparePriority = ref<ComparePriority>('balanced')
-// 记住本次对比的房源集合，切换优先级时用同一批房源重新计算
-const lastCompareIds = ref<number[] | undefined>(undefined)
 const chatListRef = ref<HTMLElement | null>(null)
 
 // 勾选用于对比的房源 id（来自推荐横条 + 购物车，共享同一份选择）
@@ -521,7 +453,7 @@ function imageUrl(property: PropertySearchResult): string | null {
   const images = property.images
   if (!images || images.length === 0) return null
   const primary = images.find((img) => img.is_primary) || images[0]
-  return `/api/v1/uploads/${primary.filename}`
+  return getImageUrl(primary.filename)
 }
 
 function inCart(propertyId: number): boolean {
@@ -530,12 +462,6 @@ function inCart(propertyId: number): boolean {
 
 function goDetail(propertyId: number) {
   router.push(`/property/${propertyId}`)
-}
-
-function scoreColor(score: number): string {
-  if (score >= 85) return '#67c23a'
-  if (score >= 70) return '#409eff'
-  return '#e6a23c'
 }
 
 async function scrollChatToBottom() {
@@ -590,7 +516,7 @@ onBeforeUnmount(() => {
 })
 
 // ── 交互 ────────────────────────────────────────────────────────
-async function handleSend(preset?: string) {
+async function handleSend(preset?: string, comparePropertyIds?: number[]) {
   const text = (preset ?? inputText.value).trim()
   if (!text || sending.value || sessionId.value === null) return
 
@@ -603,11 +529,16 @@ async function handleSend(preset?: string) {
     const resp = await agentService.sendMessage(sessionId.value, {
       message: text,
       filters: { ...filters },
+      compare_property_ids: comparePropertyIds,
+      mode: agentMode.value === 'auto' ? null : agentMode.value,
     })
+    const isRecommend = resp.intent === 'recommend'
     messages.value.push({
       role: 'assistant',
       content: resp.reply,
-      recommendations: resp.intent === 'recommend' ? resp.recommendations : undefined,
+      topPicks: isRecommend && resp.top_picks?.length ? resp.top_picks : undefined,
+      allRecommendations: isRecommend && resp.recommendations?.length ? resp.recommendations : undefined,
+      recommendations: isRecommend ? resp.recommendations : undefined,
       aiAvailable: resp.ai_available,
       quickReplies: resp.quick_replies,
       links: resp.links,
@@ -650,42 +581,44 @@ async function handleRemoveFromCart(propertyId: number) {
 
 async function handleCompare() {
   if (!canCompare.value) return
-  // 勾选 ≥2 → 比所选；否则（未勾选）比整个购物车
-  lastCompareIds.value = selectedIds.value.length >= 2 ? [...selectedIds.value] : undefined
-  await runCompare()
-  if (compareResult.value) compareVisible.value = true
+  // 确定要对比的房源 ID
+  const compareIds = selectedIds.value.length >= 2
+    ? [...selectedIds.value]
+    : cartItems.value.map((it) => it.property_id)
+
+  if (compareIds.length < 2) return
+
+  // 关闭抽屉，回到对话页
+  cartOpen.value = false
+
+  // 构建对比消息，附上房源 ID 供后端精确对比
+  const titles = compareIds
+    .map((id) => {
+      const cartItem = cartItems.value.find((it) => it.property_id === id)
+      return cartItem?.property.title || `房源 #${id}`
+    })
+    .join('、')
+
+  const msg = `请帮我详细对比以下房源：${titles}。包括周边配套、通勤便利度、房内设施、价格、空间、评价、安全等维度。`
+  await handleSend(msg, compareIds)
 }
 
-/** 优先级切换：同一批房源按新权重重新计算 */
-async function rerunCompare() {
-  await runCompare()
-}
-
-async function runCompare() {
-  comparing.value = true
-  try {
-    compareResult.value = await agentService.compareCart(lastCompareIds.value, comparePriority.value)
-  } catch {
-    // 错误提示由 api 拦截器统一处理
-  } finally {
-    comparing.value = false
+/** 跳转搜索页面，将全部匹配房源通过 sessionStorage 传递 */
+function goToSearchFromAgent(msg: AgentChatMessage) {
+  if (!msg.allRecommendations?.length) return
+  // 提取完整 Property 数据存入 sessionStorage
+  const results = msg.allRecommendations.map((rec) => rec.property)
+  const context = {
+    source: 'agent',
+    filters: { ...filters },
+    total: results.length,
+    timestamp: Date.now(),
   }
+  sessionStorage.setItem('agentSearchResults', JSON.stringify(results))
+  sessionStorage.setItem('agentSearchContext', JSON.stringify(context))
+  router.push({ name: 'search', query: { from: 'agent' } })
 }
 
-const dimensionLabels: Record<string, string> = {
-  price: '价格',
-  commute: '通勤',
-  space: '空间',
-  rating: '评价',
-}
-
-function breakdownText(row: CompareItem): string {
-  if (!row.score_breakdown) return `综合 ${row.score} 分`
-  const parts = Object.entries(row.score_breakdown).map(
-    ([k, v]) => `${dimensionLabels[k] ?? k} ${v}`,
-  )
-  return `综合 ${row.score} 分 ｜ ` + parts.join(' · ')
-}
 </script>
 
 <style scoped>
@@ -713,6 +646,10 @@ function breakdownText(row: CompareItem): string {
   font-size: 15px;
   font-weight: 600;
   margin-bottom: 10px;
+}
+
+.mode-switcher {
+  margin-left: 12px;
 }
 
 .filter-form :deep(.el-form-item) {
@@ -1021,6 +958,14 @@ function breakdownText(row: CompareItem): string {
   gap: 4px;
 }
 
+/* ── "查看所有房源" 展开按钮 ─────── */
+
+.rec-expand-bar {
+  display: flex;
+  justify-content: center;
+  padding-top: 6px;
+}
+
 /* ── 浮动购物车角标 ─────────────── */
 
 .cart-fab {
@@ -1179,52 +1124,6 @@ function breakdownText(row: CompareItem): string {
   font-size: 11px;
   color: #c0c4cc;
   text-align: center;
-}
-
-/* ── 对比弹窗 ───────────────────── */
-
-.compare-priority-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 12px;
-  flex-wrap: wrap;
-}
-
-.compare-priority-label {
-  font-size: 13px;
-  font-weight: 600;
-  color: #303133;
-}
-
-.compare-priority-hint {
-  font-size: 12px;
-  color: #c0c4cc;
-}
-
-.compare-summary {
-  margin-bottom: 14px;
-}
-
-.compare-table {
-  width: 100%;
-}
-
-.compare-tag {
-  margin: 2px 4px 2px 0;
-}
-
-.compare-recommendation {
-  margin-top: 14px;
-  padding: 10px 14px;
-  background: #ecf5ff;
-  border-radius: 6px;
-  font-size: 13px;
-  color: #303133;
-  display: flex;
-  align-items: flex-start;
-  gap: 6px;
-  line-height: 1.6;
 }
 
 /* ── 响应式 ─────────────────────── */

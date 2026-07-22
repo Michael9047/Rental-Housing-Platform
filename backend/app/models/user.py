@@ -1,4 +1,4 @@
-﻿"""用户模型 - 租客、房东、BD经理、系统管理员"""
+"""用户模型 - 租客、房东、BD经理、系统管理员"""
 import enum
 
 from sqlalchemy import Enum, String
@@ -41,7 +41,7 @@ class User(TimestampMixin, Base):
         default=UserStatus.active,
         nullable=False,
     )
-    properties: Mapped[list["Property"]] = relationship(
+    rooms: Mapped[list["Room"]] = relationship(
         back_populates="landlord",
         cascade="all, delete-orphan",
     )

@@ -1,4 +1,4 @@
-﻿import enum
+import enum
 import uuid
 
 from sqlalchemy import Enum, ForeignKey, String, Text as SAText
@@ -35,6 +35,9 @@ class ChatSession(TimestampMixin, Base):
         Enum(ChatSessionStatus, name="chat_session_status"),
         default=ChatSessionStatus.active,
         nullable=False,
+    )
+    accumulated_filters: Mapped[dict | None] = mapped_column(
+        JSON, nullable=True, default=None
     )
 
     messages: Mapped[list["ChatMessage"]] = relationship(

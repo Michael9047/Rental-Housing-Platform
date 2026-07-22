@@ -1,4 +1,4 @@
-﻿from datetime import datetime
+from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, model_validator
 
@@ -43,6 +43,32 @@ class LoginRequest(BaseModel):
     @property
     def identifier(self) -> str:
         return self.username_or_email
+
+
+class PhoneLoginRequest(BaseModel):
+    """手机号 + 短信验证码登录请求"""
+    phone: str = Field(min_length=11, max_length=32)
+    sms_code: str = Field(min_length=6, max_length=6)
+
+
+class PhoneLoginResponse(BaseModel):
+    """手机号登录响应：已注册用户直接返回 token，新用户返回 is_new=True"""
+    access_token: str | None = None
+    token_type: str = "bearer"
+    is_new_user: bool = False
+    phone: str
+
+
+class PhoneRegisterRequest(BaseModel):
+    """新用户手机号注册：完成短信验证后设置用户名和密码。
+
+    短信验证已通过 /auth/phone-login 完成（验证状态暂存 Redis），
+    此处仅需提供注册信息，无需再次提交验证码。
+    """
+    phone: str = Field(min_length=11, max_length=32)
+    username: str = Field(min_length=1, max_length=100)
+    password: str = Field(min_length=8, max_length=128)
+    role: UserRole = UserRole.tenant
 
 
 class TokenResponse(BaseModel):

@@ -1,4 +1,4 @@
-﻿import json
+import json
 import logging
 import uuid
 from typing import AsyncGenerator
@@ -57,6 +57,7 @@ class ChatService:
         if not chat_session:
             return False
         chat_session.status = ChatSessionStatus.closed
+        chat_session.accumulated_filters = None  # 关闭时清空上下文记忆
         await self.session.commit()
         return True
 

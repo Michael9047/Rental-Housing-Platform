@@ -1,0 +1,32 @@
+<h2 style="margin:0 0 16px;color:#1e293b;font-size:20px;">合同已生成</h2>
+
+<p style="margin:0 0 12px;color:#475569;font-size:15px;line-height:1.7;">
+您好，{user_name}：
+</p>
+
+<p style="margin:0 0 24px;color:#475569;font-size:15px;line-height:1.7;">
+您对 <strong>{property_title}</strong> 的租赁合同已生成，请查收附件中的合同 PDF 文件。
+</p>
+
+<!-- Detail Card -->
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:20px;margin-bottom:24px;">
+<tr><td style="padding:8px 0;">
+<p style="margin:0 0 8px;color:#64748b;font-size:14px;"><strong>合同编号：</strong>{contract_id}</p>
+<p style="margin:0 0 8px;color:#64748b;font-size:14px;"><strong>房源：</strong>{property_title}</p>
+<p style="margin:0 0 8px;color:#64748b;font-size:14px;"><strong>月租金：</strong>¥{monthly_price}</p>
+<p style="margin:0;color:#64748b;font-size:14px;"><strong>生成时间：</strong>{generated_at}</p>
+</td></tr>
+</table>
+
+<p style="margin:0 0 12px;color:#475569;font-size:15px;line-height:1.7;">
+请仔细阅读合同内容。确认无误后，请前往平台完成在线签署。
+</p>
+
+<!-- CTA Button -->
+<table cellpadding="0" cellspacing="0" style="margin-bottom:24px;">
+<tr>
+<td style="background:#2563eb;border-radius:8px;text-align:center;">
+<a href="{frontend_url}/contracts/{contract_id}" style="display:inline-block;padding:12px 32px;color:#ffffff;font-size:15px;font-weight:600;text-decoration:none;">前往签署合同</a>
+</td>
+</tr>
+</table>

@@ -13,7 +13,11 @@ logger = logging.getLogger(__name__)
 
 
 class SmsService:
-    """Alibaba Cloud 号码认证 SMS service (dypnsapi)."""
+    """阿里云号码认证服务 (dypnsapi) —— 仅用于发送短信验证码。
+
+    注意：此服务不支持通知类短信。如需发送"预约确认""支付提醒"等通知短信，
+    请使用阿里云短信服务 (dysmsapi)，另建 NotificationSmsService。
+    """
 
     ENDPOINT = "dypnsapi.aliyuncs.com"
     API_VERSION = "2017-05-25"
@@ -23,7 +27,7 @@ class SmsService:
         self.settings = get_settings()
 
     def _sign(self, params: dict, secret: str) -> str:
-        """Generate Alibaba Cloud API v1 HMAC-SHA1 signature (POST)."""
+        """生成阿里云 API v1 HMAC-SHA1 签名（POST 请求）。"""
         sorted_keys = sorted(params.keys())
         canonical = "&".join(
             f"{quote(k, safe='')}={quote(str(params[k]), safe='')}"
@@ -38,11 +42,22 @@ class SmsService:
         import base64
         return base64.b64encode(signature).decode("utf-8")
 
-    async def send(self, phone_number: str, template_param: dict | None = None) -> dict:
-        """Send an SMS via Alibaba Cloud 号码认证 API (SendSmsVerifyCode).
+    async def send_verification_code(
+        self, phone_number: str, code: str, ttl_minutes: int = 5,
+    ) -> dict:
+        """发送短信验证码（阿里云号码认证 SendSmsVerifyCode）。
 
-        Returns dict with status and optional error info.
-        Silently skips if SMS is not configured or phone is empty.
+        Args:
+            phone_number: 接收手机号
+            code: 6 位数字验证码
+            ttl_minutes: 验证码有效分钟数
+
+        Returns:
+            {"status": "sent", "biz_id": "..."}
+            {"status": "skipped", "reason": "..."}
+            {"status": "failed", "error": "..."}
+
+        未配置 AK/Secret 时静默跳过，不发短信也不抛异常。
         """
         if not phone_number:
             return {"status": "skipped", "reason": "no phone number"}
@@ -54,12 +69,14 @@ class SmsService:
         scheme_name = self.settings.sms_scheme_name
 
         if not access_key_id or not access_key_secret:
-            logger.warning("SMS not configured, skipping send to %s", phone_number)
+            logger.warning("短信验证码未配置 AK，跳过发送 to %s", phone_number)
             return {"status": "skipped", "reason": "sms not configured"}
 
         import json
         timestamp = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
         nonce = str(uuid.uuid4())
+
+        template_param = json.dumps({"code": code, "min": str(ttl_minutes)}, ensure_ascii=False)
 
         params = {
             "AccessKeyId": access_key_id,
@@ -72,7 +89,7 @@ class SmsService:
             "SignatureVersion": "1.0",
             "SchemeName": scheme_name,
             "TemplateCode": template_code,
-            "TemplateParam": json.dumps(template_param or {}, ensure_ascii=False),
+            "TemplateParam": template_param,
             "Timestamp": timestamp,
             "Version": self.API_VERSION,
         }
@@ -87,11 +104,11 @@ class SmsService:
                 resp.raise_for_status()
                 result = resp.json()
             if result.get("Code") == "OK":
-                logger.info("SMS sent to %s: %s", phone_number, result.get("BizId"))
+                logger.info("验证码短信已发送 to %s biz_id=%s", phone_number, result.get("BizId"))
                 return {"status": "sent", "biz_id": result.get("BizId")}
             else:
-                logger.error("SMS failed to %s: %s", phone_number, result.get("Message"))
+                logger.error("验证码短信发送失败 to %s: %s", phone_number, result.get("Message"))
                 return {"status": "failed", "error": result.get("Message")}
         except Exception as exc:
-            logger.exception("SMS send error to %s", phone_number)
+            logger.exception("验证码短信发送异常 to %s", phone_number)
             raise

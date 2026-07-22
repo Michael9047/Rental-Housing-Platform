@@ -1,6 +1,5 @@
-// 推荐管家会话 store —— 让聊天记录跨页面切换持久
-// AgentView 组件卸载（用户点去别的页面）时，会话 id 和消息都保留在这里，
-// 回到 /agent 直接续聊，不再每次进入新建会话。
+// AI 租房助手会话 store —— 让聊天记录跨页面切换持久
+// 会话 id 和消息保留在这里，在不同页面之间切换不会丢失对话。
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { agentService } from '@/services/agent'
@@ -19,6 +18,8 @@ export const useAgentChatStore = defineStore('agentChat', () => {
   const sessionId = ref<number | null>(null)
   const messages = ref<AgentChatMessage[]>([])
   const aiAvailable = ref(true)
+  /** 外部页面（如首页）触发的待发送查询 */
+  const pendingQuery = ref<string | null>(null)
 
   let creating: Promise<void> | null = null
 
@@ -44,7 +45,20 @@ export const useAgentChatStore = defineStore('agentChat', () => {
     sessionId.value = null
     messages.value = []
     aiAvailable.value = true
+    pendingQuery.value = null
   }
 
-  return { sessionId, messages, aiAvailable, ensureSession, reset }
+  /** 外部页面触发：设置待发送查询（AssistantBubble 会监听并消费） */
+  function openWithQuery(query: string): void {
+    pendingQuery.value = query
+  }
+
+  /** 消费待发送查询，返回后清空 */
+  function consumeQuery(): string | null {
+    const q = pendingQuery.value
+    pendingQuery.value = null
+    return q
+  }
+
+  return { sessionId, messages, aiAvailable, pendingQuery, ensureSession, reset, openWithQuery, consumeQuery }
 })

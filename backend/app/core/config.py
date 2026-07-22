@@ -1,4 +1,4 @@
-﻿from functools import lru_cache
+from functools import lru_cache
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -54,6 +54,10 @@ class Settings(BaseSettings):
     openai_chat_model: str = Field(
         default="gpt-4o",
         validation_alias="OPENAI_CHAT_MODEL",
+    )
+    openai_base_url: str = Field(
+        default="",
+        validation_alias="OPENAI_BASE_URL",
     )
     # DeepSeek LLM（用于 AI 搜房：自然语言解析 + 房源摘要生成）
     deepseek_api_key: str = Field(
@@ -117,6 +121,27 @@ class Settings(BaseSettings):
         default="",
         validation_alias="AMAP_JS_KEY",
     )
+    # 高德路线规划 API（步行/骑行/驾车/公交，四种通勤模式）
+    amap_direction_walking_url: str = Field(
+        default="https://restapi.amap.com/v3/direction/walking",
+        validation_alias="AMAP_DIRECTION_WALKING_URL",
+    )
+    amap_direction_bicycling_url: str = Field(
+        default="https://restapi.amap.com/v4/direction/bicycling",
+        validation_alias="AMAP_DIRECTION_BICYCLING_URL",
+    )
+    amap_direction_driving_url: str = Field(
+        default="https://restapi.amap.com/v3/direction/driving",
+        validation_alias="AMAP_DIRECTION_DRIVING_URL",
+    )
+    amap_direction_transit_url: str = Field(
+        default="https://restapi.amap.com/v4/direction/transit/integrated",
+        validation_alias="AMAP_DIRECTION_TRANSIT_URL",
+    )
+    amap_direction_timeout_seconds: float = Field(
+        default=8.0,
+        validation_alias="AMAP_DIRECTION_TIMEOUT_SECONDS",
+    )
 
     # ========== Google Maps（海外主引擎） ==========
     gm_api_key: str = Field(
@@ -139,6 +164,20 @@ class Settings(BaseSettings):
         default=2000,
         validation_alias="GM_NEARBY_RADIUS_METERS",
     )
+    # Google Distance Matrix API（批量通勤时间计算）
+    gm_distance_matrix_url: str = Field(
+        default="https://maps.googleapis.com/maps/api/distancematrix/json",
+        validation_alias="GM_DISTANCE_MATRIX_URL",
+    )
+    gm_direction_timeout_seconds: float = Field(
+        default=8.0,
+        validation_alias="GM_DIRECTION_TIMEOUT_SECONDS",
+    )
+    # Google Directions API（获取路线 polyline + steps，Distance Matrix 不返回这些）
+    gm_directions_url: str = Field(
+        default="https://maps.googleapis.com/maps/api/directions/json",
+        validation_alias="GM_DIRECTIONS_URL",
+    )
 
     # ========== OSM / Nominatim（全球备用引擎） ==========
     nominatim_url: str = Field(
@@ -148,6 +187,20 @@ class Settings(BaseSettings):
     nominatim_timeout_seconds: float = Field(
         default=15.0,
         validation_alias="NOMINATIM_TIMEOUT_SECONDS",
+    )
+
+    # ========== OpenRouteService（OSM 全球路线引擎）==========
+    ors_api_key: str = Field(
+        default="",
+        validation_alias="ORS_API_KEY",
+    )
+    ors_directions_url: str = Field(
+        default="https://api.openrouteservice.org/v2/directions",
+        validation_alias="ORS_DIRECTIONS_URL",
+    )
+    ors_timeout_seconds: float = Field(
+        default=8.0,
+        validation_alias="ORS_TIMEOUT_SECONDS",
     )
 
     upload_dir: str = Field(default="./uploads", validation_alias="UPLOAD_DIR")
@@ -172,7 +225,7 @@ class Settings(BaseSettings):
         validation_alias="WECHAT_TOKEN_URL",
     )
 
-    # SMS (Alibaba Cloud 号码认证 dypnsapi)
+    # SMS 验证码 (Alibaba Cloud 号码认证 dypnsapi)
     sms_provider: str = Field(default="aliyun", validation_alias="SMS_PROVIDER")
     sms_access_key_id: str = Field(default="", validation_alias="SMS_ACCESS_KEY_ID")
     sms_access_key_secret: str = Field(default="", validation_alias="SMS_ACCESS_KEY_SECRET")
@@ -184,7 +237,27 @@ class Settings(BaseSettings):
         validation_alias="SMS_ENDPOINT",
     )
 
-    # Email (SMTP)
+    # SMS 通知 (Alibaba Cloud 短信服务 dysmsapi)
+    sms_notify_access_key_id: str = Field(
+        default="", validation_alias="SMS_NOTIFY_ACCESS_KEY_ID",
+    )
+    sms_notify_access_key_secret: str = Field(
+        default="", validation_alias="SMS_NOTIFY_ACCESS_KEY_SECRET",
+    )
+    sms_notify_sign_name: str = Field(
+        default="", validation_alias="SMS_NOTIFY_SIGN_NAME",
+    )
+    sms_notify_endpoint: str = Field(
+        default="dysmsapi.aliyuncs.com",
+        validation_alias="SMS_NOTIFY_ENDPOINT",
+    )
+    # 通知类型 → 模板CODE 的映射，JSON 字符串格式：
+    # {"booking_created":"SMS_xxx","payment_received":"SMS_yyy",...}
+    sms_notify_template_map: str = Field(
+        default="{}", validation_alias="SMS_NOTIFY_TEMPLATE_MAP",
+    )
+
+    # Email (SMTP) — deprecated，DirectMail 稳定后移除
     smtp_host: str = Field(default="", validation_alias="SMTP_HOST")
     smtp_port: int = Field(default=587, validation_alias="SMTP_PORT")
     smtp_user: str = Field(default="", validation_alias="SMTP_USER")
@@ -197,6 +270,30 @@ class Settings(BaseSettings):
     smtp_use_tls: bool = Field(
         default=True,
         validation_alias="SMTP_USE_TLS",
+    )
+
+    # Email (Alibaba Cloud DirectMail) — 主引擎，支持附件
+    dm_access_key_id: str = Field(default="", validation_alias="DM_ACCESS_KEY_ID")
+    dm_access_key_secret: str = Field(default="", validation_alias="DM_ACCESS_KEY_SECRET")
+    dm_account_name: str = Field(
+        default="",
+        validation_alias="DM_ACCOUNT_NAME",
+    )
+    dm_from_alias: str = Field(
+        default="Rental Housing",
+        validation_alias="DM_FROM_ALIAS",
+    )
+    dm_region_id: str = Field(
+        default="cn-hangzhou",
+        validation_alias="DM_REGION_ID",
+    )
+    dm_endpoint: str = Field(
+        default="dm.aliyuncs.com",
+        validation_alias="DM_ENDPOINT",
+    )
+    dm_timeout_seconds: float = Field(
+        default=10.0,
+        validation_alias="DM_TIMEOUT_SECONDS",
     )
 
     # Rate limiting

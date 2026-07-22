@@ -194,6 +194,12 @@ export const usePropertyStore = defineStore('property', () => {
     }
   }
 
+  /** 直接注入预加载结果（来自 Agent 推荐），跳过后端 API 搜索 */
+  function setSearchResults(results: PropertySearchResult[]) {
+    searchResults.value = results
+    loading.value = false
+  }
+
   return {
     properties, searchResults, currentProperty, loading,
     total, page, pageSize, totalPages,
@@ -203,6 +209,7 @@ export const usePropertyStore = defineStore('property', () => {
     batchUpdateStatus, batchDelete,
     hardDeleteProperty, batchRestore, batchHardDelete,
     remove,
+    setSearchResults,
     fetchImages, fetchImagesRef, uploadImages, deleteImage, setPrimaryImage,
   }
 })

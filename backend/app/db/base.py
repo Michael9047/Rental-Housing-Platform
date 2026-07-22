@@ -1,4 +1,4 @@
-﻿from app.db.session import Base
+from app.db.session import Base
 from app.models.advertisement import AdImpression, Advertisement
 from app.models.audit_log import AuditLog
 from app.models.booking import Booking
@@ -30,6 +30,6 @@ __all__ = [
     "ChatMessage", "ChatSession", "Contract", "DataImport", "EmbeddingJob",
     "Institute", "MarketplaceComment", "MarketplaceItem", "MarketplaceItemImage",
     "MarketplaceMessage", "MarketplaceReport", "NewsArticle", "Notification",
-    "Payment", "Property", "PropertyImage", "PropertyPOI", "Review",
+    "Payment", "Room", "PropertyImage", "PropertyPOI", "Review",
     "SavedSearch", "User", "UserFavorite",
 ]

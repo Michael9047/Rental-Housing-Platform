@@ -1,0 +1,32 @@
+<h2 style="margin:0 0 16px;color:#16a34a;font-size:20px;">✅ 支付到账</h2>
+
+<p style="margin:0 0 12px;color:#475569;font-size:15px;line-height:1.7;">
+您好，{user_name}：
+</p>
+
+<p style="margin:0 0 24px;color:#475569;font-size:15px;line-height:1.7;">
+您的支付已成功到账，以下为支付详情：
+</p>
+
+<!-- Detail Card -->
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:20px;margin-bottom:24px;">
+<tr><td style="padding:8px 0;">
+<p style="margin:0 0 8px;color:#64748b;font-size:14px;"><strong>预约编号：</strong>#{booking_id}</p>
+<p style="margin:0 0 8px;color:#64748b;font-size:14px;"><strong>支付金额：</strong>¥{amount}</p>
+<p style="margin:0 0 8px;color:#64748b;font-size:14px;"><strong>支付编号：</strong>{payment_id}</p>
+<p style="margin:0;color:#64748b;font-size:14px;"><strong>到账时间：</strong>{paid_at}</p>
+</td></tr>
+</table>
+
+<p style="margin:0 0 12px;color:#475569;font-size:15px;line-height:1.7;">
+房东将尽快确认您的预约，请耐心等待。
+</p>
+
+<!-- CTA Button -->
+<table cellpadding="0" cellspacing="0" style="margin-bottom:24px;">
+<tr>
+<td style="background:#2563eb;border-radius:8px;text-align:center;">
+<a href="{frontend_url}/bookings/tenant" style="display:inline-block;padding:12px 32px;color:#ffffff;font-size:15px;font-weight:600;text-decoration:none;">查看预约状态</a>
+</td>
+</tr>
+</table>

@@ -1,0 +1,251 @@
+{
+  "_description": "StarRez 字段 → 平台 Property 字段映射表。Mock 数据结构为扁平 JSON（无 space/ 前缀），对接真实 API 后按需调整路径。",
+  "_starrez_api_version": "v1 (mock structure, adjust on real API)",
+
+  "meta": {
+    "pms_type": "starrez",
+    "property_identity": {
+      "strategy": "composite",
+      "fields": ["name", "building"],
+      "dedup_key": ["title", "address"]
+    }
+  },
+
+  "fields": {
+    "name": {
+      "target": "title",
+      "type": "direct"
+    },
+    "description": {
+      "target": "description",
+      "type": "direct"
+    },
+    "building": {
+      "target": "building_name",
+      "type": "direct",
+      "note": "StarRez 有 building 字段，直接映射。OTA XML 没有这个字段。"
+    },
+    "floor": {
+      "target": "floor",
+      "type": "direct"
+    },
+    "area_sqm": {
+      "target": "area_sqm",
+      "type": "direct"
+    },
+    "max_occupancy": {
+      "target": "bedrooms",
+      "type": "transform",
+      "type": "computed",
+      "transform": "occupancy_to_bedrooms",
+      "note": "MaxOccupancy=1→0(studio), 2→1, 3→2, 4+→3"
+    },
+    "address.line1": {
+      "target": "address",
+      "type": "direct"
+    },
+    "address.city": {
+      "target": "district",
+      "type": "direct"
+    },
+    "address.country": {
+      "target": "country",
+      "type": "lookup",
+      "lookup": {
+        "United Kingdom": "GB",
+        "United States": "US",
+        "Australia": "AU",
+        "Canada": "CA",
+        "Germany": "DE",
+        "France": "FR",
+        "Netherlands": "NL",
+        "Singapore": "SG",
+        "Japan": "JP",
+        "South Korea": "KR",
+        "China": "CN",
+        "Hong Kong": "HK"
+      }
+    },
+    "coordinates.latitude": {
+      "target": "latitude",
+      "type": "direct"
+    },
+    "coordinates.longitude": {
+      "target": "longitude",
+      "type": "direct"
+    },
+
+    "type": {
+      "target": "property_type",
+      "type": "lookup",
+      "lookup": {
+        "Ensuite Single": "studio",
+        "Ensuite": "studio",
+        "Single Room": "studio",
+        "Studio": "studio",
+        "Studio Apartment": "studio",
+        "One Bed Flat": "apartment",
+        "One Bedroom Apartment": "apartment",
+        "One Bedroom Flat": "apartment",
+        "Two Bed Flat": "apartment",
+        "Two Bedroom Apartment": "apartment",
+        "Apartment": "apartment",
+        "Flat": "apartment",
+        "Twin Share": "shared",
+        "Twin Room": "shared",
+        "Shared Room": "shared",
+        "Double Room": "shared",
+        "Triple Room": "shared",
+        "Cluster Flat": "shared",
+        "Dormitory": "shared",
+        "Townhouse": "house",
+        "House": "house",
+        "Villa": "house"
+      },
+      "fallback": "ai",
+      "note": "房型名由各公寓自定义，不在 lookup 表中的由 AI 辅助归类"
+    },
+
+    "status": {
+      "target": "status",
+      "type": "lookup",
+      "lookup": {
+        "Available": "available",
+        "Vacant": "available",
+        "Occupied": "rented",
+        "Reserved": "rented",
+        "Booked": "rented",
+        "Maintenance": "maintenance",
+        "Out of Order": "maintenance",
+        "Offline": "offline",
+        "Inactive": "offline"
+      }
+    },
+
+    "amenities": {
+      "target": "amenities",
+      "type": "lookup",
+      "strategy": "array_lookup",
+      "lookup": {
+        "WiFi": "wifi",
+        "Wi-Fi": "wifi",
+        "Wireless Internet": "wifi",
+        "Desk": "desk",
+        "Study Desk": "desk",
+        "Ensuite Bathroom": "ensuite",
+        "Private Bathroom": "ensuite",
+        "Shared Bathroom": "shared_bathroom",
+        "Kitchen": "kitchen",
+        "Kitchenette": "kitchen",
+        "Shared Kitchen": "shared_kitchen",
+        "Laundry": "laundry",
+        "Washing Machine": "laundry",
+        "Dryer": "dryer",
+        "Air Conditioning": "ac",
+        "Heating": "heating",
+        "Gym": "gym",
+        "Fitness Center": "gym",
+        "Common Room": "common_room",
+        "Study Room": "study_room",
+        "Bike Storage": "bike_storage",
+        "Parking": "parking",
+        "Elevator": "elevator",
+        "Lift": "elevator",
+        "Security": "security",
+        "CCTV": "security",
+        "24/7 Security": "security",
+        "Reception": "reception",
+        "Mail Room": "mail_room",
+        "Garden": "garden",
+        "Courtyard": "garden",
+        "Balcony": "balcony",
+        "TV": "tv",
+        "Furnished": "furnished",
+        "Bills Included": "bills_included",
+        "All Bills Included": "bills_included",
+        "Pet Friendly": "pet_friendly",
+        "Smoking": "smoking_allowed"
+      },
+      "note": "数组逐项查表，未命中项保留原文"
+    },
+
+    "lease.rate_per_week": {
+      "target": "price_monthly",
+      "type": "computed",
+      "transform": "multiply(4.33)",
+      "note": "周租 × 4.33 ≈ 月租。4.33 = 52周/12月"
+    },
+    "lease.rate_per_month": {
+      "target": "price_monthly",
+      "type": "direct",
+      "note": "部分 StarRez 配置直接存月租"
+    },
+    "lease.currency": {
+      "target": null,
+      "type": "ignore",
+      "note": "StarRez 的 currency 字段暂不映射"
+    },
+
+    "lease.start_date": {
+      "target": "available_from",
+      "type": "direct"
+    },
+    "lease.end_date": {
+      "target": null,
+      "type": "computed",
+      "transform": "date_diff_months",
+      "note": "min_lease_months = (end_date - start_date).days / 30.44"
+    },
+    "lease.min_stay_weeks": {
+      "target": "min_stay_months",
+      "type": "computed",
+      "transform": "divide(4.33)",
+      "note": "最低入住周数 ÷ 4.33 → 最低入住月数"
+    },
+
+    "capacity": {
+      "target": null,
+      "type": "computed",
+      "transform": "capacity_to_rent_type",
+      "note": "capacity=1 且房型含shared → rent_type=shared; capacity>1 → shared"
+    },
+
+    "lease.deposit_amount": {
+      "target": "deposit_amount",
+      "type": "direct"
+    },
+    "lease.deposit_weeks": {
+      "target": "deposit_type",
+      "type": "computed",
+      "transform": "weeks_to_deposit_type",
+      "note": "押金周数→DepositType: 2周≈half_month, 4周≈one_month, 8周≈two_months"
+    },
+
+    "room_number": {
+      "target": "room_number",
+      "type": "direct"
+    },
+
+    "images": {
+      "target": "image_urls",
+      "type": "direct_array",
+      "note": "StarRez 的图片 URL 列表直接映射"
+    }
+  },
+
+  "ai_extraction": {
+    "source_field": "description",
+    "description": "从 StarRez description 自由文本中 AI 提取结构化字段。仅在入驻时运行一次，结果固化到 field_map_overrides。",
+    "targets": [
+      "rent_type",
+      "deposit_amount",
+      "deposit_type",
+      "min_lease_months",
+      "house_rules",
+      "gender_restriction",
+      "bills_included",
+      "student_requirements"
+    ],
+    "prompt_template": "You are a student housing data extractor. Given a room description from a student accommodation PMS (StarRez), extract the following structured fields:\n\nDescription: \"{description}\"\n\nExtract:\n- rent_type: 'whole' (entire apartment/studio) or 'shared' (one room in shared flat)\n- deposit_amount: deposit amount as integer (e.g. 300)\n- deposit_type: 'half_month', 'one_month', 'two_months', 'three_month', 'free', or 'custom'\n- min_lease_months: minimum lease in months (1 semester ≈ 5 months, 1 academic year ≈ 9-10 months)\n- house_rules: list of strings (e.g. ['no_pets', 'no_smoking', 'female_only'])\n- gender_restriction: 'female_only', 'male_only', 'mixed', or null\n- bills_included: true/false\n- student_requirements: any student-specific requirements mentioned\n\nReturn ONLY valid JSON, no explanation."
+  }
+}

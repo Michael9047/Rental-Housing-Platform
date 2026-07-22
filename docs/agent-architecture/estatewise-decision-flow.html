@@ -1,0 +1,646 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>EstateWise Agent 决策流 — 四层混合架构</title>
+<style>
+  :root {
+    --bg: #0f172a;
+    --card: #1e293b;
+    --border: #334155;
+    --text: #e2e8f0;
+    --muted: #94a3b8;
+    --layer1: #3b82f6;
+    --layer2: #8b5cf6;
+    --layer3: #f59e0b;
+    --layer4: #10b981;
+    --fast: #06b6d4;
+    --reject: #ef4444;
+    --accent: #a78bfa;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 32px 16px 80px;
+  }
+
+  h1 {
+    font-size: 2rem;
+    font-weight: 700;
+    margin-bottom: 8px;
+    background: linear-gradient(135deg, var(--layer1), var(--layer2), var(--layer3), var(--layer4));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .subtitle {
+    color: var(--muted);
+    margin-bottom: 40px;
+    font-size: 0.95rem;
+  }
+
+  /* ── Legends ── */
+  .legends {
+    display: flex;
+    gap: 20px;
+    flex-wrap: wrap;
+    margin-bottom: 32px;
+  }
+  .legend {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.8rem;
+    color: var(--muted);
+  }
+  .legend-dot {
+    width: 10px; height: 10px;
+    border-radius: 50%;
+  }
+
+  /* ── Flow Container ── */
+  .flow {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0;
+    width: 100%;
+    max-width: 900px;
+  }
+
+  /* ── Layer Block ── */
+  .layer {
+    width: 100%;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 24px 28px;
+    position: relative;
+    transition: box-shadow 0.3s;
+  }
+  .layer:hover {
+    box-shadow: 0 0 0 1px var(--border), 0 8px 32px rgba(0,0,0,.4);
+  }
+  .layer-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 18px;
+  }
+  .layer-num {
+    width: 36px; height: 36px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 800;
+    font-size: 1.1rem;
+    color: #fff;
+    flex-shrink: 0;
+  }
+  .layer-num.l1 { background: var(--layer1); }
+  .layer-num.l2 { background: var(--layer2); }
+  .layer-num.l3 { background: var(--layer3); }
+  .layer-num.l4 { background: var(--layer4); }
+
+  .layer-title {
+    font-size: 1.15rem;
+    font-weight: 700;
+  }
+  .layer-tag {
+    font-size: 0.7rem;
+    padding: 2px 8px;
+    border-radius: 99px;
+    border: 1px solid;
+    font-weight: 600;
+  }
+  .layer-tag.l1 { color: var(--layer1); border-color: var(--layer1); }
+  .layer-tag.l2 { color: var(--layer2); border-color: var(--layer2); }
+  .layer-tag.l3 { color: var(--layer3); border-color: var(--layer3); }
+  .layer-tag.l4 { color: var(--layer4); border-color: var(--layer4); }
+
+  /* ── Arrows between layers ── */
+  .arrow {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 4px 0;
+    position: relative;
+  }
+  .arrow-line {
+    width: 2px; height: 32px;
+    background: var(--border);
+    position: relative;
+  }
+  .arrow-head {
+    width: 0; height: 0;
+    border-left: 7px solid transparent;
+    border-right: 7px solid transparent;
+    border-top: 8px solid var(--border);
+  }
+  .arrow-label {
+    position: absolute;
+    right: -120px;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 0.7rem;
+    color: var(--muted);
+    white-space: nowrap;
+  }
+
+  /* ── Branch Arrow (split) ── */
+  .branch-row {
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    gap: 0;
+    width: 100%;
+    max-width: 900px;
+  }
+  .branch-col {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    flex: 1;
+  }
+  .branch-split {
+    width: 100%;
+    display: flex;
+    justify-content: center;
+    position: relative;
+    height: 40px;
+  }
+  .branch-split svg {
+    overflow: visible;
+  }
+
+  /* ── Inner flow cards ── */
+  .inner-flow {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-top: 8px;
+  }
+  .inner-flow .step {
+    background: rgba(255,255,255,.04);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 10px 14px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    white-space: nowrap;
+    transition: all .2s;
+  }
+  .inner-flow .step:hover {
+    border-color: var(--accent);
+    background: rgba(167,139,250,.08);
+  }
+  .inner-flow .step-icon {
+    margin-right: 4px;
+  }
+  .inner-flow .arrow-sm {
+    color: var(--muted);
+    font-size: 1rem;
+    font-weight: 300;
+  }
+
+  /* ── Code block inside layer ── */
+  .code-block {
+    background: rgba(0,0,0,.35);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px 18px;
+    margin-top: 14px;
+    font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+    font-size: 0.82rem;
+    line-height: 1.7;
+    overflow-x: auto;
+    white-space: pre;
+    color: var(--text);
+  }
+  .code-block .kw  { color: #c084fc; }
+  .code-block .fn  { color: #60a5fa; }
+  .code-block .str { color: #34d399; }
+  .code-block .num { color: #fbbf24; }
+  .code-block .cmt { color: #64748b; font-style: italic; }
+
+  /* ── Signal grid ── */
+  .signal-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px,1fr));
+    gap: 10px;
+    margin-top: 14px;
+  }
+  .signal-card {
+    background: rgba(0,0,0,.25);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px;
+    text-align: center;
+  }
+  .signal-card .sig-icon { font-size: 1.4rem; margin-bottom: 4px; }
+  .signal-card .sig-name { font-size: 0.8rem; font-weight: 700; }
+  .signal-card .sig-weight { font-size: 0.7rem; color: var(--muted); }
+  .signal-card .sig-val { font-size: 0.85rem; color: var(--layer1); font-weight: 700; margin-top: 2px; }
+
+  /* ── Branch cards ── */
+  .branch-card {
+    width: 100%;
+    border-radius: 14px;
+    padding: 18px 20px;
+    text-align: center;
+    margin-top: 4px;
+  }
+  .branch-card.fast {
+    background: rgba(6,182,212,.08);
+    border: 1px dashed rgba(6,182,212,.4);
+  }
+  .branch-card.agent-pipe {
+    background: rgba(139,92,246,.08);
+    border: 1px dashed rgba(139,92,246,.4);
+  }
+  .branch-card .bc-title {
+    font-weight: 700;
+    font-size: 1rem;
+    margin-bottom: 6px;
+  }
+  .branch-card.fast .bc-title { color: var(--fast); }
+  .branch-card.agent-pipe .bc-title { color: var(--layer2); }
+  .branch-card .bc-desc {
+    font-size: 0.78rem;
+    color: var(--muted);
+  }
+
+  /* ── DAG visual ── */
+  .dag-visual {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 14px;
+    flex-wrap: wrap;
+  }
+  .dag-node {
+    background: rgba(139,92,246,.12);
+    border: 1px solid rgba(139,92,246,.35);
+    border-radius: 8px;
+    padding: 8px 14px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--layer2);
+  }
+  .dag-arrow {
+    color: var(--muted);
+    font-size: 0.9rem;
+  }
+
+  /* ── ReAct Loop circle ── */
+  .react-loop {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+    margin-top: 14px;
+    flex-wrap: wrap;
+  }
+  .react-node {
+    width: 80px; height: 80px;
+    border-radius: 50%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 0.75rem;
+    text-align: center;
+    border: 2px solid;
+  }
+  .react-node.llm  { border-color: var(--layer3); background: rgba(245,158,11,.1); color: var(--layer3); }
+  .react-node.tool { border-color: var(--layer4); background: rgba(16,185,129,.1); color: var(--layer4); }
+  .react-node.obs  { border-color: var(--muted); background: rgba(148,163,184,.1); color: var(--muted); }
+  .react-arrow {
+    color: var(--muted);
+    font-size: 1.4rem;
+    font-weight: 300;
+  }
+
+  /* ── Handoff chain ── */
+  .handoff-chain {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 14px;
+    flex-wrap: wrap;
+  }
+  .handoff-agent {
+    background: rgba(16,185,129,.08);
+    border: 1px solid rgba(16,185,129,.3);
+    border-radius: 10px;
+    padding: 10px 16px;
+    font-weight: 600;
+    font-size: 0.82rem;
+    color: var(--layer4);
+  }
+  .handoff-arrow {
+    color: var(--muted);
+    font-size: 1.1rem;
+  }
+  .handoff-guard {
+    font-size: 0.7rem;
+    color: var(--muted);
+    background: rgba(0,0,0,.2);
+    border-radius: 6px;
+    padding: 2px 8px;
+  }
+
+  /* ── Outcome badges ── */
+  .outcome-row {
+    display: flex;
+    gap: 12px;
+    margin-top: 40px;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+  .outcome {
+    padding: 8px 18px;
+    border-radius: 99px;
+    font-size: 0.82rem;
+    font-weight: 600;
+    border: 1px solid;
+  }
+  .outcome.good { color: var(--layer4); border-color: var(--layer4); }
+  .outcome.warn { color: var(--layer3); border-color: var(--layer3); }
+  .outcome.bad  { color: var(--reject); border-color: var(--reject); }
+
+  @media (max-width: 600px) {
+    .inner-flow, .react-loop, .dag-visual, .handoff-chain { justify-content: flex-start; }
+    .code-block { font-size: 0.7rem; }
+  }
+</style>
+</head>
+<body>
+
+<h1>🏠 House Renting Agent</h1>
+<p class="subtitle">Workflow（Supervisor DAG）+ ReAct（Agent Tool Loop）四层混合架构</p>
+
+<div class="legends">
+  <div class="legend"><span class="legend-dot" style="background:var(--layer1)"></span> 路由决策</div>
+  <div class="legend"><span class="legend-dot" style="background:var(--layer2)"></span> Supervisor DAG</div>
+  <div class="legend"><span class="legend-dot" style="background:var(--layer3)"></span> ReAct Loop</div>
+  <div class="legend"><span class="legend-dot" style="background:var(--layer4)"></span> Handoff</div>
+  <div class="legend"><span class="legend-dot" style="background:var(--fast)"></span> 快速通道</div>
+  <div class="legend"><span class="legend-dot" style="background:var(--reject)"></span> 拒绝/降级</div>
+</div>
+
+<div class="flow">
+
+  <!-- ═══ Layer 1 ═══ -->
+  <div class="layer">
+    <div class="layer-header">
+      <div class="layer-num l1">1</div>
+      <div class="layer-title">路由决策 · Routing Strategy</div>
+      <div class="layer-tag l1">routing-strategy.ts</div>
+    </div>
+
+    <p style="color:var(--muted);font-size:0.88rem;margin-bottom:8px;">5 个信号加权评分 → 决定走<b style="color:var(--fast)">快速通道</b>还是<b style="color:var(--layer2)"> Agent 管道</b></p>
+
+    <div class="signal-grid">
+      <div class="signal-card">
+        <div class="sig-icon">🔧</div>
+        <div class="sig-name">toolCount</div>
+        <div class="sig-weight">权重 25%</div>
+        <div class="sig-val">所需工具数</div>
+      </div>
+      <div class="signal-card">
+        <div class="sig-icon">🎯</div>
+        <div class="sig-name">confidence</div>
+        <div class="sig-weight">权重 30%</div>
+        <div class="sig-val">意图置信度</div>
+      </div>
+      <div class="signal-card">
+        <div class="sig-icon">📏</div>
+        <div class="sig-name">depth</div>
+        <div class="sig-weight">权重 20%</div>
+        <div class="sig-val">任务深度</div>
+      </div>
+      <div class="signal-card">
+        <div class="sig-icon">🔗</div>
+        <div class="sig-name">dependencies</div>
+        <div class="sig-weight">权重 15%</div>
+        <div class="sig-val">依赖数量</div>
+      </div>
+      <div class="signal-card">
+        <div class="sig-icon">❓</div>
+        <div class="sig-name">ambiguity</div>
+        <div class="sig-weight">权重 10%</div>
+        <div class="sig-val">模糊程度</div>
+      </div>
+    </div>
+
+    <div class="code-block">
+<span class="cmt">// 加权评分公式</span>
+<span class="kw">const</span> score = <span class="fn">weightedSum</span>([
+  toolCount    * <span class="num">0.25</span>,
+  confidence   * <span class="num">0.30</span>,
+  depth        * <span class="num">0.20</span>,
+  dependencies * <span class="num">0.15</span>,
+  ambiguity    * <span class="num">0.10</span>
+]);
+
+<span class="kw">const</span> route = score &gt; <span class="num">THRESHOLD</span>
+  ? <span class="str">'agent-pipeline'</span>   <span class="cmt">// → 第2层</span>
+  : <span class="str">'fast-track'</span>;        <span class="cmt">// → 直接回复</span>
+    </div>
+  </div>
+
+  <!-- Branch: Fast Track vs Agent Pipeline -->
+  <div style="display:flex;width:100%;max-width:900px;padding:8px 0;">
+    <div style="flex:1;display:flex;flex-direction:column;align-items:center;">
+      <div class="arrow-line" style="background:var(--fast)"></div>
+      <div class="arrow-head" style="border-top-color:var(--fast)"></div>
+    </div>
+    <div style="flex:1;display:flex;flex-direction:column;align-items:center;">
+      <div class="arrow-line" style="background:var(--layer2)"></div>
+      <div class="arrow-head" style="border-top-color:var(--layer2)"></div>
+    </div>
+  </div>
+
+  <div class="branch-row">
+    <div class="branch-col" style="padding-right:12px;">
+      <div class="branch-card fast">
+        <div class="bc-title">⚡ 快速通道 Fast Track</div>
+        <div class="bc-desc">简单查询、FAQ、单步操作<br>直接 LLM → 回复，不经过 Agent 管道</div>
+      </div>
+    </div>
+    <div class="branch-col" style="padding-left:12px;">
+      <div class="branch-card agent-pipe">
+        <div class="bc-title">🧩 Agent 管道 Agent Pipeline</div>
+        <div class="bc-desc">复杂多步任务、需要工具链<br>进入 Supervisor DAG 编排</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ Layer 2 ═══ -->
+  <div style="width:100%;display:flex;justify-content:center;padding:8px 0;">
+    <div class="arrow-line" style="height:28px;background:var(--layer2)"></div>
+  </div>
+
+  <div class="layer">
+    <div class="layer-header">
+      <div class="layer-num l2">2</div>
+      <div class="layer-title">Supervisor DAG 编排</div>
+      <div class="layer-tag l2">supervisor.ts · Workflow 模式</div>
+    </div>
+
+    <div class="inner-flow">
+      <div class="step">🔍 意图分类</div>
+      <span class="arrow-sm">→</span>
+      <div class="step">📋 关键词匹配</div>
+      <span class="arrow-sm">→</span>
+      <div class="step">🕸️ 构建 DAG</div>
+      <span class="arrow-sm">→</span>
+      <div class="step">📐 拓扑排序</div>
+      <span class="arrow-sm">→</span>
+      <div class="step">🚀 调度 Agent</div>
+    </div>
+
+    <div class="code-block">
+<span class="cmt">// 示例："找 3b2b 带泳池的房子"</span>
+<span class="cmt">// Supervisor 构建 DAG：</span>
+<span class="fn">intent</span>  →  property-search  <span class="cmt">// 先搜房源</span>
+           ↘  graph-enrich      <span class="cmt">// 同时用 Neo4j 做知识图谱扩充</span>
+              ↘  reply           <span class="cmt">// 合并结果 → 生成回复</span>
+
+<span class="cmt">// 拓扑排序：按依赖顺序并行/串行调度</span>
+<span class="kw">const</span> order = <span class="fn">topologicalSort</span>(dag);
+<span class="cmt">// → [property-search, graph-enrich] 并行</span>
+<span class="cmt">// → [reply] 等前两个完成</span>
+    </div>
+
+    <div class="dag-visual">
+      <div class="dag-node" style="background:rgba(59,130,246,.12);border-color:rgba(59,130,246,.35);color:var(--layer1)">🎯 意图识别</div>
+      <span class="dag-arrow">→</span>
+      <div class="dag-node">🏠 property-search</div>
+      <span class="dag-arrow">↘</span>
+      <div class="dag-node" style="background:rgba(245,158,11,.12);border-color:rgba(245,158,11,.35);color:var(--layer3)">💬 reply</div>
+      <div style="display:flex;flex-direction:column;align-items:center;margin-left:-8px;">
+        <span class="dag-arrow" style="margin-left:20px;">↗</span>
+        <div class="dag-node" style="margin-top:-10px;">🕸️ graph-enrich</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ Layer 3 ═══ -->
+  <div style="width:100%;display:flex;justify-content:center;padding:8px 0;">
+    <div class="arrow-line" style="height:28px;"></div>
+  </div>
+
+  <div class="layer">
+    <div class="layer-header">
+      <div class="layer-num l3">3</div>
+      <div class="layer-title">Agent ReAct Loop</div>
+      <div class="layer-tag l3">agent-loop.ts · ReAct 模式</div>
+    </div>
+
+    <p style="color:var(--muted);font-size:0.88rem;margin-bottom:8px;">
+      每个被调度的 Agent 内部独立运行 ReAct 循环，有 <b>token 预算</b> + <b>超时限制</b>
+    </p>
+
+    <div class="react-loop">
+      <div class="react-node llm">🤖<br>LLM</div>
+      <div class="react-arrow">→</div>
+      <div class="react-node tool">🔧<br>MCP 工具</div>
+      <div class="react-arrow">→</div>
+      <div class="react-node obs">👁️<br>观察</div>
+      <div class="react-arrow" style="transform:rotate(180deg);display:inline-block;">→</div>
+      <div style="font-size:0.7rem;color:var(--muted);margin-left:-8px;">loop</div>
+    </div>
+
+    <div class="code-block">
+<span class="cmt">// Agent ReAct 核心循环（伪代码）</span>
+<span class="kw">while</span> (step &lt; maxSteps &amp;&amp; tokensUsed &lt; tokenBudget) {
+  <span class="kw">const</span> thought = <span class="kw">await</span> <span class="fn">llm</span>.think(context, tools);
+  <span class="kw">if</span> (thought.action === <span class="str">'answer'</span>) <span class="kw">break</span>;
+
+  <span class="kw">const</span> result = <span class="kw">await</span> <span class="fn">mcp</span>.callTool(thought.tool, thought.args);
+  context.<span class="fn">push</span>({ role: <span class="str">'observation'</span>, content: result });
+  step++;
+}
+
+<span class="kw">return</span> <span class="kw">await</span> <span class="fn">llm</span>.finalAnswer(context);
+    </div>
+  </div>
+
+  <!-- ═══ Layer 4 ═══ -->
+  <div style="width:100%;display:flex;justify-content:center;padding:8px 0;">
+    <div class="arrow-line" style="height:28px;"></div>
+  </div>
+
+  <div class="layer">
+    <div class="layer-header">
+      <div class="layer-num l4">4</div>
+      <div class="layer-title">Agent Handoff 交接协议</div>
+      <div class="layer-tag l4">handoff.ts · A2A 通信</div>
+    </div>
+
+    <p style="color:var(--muted);font-size:0.88rem;margin-bottom:8px;">
+      Agent 之间自动交接任务，最多 <b>3 层</b>，有环路检测 + 健康检查
+    </p>
+
+    <div class="handoff-chain">
+      <div class="handoff-agent">🔍 搜索 Agent</div>
+      <span class="handoff-arrow">→</span>
+      <div class="handoff-guard">✅ 健康<br>⬇</div>
+      <span class="handoff-arrow">→</span>
+      <div class="handoff-agent">⚖️ 对比 Agent</div>
+      <span class="handoff-arrow">→</span>
+      <div class="handoff-guard">✅ 健康<br>🔍 无环</div>
+      <span class="handoff-arrow">→</span>
+      <div class="handoff-agent">📅 预约 Agent</div>
+    </div>
+
+    <div class="code-block">
+<span class="cmt">// Handoff 协议核心逻辑</span>
+<span class="kw">class</span> <span class="fn">HandoffManager</span> {
+  maxDepth = <span class="num">3</span>;
+  visited = <span class="kw">new</span> <span class="fn">Set</span>&lt;string&gt;();   <span class="cmt">// 环路检测</span>
+
+  <span class="kw">async</span> <span class="fn">handoff</span>(from: Agent, to: Agent, task: Task) {
+    <span class="kw">if</span> (depth &gt;= maxDepth) <span class="kw">throw</span> <span class="str">'Max handoff depth'</span>;
+    <span class="kw">if</span> (visited.has(to.id)) <span class="kw">throw</span> <span class="str">'Cycle detected'</span>;
+    <span class="kw">if</span> (!await <span class="fn">healthCheck</span>(to)) <span class="kw">throw</span> <span class="str">'Target unhealthy'</span>;
+
+    visited.add(to.id);
+    <span class="kw">return</span> <span class="kw">await</span> to.<span class="fn">execute</span>(task);  <span class="cmt">// 目标 Agent 进入自己的 ReAct Loop</span>
+  }
+}
+    </div>
+  </div>
+
+</div>
+
+<!-- ═══ Outcome summary ═══ -->
+<div class="outcome-row">
+  <div class="outcome good">✅ 最终回复用户</div>
+  <div class="outcome good">📊 附带结构化数据</div>
+  <div class="outcome warn">⚠️ 超时降级回复</div>
+  <div class="outcome bad">❌ 3 层 Handoff 上限触发拒绝</div>
+</div>
+
+<p style="color:var(--muted);font-size:0.75rem;margin-top:32px;">
+  对比我们的项目 → 目前是线性 Pipeline，无 Supervisor DAG、无 ReAct Loop、无 Handoff<br>
+  可借鉴方向：MCP 工具层 → DAG 编排 → ReAct Loop → Handoff → 路由策略，参考 [[ai-agent-architecture]] 四阶段路线
+</p>
+
+</body>
+</html>

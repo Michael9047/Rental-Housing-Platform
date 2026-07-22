@@ -19,7 +19,7 @@ def test_sms_service_skip_without_config():
     assert settings.sms_access_key_id == "", "Expected empty SMS_ACCESS_KEY_ID in test env"
     assert settings.sms_access_key_secret == "", "Expected empty SMS_ACCESS_KEY_SECRET in test env"
 
-    result = asyncio.run(svc.send(phone_number="13800138000"))
+    result = asyncio.run(svc.send_verification_code(phone_number="13800138000", code="123456"))
     assert result["status"] == "skipped", f"Expected skipped, got {result}"
     assert "not configured" in result["reason"]
     print("  PASS  SMS service skip without config")
@@ -30,7 +30,7 @@ def test_sms_service_skip_without_phone():
     from app.services.sms_service import SmsService
 
     svc = SmsService()
-    result = asyncio.run(svc.send(phone_number=""))
+    result = asyncio.run(svc.send_verification_code(phone_number="", code="123456"))
     assert result["status"] == "skipped"
     assert result["reason"] == "no phone number"
     print("  PASS  SMS service skip without phone")
@@ -130,8 +130,62 @@ def test_booking_status_notification_mapping():
     print("  PASS  Booking status notification mapping")
 
 
+def test_notify_sms_service_skip_without_config():
+    """通知短信服务在未配置时静默跳过。"""
+    from app.services.notification_sms_service import NotificationSmsService
+
+    svc = NotificationSmsService()
+    result = asyncio.run(svc.send(
+        phone_number="13800138000",
+        notification_type="booking_created",
+        title="测试",
+        content="测试通知",
+    ))
+    assert result["status"] == "skipped", f"Expected skipped, got {result}"
+    print("  PASS  Notify SMS service skip without config")
+
+
+def test_notify_sms_service_skip_without_phone():
+    """通知短信服务在无手机号时跳过。"""
+    from app.services.notification_sms_service import NotificationSmsService
+
+    svc = NotificationSmsService()
+    result = asyncio.run(svc.send(
+        phone_number="",
+        notification_type="booking_created",
+        title="测试",
+        content="测试通知",
+    ))
+    assert result["status"] == "skipped"
+    assert result["reason"] == "no phone number"
+    print("  PASS  Notify SMS service skip without phone")
+
+
+def test_notify_sms_skip_without_template():
+    """通知短信服务在未配置模板映射时跳过。"""
+    from app.services.notification_sms_service import NotificationSmsService
+    from app.core.config import get_settings
+
+    settings = get_settings()
+    # 模拟 AK 已配置但模板映射为空
+    if not settings.sms_notify_access_key_id:
+        print("  SKIP Notify SMS no-template test (no AK configured)")
+        return
+
+    svc = NotificationSmsService()
+    result = asyncio.run(svc.send(
+        phone_number="13800138000",
+        notification_type="unknown_fake_type",
+        title="测试",
+        content="测试通知",
+    ))
+    assert result["status"] == "skipped"
+    assert "no template" in result["reason"]
+    print("  PASS  Notify SMS skip without template")
+
+
 def test_config_has_new_fields():
-    """Settings object includes all new SMS and Email config fields."""
+    """Settings object includes all SMS and Email config fields."""
     from app.core.config import get_settings
 
     settings = get_settings()
@@ -139,12 +193,17 @@ def test_config_has_new_fields():
         "sms_provider", "sms_access_key_id", "sms_access_key_secret",
         "sms_sign_name", "sms_template_code", "sms_endpoint",
     ]
+    sms_notify_fields = [
+        "sms_notify_access_key_id", "sms_notify_access_key_secret",
+        "sms_notify_sign_name", "sms_notify_endpoint",
+        "sms_notify_template_map",
+    ]
     email_fields = [
         "smtp_host", "smtp_port", "smtp_user", "smtp_password",
         "smtp_from_name", "smtp_from_email", "smtp_use_tls",
     ]
 
-    for field in sms_fields + email_fields:
+    for field in sms_fields + sms_notify_fields + email_fields:
         assert hasattr(settings, field), f"Missing config field: {field}"
 
     print("  PASS  Config has all new fields")
@@ -156,6 +215,9 @@ if __name__ == "__main__":
     tests = [
         ("SMS skip without config", test_sms_service_skip_without_config),
         ("SMS skip without phone", test_sms_service_skip_without_phone),
+        ("NotifySMS skip without config", test_notify_sms_service_skip_without_config),
+        ("NotifySMS skip without phone", test_notify_sms_service_skip_without_phone),
+        ("NotifySMS skip without template", test_notify_sms_skip_without_template),
         ("Email skip without config", test_email_service_skip_without_config),
         ("Email skip without email", test_email_service_skip_without_email),
         ("Channel metadata", test_notification_channel_metadata),
