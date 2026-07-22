@@ -10,6 +10,9 @@ from functools import lru_cache
 # ═══════════════════════════════════════════════════════
 
 NPC_CODE_MAP: dict[str, str] = {
+    # Non-residential (no crime data, fall back to nearest)
+    "M-Sect": "",   # Marina Bay sector
+    "APD": "",      # Airport Police Division
     # Central Division
     "MB-NPC": "Central Police Division - Marina Bay NPC",
     "BE-NPC": "Central Police Division - Bukit Merah East NPC",

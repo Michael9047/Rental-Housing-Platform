@@ -285,7 +285,11 @@ class SafetyScoringService:
         """对单个新加坡房源评分"""
         # Point-in-Polygon 精确匹配 NPC，失败回退到最近邻
         npc_code = find_npc_by_boundary(lat, lng)
-        npc = NPC_CODE_MAP.get(npc_code or "", "") if npc_code else ""
+        if npc_code:
+            npc = NPC_CODE_MAP.get(npc_code, "")
+        if not npc_code or not npc:
+            npc = _fallback_nearest_npc(lat, lng)
+            logger.info("边界匹配失败 (%.4f, %.4f)，回退最近邻: %s", lat, lng, npc)
 
         # 从数据中查找 NPC 记录
         crime_rec = crime_data.get(npc, {})
@@ -364,6 +368,52 @@ class SafetyScoringService:
 # ═══════════════════════════════════════════════════════
 # 工具函数
 # ═══════════════════════════════════════════════════════
+
+# 最近邻回退——NPC 名称 → 近似中心坐标
+_FALLBACK_NPC_CENTERS: dict[str, tuple[float, float]] = {
+    "Clementi Police Division - Clementi NPC": (1.3152, 103.7648),
+    "Clementi Police Division - Queenstown NPC": (1.2940, 103.8000),
+    "Clementi Police Division - Bukit Merah West NPC": (1.2850, 103.8150),
+    "Clementi Police Division - Jurong East NPC": (1.3329, 103.7436),
+    "Tanglin Police Division - Orchard NPC": (1.3048, 103.8318),
+    "Tanglin Police Division - Bishan NPC": (1.3509, 103.8488),
+    "Tanglin Police Division - Toa Payoh NPC": (1.3343, 103.8563),
+    "Tanglin Police Division - Kampong Java NPC": (1.3100, 103.8450),
+    "Tanglin Police Division - Bukit Timah NPC": (1.3294, 103.8021),
+    "Bedok Police Division - Tampines NPC": (1.3531, 103.9443),
+    "Bedok Police Division - Bedok NPC": (1.3236, 103.9303),
+    "Bedok Police Division - Changi NPC": (1.3430, 103.9620),
+    "Bedok Police Division - Geylang NPC": (1.3179, 103.8874),
+    "Bedok Police Division - Marine Parade NPC": (1.3030, 103.9080),
+    "Bedok Police Division - Pasir Ris NPC": (1.3739, 103.9523),
+    "Ang Mo Kio Police Division - Ang Mo Kio North NPC": (1.3750, 103.8470),
+    "Ang Mo Kio Police Division - Ang Mo Kio South NPC": (1.3630, 103.8450),
+    "Ang Mo Kio Police Division - Sengkang NPC": (1.3906, 103.8900),
+    "Ang Mo Kio Police Division - Punggol NPC": (1.4010, 103.9075),
+    "Ang Mo Kio Police Division - Woodleigh NPC": (1.3390, 103.8710),
+    "Central Police Division - Marina Bay NPC": (1.2806, 103.8570),
+    "Central Police Division - Bukit Merah East NPC": (1.2821, 103.8266),
+    "Central Police Division - Rochor NPC": (1.3040, 103.8530),
+    "Jurong Police Division - Jurong West NPC": (1.3404, 103.7065),
+    "Jurong Police Division - Bukit Batok NPC": (1.3491, 103.7496),
+    "Jurong Police Division - Choa Chu Kang NPC": (1.3840, 103.7440),
+    "Jurong Police Division - Nanyang NPC": (1.3480, 103.6830),
+    "Woodlands Police Division - Sembawang NPC": (1.4510, 103.8210),
+    "Woodlands Police Division - Woodlands West NPC": (1.4330, 103.7750),
+    "Woodlands Police Division - Woodlands East NPC": (1.4420, 103.7960),
+    "Woodlands Police Division - Yishun North NPC": (1.4360, 103.8350),
+}
+
+def _fallback_nearest_npc(lat: float, lng: float) -> str:
+    """边界匹配失败时，回退到最近 NPC 中心坐标"""
+    best_npc = ""
+    best_dist = float("inf")
+    for npc_name, (npc_lat, npc_lng) in _FALLBACK_NPC_CENTERS.items():
+        d = _hav_distance(lat, lng, npc_lat, npc_lng)
+        if d < best_dist:
+            best_dist = d
+            best_npc = npc_name
+    return best_npc
 
 def _hav_distance(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
     """Haversine 距离（米）"""
