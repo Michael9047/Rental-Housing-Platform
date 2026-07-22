@@ -400,16 +400,10 @@ class PropertyService:
         except Exception:
             logger.exception("Failed to refresh POI for property %s", property_obj.id)
 
-<<<<<<< HEAD
-        await self._ensure_embedding(property_obj)
-        await _bump_search_cache_version()
-=======
         self._dispatch_embedding_task(property_obj.id)
 
         await self._audit(property_obj.landlord_id, "property_update", property_obj.id,
                           {"title": property_obj.title, "changed_fields": list(update_data.keys())})
-
->>>>>>> origin/main
         return property_obj
 
     async def delete(self, property_id: int) -> bool:
