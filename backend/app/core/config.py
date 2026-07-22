@@ -204,6 +204,7 @@ class Settings(BaseSettings):
     )
 
     upload_dir: str = Field(default="./uploads", validation_alias="UPLOAD_DIR")
+    private_object_dir: str = Field(default="./private_objects", validation_alias="PRIVATE_OBJECT_DIR")
     max_upload_size: int = Field(default=5 * 1024 * 1024, validation_alias="MAX_UPLOAD_SIZE")
     allowed_image_types: list[str] = Field(
         default=["image/jpeg", "image/png", "image/webp"],
@@ -271,6 +272,8 @@ class Settings(BaseSettings):
         default=True,
         validation_alias="SMTP_USE_TLS",
     )
+    email_delivery_mode: str = Field(default="mailpit", validation_alias="EMAIL_DELIVERY_MODE")
+    support_email: str = Field(default="support@localhost", validation_alias="SUPPORT_EMAIL")
 
     # Email (Alibaba Cloud DirectMail) — 主引擎，支持附件
     dm_access_key_id: str = Field(default="", validation_alias="DM_ACCESS_KEY_ID")
@@ -311,6 +314,28 @@ class Settings(BaseSettings):
         default="http://localhost:5173",
         validation_alias="FRONTEND_URL",
     )
+    payment_provider: str = Field(default="mock_hosted", validation_alias="PAYMENT_PROVIDER")
+    payment_mock_webhook_secret: str = Field(default="local-test-only-change-me", validation_alias="PAYMENT_MOCK_WEBHOOK_SECRET")
+    payment_mock_merchant_account: str = Field(default="mock_test_account", validation_alias="PAYMENT_MOCK_MERCHANT_ACCOUNT")
+    payments_live_enabled: bool = Field(default=False, validation_alias="PAYMENTS_LIVE_ENABLED")
+    wechat_pay_merchant_id: str = Field(default="", validation_alias="WECHAT_PAY_MERCHANT_ID")
+    wechat_pay_app_id: str = Field(default="", validation_alias="WECHAT_PAY_APP_ID")
+    wechat_pay_api_v3_key: str = Field(default="", validation_alias="WECHAT_PAY_API_V3_KEY")
+    wechat_pay_cert_serial_no: str = Field(default="", validation_alias="WECHAT_PAY_CERT_SERIAL_NO")
+    wechat_pay_private_key_path: str = Field(default="", validation_alias="WECHAT_PAY_PRIVATE_KEY_PATH")
+    wechat_pay_notify_url: str = Field(default="", validation_alias="WECHAT_PAY_NOTIFY_URL")
+    alipay_app_id: str = Field(default="", validation_alias="ALIPAY_APP_ID")
+    alipay_private_key_path: str = Field(default="", validation_alias="ALIPAY_PRIVATE_KEY_PATH")
+    alipay_public_key_path: str = Field(default="", validation_alias="ALIPAY_PUBLIC_KEY_PATH")
+    alipay_notify_url: str = Field(default="", validation_alias="ALIPAY_NOTIFY_URL")
+    alipay_return_url: str = Field(default="", validation_alias="ALIPAY_RETURN_URL")
+    card_provider: str = Field(default="", validation_alias="CARD_PROVIDER")
+    card_secret_key: str = Field(default="", validation_alias="CARD_SECRET_KEY")
+    card_publishable_key: str = Field(default="", validation_alias="CARD_PUBLISHABLE_KEY")
+    card_webhook_secret: str = Field(default="", validation_alias="CARD_WEBHOOK_SECRET")
+    card_success_url: str = Field(default="", validation_alias="CARD_SUCCESS_URL")
+    card_cancel_url: str = Field(default="", validation_alias="CARD_CANCEL_URL")
+    contract_expiring_soon_days: int = Field(default=30, validation_alias="CONTRACT_EXPIRING_SOON_DAYS")
 
 
 @lru_cache
