@@ -1,0 +1,629 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Agent 工作流全景图 — 6 Agent 逐个拆解</title>
+<style>
+  :root {
+    --bg: #0f1117; --card: #161822; --border: #252836;
+    --text: #cdd6f4; --muted: #6c7086; --accent: #89b4fa;
+    --green: #a6e3a1; --red: #f38ba8; --yellow: #f9e2af;
+    --orange: #fab387; --purple: #cba6f7; --teal: #94e2d5;
+    --blue: #74c7ec; --pink: #f5c2e7;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { background:var(--bg); color:var(--text); font:14px/1.6 system-ui,sans-serif; padding:20px; }
+  h1 { font-size:28px; margin-bottom:4px; }
+  h2 { font-size:20px; margin:32px 0 12px; padding-bottom:8px; border-bottom:2px solid var(--border); }
+  h3 { font-size:16px; margin:16px 0 8px; }
+  .subtitle { color:var(--muted); margin-bottom:24px; }
+
+  .badge { display:inline-block; padding:2px 10px; border-radius:10px; font-size:11px; font-weight:600; }
+  .b-real { background:#1a3824; color:var(--green); }
+  .b-stub { background:#3a1a1a; color:var(--red); }
+  .b-rule { background:#1a2a38; color:var(--blue); }
+  .b-llm { background:#2a1a38; color:var(--purple); }
+
+  .verdict { padding:12px 16px; border-radius:8px; margin:12px 0; font-weight:600; }
+  .v-yes { background:#1a3824; color:var(--green); border:1px solid #2a5840; }
+  .v-warn { background:#3a3a1a; color:var(--yellow); border:1px solid #5a5a2a; }
+  .v-no { background:#3a1a1a; color:var(--red); border:1px solid #5a2a2a; }
+
+  .grid-2 { display:grid; grid-template-columns:1fr 1fr; gap:20px; }
+  .grid-3 { display:grid; grid-template-columns:repeat(3,1fr); gap:20px; }
+
+  .card { background:var(--card); border:1px solid var(--border); border-radius:10px; padding:20px; }
+  .card.green { border-color:#1a3824; }
+  .card.blue { border-color:#1a2a38; }
+  .card.purple { border-color:#2a1a38; }
+  .card.red { border-color:#3a1a1a; }
+  .card.teal { border-color:#1a3838; }
+  .card.orange { border-color:#3a2a1a; }
+
+  .card-header { display:flex; align-items:center; gap:8px; margin-bottom:12px; }
+  .agent-num { width:28px; height:28px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-weight:800; font-size:14px; }
+  .agent-name { font-size:18px; font-weight:700; }
+
+  /* Flow chart */
+  .flow { display:flex; align-items:center; gap:8px; flex-wrap:wrap; padding:12px 0; font-family:'JetBrains Mono','Fira Code',monospace; font-size:12px; }
+  .flow-node { padding:6px 12px; border-radius:6px; font-weight:600; white-space:nowrap; font-size:12px; }
+  .flow-arrow { color:var(--muted); font-size:14px; }
+  .fn-input { background:#1a1a2a; color:var(--text); border:1px solid #2a2a4a; }
+  .fn-llm { background:#2a1a38; color:var(--purple); border:1px solid #4a2a5a; }
+  .fn-db { background:#1a2a38; color:var(--blue); border:1px solid #1e3a5a; }
+  .fn-api { background:#1a3828; color:var(--green); border:1px solid #1e4a3a; }
+  .fn-code { background:#2a2a1a; color:var(--yellow); border:1px solid #4a4a1e; }
+  .fn-out { background:#1a2830; color:var(--teal); border:1px solid #1e3a4a; }
+
+  /* Step list */
+  .steps { list-style:none; }
+  .steps li { padding:8px 0; border-bottom:1px solid var(--border); display:flex; align-items:flex-start; gap:10px; }
+  .steps li:last-child { border-bottom:none; }
+  .step-num { min-width:26px; height:26px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:700; flex-shrink:0; }
+  .step-num.llm { background:#2a1a38; color:var(--purple); }
+  .step-num.db { background:#1a2a38; color:var(--blue); }
+  .step-num.api { background:#1a3828; color:var(--green); }
+  .step-num.code { background:#2a2a1a; color:var(--yellow); }
+  .step-num.rule { background:#1a2838; color:var(--teal); }
+  .step-content { flex:1; }
+  .step-title { font-weight:600; }
+  .step-detail { color:var(--muted); font-size:12px; }
+
+  /* Comparison table */
+  table { width:100%; border-collapse:collapse; font-size:13px; margin:12px 0; }
+  th { text-align:left; padding:8px 10px; border-bottom:2px solid var(--border); color:var(--accent); font-size:11px; text-transform:uppercase; }
+  td { padding:8px 10px; border-bottom:1px solid var(--border); vertical-align:top; }
+  tr:hover td { background:rgba(255,255,255,0.02); }
+
+  .section-nav { position:sticky; top:8px; background:var(--card); border:1px solid var(--border); border-radius:10px; padding:12px 16px; margin-bottom:24px; display:flex; gap:16px; flex-wrap:wrap; z-index:10; }
+  .section-nav a { color:var(--accent); text-decoration:none; font-size:13px; }
+  .section-nav a:hover { text-decoration:underline; }
+
+  @media (max-width:900px) {
+    .grid-2,.grid-3 { grid-template-columns:1fr; }
+    .flow { flex-direction:column; align-items:flex-start; }
+    .flow-arrow { transform:rotate(90deg); }
+  }
+</style>
+</head>
+<body>
+
+<div class="section-nav">
+  <strong>🔍 导航</strong>
+  <a href="#overview">总览</a>
+  <a href="#filter">① Filter</a>
+  <a href="#search">② Search</a>
+  <a href="#synthesizer">③ Synthesizer</a>
+  <a href="#compare">④ Compare</a>
+  <a href="#cart">⑤ Cart</a>
+  <a href="#faq">⑥ FAQ</a>
+  <a href="#verdict">结论</a>
+</div>
+
+<h1>🏗️ 租房 AI Agent 工作流全景</h1>
+<p class="subtitle">基于源码逆向 | 2026-07-22 | 每个 Agent 都是 Workflow，无自主决策能力</p>
+
+<div class="verdict v-warn">
+  ⚠️ 核心结论：所有 6 个 Agent 本质都是确定性 Pipeline（workflow）。无 ReAct 循环（SearchAgent 虽有 handle_with_react 但 P0 重构后改为直接执行）。Compare/Cart Agent 是 stub 空壳，真实逻辑在 AgentService 单体里。
+</div>
+
+<!-- ═══════════════════════ OVERVIEW ═══════════════════════ -->
+<h2 id="overview">📊 六 Agent 总览</h2>
+
+<table>
+<tr>
+  <th>#</th><th>Agent</th><th>文件</th><th>类型</th><th>LLM 调用</th><th>核心逻辑</th><th>工具数</th>
+</tr>
+<tr>
+  <td>①</td><td><strong>FilterAgent</strong></td>
+  <td><code>filter_agent.py</code> (197行)</td>
+  <td><span class="badge b-real">真实</span></td>
+  <td>1 次 <code>complete_json</code></td>
+  <td>LLM 提取结构化条件 + 规则规范化</td>
+  <td>2</td>
+</tr>
+<tr>
+  <td>②</td><td><strong>SearchAgent</strong></td>
+  <td><code>search_agent.py</code> (98行)</td>
+  <td><span class="badge b-real">真实</span></td>
+  <td>0-1 次（直接委托）</td>
+  <td>委托 AgentService.recommend_properties()</td>
+  <td>8（未使用）</td>
+</tr>
+<tr>
+  <td>③</td><td><strong>SynthesizerAgent</strong></td>
+  <td><code>synthesizer_agent.py</code> (82行)</td>
+  <td><span class="badge b-real">真实</span></td>
+  <td>1 次 <code>complete_text</code></td>
+  <td>按漏斗阶段选语气，LLM 生成回复</td>
+  <td>0</td>
+</tr>
+<tr>
+  <td>④</td><td><strong>CompareAgent</strong></td>
+  <td><code>compare_agent.py</code> (19行)</td>
+  <td><span class="badge b-stub">Stub</span></td>
+  <td>0</td>
+  <td>只返回占位文本，真逻辑在 AgentService</td>
+  <td>4（未实现）</td>
+</tr>
+<tr>
+  <td>⑤</td><td><strong>CartAgent</strong></td>
+  <td><code>cart_agent.py</code> (16行)</td>
+  <td><span class="badge b-stub">Stub</span></td>
+  <td>0</td>
+  <td>只返回占位文本，真逻辑在 AgentService</td>
+  <td>0</td>
+</tr>
+<tr>
+  <td>⑥</td><td><strong>FAQAgent</strong></td>
+  <td><code>faq_agent.py</code> (44行)</td>
+  <td><span class="badge b-rule">规则</span></td>
+  <td>0</td>
+  <td>纯关键词匹配，无 AI</td>
+  <td>0</td>
+</tr>
+</table>
+
+<!-- ═══════════════════════ ① FILTER ═══════════════════════ -->
+<h2 id="filter">① FilterAgent — NL → 结构化条件</h2>
+
+<div class="grid-2">
+<div class="card purple">
+  <div class="card-header">
+    <div class="agent-num" style="background:#2a1a38;color:var(--purple)">①</div>
+    <span class="agent-name">FilterAgent</span>
+    <span class="badge b-llm">1×LLM JSON</span>
+  </div>
+  <p style="color:var(--muted);font-size:13px;margin-bottom:12px">从自然语言提取结构化筛选条件，区分硬约束 vs 软偏好</p>
+
+  <div class="flow">
+    <div class="flow-node fn-input">📝 用户消息</div>
+    <span class="flow-arrow">→</span>
+    <div class="flow-node fn-llm">🤖 LLM complete_json</div>
+    <span class="flow-arrow">→</span>
+    <div class="flow-node fn-code">🔧 规则规范化</div>
+    <span class="flow-arrow">→</span>
+    <div class="flow-node fn-out">📋 {district, price, amenities…}</div>
+  </div>
+
+  <ol class="steps">
+    <li>
+      <div class="step-num llm">1</div>
+      <div class="step-content">
+        <div class="step-title">注入上轮条件（如存在）</div>
+        <div class="step-detail">将 prev_filters 序列化为 JSON 注入 FILTER_PROMPT 的 {PREV_FILTERS_PLACEHOLDER}</div>
+      </div>
+    </li>
+    <li>
+      <div class="step-num llm">2</div>
+      <div class="step-content">
+        <div class="step-title">LLM 单次调用 complete_json</div>
+        <div class="step-detail">temperature=0.0, max_tokens=500。Prompt 含 6 个 Few-Shot 示例 + 上下文合并规则</div>
+      </div>
+    </li>
+    <li>
+      <div class="step-num code">3</div>
+      <div class="step-content">
+        <div class="step-title">_normalize_amenities() 规则规范化</div>
+        <div class="step-detail">用户口语→标准值映射（"养猫"→"宠物友好"，19条规则）</div>
+      </div>
+    </li>
+    <li>
+      <div class="step-num code">4</div>
+      <div class="step-content">
+        <div class="step-title">返回 AgentResult(data=filters_dict)</div>
+        <div class="step-detail">含 hard_filters / soft_preferences 分类，供后续放宽决策使用</div>
+      </div>
+    </li>
+  </ol>
+</div>
+
+<div class="card" style="border-color:#2a1a38">
+  <h3>🔍 关键细节</h3>
+  <ul style="list-style:none;font-size:13px">
+    <li style="padding:6px 0;border-bottom:1px solid var(--border)">✅ <strong>跨轮上下文合并</strong>：上轮条件注入 prompt，LLM 判断"增量修改/追加/移除/重置"</li>
+    <li style="padding:6px 0;border-bottom:1px solid var(--border)">✅ <strong>硬约束 vs 软偏好</strong>：amenities/room_type/commute=硬约束，price/district/area=软偏好（LLM 判断）</li>
+    <li style="padding:6px 0;border-bottom:1px solid var(--border)">✅ <strong>设施映射表</strong>：19 组口语→标准值映射（如 "养猫/养狗"→"宠物友好"）</li>
+    <li style="padding:6px 0;border-bottom:1px solid var(--border)">⚠️ <strong>无 ReAct</strong>：handle() 直接覆盖，不走父类 handle_with_react()</li>
+    <li style="padding:6px 0">⚠️ <strong>LLM 不可用=空 JSON</strong>：降级策略是返回 {}，不做规则兜底</li>
+  </ul>
+</div>
+</div>
+
+<!-- ═══════════════════════ ② SEARCH ═══════════════════════ -->
+<h2 id="search">② SearchAgent — 房源检索 + 渐进放宽</h2>
+
+<div class="grid-2">
+<div class="card blue">
+  <div class="card-header">
+    <div class="agent-num" style="background:#1a2a38;color:var(--blue)">②</div>
+    <span class="agent-name">SearchAgent</span>
+    <span class="badge b-real">委托型</span>
+  </div>
+  <p style="color:var(--muted);font-size:13px;margin-bottom:12px">表面是 ReAct Agent，实际委托 AgentService.recommend_properties() 单体执行</p>
+
+  <div class="flow">
+    <div class="flow-node fn-input">📝 用户消息 + filters</div>
+    <span class="flow-arrow">→</span>
+    <div class="flow-node fn-code">🔀 路由判断</div>
+    <span class="flow-arrow">→</span>
+    <div class="flow-node fn-db">🗄️ AgentService</div>
+    <span class="flow-arrow">→</span>
+    <div class="flow-node fn-out">📦 房源列表 + Top 3</div>
+  </div>
+
+  <ol class="steps">
+    <li>
+      <div class="step-num db">1</div>
+      <div class="step-content">
+        <div class="step-title">receive: 用户消息 + 前端 filters + 上轮 extracted_filters</div>
+        <div class="step-detail">前端 filters 优先级高于 LLM 提取的 extracted</div>
+      </div>
+    </li>
+    <li>
+      <div class="step-num db">2</div>
+      <div class="step-content">
+        <div class="step-title">extract_filters (LLM)：结构化条件提取</div>
+        <div class="step-detail">temperature=0.0, 设施映射 21 条规则, 通勤推断规则, ±10% 价格区间</div>
+      </div>
+    </li>
+    <li>
+      <div class="step-num db">3</div>
+      <div class="step-content">
+        <div class="step-title">_lookup_institution: 学校→坐标</div>
+        <div class="step-detail">精匹配 abbreviation → ILIKE name → ILIKE abbreviation，三级回退</div>
+      </div>
+    </li>
+    <li>
+      <div class="step-num db">4a</div>
+      <div class="step-content">
+        <div class="step-title">分支 A：有机构坐标 → _geo_search</div>
+        <div class="step-detail">Haversine 精筛，radius 3→5→10→20→50km 渐进放宽</div>
+      </div>
+    </li>
+    <li>
+      <div class="step-num db">4b</div>
+      <div class="step-content">
+        <div class="step-title">分支 B：无坐标 → _search_with_relaxation</div>
+        <div class="step-detail">逐级放宽 district→property_type→bedrooms→price_max，英文关键词兜底</div>
+      </div>
+    </li>
+    <li>
+      <div class="step-num api">5</div>
+      <div class="step-content">
+        <div class="step-title">(可选) _filter_by_commute：路线 API 过滤</div>
+        <div class="step-detail">多引擎降级链：主API→备选API→ORS→Haversine 兜底。4 级渐进放宽</div>
+      </div>
+    </li>
+    <li>
+      <div class="step-num code">6</div>
+      <div class="step-content">
+        <div class="step-title">_score_properties: 确定性评分</div>
+        <div class="step-detail">price×0.40 + space×0.20 + facility×0.20 + base×0.20。选 Top 3</div>
+      </div>
+    </li>
+    <li>
+      <div class="step-num code">7</div>
+      <div class="step-content">
+        <div class="step-title">safe_fallback_check: 安全兜底判断</div>
+        <div class="step-detail">结果为空/过少/得分断层→生成兜底建议（放宽预算/区域/户型）</div>
+      </div>
+    </li>
+    <li>
+      <div class="step-num llm">8</div>
+      <div class="step-content">
+        <div class="step-title">LLM 生成推荐回复（基于 Top 3）</div>
+        <div class="step-detail">RECOMMEND_SYSTEM_PROMPT 含 3 个 Few-Shot（结果充足/偏少/无结果），150-250字口语</div>
+      </div>
+    </li>
+  </ol>
+</div>
+
+<div class="card" style="border-color:#1a2a38">
+  <h3>🔍 关键细节</h3>
+  <ul style="list-style:none;font-size:13px">
+    <li style="padding:6px 0;border-bottom:1px solid var(--border)">⚠️ <strong>search_direct() 是 fast path</strong>：不走 ReAct，直接委托 AgentService</li>
+    <li style="padding:6px 0;border-bottom:1px solid var(--border)">⚠️ <strong>handle() 有 ReAct 壳但未实际使用</strong>：P0 重构后全部改为直接执行</li>
+    <li style="padding:6px 0;border-bottom:1px solid var(--border)">✅ <strong>渐进放宽 4 级</strong>：district→property_type→bedrooms→price×1.2，保障不空结果</li>
+    <li style="padding:6px 0;border-bottom:1px solid var(--border)">✅ <strong>多引擎通勤降级</strong>：主API→备选→ORS→Haversine 4 级</li>
+    <li style="padding:6px 0;border-bottom:1px solid var(--border)">✅ <strong>一致性校验</strong>：_validate_recommendations 丢弃 LLM 幻觉（不在候选快照中的 ID）</li>
+    <li style="padding:6px 0">✅ <strong>评分公式</strong>：price×0.40 + space×0.20 + facility×0.20 + base×0.20（纯确定性，非 LLM 评分）</li>
+  </ul>
+</div>
+</div>
+
+<!-- ═══════════════════════ ③ SYNTHESIZER ═══════════════════════ -->
+<h2 id="synthesizer">③ SynthesizerAgent — 漏斗阶段语调适配</h2>
+
+<div class="grid-2">
+<div class="card teal">
+  <div class="card-header">
+    <div class="agent-num" style="background:#1a3830;color:var(--teal)">③</div>
+    <span class="agent-name">SynthesizerAgent</span>
+    <span class="badge b-llm">1×LLM Text</span>
+  </div>
+  <p style="color:var(--muted);font-size:13px;margin-bottom:12px">按搜索漏斗阶段（5级）选择不同语气 prompt，单次 LLM 调用生成回复</p>
+
+  <div class="flow">
+    <div class="flow-node fn-input">📊 context.search_state</div>
+    <span class="flow-arrow">→</span>
+    <div class="flow-node fn-code">🏷️ 读漏斗阶段</div>
+    <span class="flow-arrow">→</span>
+    <div class="flow-node fn-llm">🤖 LLM complete_text</div>
+    <span class="flow-arrow">→</span>
+    <div class="flow-node fn-out">💬 口语推荐回复</div>
+  </div>
+
+  <ol class="steps">
+    <li>
+      <div class="step-num code">1</div>
+      <div class="step-content">
+        <div class="step-title">读取漏斗阶段 (search_state.funnel_stage)</div>
+        <div class="step-detail">5 种：explore → calibrate → narrow → compare → decide</div>
+      </div>
+    </li>
+    <li>
+      <div class="step-num code">2</div>
+      <div class="step-content">
+        <div class="step-title">选择对应 STAGE_TONES 语气 prompt</div>
+        <div class="step-detail">每阶段有专用语调规则。例如 narrow: "逐套分析匹配度，突出差异化优势，给出明确排序"</div>
+      </div>
+    </li>
+    <li>
+      <div class="step-num llm">3</div>
+      <div class="step-content">
+        <div class="step-title">LLM single call complete_text()</div>
+        <div class="step-detail">max_tokens=300。口语化中文，1-3句话。无 Few-Shot（prompt 内嵌语调说明）</div>
+      </div>
+    </li>
+  </ol>
+</div>
+
+<div class="card" style="border-color:#1a3830">
+  <h3>🎯 5 级漏斗阶段 → 语气</h3>
+  <table style="font-size:12px">
+    <tr><th>阶段</th><th>含义</th><th>语气策略</th></tr>
+    <tr><td>explore</td><td>刚开始探索</td><td>市场快照，引导细化条件</td></tr>
+    <tr><td>calibrate</td><td>了解行情</td><td>解释价位差异，建立预算预期</td></tr>
+    <tr><td>narrow</td><td>已明确条件</td><td>逐套分析，差异化排序</td></tr>
+    <tr><td>compare</td><td>最终决策</td><td>果断推荐，指出 trade-off</td></tr>
+    <tr><td>decide</td><td>接近确定</td><td>确认选择 + 引导下一步</td></tr>
+  </table>
+</div>
+</div>
+
+<!-- ═══════════════════════ ④ COMPARE ═══════════════════════ -->
+<h2 id="compare">④ CompareAgent — Stub 空壳</h2>
+
+<div class="card red">
+  <div class="card-header">
+    <div class="agent-num" style="background:#3a1a1a;color:var(--red)">④</div>
+    <span class="agent-name">CompareAgent</span>
+    <span class="badge b-stub">Stub</span>
+  </div>
+
+  <div class="verdict v-no">
+    ⚠️ 这是空壳！19 行代码，handle() 只返回占位文本。真实对比逻辑在 AgentService.compare_cart() 里。
+  </div>
+
+  <pre style="background:#0a0b10;padding:12px;border-radius:8px;font-size:12px;color:var(--red)">
+class CompareAgent(BaseAgent):
+    name = "compare_agent"
+    description = "多维度房源对比（价格/通勤/空间/评价）。保持现有逻辑不变。"
+    tools = ["compare_dimensions", "cart_view", "poi_lookup", "commute_calc"]
+
+    async def handle(self, context: AgentContext) -> AgentResult:
+        """委托现有 AgentService.compare_cart()。"""
+        return AgentResult(
+            content="对比功能请通过 AgentService.compare_cart() 调用。",
+            success=True,
+        )</pre>
+
+  <h3 style="margin-top:16px">真实对比流程（在 AgentService 里）：</h3>
+  <div class="flow">
+    <div class="flow-node fn-input">📋 property_ids</div>
+    <span class="flow-arrow">→</span>
+    <div class="flow-node fn-db">🗄️ 加载 Property</div>
+    <span class="flow-arrow">→</span>
+    <div class="flow-node fn-db">📊 聚合 POI+评价</div>
+    <span class="flow-arrow">→</span>
+    <div class="flow-node fn-code">📐 compute_scores (加权)</div>
+    <span class="flow-arrow">→</span>
+    <div class="flow-node fn-llm">🤖 LLM 解释优劣势</div>
+    <span class="flow-arrow">→</span>
+    <div class="flow-node fn-out">📊 七维对比分析</div>
+  </div>
+  <p style="color:var(--muted);font-size:12px;margin-top:8px">
+    评分与解释分离：compute_scores() 用真实数据算出确定性的加权分（通勤×0.35 + 设施×0.20 + 价格×0.20 + 空间×0.15 + 评价×0.10）。LLM 只负责解释不能改分数。LLM 不可用时降级为 _rule_based_compare() 规则模板生成解释，分数完全一致。
+  </p>
+</div>
+
+<!-- ═══════════════════════ ⑤ CART ═══════════════════════ -->
+<h2 id="cart">⑤ CartAgent — Stub 空壳</h2>
+
+<div class="card red">
+  <div class="card-header">
+    <div class="agent-num" style="background:#3a1a1a;color:var(--red)">⑤</div>
+    <span class="agent-name">CartAgent</span>
+    <span class="badge b-stub">Stub</span>
+  </div>
+
+  <div class="verdict v-no">
+    ⚠️ 完全的空壳！16 行代码，只是占位。真实 CRUD 在 AgentService.add_to_cart() / remove_from_cart() / get_cart_items() 里。
+  </div>
+
+  <pre style="background:#0a0b10;padding:12px;border-radius:8px;font-size:12px;color:var(--red)">
+class CartAgent(BaseAgent):
+    name = "cart_agent"
+    description = "购物车 CRUD（添加/移除/查看候选清单）"
+
+    async def handle(self, context: AgentContext) -> AgentResult:
+        return AgentResult(
+            content="购物车操作请通过 AgentService 处理。",
+            success=True,
+        )</pre>
+
+  <h3 style="margin-top:16px">真实购物车流程（在 AgentService 里）：</h3>
+  <div class="flow">
+    <div class="flow-node fn-input">📝 "把第一个加入购物车"</div>
+    <span class="flow-arrow">→</span>
+    <div class="flow-node fn-code">🔢 _parse_refs() 解析序号</div>
+    <span class="flow-arrow">→</span>
+    <div class="flow-node fn-db">🔍 从会话 metadata 取上次推荐</div>
+    <span class="flow-arrow">→</span>
+    <div class="flow-node fn-db">💾 AgentCart CRUD</div>
+    <span class="flow-arrow">→</span>
+    <div class="flow-node fn-out">✅ "已将「公寓A」加入候选清单"</div>
+  </div>
+  <p style="color:var(--muted);font-size:12px;margin-top:8px">
+    纯 CRUD，零 LLM 调用。序号→property_id 解析全部基于规则（正则匹配中文数字）。购物车用 AgentCart/AgentCartItem 模型持久化。
+  </p>
+</div>
+
+<!-- ═══════════════════════ ⑥ FAQ ═══════════════════════ -->
+<h2 id="faq">⑥ FAQAgent — 纯规则匹配</h2>
+
+<div class="card orange">
+  <div class="card-header">
+    <div class="agent-num" style="background:#3a2a1a;color:var(--orange)">⑥</div>
+    <span class="agent-name">FAQAgent</span>
+    <span class="badge b-rule">零 LLM</span>
+  </div>
+
+  <div class="verdict v-warn">
+    📌 纯规则 Agent。无 LLM 调用。match_faq() 做关键词匹配（强/弱命中），回退规则兜底。
+  </div>
+
+  <div class="flow">
+    <div class="flow-node fn-input">📝 用户消息</div>
+    <span class="flow-arrow">→</span>
+    <div class="flow-node fn-code">🔍 match_faq()</div>
+    <span class="flow-arrow">→</span>
+    <div class="flow-node fn-code">⚡ strong/weak/none</div>
+    <span class="flow-arrow">→</span>
+    <div class="flow-node fn-out">📋 FAQ 答案 / chips 反问</div>
+  </div>
+
+  <ol class="steps">
+    <li>
+      <div class="step-num rule">1</div>
+      <div class="step-content">
+        <div class="step-title">match_faq(message) 关键词匹配</div>
+        <div class="step-detail">strong: 精确命中（如"押金怎么退"→deposit FAQ）。weak: 模糊命中，返回候选 chips 反问。</div>
+      </div>
+    </li>
+    <li>
+      <div class="step-num rule">2</div>
+      <div class="step-content">
+        <div class="step-title">strong → 直接返回预设答案</div>
+        <div class="step-detail">含 next_chips（后续建议按钮）+ links（页面深链，如合同签署页）</div>
+      </div>
+    </li>
+    <li>
+      <div class="step-num rule">3</div>
+      <div class="step-content">
+        <div class="step-title">weak → 反问确认 chips</div>
+        <div class="step-detail">"你想了解的是「押金退还」还是「合同签署」？点按钮选择"</div>
+      </div>
+    </li>
+    <li>
+      <div class="step-num rule">4</div>
+      <div class="step-content">
+        <div class="step-title">none → get_faq() 回退匹配</div>
+        <div class="step-detail">最终兜底："这是平台使用问题，建议查看帮助中心或联系客服"</div>
+      </div>
+    </li>
+  </ol>
+</div>
+
+<!-- ═══════════════════════ 真实执行流程 ═══════════════════════ -->
+<h2 id="reality">🔮 真实执行路径（AgentService.handle_message）</h2>
+
+<div class="card" style="border-color:var(--accent)">
+  <p style="color:var(--muted);font-size:13px;margin-bottom:16px">
+    实际运行时，6 个 Agent 并未被调用（Filter/Search/Synthesizer 被 AgentService 直接调用内部方法替代，Compare/Cart 是空壳，FAQ 走独立规则匹配）。真正的运行路径是 AgentService 单体：
+  </p>
+
+  <div class="flow" style="font-size:13px">
+    <div class="flow-node fn-input">📨 handle_message()</div>
+    <span class="flow-arrow">→</span>
+    <div class="flow-node fn-llm">🤖 classify_message()</div>
+    <span class="flow-arrow">→</span>
+    <div class="flow-node fn-code">🔀 意图路由</div>
+    <span class="flow-arrow" style="font-size:18px">⤵</span>
+  </div>
+
+  <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-top:8px">
+    <div style="background:#1a3824;padding:12px;border-radius:8px;border:1px solid #2a5840">
+      <strong style="color:var(--green)">search → recommend</strong>
+      <p style="font-size:11px;color:var(--muted);margin-top:4px">
+        extract_filters(LLM) → geo/relax search(DB) → commute filter(API) → score(Code) → generate reply(LLM)
+      </p>
+    </div>
+    <div style="background:#2a1a38;padding:12px;border-radius:8px;border:1px solid #4a2a5a">
+      <strong style="color:var(--purple)">compare → compare_cart</strong>
+      <p style="font-size:11px;color:var(--muted);margin-top:4px">
+        load props(DB) → POI+reviews(DB) → compute_scores(Code) → LLM explain → 7-dim analysis
+      </p>
+    </div>
+    <div style="background:#1a2838;padding:12px;border-radius:8px;border:1px solid #1e3a4a">
+      <strong style="color:var(--blue)">faq → match_faq</strong>
+      <p style="font-size:11px;color:var(--muted);margin-top:4px">
+        keyword match(Rule) → strong: answer + chips / weak: confirm chips / none: fallback
+      </p>
+    </div>
+  </div>
+
+  <div class="flow" style="font-size:13px;margin-top:16px">
+    <span class="flow-arrow" style="font-size:18px">⤴</span>
+    <span class="flow-arrow">→</span>
+    <div class="flow-node fn-db">💾 持久化 ChatMessage</div>
+    <span class="flow-arrow">→</span>
+    <div class="flow-node fn-out">📦 返回 {reply, recommendations, cart_changed…}</div>
+  </div>
+</div>
+
+<!-- ═══════════════════════ VERDICT ═══════════════════════ -->
+<h2 id="verdict">📊 最终结论</h2>
+
+<div class="grid-3">
+  <div class="card green">
+    <div class="card-header"><span style="font-size:20px;margin-right:8px">✅</span> <strong>真实运作的 Agent</strong></div>
+    <ul style="font-size:13px;list-style:none">
+      <li style="padding:4px 0">① FilterAgent — LLM 提取条件</li>
+      <li style="padding:4px 0">② SearchAgent — 检索+放宽+评分</li>
+      <li style="padding:4px 0">③ SynthesizerAgent — 语气适配</li>
+      <li style="padding:4px 0">⑥ FAQAgent — 规则匹配（无 LLM）</li>
+    </ul>
+    <p style="font-size:11px;color:var(--muted);margin-top:8px">但均不走 Agentic 框架的 AgentRegistry/AgentLoop，直接在 AgentService 中调用</p>
+  </div>
+
+  <div class="card red">
+    <div class="card-header"><span style="font-size:20px;margin-right:8px">❌</span> <strong>空壳 Agent</strong></div>
+    <ul style="font-size:13px;list-style:none">
+      <li style="padding:4px 0">④ CompareAgent — 19行，占位</li>
+      <li style="padding:4px 0">⑤ CartAgent — 16行，占位</li>
+    </ul>
+    <p style="font-size:11px;color:var(--muted);margin-top:8px">真实逻辑在 AgentService 单体（1836行）中</p>
+  </div>
+
+  <div class="card" style="border-color:var(--yellow)">
+    <div class="card-header"><span style="font-size:20px;margin-right:8px">⚠️</span> <strong>架构债务</strong></div>
+    <ul style="font-size:13px;list-style:none">
+      <li style="padding:4px 0">• Agent 目录与真实执行路径脱节</li>
+      <li style="padding:4px 0">• AgentService 1836 行单体未拆分</li>
+      <li style="padding:4px 0">• ReAct Loop 存在但 P0 废弃</li>
+      <li style="padding:4px 0">• ToolRegistry 注册但未被 Agent 使用</li>
+      <li style="padding:4px 0">• AgentRegistry 路由能力未启用</li>
+    </ul>
+  </div>
+</div>
+
+<p style="color:var(--muted);font-size:12px;margin-top:24px;text-align:center">
+  所有 Agent 本质是确定性 Pipeline（Workflow）。无自主决策、无工具组合创新、无多步推理。符合"Workflow ≠ Agent"的经典定义。
+  <br>源码: backend/app/services/agentic/agents/*.py + backend/app/services/agent_service.py
+</p>
+
+</body>
+</html>

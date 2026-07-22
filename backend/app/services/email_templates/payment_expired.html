@@ -1,0 +1,31 @@
+<h2 style="margin:0 0 16px;color:#6b7280;font-size:20px;">支付已过期</h2>
+
+<p style="margin:0 0 12px;color:#475569;font-size:15px;line-height:1.7;">
+您好，{user_name}：
+</p>
+
+<p style="margin:0 0 24px;color:#475569;font-size:15px;line-height:1.7;">
+您的支付订单因超过 2 小时未完成已被系统自动关闭。
+</p>
+
+<!-- Detail Card -->
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:20px;margin-bottom:24px;">
+<tr><td style="padding:8px 0;">
+<p style="margin:0 0 8px;color:#64748b;font-size:14px;"><strong>预约编号：</strong>#{booking_id}</p>
+<p style="margin:0 0 8px;color:#64748b;font-size:14px;"><strong>支付金额：</strong>¥{amount}</p>
+<p style="margin:0;color:#64748b;font-size:14px;"><strong>支付编号：</strong>{payment_id}</p>
+</td></tr>
+</table>
+
+<p style="margin:0 0 24px;color:#475569;font-size:15px;line-height:1.7;">
+如需继续，请重新发起支付。
+</p>
+
+<!-- CTA Button -->
+<table cellpadding="0" cellspacing="0" style="margin-bottom:24px;">
+<tr>
+<td style="background:#2563eb;border-radius:8px;text-align:center;">
+<a href="{frontend_url}/booking/payment/{payment_id}" style="display:inline-block;padding:12px 32px;color:#ffffff;font-size:15px;font-weight:600;text-decoration:none;">重新发起支付</a>
+</td>
+</tr>
+</table>

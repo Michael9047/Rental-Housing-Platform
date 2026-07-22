@@ -410,10 +410,9 @@ def bind_tool_handlers(
         limit: int = 100,
         **kwargs: Any,
     ) -> dict[str, Any]:
-        """搜索房源：先用 PropertyService 做结构化搜索，再交给 AgentService 做渐进放宽。"""
+        """搜索房源：PropertyService 做结构化搜索，失败时 SearchAgent 做渐进放宽。"""
         from decimal import Decimal
         from app.services.property_service import PropertyService
-        from app.services.agent_service import AgentService
 
         sess = _current_session.get()
         if sess is None:
@@ -422,64 +421,36 @@ def bind_tool_handlers(
         try:
             prop_svc = PropertyService(sess)
             rows = await prop_svc.search(
-                query=query,
-                district=district,
+                query=query, district=district,
                 price_min=Decimal(str(price_min)) if price_min is not None else None,
                 price_max=Decimal(str(price_max)) if price_max is not None else None,
-                bedrooms=bedrooms,
-                property_type=property_type,
-                limit=limit,
+                bedrooms=bedrooms, property_type=property_type, limit=limit,
             )
-            results = []
-            for prop, sim in rows:
-                results.append({
-                    "id": prop.id,
-                    "title": prop.title,
-                    "district": prop.district,
-                    "price_monthly": float(prop.price_monthly),
-                    "bedrooms": prop.bedrooms,
-                    "property_type": prop.property_type,
-                    "area_sqm": float(prop.area_sqm) if prop.area_sqm else None,
-                    "address": prop.address,
-                    "similarity": round(sim, 4) if sim else None,
-                })
+            results = [
+                {"id": prop.id, "title": prop.title, "district": prop.district,
+                 "price_monthly": float(prop.price_monthly), "bedrooms": prop.bedrooms,
+                 "property_type": prop.property_type, "area_sqm": float(prop.area_sqm) if prop.area_sqm else None,
+                 "address": prop.address, "similarity": round(sim, 4) if sim else None}
+                for prop, sim in rows
+            ]
             return {"count": len(results), "rows": results}
         except Exception as exc:
             logger.exception("property_search 失败")
-            # 降级：使用 AgentService 的渐进放宽搜索
+            # 降级：使用 SearchAgent 的渐进放宽搜索
             try:
-                agent_svc = AgentService(sess)
-                filters = {
-                    "district": district,
-                    "price_min": price_min,
-                    "price_max": price_max,
-                    "bedrooms": bedrooms,
-                    "property_type": property_type,
-                }
-                filters = {k: v for k, v in filters.items() if v is not None}
-                relax_result = await agent_svc._search_with_relaxation(
-                    query=query, filters=filters, limit=limit
-                )
+                from app.services.agentic.agents.search_agent import SearchAgent
+                agent = SearchAgent(session=sess)
+                filters = {k: v for k, v in {"district": district, "price_min": price_min, "price_max": price_max, "bedrooms": bedrooms, "property_type": property_type}.items() if v is not None}
+                relax_result = await agent._search_with_relaxation(query=query, filters=filters, limit=limit)
                 rows_list = relax_result.get("rows", [])
-                results = []
-                for prop, sim in rows_list:
-                    results.append({
-                        "id": prop.id,
-                        "title": prop.title,
-                        "district": prop.district,
-                        "price_monthly": float(prop.price_monthly),
-                        "bedrooms": prop.bedrooms,
-                        "property_type": prop.property_type,
-                        "area_sqm": float(prop.area_sqm) if prop.area_sqm else None,
-                        "address": prop.address,
-                        "similarity": round(sim, 4) if sim else None,
-                    })
-                return {
-                    "count": len(results),
-                    "rows": results,
-                    "relaxation_level": relax_result.get("relaxation_level", 0),
-                    "relaxed_fields": relax_result.get("relaxed_fields", []),
-                }
+                results = [
+                    {"id": prop.id, "title": prop.title, "district": prop.district,
+                     "price_monthly": float(prop.price_monthly), "bedrooms": prop.bedrooms,
+                     "property_type": prop.property_type, "area_sqm": float(prop.area_sqm) if prop.area_sqm else None,
+                     "address": prop.address, "similarity": round(sim, 4) if sim else None}
+                    for prop, sim in rows_list
+                ]
+                return {"count": len(results), "rows": results, "relaxation_level": relax_result.get("relaxation_level", 0), "relaxed_fields": relax_result.get("relaxed_fields", [])}
             except Exception as exc2:
                 logger.exception("property_search 降级也失败")
                 return {"error": str(exc2), "rows": []}
@@ -524,7 +495,7 @@ def bind_tool_handlers(
         **kwargs: Any,
     ) -> dict[str, Any]:
         """对候选房源进行确定性质量评分。"""
-        from app.services.agent_service import _score_properties as score_fn
+        from app.services.agentic.agents.search_agent import score_properties as score_fn
         from app.models.property import Property
         from sqlalchemy import select
 
@@ -558,7 +529,8 @@ def bind_tool_handlers(
         **kwargs: Any,
     ) -> dict[str, Any]:
         """多维度对比房源。"""
-        from app.services.agent_service import AgentService
+        from app.services.agentic.agents.compare_agent import CompareAgent
+        from app.services.agentic.agents.cart_agent import CartService
 
         sess = _current_session.get()
         if sess is None:
@@ -566,11 +538,13 @@ def bind_tool_handlers(
 
         user_id = _current_user_id.get()
         try:
-            agent_svc = AgentService(sess)
-            result = await agent_svc.compare_cart(
+            agent = CompareAgent(session=sess)
+            cart_agent = CartService(session=sess)
+            result = await agent.compare(
                 user_id=user_id or 0,
                 property_ids=property_ids,
                 priority=priority,
+                cart_agent=cart_agent,
             )
             return result
         except Exception as exc:
@@ -738,7 +712,7 @@ def bind_tool_handlers(
     # ── cart_view ──
     async def _cart_view(**kwargs: Any) -> dict[str, Any]:
         """查看当前用户的候选清单。"""
-        from app.services.agent_service import AgentService
+        from app.services.agentic.agents.cart_agent import CartService
 
         sess = _current_session.get()
         user_id = _current_user_id.get()
@@ -746,8 +720,8 @@ def bind_tool_handlers(
             return {"error": "会话不可用", "items": []}
 
         try:
-            agent_svc = AgentService(sess)
-            cart, items = await agent_svc.get_cart_items(user_id)
+            agent = CartService(session=sess)
+            cart, items = await agent.get_cart_items(user_id)
             return {
                 "cart_id": cart.id,
                 "count": len(items),
@@ -769,7 +743,7 @@ def bind_tool_handlers(
     # ── cart_add ──
     async def _cart_add(property_id: int, reason: str | None = None, **kwargs: Any) -> dict[str, Any]:
         """将房源加入候选清单。"""
-        from app.services.agent_service import AgentService
+        from app.services.agentic.agents.cart_agent import CartService
 
         sess = _current_session.get()
         user_id = _current_user_id.get()
@@ -777,8 +751,8 @@ def bind_tool_handlers(
             return {"error": "请先登录"}
 
         try:
-            agent_svc = AgentService(sess)
-            item = await agent_svc.add_to_cart(user_id, property_id, reason or "")
+            agent = CartService(session=sess)
+            item = await agent.add_to_cart(user_id, property_id, reason or "")
             return {
                 "success": True,
                 "property_id": property_id,
@@ -795,7 +769,7 @@ def bind_tool_handlers(
     # ── cart_remove ──
     async def _cart_remove(property_id: int, **kwargs: Any) -> dict[str, Any]:
         """从候选清单移除房源。"""
-        from app.services.agent_service import AgentService
+        from app.services.agentic.agents.cart_agent import CartService
 
         sess = _current_session.get()
         user_id = _current_user_id.get()
@@ -803,8 +777,8 @@ def bind_tool_handlers(
             return {"error": "请先登录"}
 
         try:
-            agent_svc = AgentService(sess)
-            removed = await agent_svc.remove_from_cart(user_id, property_id)
+            agent = CartService(session=sess)
+            removed = await agent.remove_from_cart(user_id, property_id)
             return {
                 "success": removed,
                 "property_id": property_id,

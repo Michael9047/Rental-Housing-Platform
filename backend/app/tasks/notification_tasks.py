@@ -7,7 +7,6 @@ from app.celery_app import celery_app
 from app.core.config import get_settings
 from app.models.user import User
 from app.services.wechat_service import WeChatService
-from app.services.sms_service import SmsService
 from app.services.email_service import EmailService
 
 logger = logging.getLogger(__name__)
@@ -131,7 +130,7 @@ def send_booking_reminder_message(user_id: int, booking_info: dict) -> None:
     )
 
 
-# ── SMS Notification Task ──────────────────────────────────────────
+# ── SMS 通知任务 ─────────────────────────────────────────────────
 
 @celery_app.task(
     name="send_sms_notification",
@@ -139,8 +138,14 @@ def send_booking_reminder_message(user_id: int, booking_info: dict) -> None:
     retry_backoff=True,
     max_retries=3,
 )
-def send_sms_notification(user_id: int, content: str) -> dict:
-    """Send an SMS notification to a user."""
+def send_sms_notification(
+    user_id: int,
+    notification_type: str,
+    title: str = "",
+    content: str = "",
+    template_kwargs: dict | None = None,
+) -> dict:
+    """发送通知短信（阿里云 dysmsapi）。"""
     import asyncio
 
     async def _run() -> dict:
@@ -151,26 +156,28 @@ def send_sms_notification(user_id: int, content: str) -> dict:
         async with async_session() as session:
             user = await session.get(User, user_id)
             if not user or not user.phone:
-                logger.warning("User %s has no phone, skipping SMS", user_id)
+                logger.warning("User %s has no phone, skipping SMS notify", user_id)
                 await engine.dispose()
                 return {"status": "skipped", "reason": "no phone"}
 
             phone = user.phone
             await engine.dispose()
 
-        sms = SmsService()
+        from app.services.notification_sms_service import NotificationSmsService
+
+        svc = NotificationSmsService()
         try:
-            # 号码认证模板 100001: "您的验证码为${code}。${min}分钟内有效"
-            import uuid
-            code = content[:20] if content else str(uuid.uuid4().hex[:6])
-            result = await sms.send(
+            result = await svc.send(
                 phone_number=phone,
-                template_param={"code": code, "min": "5"},
+                notification_type=notification_type,
+                title=title,
+                content=content,
+                **(template_kwargs or {}),
             )
-            logger.info("SMS sent to user %s: %s", user_id, result)
+            logger.info("SMS notify sent to user %s: %s", user_id, result)
             return result
         except Exception as exc:
-            logger.exception("Failed to send SMS to user %s", user_id)
+            logger.exception("Failed to send SMS notify to user %s", user_id)
             raise
 
     return asyncio.run(_run())
@@ -184,9 +191,29 @@ def send_sms_notification(user_id: int, content: str) -> dict:
     retry_backoff=True,
     max_retries=3,
 )
-def send_email_notification(user_id: int, subject: str, html_body: str) -> dict:
-    """Send an email notification to a user."""
+def send_email_notification(
+    user_id: int,
+    subject: str,
+    html_body: str,
+    attachments: list[dict] | None = None,
+) -> dict:
+    """Send an email notification to a user.
+
+    attachments: 可选，[{"filename": "合同.pdf", "content_b64": "..."}]
+    """
     import asyncio
+    import base64
+
+    # Base64 解码附件（Celery 不支持直接传 bytes）
+    email_attachments = None
+    if attachments:
+        email_attachments = []
+        for att in attachments:
+            raw = base64.b64decode(att["content_b64"])
+            from app.services.email_service import Attachment
+            email_attachments.append(
+                Attachment(filename=att["filename"], content=raw)
+            )
 
     async def _run() -> dict:
         settings = get_settings()
@@ -209,8 +236,67 @@ def send_email_notification(user_id: int, subject: str, html_body: str) -> dict:
                 to_email=to_email,
                 subject=subject,
                 html_body=html_body,
+                attachments=email_attachments,
             )
             logger.info("Email sent to user %s: %s", user_id, result)
+            return result
+        except Exception as exc:
+            logger.exception("Failed to send email to user %s", user_id)
+            raise
+
+    return asyncio.run(_run())
+
+
+# ── Email Notification with Template Task ─────────────────────────────
+
+@celery_app.task(
+    name="send_email_notification_with_template",
+    autoretry_for=(Exception,),
+    retry_backoff=True,
+    max_retries=3,
+)
+def send_email_notification_with_template(
+    user_id: int,
+    subject: str,
+    template_name: str,
+    context: dict | None = None,
+) -> dict:
+    """使用邮件模板发送通知。
+
+    context 中 user_name 可留空，任务会自动从数据库查询用户信息填充。
+    """
+    import asyncio
+
+    async def _run() -> dict:
+        settings = get_settings()
+        engine = create_async_engine(settings.database_url)
+        async_session = async_sessionmaker(engine, expire_on_commit=False)
+
+        async with async_session() as session:
+            user = await session.get(User, user_id)
+            if not user or not user.email:
+                logger.warning("User %s has no email, skipping email", user_id)
+                await engine.dispose()
+                return {"status": "skipped", "reason": "no email"}
+
+            to_email = user.email
+            # 自动填充 user_name 和 frontend_url
+            ctx = dict(context or {})
+            if not ctx.get("user_name"):
+                ctx["user_name"] = user.username
+            if not ctx.get("frontend_url"):
+                ctx["frontend_url"] = settings.frontend_url
+            await engine.dispose()
+
+        email_svc = EmailService()
+        try:
+            result = await email_svc.send_with_template(
+                to_email=to_email,
+                subject=subject,
+                template_name=template_name,
+                context=ctx,
+            )
+            logger.info("Email (template) sent to user %s: %s", user_id, result)
             return result
         except Exception as exc:
             logger.exception("Failed to send email to user %s", user_id)

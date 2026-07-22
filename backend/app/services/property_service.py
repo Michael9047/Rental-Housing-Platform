@@ -111,10 +111,12 @@ class PropertyService:
             if loaded and loaded.institute:
                 object.__setattr__(property_obj, 'institute_name', loaded.institute.name)
 
+        # 异步派发 Google Maps 全量 POI 检索（不阻塞创建流程）
         try:
-            await POIService(self.session).generate_poi_for_property(property_obj)
+            from app.tasks.poi_tasks import generate_full_poi_for_property
+            generate_full_poi_for_property.delay(property_obj.id)
         except Exception:
-            logger.exception("Failed to generate POI for property %s", property_obj.id)
+            logger.exception("Failed to dispatch POI task for property %s", property_obj.id)
 
         await self._ensure_embedding(property_obj)
         await _bump_search_cache_version()
@@ -577,10 +579,12 @@ class PropertyService:
         await self.session.commit()
         await self.session.refresh(property_obj)
 
+        # 异步派发 Google Maps 全量 POI 检索（不阻塞更新流程）
         try:
-            await POIService(self.session).generate_poi_for_property(property_obj, force=True)
+            from app.tasks.poi_tasks import generate_full_poi_for_property
+            generate_full_poi_for_property.delay(property_obj.id)
         except Exception:
-            logger.exception("Failed to refresh POI for property %s", property_obj.id)
+            logger.exception("Failed to dispatch POI task for property %s", property_obj.id)
 
         await self._ensure_embedding(property_obj)
         await _bump_search_cache_version()

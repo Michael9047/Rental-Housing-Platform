@@ -10,7 +10,7 @@ from app.schemas.property_image import PropertyImageRead
 from app.services.property_service import PropertyService
 from app.services.user_service import UserService
 from app.models.property import Property
-from app.tasks.poi_tasks import generate_map_pois_for_property
+from app.tasks.poi_tasks import generate_full_poi_for_property
 
 router = APIRouter()
 
@@ -30,7 +30,7 @@ async def create_property(
                            detail="Landlords can only create properties for themselves")
     prop = await PropertyService(session).create(property_in)
     # 异步生成地图 POI（Celery 任务，不阻塞响应）
-    generate_map_pois_for_property.delay(prop.id)
+    generate_full_poi_for_property.delay(prop.id)
     return prop
 
 
@@ -384,7 +384,7 @@ async def update_property(
     if not prop:
         raise HTTPException(status_code=404, detail="Property not found")
     # 异步刷新地图 POI（地址或坐标变更时 Celery 重新搜索）
-    generate_map_pois_for_property.delay(prop.id)
+    generate_full_poi_for_property.delay(prop.id)
     return prop
 
 

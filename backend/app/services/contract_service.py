@@ -1,5 +1,7 @@
+import base64
 import logging
 from datetime import datetime
+from typing import Optional
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -78,7 +80,12 @@ class ContractService:
         await self.session.commit()
         await self.session.refresh(contract)
 
-        # 通知租客和房东
+        # 生成合同 PDF（用于邮件附件）
+        pdf_attachments = await self._build_pdf_attachments(
+            contract, property_title,
+        )
+
+        # 通知租客和房东（带 PDF 附件）
         notification_service = NotificationService(self.session)
         await notification_service.create_notification(
             user_id=contract.tenant_id,
@@ -86,6 +93,7 @@ class ContractService:
             title="合同已生成",
             content=f"您对 {property_title} 的租赁合同已生成，请前往签署",
             channels=["email"],
+            email_attachments=pdf_attachments,
         )
         if booking.landlord_id:
             await notification_service.create_notification(
@@ -94,9 +102,49 @@ class ContractService:
                 title="合同已生成",
                 content=f"预约 #{booking.id} 的租赁合同已生成，等待租客签署",
                 channels=["email"],
+                email_attachments=pdf_attachments,
             )
 
         return contract
+
+    # ── PDF 附件辅助方法 ──────────────────────────────────────
+
+    async def _build_pdf_attachments(
+        self,
+        contract: Contract,
+        property_title: str,
+        suffix: str = "",
+    ) -> Optional[list[dict]]:
+        """生成合同 PDF 并转为 Base64 编码的附件列表。
+
+        失败时返回 None（不阻塞通知发送）。
+        """
+        try:
+            from app.services.contract_pdf_service import ContractPdfService
+
+            pdf_service = ContractPdfService()
+            pdf_bytes = await pdf_service.generate(contract)
+
+            # 构建文件名
+            label = f"{suffix}-" if suffix else ""
+            filename = f"租赁合同-{label}{property_title}-{contract.id[:8]}.pdf"
+
+            return [{
+                "filename": filename,
+                "content_b64": base64.b64encode(pdf_bytes).decode("ascii"),
+            }]
+        except ImportError:
+            logger.warning(
+                "weasyprint 未安装，跳过合同 PDF 生成 contract_id=%s",
+                contract.id,
+            )
+            return None
+        except Exception as exc:
+            logger.exception(
+                "合同 PDF 生成失败，跳过附件 contract_id=%s",
+                contract.id,
+            )
+            return None
 
     async def get_contract(self, contract_id: str) -> Contract | None:
         return await self.session.get(Contract, contract_id)
@@ -115,8 +163,17 @@ class ContractService:
         await self.session.commit()
         await self.session.refresh(contract)
 
-        # 通知租客和房东
+        # 获取房源名称用于附件文件名和通知
         booking = await self.session.get(Booking, contract.booking_id)
+        property_obj = await self.session.get(Property, contract.property_id) if contract.property_id else None
+        property_title = property_obj.title if property_obj else "未指定物业"
+
+        # 生成签署完成的合同 PDF（用于邮件附件）
+        pdf_attachments = await self._build_pdf_attachments(
+            contract, property_title, suffix="已签署",
+        )
+
+        # 通知租客和房东（带签署版 PDF 附件）
         notification_service = NotificationService(self.session)
         await notification_service.create_notification(
             user_id=contract.tenant_id,
@@ -124,6 +181,7 @@ class ContractService:
             title="合同已签署",
             content=f"您已成功签署预约 #{contract.booking_id} 的租赁合同",
             channels=["email"],
+            email_attachments=pdf_attachments,
         )
         if booking and booking.landlord_id:
             await notification_service.create_notification(
@@ -132,6 +190,7 @@ class ContractService:
                 title="合同已被签署",
                 content=f"租客已签署预约 #{contract.booking_id} 的租赁合同",
                 channels=["email"],
+                email_attachments=pdf_attachments,
             )
 
         return contract

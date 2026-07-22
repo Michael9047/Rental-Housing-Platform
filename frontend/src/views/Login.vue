@@ -515,6 +515,21 @@ async function handleWechatLogin() {
   font-weight: 600;
 }
 
+.forgot-row {
+  text-align: right;
+  margin-top: 10px;
+}
+
+.forgot-row a {
+  font-size: 13px;
+  color: var(--text-muted);
+  text-decoration: none;
+}
+
+.forgot-row a:hover {
+  color: var(--primary);
+}
+
 .wechat-btn {
   width: 100%;
   background: #07c160;

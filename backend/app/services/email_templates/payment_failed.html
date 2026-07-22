@@ -1,0 +1,32 @@
+<h2 style="margin:0 0 16px;color:#dc2626;font-size:20px;">支付未成功</h2>
+
+<p style="margin:0 0 12px;color:#475569;font-size:15px;line-height:1.7;">
+您好，{user_name}：
+</p>
+
+<p style="margin:0 0 24px;color:#475569;font-size:15px;line-height:1.7;">
+很遗憾，您的支付未能成功处理。
+</p>
+
+<!-- Detail Card -->
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:20px;margin-bottom:24px;">
+<tr><td style="padding:8px 0;">
+<p style="margin:0 0 8px;color:#991b1b;font-size:14px;"><strong>预约编号：</strong>#{booking_id}</p>
+<p style="margin:0 0 8px;color:#991b1b;font-size:14px;"><strong>支付金额：</strong>¥{amount}</p>
+<p style="margin:0 0 8px;color:#991b1b;font-size:14px;"><strong>支付编号：</strong>{payment_id}</p>
+<p style="margin:0;color:#991b1b;font-size:14px;"><strong>失败原因：</strong>{reason}</p>
+</td></tr>
+</table>
+
+<p style="margin:0 0 24px;color:#475569;font-size:15px;line-height:1.7;">
+请检查支付方式后重新发起支付，或联系客服获取帮助。
+</p>
+
+<!-- CTA Button -->
+<table cellpadding="0" cellspacing="0" style="margin-bottom:24px;">
+<tr>
+<td style="background:#dc2626;border-radius:8px;text-align:center;">
+<a href="{frontend_url}/booking/payment/{payment_id}" style="display:inline-block;padding:12px 32px;color:#ffffff;font-size:15px;font-weight:600;text-decoration:none;">重新支付</a>
+</td>
+</tr>
+</table>

@@ -192,7 +192,7 @@ async def send_sms_code(
     await store_sms_code(phone, code, ttl=300)
     logger.info("SMS code stored for phone=%s code=%s", phone, code)
 
-    # 发送短信
+    # 发送验证码短信
     sms = SmsService()
     result = await sms.send(phone, template_param={"code": code, "min": "5"})
 
@@ -398,15 +398,15 @@ async def forgot_password(
     reset_link = f"{settings.frontend_url}/reset-password?token={token}"
     email_svc = EmailService()
     try:
-        await email_svc.send(
+        await email_svc.send_with_template(
             to_email=user.email,
             subject="密码重置请求",
-            html_body=(
-                f"<h3>密码重置</h3>"
-                f"<p>点击以下链接重置密码（有效期 30 分钟）：</p>"
-                f"<p><a href='{reset_link}'>{reset_link}</a></p>"
-                f"<p>如果您没有请求重置密码，请忽略此邮件。</p>"
-            ),
+            template_name="password_reset",
+            context={
+                "user_name": user.username,
+                "reset_link": reset_link,
+                "expire_minutes": "30",
+            },
         )
     except Exception:
         pass  # 不暴露邮件发送失败给调用方

@@ -225,7 +225,7 @@ class Settings(BaseSettings):
         validation_alias="WECHAT_TOKEN_URL",
     )
 
-    # SMS (Alibaba Cloud 号码认证 dypnsapi)
+    # SMS 验证码 (Alibaba Cloud 号码认证 dypnsapi)
     sms_provider: str = Field(default="aliyun", validation_alias="SMS_PROVIDER")
     sms_access_key_id: str = Field(default="", validation_alias="SMS_ACCESS_KEY_ID")
     sms_access_key_secret: str = Field(default="", validation_alias="SMS_ACCESS_KEY_SECRET")
@@ -237,7 +237,27 @@ class Settings(BaseSettings):
         validation_alias="SMS_ENDPOINT",
     )
 
-    # Email (SMTP)
+    # SMS 通知 (Alibaba Cloud 短信服务 dysmsapi)
+    sms_notify_access_key_id: str = Field(
+        default="", validation_alias="SMS_NOTIFY_ACCESS_KEY_ID",
+    )
+    sms_notify_access_key_secret: str = Field(
+        default="", validation_alias="SMS_NOTIFY_ACCESS_KEY_SECRET",
+    )
+    sms_notify_sign_name: str = Field(
+        default="", validation_alias="SMS_NOTIFY_SIGN_NAME",
+    )
+    sms_notify_endpoint: str = Field(
+        default="dysmsapi.aliyuncs.com",
+        validation_alias="SMS_NOTIFY_ENDPOINT",
+    )
+    # 通知类型 → 模板CODE 的映射，JSON 字符串格式：
+    # {"booking_created":"SMS_xxx","payment_received":"SMS_yyy",...}
+    sms_notify_template_map: str = Field(
+        default="{}", validation_alias="SMS_NOTIFY_TEMPLATE_MAP",
+    )
+
+    # Email (SMTP) — deprecated，DirectMail 稳定后移除
     smtp_host: str = Field(default="", validation_alias="SMTP_HOST")
     smtp_port: int = Field(default=587, validation_alias="SMTP_PORT")
     smtp_user: str = Field(default="", validation_alias="SMTP_USER")
@@ -250,6 +270,30 @@ class Settings(BaseSettings):
     smtp_use_tls: bool = Field(
         default=True,
         validation_alias="SMTP_USE_TLS",
+    )
+
+    # Email (Alibaba Cloud DirectMail) — 主引擎，支持附件
+    dm_access_key_id: str = Field(default="", validation_alias="DM_ACCESS_KEY_ID")
+    dm_access_key_secret: str = Field(default="", validation_alias="DM_ACCESS_KEY_SECRET")
+    dm_account_name: str = Field(
+        default="",
+        validation_alias="DM_ACCOUNT_NAME",
+    )
+    dm_from_alias: str = Field(
+        default="Rental Housing",
+        validation_alias="DM_FROM_ALIAS",
+    )
+    dm_region_id: str = Field(
+        default="cn-hangzhou",
+        validation_alias="DM_REGION_ID",
+    )
+    dm_endpoint: str = Field(
+        default="dm.aliyuncs.com",
+        validation_alias="DM_ENDPOINT",
+    )
+    dm_timeout_seconds: float = Field(
+        default=10.0,
+        validation_alias="DM_TIMEOUT_SECONDS",
     )
 
     # Rate limiting

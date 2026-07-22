@@ -8,7 +8,10 @@ from app.models.notification import Notification, NotificationType
 
 logger = logging.getLogger(__name__)
 
-# Per-notification-type channel templates
+# 各通知类型的渠道元数据
+# - wechat_template: 微信模板消息 ID（暂未启用）
+# - sms_template: 通知短信模板 CODE，需在阿里云控制台申请后填入
+#   没有配置 sms_template 的类型发短信时会走通用模板（title + content）
 _CHANNEL_META: dict[NotificationType, dict] = {
     NotificationType.booking_created: {
         "wechat_template": "booking_confirm_template_id",
@@ -49,9 +52,29 @@ _CHANNEL_META: dict[NotificationType, dict] = {
     NotificationType.auth_password_reset: {
         "wechat_template": "status_update_template_id",
     },
+    NotificationType.repair_created: {
+        "wechat_template": "status_update_template_id",
+    },
+    NotificationType.repair_assigned: {
+        "wechat_template": "status_update_template_id",
+    },
+    NotificationType.repair_completed: {
+        "wechat_template": "status_update_template_id",
+    },
+    NotificationType.repair_status_change: {
+        "wechat_template": "status_update_template_id",
+    },
     NotificationType.system: {
         "wechat_template": "status_update_template_id",
     },
+}
+
+# 通知类型 → 邮件模板映射（仅需自定义模板的类型）
+_NOTIFICATION_EMAIL_TEMPLATE: dict[NotificationType, str] = {
+    NotificationType.payment_created: "payment_created",
+    NotificationType.payment_received: "payment_received",
+    NotificationType.payment_failed: "payment_failed",
+    NotificationType.payment_expired: "payment_expired",
 }
 
 
@@ -68,10 +91,12 @@ class NotificationService:
         title: str,
         content: str,
         channels: Optional[list[str]] = None,
+        email_attachments: Optional[list[dict]] = None,
     ) -> Notification:
         """Create a DB notification record and dispatch to push channels.
 
         channels: list of "wechat", "sms", "email". Defaults to all three.
+        email_attachments: list of {"filename": str, "content_b64": str} for email.
         Channel dispatch failures are logged but do not block DB write.
         """
         notification = Notification(
@@ -85,7 +110,9 @@ class NotificationService:
         await self.session.refresh(notification)
 
         # Dispatch to push channels (fire-and-forget via Celery)
-        await self._dispatch_channels(user_id, type, title, content, channels)
+        await self._dispatch_channels(
+            user_id, type, title, content, channels, email_attachments,
+        )
 
         return notification
 
@@ -133,6 +160,7 @@ class NotificationService:
         title: str,
         content: str,
         channels: Optional[list[str]] = None,
+        email_attachments: Optional[list[dict]] = None,
     ) -> None:
         """Fire Celery tasks for each requested push channel."""
         if channels is None:
@@ -146,23 +174,40 @@ class NotificationService:
                 send_email_notification,
             )
 
-            # # 微信暂不启用
+            # 微信暂不启用
             # if "wechat" in channels:
             #     ...
 
             if "sms" in channels:
                 try:
-                    send_sms_notification.delay(user_id=user_id, content=content or title)
+                    send_sms_notification.delay(
+                        user_id=user_id,
+                        notification_type=ntype.value,
+                        title=title,
+                        content=content or title,
+                    )
                 except Exception as exc:
-                    logger.warning("Failed to dispatch SMS notification: %s", exc)
+                    logger.warning("Failed to dispatch SMS notify: %s", exc)
 
             if "email" in channels:
                 try:
-                    send_email_notification.delay(
-                        user_id=user_id,
-                        subject=title,
-                        html_body=f"<h3>{title}</h3><p>{content or ''}</p><p>点击查看详情。</p>",
-                    )
+                    # 优先使用模板：根据通知类型匹配对应邮件模板
+                    template_name = _NOTIFICATION_EMAIL_TEMPLATE.get(ntype)
+                    if template_name:
+                        from app.tasks.notification_tasks import send_email_notification_with_template
+                        send_email_notification_with_template.delay(
+                            user_id=user_id,
+                            subject=title,
+                            template_name=template_name,
+                            context={"content": content or ""},
+                        )
+                    else:
+                        send_email_notification.delay(
+                            user_id=user_id,
+                            subject=title,
+                            html_body=f"<h3>{title}</h3><p>{content or ''}</p><p>点击查看详情。</p>",
+                            attachments=email_attachments,
+                        )
                 except Exception as exc:
                     logger.warning("Failed to dispatch Email notification: %s", exc)
         except Exception as exc:

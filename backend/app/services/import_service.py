@@ -1078,9 +1078,9 @@ class ImportService:
 
         def _run() -> None:
             try:
-                from app.tasks.poi_tasks import generate_map_pois_for_property
+                from app.tasks.poi_tasks import generate_full_poi_for_property
                 for property_id in property_ids:
-                    generate_map_pois_for_property.delay(property_id)
+                    generate_full_poi_for_property.delay(property_id)
             except Exception:
                 logger.exception("Failed to dispatch batch map POI generation")
 
