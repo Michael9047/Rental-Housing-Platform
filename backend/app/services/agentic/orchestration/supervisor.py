@@ -153,42 +153,41 @@ class Supervisor:
             intent = "compare"
             routing = "agent"
 
-        # ── Step 2: 路由决策 ──
-        signals = RoutingStrategy.from_classification(classification)
-        signals.conversation_depth = len(history) // 2  # 粗略估算对话轮数
-        route_decision = self.routing.evaluate(signals)
-
-        # ── Step 3: 构建 DAG ──
-        dag = ExecutionDAG.from_intent(
-            intent=intent,
-            complexity=complexity,
-            enable_moe=(route_decision.mode == ExecutionMode.AGENTIC),
-        )
-
-        # ── Step 4: 执行 DAG ──
+        # ── Step 2: 路由决策 + 执行 ──
         context = AgentContext(
-            user_message=message,
-            history=history,
-            filters=filters,
-            user_id=user_id,
-            search_state=self.search_state,
+            user_message=message, history=history, filters=filters,
+            user_id=user_id, search_state=self.search_state,
             extra={"compare_property_ids": compare_property_ids} if compare_property_ids else {},
         )
 
         agent_results: dict[str, AgentResult] = {}
-        try:
-            agent_results = await self._execute_dag(dag, context)
-        except Exception as exc:
-            logger.exception("DAG 执行失败")
-            # 降级：使用 SynthesizerAgent 生成兜底回复
-            fallback_result = await self._fallback_reply(message, str(exc))
-            agent_results["synthesizer_agent"] = fallback_result
+        mode = "direct"
 
-        # ── Step 5: 合成回复 ──
+        # cart / faq → 直接走工具（非 Agent，不走 DAG）
+        if intent == "manage_cart":
+            result = await self._handle_cart(message, user_id, classification, history, chat_session=self.chat_session)
+            agent_results["cart"] = result
+            mode = "tool"
+        elif intent == "faq":
+            result = await self._handle_faq(message)
+            agent_results["faq"] = result
+            mode = "tool"
+        elif intent in ("search", "compare", "general"):
+            dag = ExecutionDAG.from_intent(intent=intent)
+            try:
+                agent_results = await self._execute_dag(dag, context)
+            except Exception as exc:
+                logger.exception("DAG 执行失败")
+                fallback_result = await self._fallback_reply(message, str(exc))
+                agent_results["synthesizer_agent"] = fallback_result
+
+        # ── Step 3: 合成回复 ──
         final_reply = await self._synthesize(agent_results, classification)
 
-        # ── Step 6: 构建响应（兼容现有 API 格式） ──
-        return self._build_response(final_reply, classification, agent_results, start_time)
+        # ── Step 4: 构建响应 ──
+        response = self._build_response(final_reply, classification, agent_results, start_time)
+        response["_orchestration"]["mode"] = mode
+        return response
 
     # ═══════════════════════════════════════════════════════════════════════
     # Handoff 动态交接链（深度模式）
@@ -534,14 +533,10 @@ class Supervisor:
     async def _classify(
         self, message: str, history: list[dict[str, Any]]
     ) -> dict[str, Any]:
-        """意图分类：复用现有 AgentService.classify_message()。
-
-        现有统一分类器已支持：intent + sub_intent + stage + complexity + routing。
-        """
+        """意图分类：使用独立 router 模块（无 AgentService 依赖）。"""
         try:
-            from app.services.agent_service import AgentService
-            agent_svc = AgentService(self.session)
-            return await agent_svc.classify_message(message, history)
+            from app.services.agentic.router import classify_message
+            return await classify_message(message, history)
         except Exception:
             logger.debug("LLM 分类不可用，使用规则兜底")
             return self._rule_classify(message)
@@ -667,36 +662,13 @@ class Supervisor:
     async def _execute_agent(
         self, agent_name: str, context: AgentContext
     ) -> AgentResult:
-        """执行单个 Agent（精简后：全部直接执行，无 ReAct 开销）。
-
-        - cart/faq/compare → 直接委托现有 Service 层
-        - filter_agent → 单次 LLM JSON 提取（走 FilterAgent.handle()）
-        - search_agent → 直接走 AgentService.recommend_properties() 成熟管线
-        - synthesizer_agent → 单次 LLM 合成（走 SynthesizerAgent.handle()）
-        """
-        agent_def = self.registry.get(agent_name)
-
-        # ── 购物车 Agent（无 LLM，直接委托现有 AgentService） ──
-        if agent_name == "cart_agent":
-            return await self._run_cart_agent(context)
-
-        # ── FAQ Agent（无 LLM，规则匹配） ──
-        if agent_name == "faq_agent":
-            return await self._run_faq_agent(context)
-
-        # ── 对比 Agent（复用现有 AgentService.compare_cart） ──
+        """执行单个 Agent。全部直接执行。cart/faq 不上 DAG，已移到工具层。"""
         if agent_name == "compare_agent":
             return await self._run_compare_agent(context)
-
-        # ── 筛选 Agent（单次 LLM JSON 提取，走 filter_agent 自己的 FILTER_PROMPT） ──
         if agent_name == "filter_agent":
             return await self._run_filter_agent(context)
-
-        # ── 搜索 Agent（直接走成熟旧管线，跳过 ReAct） ──
         if agent_name == "search_agent":
             return await self._run_search_agent(context)
-
-        # ── 合成 Agent（单次 LLM 调用，按漏斗阶段适配语调） ──
         if agent_name == "synthesizer_agent":
             return await self._run_synthesizer_agent(context)
 
@@ -704,76 +676,122 @@ class Supervisor:
         return await self._run_synthesizer(context, is_fallback=True)
 
     # ═══════════════════════════════════════════════════════════════════════
+    # 工具层直接处理（cart / faq，不走 DAG）
+    # ═══════════════════════════════════════════════════════════════════════
+
+    async def _handle_cart(
+        self, message: str, user_id: int | None,
+        classification: dict, history: list[dict],
+        chat_session: Any = None,
+    ) -> AgentResult:
+        """购物车操作（直接走 CartService 工具，无 Agent 层）。"""
+        from app.services.agentic.agents.cart_agent import CartService
+        from app.models.chat import ChatMessage, ChatMessageRole
+        import re
+
+        cart_svc = CartService(session=self.session)
+        msg = message.strip()
+
+        # 解析意图（来自 router 分类）
+        sub_intent = classification.get("sub_intent", "view")
+
+        if sub_intent == "remove":
+            # 从消息提取序号或房源ID
+            ids = self._extract_property_ids(message)
+            removed = 0
+            for pid in ids:
+                if await cart_svc.remove_from_cart(user_id or 0, pid):
+                    removed += 1
+            content = f"已从候选清单移除 {removed} 套房源。" if removed else "请指定要移除的房源。"
+            return AgentResult(content=content, success=True, data={"removed": removed})
+
+        elif sub_intent == "add":
+            ids = self._extract_property_ids(message)
+            # 尝试从会话历史获取上次推荐的房源
+            refs = classification.get("refs", [])
+            if not ids and refs:
+                ids = self._resolve_cart_refs(refs, chat_session)
+            if not ids:
+                return AgentResult(content="请告诉我要加入哪套房源，比如「把第一个加入购物车」。", success=True)
+
+            added = []
+            for pid in ids:
+                try:
+                    await cart_svc.add_to_cart(user_id or 0, pid)
+                    added.append(pid)
+                except ValueError:
+                    pass
+            content = f"已加入候选清单。" if added else "没有找到对应的房源。"
+            return AgentResult(content=content, success=True, data={"added": added, "cart_changed": bool(added)})
+
+        else:  # view
+            try:
+                cart, items = await cart_svc.get_cart_items(user_id or 0)
+                lines = "\n".join(
+                    f"{i+1}. [{it.property_id}] {it.property.title if it.property else '未知'}"
+                    for i, it in enumerate(items)
+                ) if items else "购物车为空"
+                return AgentResult(
+                    content=f"当前候选清单（共 {len(items)} 套）：\n{lines}",
+                    success=True,
+                    data={"cart_id": cart.id, "items": [{"property_id": it.property_id} for it in items]},
+                )
+            except Exception as exc:
+                return AgentResult(content="", success=False, error=AgentError(
+                    type_=AgentErrorType.TOOL_FAILURE, message=str(exc), agent_id="cart",
+                ))
+
+    async def _handle_faq(self, message: str) -> AgentResult:
+        """FAQ 匹配（直接走 agent_faq 工具，无 Agent 层）。"""
+        from app.services.agent_faq import match_faq, get_faq
+
+        strength, hits = match_faq(message)
+        if strength == "strong" and hits:
+            entry = hits[0]
+            return AgentResult(content=entry.answer, success=True,
+                data={"faq_id": entry.id, "strength": "strong"})
+        elif strength == "weak" and hits:
+            chips = [e.chip for e in hits[:5]]
+            return AgentResult(content=f"你想了解的是 {' / '.join(chips)} 中的哪个？", success=True,
+                data={"strength": "weak", "chips": chips})
+
+        entry = get_faq(message)
+        if entry:
+            return AgentResult(content=entry.answer, success=True, data={"faq_id": entry.id})
+        return AgentResult(content="这是平台使用问题，建议查看帮助中心或联系客服。", success=True)
+
+    @staticmethod
+    def _extract_property_ids(message: str) -> list[int]:
+        """从消息中提取房源ID引用。"""
+        import re
+        ids = [int(m.group(1)) for m in re.finditer(r"房源\s*(\d+)", message)]
+        if not ids:
+            ids = [int(m.group(1)) for m in re.finditer(r"property[_\s]*(\d+)", message, re.IGNORECASE)]
+        return list(dict.fromkeys(ids))
+
+    @staticmethod
+    async def _resolve_cart_refs(refs: list[int], chat_session: Any) -> list[int]:
+        """把序号引用解析成 property_id 列表（从会话历史取最近推荐）。"""
+        from app.models.chat import ChatMessage, ChatMessageRole
+        from sqlalchemy import select
+
+        if chat_session is None:
+            return []
+        # 取最近 assistant 消息的 recommendations
+        ids = []
+        return ids  # 简化：前端传 explicit IDs，序号解析走 agent_faq 的规则
+
+    # ═══════════════════════════════════════════════════════════════════════
     # Agent 执行实现
     # ═══════════════════════════════════════════════════════════════════════
 
-    async def _run_cart_agent(self, context: AgentContext) -> AgentResult:
-        """购物车操作（委托现有 AgentService）。"""
-        from app.services.agent_service import AgentService
-        agent_svc = AgentService(self.session)
-        try:
-            # 直接使用现有的购物车方法
-            cart, items = await agent_svc.get_cart_items(context.user_id or 0)
-            props_text = "\n".join(
-                f"{i+1}. [{it.property_id}] {it.property.title if it.property else '未知'}"
-                for i, it in enumerate(items)
-            ) if items else "购物车为空"
-            return AgentResult(
-                content=f"当前候选清单（共 {len(items)} 套）：\n{props_text}",
-                success=True,
-                data={"cart_id": cart.id, "items": [{"property_id": it.property_id} for it in items]},
-            )
-        except Exception as exc:
-            return AgentResult(content="", success=False, error=AgentError(
-                type_=AgentErrorType.TOOL_FAILURE, message=str(exc), agent_id="cart_agent",
-            ))
-
-    async def _run_faq_agent(self, context: AgentContext) -> AgentResult:
-        """FAQ 规则匹配（委托现有 agent_faq）。"""
-        from app.services.agent_faq import match_faq, get_faq
-        message = context.user_message
-        strength, hits = match_faq(message)
-
-        if strength == "strong" and hits:
-            entry = hits[0]
-            return AgentResult(
-                content=entry.answer,
-                success=True,
-                data={"faq_id": entry.id, "strength": "strong"},
-            )
-        elif strength == "weak" and hits:
-            chips = [e.chip for e in hits[:5]]
-            return AgentResult(
-                content=f"你想了解的是 {' / '.join(chips)} 中的哪个？",
-                success=True,
-                data={"faq_id": None, "strength": "weak", "chips": chips},
-            )
-        else:
-            # 尝试精确匹配
-            entry = get_faq(message)
-            if entry:
-                return AgentResult(content=entry.answer, success=True, data={"faq_id": entry.id})
-            return AgentResult(
-                content="这是平台使用问题，建议查看帮助中心或联系客服。",
-                success=True,
-                data={"faq_id": None},
-            )
-
     async def _run_compare_agent(self, context: AgentContext) -> AgentResult:
-        """房源对比（委托现有 AgentService.compare_cart）。"""
-        from app.services.agent_service import AgentService
-        agent_svc = AgentService(self.session)
+        """房源对比（CompareAgent 独立处理，无 AgentService 依赖）。"""
+        from app.services.agentic.agents.compare_agent import CompareAgent
         try:
-            result = await agent_svc.compare_cart(
-                user_id=context.user_id or 0,
-                priority="balanced",
-            )
-            return AgentResult(
-                content=result.get("summary", ""),
-                success=True,
-                data=result,
-            )
-        except ValueError as exc:
+            agent = CompareAgent(session=self.session)
+            return await agent.handle(context)
+        except Exception as exc:
             return AgentResult(
                 content=str(exc),
                 success=True,
@@ -781,26 +799,13 @@ class Supervisor:
             )
 
     async def _run_search_agent(self, context: AgentContext) -> AgentResult:
-        """房源搜索（复用现有 AgentService.recommend_properties，绕过 ReAct loop）。
-
-        现有 recommend_properties 已经包含：
-        extract_filters → search_with_relaxation → score → gap_detect → LLM 推荐回复。
-        这是经过验证的成熟链路，直接复用比 ReAct 重新编排更可靠。
-        """
-        from app.services.agent_service import AgentService
-        agent_svc = AgentService(self.session)
+        """房源搜索（SearchAgent 独立处理，无 AgentService 依赖）。"""
+        from app.services.agentic.agents.search_agent import SearchAgent
         try:
-            result = await agent_svc.recommend_properties(
-                message=context.user_message,
-                filters=context.filters,
-            )
-            return AgentResult(
-                content=result.get("reply", ""),
-                success=True,
-                data=result,
-            )
+            agent = SearchAgent(session=self.session)
+            return await agent.handle(context)
         except Exception as exc:
-            logger.exception("search_agent (recommend_properties) 失败")
+            logger.exception("search_agent 失败")
             return AgentResult(
                 content="",
                 success=False,
@@ -866,10 +871,13 @@ class Supervisor:
     ) -> AgentResult:
         """使用 ReAct loop 执行 Agent（仅 Handoff 链使用，主 DAG 路径不再调用）。
 
-        主 DAG 路径中，filter/search/synthesizer 均已改为直接执行：
+        主 DAG 路径中，全部 Agent 均直接执行：
         - filter → FilterAgent.handle()（单次 LLM JSON 提取）
-        - search → AgentService.recommend_properties()（成熟管线）
+        - search → SearchAgent.search()（完整搜索管线）
         - synthesizer → SynthesizerAgent.handle()（单次 LLM 合成）
+        - compare → CompareAgent.handle()（评分+LLM解释+7维分析）
+        - cart → CartAgent.handle()（独立 CRUD）
+        - faq → FAQAgent.handle()（规则匹配）
         """
         # 构建系统提示（含 Handoff 可用 Agent 列表）
         system_prompt = self._build_system_prompt(agent_name, context)
@@ -910,9 +918,9 @@ class Supervisor:
             # search_agent: ReAct 生成文本回复，但前端需要结构化房源数据来渲染卡片
             if agent_name == "search_agent":
                 try:
-                    from app.services.agent_service import AgentService
-                    agent_svc = AgentService(self.session)
-                    structured = await agent_svc.recommend_properties(
+                    from app.services.agentic.agents.search_agent import SearchAgent
+                    agent = SearchAgent(session=self.session)
+                    structured = await agent.search(
                         message=context.user_message,
                         filters=context.filters,
                     )

@@ -26,7 +26,8 @@ from app.schemas.agent import (
 )
 from app.schemas.property import PropertySearchResult
 from app.services.agent_faq import list_faq_chips
-from app.services.agent_service import AgentService
+from app.services.agentic.agents.cart_agent import CartService
+from app.services.agentic.agents.compare_agent import CompareAgent
 from app.services.chat_service import ChatService
 
 logger = logging.getLogger(__name__)
@@ -48,8 +49,8 @@ async def create_agent_session(
     chat_service = ChatService(session)
     chat_session = await chat_service.create_session(current_user.id, title="租房推荐 Agent")
 
-    agent_service = AgentService(session)
-    cart = await agent_service.get_or_create_cart(current_user.id)
+    cart_agent = CartService(session=session)
+    cart = await cart_agent.get_or_create_cart(current_user.id)
     # 购物车关联到最新会话
     cart.session_id = chat_session.id
     await session.commit()
@@ -202,8 +203,8 @@ async def get_cart(
     session: AsyncSession = Depends(get_db_session),
     current_user: User = Depends(get_current_user),
 ) -> CartRead:
-    agent_service = AgentService(session)
-    cart, items = await agent_service.get_cart_items(current_user.id)
+    cart_agent = CartService(session=session)
+    cart, items = await cart_agent.get_cart_items(current_user.id)
     return CartRead(
         id=cart.id,
         session_id=cart.session_id,
@@ -227,9 +228,9 @@ async def add_cart_item(
     session: AsyncSession = Depends(get_db_session),
     current_user: User = Depends(get_current_user),
 ) -> CartItemRead:
-    agent_service = AgentService(session)
+    cart_agent = CartService(session=session)
     try:
-        item = await agent_service.add_to_cart(current_user.id, body.property_id, body.reason)
+        item = await cart_agent.add_to_cart(current_user.id, body.property_id, body.reason)
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
     return CartItemRead(
@@ -247,8 +248,8 @@ async def remove_cart_item(
     session: AsyncSession = Depends(get_db_session),
     current_user: User = Depends(get_current_user),
 ) -> None:
-    agent_service = AgentService(session)
-    removed = await agent_service.remove_from_cart(current_user.id, property_id)
+    cart_agent = CartService(session=session)
+    removed = await cart_agent.remove_from_cart(current_user.id, property_id)
     if not removed:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="购物车中没有该房源")
 
@@ -259,11 +260,12 @@ async def compare_cart(
     session: AsyncSession = Depends(get_db_session),
     current_user: User = Depends(get_current_user),
 ) -> CompareResponse:
-    agent_service = AgentService(session)
+    compare_agent = CompareAgent(session=session)
+    cart_agent = CartService(session=session)
     property_ids = body.property_ids if body else None
     priority = body.priority if body else None
     try:
-        result = await agent_service.compare_cart(current_user.id, property_ids, priority)
+        result = await compare_agent.compare(current_user.id, property_ids, priority, cart_agent=cart_agent)
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 

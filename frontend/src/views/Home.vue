@@ -57,10 +57,21 @@ const searchKeyword = ref('')
 async function loadBuildings() {
   loading.value = true
   try {
-    const params: any = { limit: 50 }
+    const params: any = { page_size: 50 }
     if (searchKeyword.value) params.keyword = searchKeyword.value
-    const r = await api.get('/buildings/public/list', { params })
-    buildings.value = r.data.items || []
+    const r = await api.get('/properties', { params })
+    // 将 properties API 返回的数据映射为卡片需要的格式
+    buildings.value = (r.data.items || []).map((p: any) => ({
+      id: p.id,
+      name: p.title || p.address,
+      address: p.address,
+      min_rent: p.price_monthly ? Number(p.price_monthly) : null,
+      primary_image: p.images?.find((i: any) => i.is_primary)?.filename || p.images?.[0]?.filename || null,
+      amenities: p.amenities || [],
+      female_only: false,
+      couples_allowed: false,
+      unit_type_count: null,
+    }))
   } catch { /* */ }
   finally { loading.value = false }
 }

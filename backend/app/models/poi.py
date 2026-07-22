@@ -26,5 +26,7 @@ class PropertyPOI(TimestampMixin, Base):
     reviewed: Mapped[bool] = mapped_column(Boolean, default=False)
     # 地图小卡片预生成数据：6 大类 POI（含 lat/lng），创建房源时 Celery 异步生成
     map_poi_data: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    # 安全评分数据：data.gov.sg / Police.uk 街区犯罪数据，创建房源时 Celery 异步生成
+    safety_data: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
     property: Mapped["Room"] = relationship()

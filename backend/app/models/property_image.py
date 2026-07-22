@@ -23,5 +23,10 @@ class RoomImage(TimestampMixin, Base):
 
     room: Mapped["Room"] = relationship(back_populates="images")
 
+    # 向后兼容：Pydantic schema 期望 property_id
+    @property
+    def property_id(self) -> int:
+        return self.room_id
+
 # 向后兼容别名
 PropertyImage = RoomImage

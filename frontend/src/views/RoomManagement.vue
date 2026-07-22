@@ -292,8 +292,8 @@ async function doBatch(action: string) {
   if (!selectedIds.value.length) { ElMessage.warning('请先选择房间'); return }
   if (action === 'delete') { try { await ElMessageBox.confirm(`确认删除 ${selectedIds.value.length} 个房间？`, '确认', { type: 'warning' }) } catch { return } }
   try {
-    if (action === 'delete') await api.post('/rooms/batch/delete', { ids: selectedIds.value })
-    else await api.post('/rooms/batch/status', { ids: selectedIds.value, status: action })
+    if (action === 'delete') await api.post('/properties/batch/delete', { ids: selectedIds.value })
+    else await api.post('/properties/batch/status', { ids: selectedIds.value, status: action })
     ElMessage.success('操作成功'); selectedIds.value = []; loadRooms()
   } catch { /* */ }
 }
@@ -304,7 +304,7 @@ async function toggleStatus(row: any) {
 }
 
 async function handleDelete(row: any) {
-  try { await ElMessageBox.confirm('确定删除此房间？', '确认', { type: 'warning' }); await api.delete('/rooms/' + row.id); ElMessage.success('已删除'); loadRooms() } catch { /* */ }
+  try { await ElMessageBox.confirm('确定删除此房间？', '确认', { type: 'warning' }); await api.delete('/properties/' + row.id); ElMessage.success('已删除'); loadRooms() } catch { /* */ }
 }
 
 // ═══ 房间弹窗 ═══
@@ -363,7 +363,7 @@ async function saveRoom() {
     try {
       const params: any = { unit_type_id: roomForm.unit_type_id, room_number: roomForm.room_number.trim() }
       if (editingRoom.value) params.exclude_id = editingRoom.value.id
-      const r = await api.get('/rooms/check-duplicate', { params })
+      const r = await api.get('/properties/check-duplicate', { params })
       if (r.data.duplicate) { ElMessage.warning(`房号「${roomForm.room_number.trim()}」已在当前户型下存在，请勿重复录入`); return }
     } catch { /* */ }
   }
@@ -386,7 +386,7 @@ async function saveRoom() {
     if (editingRoom.value) {
       // 不发送version，避免乐观锁冲突
       console.log('PATCH /rooms/' + editingRoom.value.id, JSON.stringify(data))
-      await api.patch('/rooms/' + editingRoom.value.id, data)
+      await api.patch('/properties/' + editingRoom.value.id, data)
     } else {
       await api.post('/rooms', data)
     }
@@ -519,7 +519,7 @@ async function doBatchImport() {
     try {
       const rn = String(r.room_number || '').trim()
       const params = { unit_type_id: roomForm.unit_type_id, room_number: rn }
-      const check = await api.get('/rooms/check-duplicate', { params })
+      const check = await api.get('/properties/check-duplicate', { params })
       if (check.data.duplicate) {
         r._error = (r._error || '') + '；房号「' + rn + '」在当前户型下已存在'
         continue

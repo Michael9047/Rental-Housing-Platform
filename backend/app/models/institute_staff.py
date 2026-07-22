@@ -1,21 +1,21 @@
-"""公寓工作人员模型"""
+"""公寓人员配置模型"""
 from sqlalchemy import ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.db.session import Base
 from app.models.mixins import TimestampMixin
+from app.db.session import Base
 
 
 class BuildingStaff(TimestampMixin, Base):
-    """公寓工作人员"""
+    """公寓人员 — 负责人/员工/推销员"""
     __tablename__ = "building_staff"
 
-    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     institute_id: Mapped[int] = mapped_column(
         ForeignKey("institutes.id", ondelete="CASCADE"), index=True, nullable=False
     )
     name: Mapped[str] = mapped_column(String(100), nullable=False)
-    role: Mapped[str] = mapped_column(String(50), default="staff", nullable=False)
+    role: Mapped[str] = mapped_column(String(50), nullable=False, default="staff")
     phone: Mapped[str | None] = mapped_column(String(32), nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
 

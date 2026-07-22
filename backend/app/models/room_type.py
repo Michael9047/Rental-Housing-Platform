@@ -42,7 +42,7 @@ class RoomType(TimestampMixin, Base):
 
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
     property_id: Mapped[int] = mapped_column(
-        ForeignKey("properties.id", ondelete="CASCADE"), index=True, nullable=False
+        ForeignKey("rooms.id", ondelete="CASCADE"), index=True, nullable=False
     )
 
     # 房型基本信息

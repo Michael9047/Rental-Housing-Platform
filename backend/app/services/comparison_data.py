@@ -103,11 +103,28 @@ async def gather_comprehensive_metrics(
             review_map[p.id] = ri
 
     # ── 安全评分 ──
+    # 优先从 PropertyPOI.safety_data 缓存读取
     safety_map: dict[int, float] = {}
-    if safety_service:
+    uncached_ids: list[int] = []
+    uncached_coords: dict[int, tuple[float, float]] = {}
+    for p in props:
+        poi = poi_map.get(p.id)
+        if poi and poi.safety_data and poi.safety_data.get("safety_score"):
+            safety_map[p.id] = poi.safety_data["safety_score"]
+        elif p.latitude is not None and p.longitude is not None:
+            uncached_ids.append(p.id)
+            uncached_coords[p.id] = (float(p.latitude), float(p.longitude))
+
+    if uncached_ids and safety_service:
         try:
-            results = await safety_service.score_properties(ids)
-            safety_map = {pid: r.score for pid, r in results.items()}
+            lats = {pid: lat for pid, (lat, _) in uncached_coords.items()}
+            lngs = {pid: lng for pid, (_, lng) in uncached_coords.items()}
+            country = props[0].country if props else None
+            results = await safety_service.score_properties(
+                uncached_ids, country=country, latitudes=lats, longitudes=lngs
+            )
+            for pid, r in results.items():
+                safety_map[pid] = r.score
         except Exception:
             logger.warning("安全评分获取失败，使用中性分", exc_info=True)
 

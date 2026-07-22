@@ -70,7 +70,8 @@ def register_all_agents(registry: AgentRegistry) -> None:
     ))
 
     # ═══════════════════════════════════════════════════════════════════════
-    # Layer 2 — 条件任务 Agent（3 个）：按意图触发
+    # Layer 2 — 条件任务 Agent（1 个）：按意图触发
+    # cart / faq 已降级为工具（CartService + agent_faq），不再注册为 Agent
     # ═══════════════════════════════════════════════════════════════════════
 
     registry.register(AgentDefinition(
@@ -84,30 +85,6 @@ def register_all_agents(registry: AgentRegistry) -> None:
         max_token_budget=6000,
         timeout_ms=60_000,
         fallback_agent_id="synthesizer_agent",
-    ))
-
-    registry.register(AgentDefinition(
-        id="cart_agent",
-        name="购物车 Agent",
-        description="候选清单管理：查看/添加/移除，委托现有 AgentService 购物车方法",
-        model_id=ModelId.LITE,
-        capabilities=["cart", "favorites"],
-        tools=["cart_view", "cart_add", "cart_remove"],
-        cost_tier=CostTier.LOW,
-        max_token_budget=1000,
-        timeout_ms=15_000,
-    ))
-
-    registry.register(AgentDefinition(
-        id="faq_agent",
-        name="FAQ Agent",
-        description="FAQ 规则匹配：押金/合同/费用/预订流程等政策咨询",
-        model_id=ModelId.LITE,
-        capabilities=["faq", "policy", "help"],
-        tools=["faq_match"],
-        cost_tier=CostTier.LOW,
-        max_token_budget=1000,
-        timeout_ms=15_000,
     ))
 
     logger.info(

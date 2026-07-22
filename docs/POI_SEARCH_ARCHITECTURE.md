@@ -7,53 +7,74 @@
 
 ## 一、关键词分层体系
 
-### 1.1 分层总览
+### 1.1 两级分层总览
 
-| 层级 | 中文名 | 包含关键词 | 用途 |
-|------|--------|-----------|------|
-| **L1 — 美食** | 餐饮配套 | 餐厅、cafe、烘焙、快餐、食阁 | 聚集分析的主数据源 |
-| **L2 — 便利** | 生活便利 | 超市、便利店、市场、药店、健身房、酒吧 | 聚集附属标签，独立展示 |
-| **L3 — 出行** | 交通出行 | 地铁站、公交站 | 聚集命名锚点，独立展示 |
-| **L4 — 地标** | 大型地标 | 商场、小贩中心 | 聚集命名锚点，独立展示 |
-| **L5 — 医疗** | 医疗设施 | 医院 | 独立展示 |
+> **母类** 用于 UI Tab 分组，**子类** 用于实际搜索与数据存储。`gmR` 的 key 均为子类关键词。
+
+| 母类 | 子类 | 搜索端点 |
+|------|------|---------|
+| **交通** | 地铁站 | searchNearby |
+| | 公交站 | searchText 双词 2×2 网格 |
+| **医疗** | 医院 | searchNearby |
+| | 药店 | searchText 2×2 网格 |
+| **购物** | 超市 | searchText 2×2 网格 |
+| | 便利店 | searchText 2×2 网格 |
+| | 商场 | searchNearby |
+| | 酒吧 | searchText 2×2 网格 |
+| **美食** | 餐厅 | searchText 2×2 网格 |
+| | cafe | searchText 2×2 网格 |
+| | 烘焙 | searchText 2×2 网格 |
+| | 快餐 | searchText 2×2 网格 |
+| | 食阁 | searchText 2×2 网格 |
+| **生活** | 市场 | searchText 2×2 网格 |
+| | 健身房 | searchText 2×2 网格 |
+| **地标** | 小贩中心 | searchText 单矩形 + includedType |
 
 ### 1.2 详细检索表
 
-| 层级 | 关键词 | Google 搜索词 | 端点 | 上限 | 备注 |
-|------|--------|-------------|------|------|------|
-| **L1 美食** | 餐厅 | `"restaurant"` | searchText | 240 (2×2格×3页) | 网格分割 |
-| | cafe | `"cafe"` | searchText | 240 (2×2格×3页) | 网格分割 |
-| | 烘焙 | `"bakery"` | searchText | 240 (2×2格×3页) | 网格分割 |
-| | 快餐 | `"fast food"` | searchText | 240 (2×2格×3页) | 网格分割 |
-| | 食阁 | `"food centre"` | searchText | 240 (2×2格×3页) | 网格分割，含小贩中心摊位 |
-| **L2 便利** | 超市 | `"supermarket"` | searchText | 160 (2×2格×2页) | 网格分割 |
-| | 便利店 | `"convenience store"` | searchText | 160 (2×2格×2页) | 网格分割 |
-| | 市场 | `"market"` | searchText | 160 (2×2格×2页) | 网格分割 |
-| | 药店 | `"pharmacy"` | searchText | 160 (2×2格×2页) | 网格分割 |
-| | 健身房 | `"gym"` | searchText | 160 (2×2格×2页) | 网格分割 |
-| | 酒吧 | `"bar"` | searchText | 160 (2×2格×2页) | 网格分割 |
-| **L3 出行** | 地铁站 | `"subway station"` | searchText | 160 (2×2格×2页) | 网格分割，150m去重 |
-| | 公交站 | `"bus stop"` + `"bus station"` | searchText | 320 (双词×2×2格×2页) | 网格分割，80m去重 |
-| **L4 地标** | 商场 | `"shopping mall"` | searchText | 160 (2×2格×2页) | 网格分割，150m去重 |
-| | 小贩中心 | `"hawker centre"` + `"food centre"` | searchText | 120 (双词×3页, 单矩形) | 不走网格，`includedType: "food_court"` 过滤 |
-| **L5 医疗** | 医院 | `"hospital"` | searchText | 160 (2×2格×2页) | 网格分割，200m去重 |
+| 母类 | 子类 | 搜索词 | 端点 | 翻页 | 上限 | 备注 |
+|------|------|--------|------|------|------|------|
+| **交通** | 地铁站 | `["subway_station"]` | searchNearby | — | 20 | 圆形，150m 去重 |
+| | 公交站 | `"bus stop"` + `"bus station"` | searchText | 2页 | 320 (双词×2×2格×2页) | 网格分割，80m 去重 |
+| **医疗** | 医院 | `["hospital"]` | searchNearby | — | 20 | 圆形，200m 去重 |
+| | 药店 | `"pharmacy"` | searchText | 2页 | 160 (2×2格×2页) | 网格分割 |
+| **购物** | 超市 | `"supermarket"` | searchText | 2页 | 160 (2×2格×2页) | 网格分割 |
+| | 便利店 | `"convenience store"` | searchText | 2页 | 160 (2×2格×2页) | 网格分割 |
+| | 商场 | `["shopping_mall"]` | searchNearby | — | 20 | 圆形，150m 去重 |
+| | 酒吧 | `"bar"` | searchText | 2页 | 160 (2×2格×2页) | 网格分割 |
+| **美食** | 餐厅 | `"restaurant"` | searchText | 3页 | 240 (2×2格×3页) | 网格分割 |
+| | cafe | `"cafe"` | searchText | 3页 | 240 (2×2格×3页) | 网格分割 |
+| | 烘焙 | `"bakery"` | searchText | 3页 | 240 (2×2格×3页) | 网格分割 |
+| | 快餐 | `"fast food"` | searchText | 3页 | 240 (2×2格×3页) | 网格分割 |
+| | 食阁 | `"food centre"` | searchText | 3页 | 240 (2×2格×3页) | 网格分割，含小贩中心摊位 |
+| **生活** | 市场 | `"market"` | searchText | 2页 | 160 (2×2格×2页) | 网格分割，150m 去重 |
+| | 健身房 | `"gym"` | searchText | 2页 | 160 (2×2格×2页) | 网格分割 |
+| **地标** | 小贩中心 | `"hawker centre"` + `"food centre"` | searchText | 3页 | 120 (双词×3页，单矩形) | 不走网格，`includedType: "food_court"` 过滤 |
 
 ---
 
-## 二、端点选择策略
+## 二、端点与搜索策略
 
-> **已完全舍弃 `searchNearby` 圆形搜索**，全关键词统一走 `searchText` 矩形搜索。
+### 2.1 三条执行路径
 
-| 端点 | 适用场景 | 优势 | 限制 |
-|------|---------|------|------|
-| **searchText** | 全部 16 个关键词 | 矩形搜索、可翻页、可网格分割突破 20 条上限 | 需手动 `place_id` 去重 |
+| 路径 | 关键词数 | 端点 | 搜索形状 | 翻页 | 上限 |
+|------|---------|------|---------|------|------|
+| **A — searchNearby** | 3（地铁站/商场/医院） | `POST places:searchNearby` | 圆形 circle | 不支持 | 20 |
+| **B — 网格 searchText** | 12（其余除小贩中心） | `POST places:searchText` | 矩形 rectangle + 2×2 网格 | L1 美食 3 页 / 其余 2 页 | 160–320 |
+| **C — 特殊** | 1（小贩中心） | `POST places:searchText` | 矩形 rectangle + `includedType` | 3 页 × 双词 | 120 |
 
-**两条执行路径**：
+### 2.2 端点特性对比
 
-| 路径 | 关键词 | 搜索方式 | 翻页 | 上限 |
-|------|--------|---------|------|------|
-| **A — 特殊** | 小贩中心 | 单矩形 + `includedType: "food_court"` | 3 页 × 双词 | 120 |
-| **B — 通用** | 其余 15 个 | 2×2 网格分割 | L1 美食 3 页 / 其余 2 页 | 160 / 240 |
+| 参数 | searchNearby | searchText |
+|------|-------------|------------|
+| 请求方式 | `POST places:searchNearby` | `POST places:searchText` |
+| 搜索形状 | `circle` (center + radius) | `rectangle` (low + high) |
+| 结果上限 | `maxResultCount: 20`（不可翻页） | `pageSize: 20` × N 页（每格） |
+| 翻页 | 不支持（不返回 nextPageToken） | L1 美食 3 页 / 其余 2 页 |
+| 网格突破 | 不支持 | 2×2 = 4 格 |
+| 类型过滤 | `includedTypes` | `includedType`（可选） |
+| 文本搜索 | 不支持 | `textQuery` |
+| 去重 | 自动（结构化） | 需手动 `place_id` + proximity |
 
 ---
 
@@ -66,10 +87,6 @@
 | **Q1** | 优质 | ≥ 4.4 | 优先展示，聚集分析加权 |
 | **Q2** | 标准 | 3.0 — 4.3 | 正常纳入聚集分析 |
 | **Q3** | 低质 | < 3.0 | **舍去**，不计入聚集 |
-
-**应用位置**：
-- 搜索完成后、聚集分析前过滤
-- 低质餐厅不参与聚类、不计入聚集数量
 
 ---
 
@@ -109,8 +126,6 @@
 
 ### 4.5 去重规则
 
-> 全关键词走 searchText 后无自动去重，所有去重均为手动 post-search。
-
 | 关键词 | 去重方式 | 阈值 |
 |--------|---------|------|
 | 地铁站 | proximity | 150m |
@@ -120,38 +135,103 @@
 | 市场 | proximity | 150m |
 | 全 searchText 关键词 | 同名 + proximity | 50m |
 
-### 4.6 后续规划
-
-- [ ] **路牌号标识** — 聚集地附带门牌号范围，辅助命名校验
-- [ ] **聚集地名称人工审核** — 标记置信度低的命名供人工修正
-- [ ] **餐饮多样性指数** — 统计聚集地内美食类型数量（餐厅/cafe/烘焙/快餐比例）
+> searchNearby 关键词（地铁站/商场/医院）API 层自动去重；searchText 关键词需手动 post-search 去重。
 
 ---
 
-## 五、搜索参数速查
+## 五、线路信息（待定）
 
-> 全关键词统一使用 `POST places:searchText`，`searchNearby` 已废弃。
+> 地铁站、公交站的 POI 数据中已预留 `transit_lines` 字段，但 Google Places API 不返回站点线路信息。
+> 填充方案待定：
 
-| 参数 | 值 | 说明 |
-|------|-----|------|
-| 请求方式 | `POST places:searchText` | Google Places API (New) |
-| 搜索形状 | `rectangle` (low + high) | 由圆心 + 半径换算矩形 |
-| 网格分割 | 2×2 = 4 格 | 每格独立搜索，cross-cell `place_id` 去重 |
-| 每页条数 | `pageSize: 20` | Google 单页上限 |
-| 翻页 | L1: 3 页 / 其余: 2 页 | 小贩中心特殊：单矩形 3 页 |
-| 类型过滤 | `includedType`（可选） | 仅小贩中心使用 `"food_court"` |
-| 文本搜索 | `textQuery` | 双词关键词独立搜索后取并集 |
-| 去重 | 手动 `place_id` + proximity | searchText 无自动去重 |
+| 方案 | 说明 |
+|------|------|
+| **LTA DataMall** | 新加坡陆交局官方 API，免费注册，完整站点+线路数据 |
+| **静态字典** | Clementi 区域内站点有限，手动建 MRT/LRT 线路索引 |
+
+### 5.1 数据字段（已预留）
+
+```json
+{
+  "name": "Clementi",
+  "keyword": "地铁站",
+  "transit_lines": [
+    {"name": "East-West Line", "ref": "EW", "vehicle": "subway"}
+  ]
+}
+```
+
+### 5.2 展示（已实现）
+
+- 地图 tooltip：站名下方显示线路 ref
+- 列表项：站名旁显示线路编号
+- 当前数据为空时不显示
 
 ---
 
-## 六、文件位置
+## 六、并发控制
+
+| 参数 | 值 |
+|------|-----|
+| 并发数 | 6 |
+| 实现 | Semaphore 队列 |
+| 翻页延迟 | 400ms（避免撞 rate limit） |
+
+---
+
+## 七、安全评分
+
+> 新加坡安全评分已接入 data.gov.sg，与 POI 检索合并到同一 Celery 任务异步执行。
+
+### 7.1 新加坡管线
+
+| 参数 | 值 |
+|------|-----|
+| 数据源 | data.gov.sg — Selected Major Offences by NPC（年度） |
+| NPC 映射 | 35 个 NPC 中心坐标，最近邻匹配 |
+| 缓存 | 内存 24h（数据年度更新） |
+| 存储 | `PropertyPOI.safety_data` JSON 字段 |
+
+### 7.2 评分维度与权重
+
+| 犯罪类别 | 权重 |
+|---------|------|
+| Housebreaking (破门行窃) | 35% |
+| Outrage of Modesty (非礼) | 30% |
+| Robbery (抢劫) | 12% |
+| Snatch Theft (抢夺) | 8% |
+| Motor Theft (偷车) | 10% |
+| UML Harassment (非法放贷骚扰) | 5% |
+
+### 7.3 评分公式
+
+```
+ratio = zone_weighted_rate / national_weighted_rate
+score = clamp(100 - ratio × 50, 10, 100)
+```
+
+---
+
+## 八、文件位置
 
 | 文件 | 内容 |
 |------|------|
-| `frontend/public/poi-compare.html` | 测试页面（浏览器端验证） |
-| `backend/app/services/poi_service.py` | 后端 POI 服务（上线后由此实现） |
-| `backend/app/services/geocoding_service.py` | 多引擎地理编码 + POI 搜索 |
+| `frontend/public/poi-compare.html` | 浏览器端验证页面（Google Maps API 直调） |
+| `backend/app/services/google_poi_service.py` | **Google Maps 全量 POI 服务**（16 关键词 / 3 路径 / 网格分割） |
+| `backend/app/services/safety_scoring.py` | **安全评分服务**（SG: data.gov.sg 已实现 / UK: 待实现） |
+| `backend/app/tasks/poi_tasks.py` | Celery 异步任务 — POI + 安全评分合并执行 |
+| `backend/app/models/poi.py` | `PropertyPOI` 模型（含 `safety_data` 字段） |
+| `backend/app/services/poi_service.py` | 旧 POI 服务（Amap/Overpass，保留向后兼容） |
+| `backend/app/services/geocoding_service.py` | 多引擎地理编码（Amap/Google/Overpass/Nominatim） |
+
+### 集成点
+
+| 触发场景 | 调用方式 | 生成数据 |
+|---------|---------|---------|
+| 房源创建 `POST /api/v1/properties` | `generate_full_poi_for_property.delay(prop.id)` | POI + 安全评分 |
+| 房源更新 `PATCH /api/v1/properties/{id}` | 同上 | POI + 安全评分 |
+| 批量导入 `POST /api/v1/imports/confirm` | 同上 | POI + 安全评分 |
+| 对比 Agent | `comparison_data.gather_comprehensive_metrics()` | 优先读 DB 缓存 |
 
 ---
 

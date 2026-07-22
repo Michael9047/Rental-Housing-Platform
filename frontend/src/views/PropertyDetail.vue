@@ -6,7 +6,7 @@
       <div class="image-carousel" v-if="building.images?.length">
         <el-carousel :interval="4000" height="360px" indicator-position="outside">
           <el-carousel-item v-for="img in building.images" :key="img.id">
-            <img :src="'/api/v1/uploads/'+img.filename" style="width:100%;height:360px;object-fit:cover;border-radius:12px" />
+            <img :src="img.filename?.startsWith('http') ? img.filename : '/api/v1/uploads/'+img.filename" style="width:100%;height:360px;object-fit:cover;border-radius:12px" />
           </el-carousel-item>
         </el-carousel>
       </div>
@@ -158,13 +158,51 @@ async function loadBuilding() {
   loading.value = true
   try {
     const id = route.params.id
-    const r = await api.get(`/buildings/public/${id}`)
-    building.value = r.data
-    if (r.data.unit_types?.length) selectedUnitType.value = r.data.unit_types[0]
-    // 初始化地图
-    if (r.data.latitude && r.data.longitude) {
+    const r = await api.get(`/properties/${id}`)
+    const room = r.data
+    // 用 room 数据拼装为 building 格式（兼容模板）
+    building.value = {
+      id: room.id,
+      name: room.title || room.address,
+      address: room.address,
+      description: room.description,
+      latitude: room.latitude,
+      longitude: room.longitude,
+      amenities: room.amenities || [],
+      images: room.images || [],
+      unit_types: [],
+      female_only: false,
+      couples_allowed: false,
+    }
+    // 地图
+    if (room.latitude && room.longitude) {
       await nextTick()
-      initMap(r.data.latitude, r.data.longitude)
+      initMap(room.latitude, room.longitude)
+    }
+    // 如果有 unit_type_id，尝试取户型
+    if (room.unit_type_id) {
+      try {
+        const utRes = await api.get(`/unit-types/${room.unit_type_id}`)
+        const ut = utRes.data
+        ut.room_count = 1
+        ut.rooms = [{
+          id: room.id, room_number: room.room_number,
+          floor: room.floor, special_discount: room.special_discount,
+          available_from: room.available_from, status: room.status,
+        }]
+        building.value.unit_types = [ut]
+        selectedUnitType.value = ut
+      } catch { /* unit_type not available */ }
+    }
+    // 如果没取到户型，尝试取同 institute 的 unit_types
+    if (!building.value.unit_types?.length && room.institute_id) {
+      try {
+        const utsRes = await api.get('/unit-types', { params: { institute_id: room.institute_id, page_size: 10 } })
+        const uts = (utsRes.data.items || utsRes.data || []).map((ut: any) => ({
+          ...ut, room_count: 0, rooms: []
+        }))
+        if (uts.length) building.value.unit_types = uts
+      } catch { /* */ }
     }
   } catch { /* */ }
   finally { loading.value = false }
