@@ -51,7 +51,12 @@ const routes: RouteRecordRaw[] = [
       { path: 'profile', name: 'profile', component: () => import('@/views/Profile.vue'), meta: { requiresAuth: true } },
       { path: 'profile/edit', name: 'profile-edit', component: () => import('@/views/ProfileEdit.vue'), meta: { requiresAuth: true } },
       { path: 'contract/:id', name: 'contract-view', component: () => import('@/views/ContractView.vue'), meta: { requiresAuth: true } },
+      // 预定-支付-合同流程
+      { path: 'booking/confirm', name: 'booking-confirm', component: () => import('@/views/BookingConfirm.vue'), meta: { requiresAuth: true } },
+      { path: 'booking/payment/:id/deposit', name: 'deposit-payment', component: () => import('@/views/DepositPayment.vue'), meta: { requiresAuth: true } },
 
+      // 租客预定列表
+      { path: 'bookings/tenant', name: 'tenant-bookings', component: () => import('@/views/TenantBookings.vue'), meta: { requiresAuth: true } },
       // 房东管理页面
       { path: 'bookings/landlord', name: 'landlord-bookings', component: () => import('@/views/LandlordBookings.vue'), meta: { requiresAuth: true, requiresLandlord: true } },
       { path: 'workspace', name: 'landlord-workspace', component: () => import('@/views/landlord/LandlordDashboard.vue'), meta: { requiresAuth: true, requiresLandlord: true } },

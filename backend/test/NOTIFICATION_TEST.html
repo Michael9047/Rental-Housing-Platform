@@ -1,0 +1,392 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🔔</text></svg>">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>通知模块测试面板 — Rental Housing Platform</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  background: #f5f7fa;
+  color: #1e293b;
+  line-height: 1.6;
+}
+
+.container { max-width: 1024px; margin: 0 auto; padding: 32px 20px; }
+
+.header { text-align: center; margin-bottom: 32px; }
+.header h1 { font-size: 28px; font-weight: 700; color: #0f172a; margin-bottom: 8px; }
+.header p { color: #64748b; font-size: 14px; }
+
+.config-bar {
+  display: flex; gap: 12px; align-items: center; flex-wrap: wrap;
+  background: #fff; border-radius: 12px; padding: 16px 20px;
+  margin-bottom: 24px; box-shadow: 0 1px 3px rgba(0,0,0,.06);
+}
+.config-bar label { font-size: 13px; font-weight: 600; color: #475569; white-space: nowrap; }
+.config-bar input, .config-bar select {
+  border: 1px solid #e2e8f0; border-radius: 8px; padding: 8px 12px;
+  font-size: 13px; outline: none; min-width: 140px;
+}
+.config-bar input:focus, .config-bar select:focus {
+  border-color: #2563eb; box-shadow: 0 0 0 3px rgba(37,99,235,.1);
+}
+
+.section-title {
+  font-size: 16px; font-weight: 700; color: #0f172a;
+  margin-bottom: 16px; padding-bottom: 8px; border-bottom: 2px solid #2563eb;
+}
+
+.scenario-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 16px; margin-bottom: 32px;
+}
+
+.scenario-card {
+  background: #fff; border-radius: 12px; padding: 20px;
+  box-shadow: 0 1px 3px rgba(0,0,0,.06);
+  transition: transform .15s, box-shadow .15s;
+  display: flex; flex-direction: column; gap: 12px;
+}
+.scenario-card:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,.1); }
+
+.event-type {
+  font-size: 12px; font-weight: 600; color: #2563eb;
+  background: #eff6ff; padding: 2px 8px; border-radius: 4px; align-self: flex-start;
+}
+.scenario-card .title { font-size: 15px; font-weight: 700; color: #1e293b; }
+
+.channels { display: flex; gap: 6px; flex-wrap: wrap; }
+.ch-badge { font-size: 11px; padding: 2px 8px; border-radius: 4px; font-weight: 600; }
+.ch-badge.email { background: #dcfce7; color: #166534; }
+.ch-badge.sms   { background: #fef3c7; color: #92400e; }
+.ch-badge.in_app { background: #dbeafe; color: #1e40af; }
+.ch-badge.landlord { background: #f3e8ff; color: #6b21a8; }
+
+.scenario-card .desc { font-size: 13px; color: #64748b; flex: 1; }
+
+.scenario-card button {
+  border: none; border-radius: 8px; padding: 10px 16px;
+  font-size: 13px; font-weight: 600; cursor: pointer; transition: all .15s;
+  color: #fff; background: #2563eb;
+}
+.scenario-card button:hover { background: #1d4ed8; }
+.scenario-card button:active { transform: scale(.97); }
+.scenario-card button:disabled { background: #94a3b8; cursor: not-allowed; }
+
+.bulk-actions { display: flex; gap: 12px; margin-bottom: 24px; }
+.bulk-actions button {
+  border: none; border-radius: 10px; padding: 12px 24px;
+  font-size: 14px; font-weight: 700; cursor: pointer; transition: all .15s;
+}
+.btn-test-all {
+  background: linear-gradient(135deg, #2563eb, #1d4ed8); color: #fff; flex: 1;
+}
+.btn-test-all:hover { opacity: .9; }
+.btn-clear { background: #f1f5f9; color: #475569; border: 1px solid #e2e8f0; }
+.btn-clear:hover { background: #e2e8f0; }
+.btn-api-check { background: #16a34a; color: #fff; }
+.btn-api-check:hover { background: #15803d; }
+
+.tabs { display: flex; gap: 0; margin-bottom: 24px; background: #e2e8f0; border-radius: 10px; padding: 4px; }
+.tab-btn {
+  flex: 1; border: none; background: transparent; padding: 10px 16px;
+  font-size: 13px; font-weight: 600; color: #64748b; cursor: pointer;
+  border-radius: 8px; transition: all .15s;
+}
+.tab-btn.active { background: #fff; color: #1e293b; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
+
+.result-panel {
+  background: #fff; border-radius: 12px; padding: 20px;
+  box-shadow: 0 1px 3px rgba(0,0,0,.06); margin-bottom: 24px;
+}
+.result-panel h3 { font-size: 14px; font-weight: 600; color: #475569; margin-bottom: 12px; }
+
+.result-log {
+  background: #0f1117; border-radius: 8px; padding: 12px 16px;
+  max-height: 360px; overflow-y: auto;
+  font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+  font-size: 12px; line-height: 1.8; color: #cdd6f4;
+}
+.result-entry { padding: 3px 0; border-bottom: 1px solid #1e2030; }
+.result-entry:last-child { border-bottom: none; }
+.result-entry .time { color: #6c7086; margin-right: 8px; }
+.result-entry .ok { color: #a6e3a1; }
+.result-entry .warn { color: #f9e2af; }
+.result-entry .err { color: #f38ba8; }
+.result-entry .info { color: #89b4fa; }
+</style>
+</head>
+<body>
+
+<div class="container">
+
+  <div class="header">
+    <h1>通知模块测试面板</h1>
+    <p>对应文档第3-14节 — 12 个业务事件 × 4 个渠道的全面测试</p>
+  </div>
+
+  <!-- 配置区 -->
+  <div class="config-bar">
+    <label>API:</label>
+    <input type="text" id="apiBase" value="http://localhost:8001/api/v1">
+    <label>Token:</label>
+    <input type="text" id="authToken" placeholder="自动获取..." style="min-width:280px">
+    <button class="btn-api-check" onclick="autoLogin()" style="min-width:auto;padding:8px 16px;font-size:13px;">一键登录</button>
+    <span id="loginStatus" style="font-size:11px;color:#94a3b8"></span>
+  </div>
+  <div class="config-bar" style="margin-top:-12px;border-top-left-radius:0;border-top-right-radius:0;padding-top:8px">
+    <label>User:</label>
+    <input type="number" id="userId" value="" style="width:70px" placeholder="自动">
+    <label>Order:</label>
+    <input type="number" id="orderId" value="" style="width:70px" placeholder="可选">
+    <label>Prop:</label>
+    <input type="number" id="propertyId" value="4186" style="width:70px">
+  </div>
+
+  <!-- 快捷按钮 -->
+  <div class="bulk-actions">
+    <button class="btn-test-all" onclick="triggerAll()">一键触发全部 12 个场景</button>
+    <button class="btn-api-check" onclick="checkUnread()">查询未读数量</button>
+    <button class="btn-api-check" onclick="listNotifications()">查看通知列表</button>
+    <button class="btn-clear" onclick="clearLog()">清空日志</button>
+  </div>
+
+  <!-- Tabs -->
+  <div class="tabs">
+    <button class="tab-btn active" onclick="switchTab('scenarios', this)">场景触发 (12个)</button>
+    <button class="tab-btn" onclick="switchTab('verify', this)">验收清单 (16项)</button>
+  </div>
+
+  <!-- 场景触发 -->
+  <div id="tab-scenarios">
+    <div class="section-title">通知场景矩阵</div>
+    <div class="scenario-grid" id="scenarioGrid"></div>
+  </div>
+
+  <!-- 验收清单 -->
+  <div id="tab-verify" style="display:none;">
+    <div class="section-title">验收清单（文档第14节）</div>
+    <div class="scenario-grid" id="verifyGrid"></div>
+  </div>
+
+  <!-- 日志 -->
+  <div class="result-panel">
+    <h3>执行日志</h3>
+    <div class="result-log" id="resultLog">
+      <div style="color:#6c7086">等待操作...</div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+// ══════════════════════════════════════════════════════════════
+// 场景定义
+// ══════════════════════════════════════════════════════════════
+const SCENARIOS = [
+  { key:'contract_signed',       title:'📝 合同签署成功',       section:'合同', channels:['email','in_app'],          desc:'合同签署成功，等待付款' },
+  { key:'payment_pending',       title:'⏳ 订单等待支付',       section:'支付', channels:['email','in_app'],          desc:'订单生成，等待支付' },
+  { key:'payment_failed',        title:'❌ 支付失败',            section:'支付', channels:['email','sms','in_app'],   desc:'支付尝试失败，全渠道通知' },
+  { key:'payment_processing',    title:'🔄 支付处理中',         section:'支付', channels:['in_app'],                 desc:'仅站内消息，不误发邮件/短信' },
+  { key:'payment_expiring_in_3_hours',   title:'🔴 支付截止前3小时',    section:'支付', channels:['email','sms','in_app'],   desc:'三小时提醒，幂等键防重复' },
+  { key:'payment_succeeded',     title:'✅ 支付成功/预订确认',   section:'支付', channels:['email','sms','in_app','landlord'], desc:'租客+房东双通知' },
+  { key:'booking_confirmed',     title:'🏠 预订已确认',         section:'订单', channels:['email','sms','in_app','landlord'], desc:'预订确认全渠道通知' },
+  { key:'order_auto_cancelled',  title:'🚫 订单自动取消',       section:'订单', channels:['email','sms','in_app'],   desc:'超时未付自动取消' },
+  { key:'payment_review',        title:'🔍 付款等待核对',       section:'支付', channels:['email','in_app'],          desc:'异常付款人工核对' },
+  { key:'refund_pending',        title:'💸 退款处理中',         section:'退款', channels:['email','in_app'],          desc:'退款正在处理' },
+  { key:'refunded',              title:'💰 退款成功',           section:'退款', channels:['email','in_app'],          desc:'退款已到账' },
+  { key:'contract_expiring',     title:'📅 合同租期临近',       section:'合同', channels:['email','in_app'],          desc:'租期即将到期提醒' },
+];
+
+const VERIFY_CHECKS = [
+  { id:'V1',  label:'合同签署 → 等待支付通知', scenario:'contract_signed' },
+  { id:'V2',  label:'支付失败 → 邮件+短信+站内', scenario:'payment_failed' },
+  { id:'V3',  label:'截止前3h提醒（幂等不重复）', scenario:'payment_expiring_in_3_hours' },
+  { id:'V4',  label:'已支付订单不收3h催付', desc:'先触发 payment_succeeded，再触发 payment_expiring_in_3_hours' },
+  { id:'V5',  label:'支付成功 → 租客确认通知', scenario:'payment_succeeded' },
+  { id:'V6',  label:'支付成功 → 房东出租确认', scenario:'payment_succeeded' },
+  { id:'V7',  label:'重复Webhook不产生重复通知', desc:'同一场景触发2次，第2次幂等跳过' },
+  { id:'V8',  label:'支付处理中不误发成功/失败', scenario:'payment_processing' },
+  { id:'V9',  label:'自动取消 → 取消通知', scenario:'order_auto_cancelled' },
+  { id:'V10', label:'迟到付款 → 核对通知', scenario:'payment_review' },
+  { id:'V11', label:'退款中/已退款通知', scenario:'refund_pending' },
+  { id:'V12', label:'未验证手机号不发送短信', desc:'用户无手机号时SMS跳过' },
+  { id:'V13', label:'邮件/短信失败不影响订单', desc:'通知失败不回滚已支付订单' },
+  { id:'V14', label:'消息卡跳转正确订单', desc:'前端消息卡片点击跳转正确order' },
+  { id:'V15', label:'无效订单关联不崩溃', desc:'order_id无效时列表正常加载' },
+  { id:'V16', label:'通知不含敏感数据', desc:'检查无护照号/卡号/签名/密钥' },
+];
+
+// ══════════════════════════════════════════════════════════════
+function cfg() { return {
+  apiBase: $('apiBase').value.trim(),
+  token: $('authToken').value.trim(),
+  userId: $('userId').value||'',
+  orderId: $('orderId').value||'',
+  propertyId: $('propertyId').value||'4186',
+};}
+function $(id){ return document.getElementById(id); }
+
+async function autoLogin() {
+  const base = $('apiBase').value.trim();
+  const apiRoot = base.replace('/api/v1','');
+  const status = $('loginStatus');
+  status.style.color = '#d97706';
+  status.textContent = '登录中...';
+
+  try {
+    // 先试登录
+    let r = await fetch(base + '/auth/login', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({username_or_email: 'test_agent', password: 'test123456'}),
+    });
+
+    if (!r.ok) {
+      status.textContent = '注册新账号...';
+      r = await fetch(base + '/auth/register', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({username: 'test_agent', email: 'test_agent@test.com', password: 'test123456'}),
+      });
+      if (!r.ok) {
+        // 如果已存在，试试别的用户名
+        const suffix = Date.now().toString(36);
+        await fetch(base + '/auth/register', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({username: 'ntf_test_' + suffix, email: 'ntf_test_' + suffix + '@test.com', password: 'test123456'}),
+        });
+        r = await fetch(base + '/auth/login', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({username_or_email: 'ntf_test_' + suffix, password: 'test123456'}),
+        });
+      } else {
+        r = await fetch(base + '/auth/login', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({username_or_email: 'test_agent', password: 'test123456'}),
+        });
+      }
+    }
+
+    const d = await r.json();
+    if (!d.access_token) {
+      status.style.color = '#dc2626';
+      status.textContent = '登录失败: ' + JSON.stringify(d).slice(0, 80);
+      return;
+    }
+    $('authToken').value = d.access_token;
+    $('userId').value = d.user_id || '';
+    status.style.color = '#16a34a';
+    status.textContent = '已登录 uid=' + (d.user_id || '?');
+    logOk('自动登录成功 user_id=' + (d.user_id || '?') + ' token=' + d.access_token.slice(0, 20) + '...');
+  } catch (e) {
+    status.style.color = '#dc2626';
+    status.textContent = '连接失败: ' + e.message;
+    logErr('登录失败: ' + e.message + ' (检查后端是否启动)');
+  }
+}
+
+function chBadge(c) {
+  const m={email:'📧 邮件',sms:'📱 短信',in_app:'🔔 站内',landlord:'🏘️ 房东'};
+  return `<span class="ch-badge ${c}">${m[c]||c}</span>`;
+}
+
+function buildCards() {
+  $('scenarioGrid').innerHTML = SCENARIOS.map(s=>`
+    <div class="scenario-card">
+      <span class="event-type">${s.key}</span>
+      <div class="title">${s.title}</div>
+      <div class="channels">${s.channels.map(chBadge).join('')}</div>
+      <div class="desc">${s.desc}</div>
+      <button id="btn-${s.key}" onclick="triggerScenario('${s.key}')">触发此场景</button>
+    </div>`).join('');
+  $('verifyGrid').innerHTML = VERIFY_CHECKS.map(v=>`
+    <div class="scenario-card">
+      <span class="event-type">验收 ${v.id}</span>
+      <div class="title">${v.label}</div>
+      <div class="desc">${v.desc||'自动触发对应场景'}</div>
+      ${v.scenario
+        ?`<button onclick="triggerScenario('${v.scenario}')">触发: ${v.scenario}</button>`
+        :`<button onclick="logWarn('需手动验证: ${v.label}')">标记手动</button>`}
+    </div>`).join('');
+}
+
+async function triggerScenario(key) {
+  const c=cfg(); const btn=$('btn-'+key);
+  if(btn){btn.disabled=true;btn.textContent='发送中...';}
+  try{
+    const r=await fetch(c.apiBase+'/notifications/test-trigger',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','Authorization':c.token?`Bearer ${c.token}`:''},
+      body:JSON.stringify({scenario:key,user_id:parseInt(c.userId)||null,order_id:parseInt(c.orderId)||null,property_id:parseInt(c.propertyId)||null}),
+    });
+    const d=await r.json();
+    if(r.ok){logOk(`${key}: ✅ notification_id=${d.notification_id} channels=[${d.channels_sent.join(',')}] ${d.detail}`);}
+    else{logErr(`${key}: ❌ HTTP ${r.status} — ${d.detail||JSON.stringify(d)}`);}
+  }catch(e){logErr(`${key}: ❌ ${e.message}`);}
+  if(btn){setTimeout(()=>{btn.disabled=false;btn.textContent='触发此场景';},1500);}
+}
+
+async function triggerAll() {
+  logWarn('开始批量触发...');
+  for(let i=0;i<SCENARIOS.length;i++){
+    logInfo(`[${i+1}/${SCENARIOS.length}] ${SCENARIOS[i].key}`);
+    await triggerScenario(SCENARIOS[i].key);
+    await new Promise(r=>setTimeout(r,400));
+  }
+  logOk('全部场景触发完毕！');
+}
+
+async function checkUnread() {
+  const c=cfg();
+  try{
+    const r=await fetch(c.apiBase+'/notifications/unread-count',{headers:{'Authorization':c.token?`Bearer ${c.token}`:''}});
+    const d=await r.json();
+    logInfo(`未读数量: ${d.count} (>=99显示99+)`);
+  }catch(e){logErr('查询失败: '+e.message);}
+}
+
+async function listNotifications() {
+  const c=cfg();
+  try{
+    const r=await fetch(c.apiBase+'/notifications?filter=all',{headers:{'Authorization':c.token?`Bearer ${c.token}`:''}});
+    const d=await r.json();
+    logInfo(`共 ${d.length} 条通知`);
+    d.slice(0,10).forEach(n=>{
+      logInfo(`  #${n.id} [${n.type}] ${n.title} ${n.is_read?'✅已读':'🔵未读'} order=${n.order_id||'-'}`);
+    });
+    if(d.length>10) logInfo(`  ...还有 ${d.length-10} 条`);
+  }catch(e){logErr('查询失败: '+e.message);}
+}
+
+function log(cls,msg){
+  const div=$('resultLog');
+  if(div.children.length===1&&div.children[0].style&&div.children[0].style.color) div.innerHTML='';
+  const e=document.createElement('div');e.className='result-entry';
+  e.innerHTML=`<span class="time">${new Date().toLocaleTimeString('zh-CN')}</span><span class="${cls}">${msg}</span>`;
+  div.prepend(e);
+}
+function logOk(m){log('ok',m);} function logWarn(m){log('warn',m);}
+function logErr(m){log('err',m);} function logInfo(m){log('info',m);}
+function clearLog(){$('resultLog').innerHTML='<div style="color:#6c7086">日志已清空</div>';}
+
+function switchTab(tab,btn){
+  document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  $('tab-scenarios').style.display=tab==='scenarios'?'':'none';
+  $('tab-verify').style.display=tab==='verify'?'':'none';
+}
+
+buildCards();
+logWarn('面板就绪。请配置 API Base 和 Token，然后点击场景按钮测试。');
+logInfo('提示: 邮件需SMTP/DirectMail配置；短信需阿里云dysmsapi配置；未配置的渠道自动跳过。');
+</script>
+</body>
+</html>

@@ -1,0 +1,691 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🗺</text></svg>">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>房源地图可视化 — Property Map</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<style>
+:root {
+  --bg: #0f1117; --card: #161822; --border: #252836;
+  --text: #cdd6f4; --muted: #6c7086; --accent: #89b4fa;
+  --green: #a6e3a1; --red: #f38ba8; --yellow: #f9e2af;
+  --purple: #cba6f7; --teal: #94e2d5; --orange: #fab387;
+  --pink: #f5c2e7;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--text);
+  font: 14px/1.6 system-ui, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  display: flex; height: 100vh; overflow: hidden;
+}
+
+/* ── 左侧面板 ── */
+.sidebar {
+  width: 380px; min-width: 380px;
+  display: flex; flex-direction: column;
+  border-right: 1px solid var(--border);
+  background: var(--bg);
+}
+.sidebar-header {
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border);
+}
+.sidebar-header h1 { font-size: 18px; font-weight: 700; }
+.sidebar-header h1 span { color: var(--accent); }
+.sidebar-header .subtitle { font-size: 12px; color: var(--muted); margin-top: 4px; }
+
+/* 连接配置 */
+.config-row {
+  display: flex; gap: 8px; padding: 12px 20px;
+  border-bottom: 1px solid var(--border);
+  align-items: center;
+}
+.config-row input {
+  background: var(--card); color: var(--text);
+  border: 1px solid var(--border); border-radius: 6px;
+  padding: 6px 10px; font: 12px system-ui; outline: none;
+  flex: 1;
+}
+.config-row input:focus { border-color: var(--accent); }
+.config-row button {
+  background: var(--accent); color: var(--bg);
+  border: none; border-radius: 6px; padding: 6px 14px;
+  font: 12px system-ui; font-weight: 600; cursor: pointer;
+  white-space: nowrap;
+}
+.config-row button:disabled { opacity: .4; cursor: default; }
+
+/* 统计条 */
+.stats-bar {
+  display: flex; gap: 0;
+  padding: 10px 20px; border-bottom: 1px solid var(--border);
+  font-size: 11px;
+}
+.stat-item {
+  flex: 1; text-align: center;
+  border-right: 1px solid var(--border);
+}
+.stat-item:last-child { border-right: none; }
+.stat-item .num { font-size: 20px; font-weight: 700; color: var(--accent); }
+.stat-item .label { color: var(--muted); margin-top: 2px; }
+
+/* 城市筛选 */
+.filter-row {
+  display: flex; gap: 6px; padding: 10px 20px;
+  border-bottom: 1px solid var(--border);
+  flex-wrap: wrap;
+}
+.filter-chip {
+  padding: 3px 10px; border-radius: 12px;
+  font-size: 11px; cursor: pointer;
+  border: 1px solid var(--border);
+  background: var(--card); color: var(--muted);
+  transition: all .15s;
+}
+.filter-chip:hover { border-color: var(--accent); color: var(--text); }
+.filter-chip.active { background: var(--accent); color: var(--bg); border-color: var(--accent); }
+
+/* 房源列表 */
+.property-list {
+  flex: 1; overflow-y: auto; padding: 8px 0;
+}
+.property-item {
+  padding: 10px 20px; cursor: pointer;
+  border-bottom: 1px solid rgba(37,38,46,.5);
+  transition: background .15s;
+}
+.property-item:hover { background: var(--card); }
+.property-item.active { background: #1a2a38; border-left: 3px solid var(--accent); padding-left: 17px; }
+.property-item .p-title { font-size: 13px; font-weight: 600; margin-bottom: 2px; }
+.property-item .p-info { font-size: 11px; color: var(--muted); }
+.property-item .p-price { color: var(--accent); font-weight: 700; font-size: 13px; }
+.property-item .p-row { display: flex; justify-content: space-between; align-items: center; margin-top: 4px; }
+.property-item .p-city {
+  display: inline-block; padding: 1px 6px; border-radius: 4px;
+  font-size: 10px; font-weight: 600;
+}
+
+/* ── 右侧地图 ── */
+.map-container {
+  flex: 1; position: relative;
+}
+#map { width: 100%; height: 100%; }
+
+/* 图例 */
+.legend {
+  position: absolute; bottom: 30px; right: 12px;
+  background: var(--card); border: 1px solid var(--border);
+  border-radius: 8px; padding: 10px 14px; font-size: 11px;
+  z-index: 1000;
+}
+.legend-item { display: flex; align-items: center; gap: 6px; margin: 4px 0; }
+.legend-dot { width: 10px; height: 10px; border-radius: 50%; }
+
+/* 加载动画 */
+#loader {
+  display: none;
+  position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%);
+  background: var(--card); border: 1px solid var(--border);
+  border-radius: 12px; padding: 20px 30px; text-align: center; z-index: 1001;
+}
+#loader .spinner {
+  width: 32px; height: 32px; border: 3px solid var(--border);
+  border-top-color: var(--accent); border-radius: 50%;
+  animation: spin .8s linear infinite; margin: 0 auto 12px;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+#loader .msg { font-size: 13px; color: var(--muted); }
+
+/* 调试面板 */
+.debug-panel {
+  border-top: 1px solid var(--border);
+  padding: 10px 16px; font-size: 11px;
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  max-height: 180px; overflow-y: auto;
+  background: #0a0b10;
+}
+.debug-line {
+  padding: 2px 0; border-bottom: 1px solid rgba(37,38,46,.3);
+  word-break: break-all;
+}
+.debug-line:last-child { border-bottom: none; }
+.debug-ok   { color: var(--green); }
+.debug-info { color: var(--accent); }
+.debug-warn { color: var(--yellow); }
+.debug-err  { color: var(--red); }
+.debug-time { color: var(--muted); font-size: 10px; }
+
+/* 空状态 */
+.empty-state {
+  text-align: center; padding: 40px 20px; color: var(--muted);
+}
+.empty-state .icon { font-size: 48px; margin-bottom: 12px; }
+
+/* 覆盖 Leaflet 暗色 */
+.leaflet-popup-content-wrapper {
+  background: var(--card) !important;
+  color: var(--text) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: 10px !important;
+  font: 13px system-ui, 'PingFang SC', sans-serif !important;
+}
+.leaflet-popup-tip { background: var(--card) !important; }
+.leaflet-popup-content { margin: 10px 14px !important; }
+.popup-title { font-size: 14px; font-weight: 700; margin-bottom: 6px; }
+.popup-row { font-size: 12px; color: var(--muted); margin: 2px 0; }
+.popup-price { font-size: 16px; font-weight: 700; color: var(--accent); margin: 6px 0; }
+.popup-badges { display: flex; gap: 4px; margin-top: 6px; }
+.popup-badge {
+  padding: 2px 8px; border-radius: 4px;
+  font-size: 10px; font-weight: 600;
+  background: #1a2a38; color: var(--accent);
+}
+</style>
+</head>
+<body>
+
+<!-- ═══ 左侧面板 ═══ -->
+<div class="sidebar">
+  <div class="sidebar-header">
+    <h1>🏠 房源地图 <span>可视化</span></h1>
+    <div class="subtitle">所有带坐标的测试房源分布</div>
+  </div>
+
+  <div class="config-row">
+    <input id="baseUrl" value="http://localhost:8001/api/v1" placeholder="API Base URL">
+    <button id="btnLoad" onclick="loadProperties()">🔍 加载房源</button>
+    <label style="display:flex;align-items:center;gap:4px;font-size:11px;color:var(--muted);cursor:pointer;white-space:nowrap">
+      <input type="checkbox" id="chkUni" checked onchange="toggleUniversities()"> 🎓 大学
+    </label>
+  </div>
+
+  <div class="stats-bar" id="statsBar" style="display:none">
+    <div class="stat-item"><div class="num" id="statTotal">0</div><div class="label">总房源</div></div>
+    <div class="stat-item"><div class="num" id="statCities">0</div><div class="label">城市</div></div>
+    <div class="stat-item"><div class="num" id="statAvgPrice">0</div><div class="label">均价 (CNY)</div></div>
+  </div>
+
+  <div class="filter-row" id="filterRow" style="display:none"></div>
+
+  <div class="property-list" id="propertyList">
+    <div class="empty-state" id="emptyState">
+      <div class="icon">🗺️</div>
+      <div>点击「加载房源」从后端获取数据</div>
+      <div style="font-size:11px;margin-top:4px">API: http://localhost:8001/api/v1</div>
+      <div id="fileWarn" style="display:none;margin-top:12px;padding:10px;background:#3a1a1a;border:1px solid #f38ba8;border-radius:8px;color:#f38ba8;font-size:12px;text-align:left">
+        <b>⚠️ 不要双击文件打开！</b><br><br>
+        你当前用的是 <code>file://</code> 协议，浏览器禁止跨域请求。<br><br>
+        <b>正确方式：</b> 地址栏输入<br>
+        <code style="background:#0a0b10;padding:2px 6px;border-radius:4px">http://localhost:8080/PROPERTY_MAP.html</code>
+      </div>
+    </div>
+  </div>
+
+  <!-- 调试日志面板 -->
+  <div class="debug-panel" id="debugPanel"></div>
+</div>
+
+<!-- ═══ 右侧地图 ═══ -->
+<div class="map-container">
+  <div id="map"></div>
+  <div id="loader"><div class="spinner"></div><div class="msg">加载中...</div></div>
+
+  <div class="legend" id="legendBox">
+    <div style="font-weight:600;margin-bottom:6px">房源类型</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#a6e3a1"></div> 单间 (studio)</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#89b4fa"></div> 一室 (1-bed)</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#74c7ec"></div> 两室+ (2-bed)</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#f9e2af"></div> 合租 (shared)</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#cba6f7"></div> 别墅 (house)</div>
+    <div style="font-weight:600;margin:8px 0 4px;border-top:1px solid var(--border);padding-top:8px">🎓 大学</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#f38ba8;border:2px solid #fff;width:8px;height:8px"></div> 伦敦</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#a6e3a1;border:2px solid #fff;width:8px;height:8px"></div> 新加坡</div>
+  </div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+// ═══════════════════════════════════════════
+// 调试日志
+// ═══════════════════════════════════════════
+function debug(msg, cls) {
+  cls = cls || 'info';
+  const panel = document.getElementById('debugPanel');
+  if (!panel) return;
+  const now = new Date().toLocaleTimeString();
+  const line = document.createElement('div');
+  line.className = 'debug-line debug-' + cls;
+  line.innerHTML = '<span class="debug-time">' + now + '</span> ' + msg;
+  panel.prepend(line);
+  // 保留最近 50 条
+  while (panel.children.length > 50) panel.lastChild.remove();
+}
+
+// ═══════════════════════════════════════════
+// 全局状态
+// ═══════════════════════════════════════════
+let allProperties = [];
+let markers = [];
+let uniMarkers = [];
+let showUniversities = true;
+let activeFilter = 'all';
+let map;
+
+// ═══════════════════════════════════════════
+// 大学数据 — 全球主要留学目的地
+// ═══════════════════════════════════════════
+const UNIVERSITIES = [
+  // ── 伦敦 ──
+  { name: 'UCL 伦敦大学学院', abbr: 'UCL', lat: 51.5246, lng: -0.1339, city: '伦敦', students: '~46,000' },
+  { name: 'Imperial 帝国理工', abbr: 'ICL', lat: 51.4988, lng: -0.1749, city: '伦敦', students: '~22,000' },
+  { name: 'LSE 伦敦政经', abbr: 'LSE', lat: 51.5144, lng: -0.1167, city: '伦敦', students: '~12,000' },
+  { name: "King's 国王学院", abbr: 'KCL', lat: 51.5115, lng: -0.1160, city: '伦敦', students: '~33,000' },
+  { name: 'Queen Mary 玛丽女王', abbr: 'QMUL', lat: 51.5241, lng: -0.0403, city: '伦敦', students: '~27,000' },
+  { name: 'SOAS 亚非学院', abbr: 'SOAS', lat: 51.5223, lng: -0.1290, city: '伦敦', students: '~6,000' },
+  // ── 新加坡 ──
+  { name: 'NUS 新加坡国立', abbr: 'NUS', lat: 1.2966, lng: 103.7764, city: '新加坡', students: '~40,000' },
+  { name: 'NTU 南洋理工', abbr: 'NTU', lat: 1.3483, lng: 103.6831, city: '新加坡', students: '~33,000' },
+  { name: 'SMU 新加坡管理', abbr: 'SMU', lat: 1.2963, lng: 103.8502, city: '新加坡', students: '~10,000' },
+  { name: 'SUTD 科技设计大学', abbr: 'SUTD', lat: 1.3416, lng: 103.9661, city: '新加坡', students: '~1,500' },
+];
+
+// 城市 → 大学颜色
+const UNI_CITY_COLORS = {
+  '伦敦': '#f38ba8',
+  '新加坡': '#a6e3a1',
+};
+
+// ═══════════════════════════════════════════
+// 城市 → 坐标映射（用于聚类缩放）
+// ═══════════════════════════════════════════
+const CITY_COORDS = {
+  '新加坡': [1.33, 103.75],
+  '伦敦': [51.51, -0.12],
+};
+
+// 类型 → 颜色
+const TYPE_COLORS = {
+  'studio': '#a6e3a1',
+  '1-bed': '#89b4fa',
+  '2-bed': '#74c7ec',
+  'shared': '#f9e2af',
+  'house': '#cba6f7',
+};
+const TYPE_LABELS = {
+  'studio': '单间',
+  '1-bed': '一室',
+  '2-bed': '两室+',
+  'shared': '合租',
+  'house': '别墅',
+};
+const CURRENCY_SYMBOLS = {
+  'CNY': '¥', 'GBP': '£', 'SGD': 'S$', 'USD': '$', 'HKD': 'HK$',
+};
+function fmtPrice(p) {
+  const cur = p.currency ? CURRENCY_SYMBOLS[p.currency] || '¥' : '¥';
+  const price = Number(p.price_monthly || 0);
+  return cur + price.toLocaleString();
+}
+const DEFAULT_COLOR = '#fab387';
+
+// ═══════════════════════════════════════════
+// 初始化地图
+// ═══════════════════════════════════════════
+function initMap() {
+  map = L.map('map', {
+    center: [20, 0],
+    zoom: 2,
+    zoomControl: true,
+  });
+
+  // 暗色地图底图
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> &copy; <a href="https://carto.com/">CARTO</a>',
+    subdomains: 'abcd',
+    maxZoom: 19,
+  }).addTo(map);
+}
+
+// ═══════════════════════════════════════════
+// 加载房源数据
+// ═══════════════════════════════════════════
+async function loadProperties() {
+  const baseUrl = document.getElementById('baseUrl').value.trim();
+  const loader = document.getElementById('loader');
+  const btn = document.getElementById('btnLoad');
+
+  btn.disabled = true;
+  loader.style.display = 'block';
+  debug('━━━ 开始加载 ━━━', 'info');
+  debug('Base URL: ' + baseUrl, 'info');
+
+  try {
+    const url = `${baseUrl}/properties/search?limit=100`;
+    debug('GET ' + url, 'info');
+
+    const startTime = performance.now();
+    const resp = await fetch(url);
+    const elapsed = Math.round(performance.now() - startTime);
+
+    debug('HTTP ' + resp.status + ' ' + resp.statusText + ' (' + elapsed + 'ms)', resp.ok ? 'ok' : 'warn');
+
+    if (!resp.ok) {
+      const errText = await resp.text().catch(() => '(无法读取响应体)');
+      debug('响应体: ' + errText.substring(0, 300), 'err');
+      throw new Error('HTTP ' + resp.status + ': ' + resp.statusText);
+    }
+
+    const contentType = resp.headers.get('content-type') || '';
+    debug('Content-Type: ' + contentType, 'info');
+
+    let data = await resp.json();
+    if (data && Array.isArray(data)) {
+      allProperties = data;
+    } else if (data && Array.isArray(data.items)) {
+      allProperties = data.items;
+    } else if (data && Array.isArray(data.data)) {
+      allProperties = data.data;
+    } else if (data && Array.isArray(data.results)) {
+      allProperties = data.results;
+    } else {
+      debug('未知响应格式: ' + JSON.stringify(data).substring(0, 200), 'warn');
+      allProperties = [];
+    }
+
+    const total = allProperties.length;
+    allProperties = allProperties.filter(p => p.latitude && p.longitude);
+    debug('收到 ' + total + ' 套, 有坐标 ' + allProperties.length + ' 套', 'ok');
+
+    // 类型分布
+    const typeCount = {};
+    allProperties.forEach(p => { const t = p.property_type || '?'; typeCount[t] = (typeCount[t] || 0) + 1; });
+    debug('类型分布: ' + JSON.stringify(typeCount), 'info');
+
+    renderAll();
+    debug('地图渲染完成', 'ok');
+  } catch (err) {
+    debug('FAIL: ' + err.message, 'err');
+    if (err.message.includes('Failed to fetch') || err.message.includes('NetworkError')) {
+      debug('可能原因: 后端未启动 / 端口不对 / CORS 阻止', 'warn');
+      debug('确认后端运行: cd backend && .venv/Scripts/uvicorn app.main:app --port 8001', 'warn');
+    }
+  } finally {
+    btn.disabled = false;
+    loader.style.display = 'none';
+  }
+}
+
+// ═══════════════════════════════════════════
+// 渲染全部
+// ═══════════════════════════════════════════
+function renderAll() {
+  renderStats();
+  renderFilters();
+  renderPropertyList();
+  renderMarkers();
+}
+
+// ═══════════════════════════════════════════
+// 统计
+// ═══════════════════════════════════════════
+function renderStats() {
+  document.getElementById('statsBar').style.display = 'flex';
+  document.getElementById('statTotal').textContent = allProperties.length;
+
+  const cities = new Set(allProperties.map(p => p.district || p.city || '未知'));
+  document.getElementById('statCities').textContent = cities.size;
+
+  const prices = allProperties.map(p => Number(p.price_monthly)).filter(p => p > 0);
+  const avg = prices.length > 0 ? Math.round(prices.reduce((a, b) => a + b, 0) / prices.length) : 0;
+  document.getElementById('statAvgPrice').textContent = avg.toLocaleString();
+}
+
+// ═══════════════════════════════════════════
+// 城市筛选
+// ═══════════════════════════════════════════
+function renderFilters() {
+  const row = document.getElementById('filterRow');
+  row.style.display = 'flex';
+
+  // 提取城市
+  const cityCount = {};
+  allProperties.forEach(p => {
+    const city = extractCity(p);
+    cityCount[city] = (cityCount[city] || 0) + 1;
+  });
+
+  let html = `<div class="filter-chip ${activeFilter === 'all' ? 'active' : ''}" onclick="setFilter('all')">全部 (${allProperties.length})</div>`;
+  for (const [city, count] of Object.entries(cityCount).sort()) {
+    html += `<div class="filter-chip ${activeFilter === city ? 'active' : ''}" onclick="setFilter('${city}')">${city} (${count})</div>`;
+  }
+  row.innerHTML = html;
+}
+
+function extractCity(prop) {
+  const district = prop.district || '';
+  if (district.includes('新加坡')) return '新加坡';
+  if (district.includes('伦敦')) return '伦敦';
+  return district.split('-')[0] || '其他';
+}
+
+function setFilter(city) {
+  activeFilter = city;
+  renderFilters();
+  renderPropertyList();
+  renderMarkers();
+}
+
+function getFilteredProperties() {
+  if (activeFilter === 'all') return allProperties;
+  return allProperties.filter(p => extractCity(p) === activeFilter);
+}
+
+// ═══════════════════════════════════════════
+// 房源列表
+// ═══════════════════════════════════════════
+function renderPropertyList() {
+  const list = document.getElementById('propertyList');
+  const filtered = getFilteredProperties();
+
+  if (filtered.length === 0) {
+    list.innerHTML = `<div class="empty-state"><div class="icon">📭</div><div>没有匹配的房源</div></div>`;
+    return;
+  }
+
+  const CITY_COLORS = {
+    '新加坡': '#a6e3a1', '伦敦': '#f9e2af',
+  };
+
+  list.innerHTML = filtered.map((p, i) => {
+    const city = extractCity(p);
+    const cityColor = CITY_COLORS[city] || 'var(--muted)';
+    const typeLabel = TYPE_LABELS[p.property_type] || p.property_type || '?';
+    const price = Number(p.price_monthly || 0);
+
+    return `
+      <div class="property-item" data-id="${p.id}" onclick="focusProperty(${p.id})">
+        <div class="p-row">
+          <div class="p-title">${escHtml(p.title || '未命名')}</div>
+          <span class="p-city" style="background:${cityColor}22;color:${cityColor}">${city}</span>
+        </div>
+        <div class="p-info">${typeLabel} · ${p.bedrooms || 0}室${p.bathrooms || 0}卫 · ${p.area_sqm || '?'}㎡</div>
+        <div class="p-row">
+          <div class="p-price">${fmtPrice(p)}/月</div>
+          <div class="p-info">${p.district || ''}</div>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+function focusProperty(id) {
+  // 高亮列表项
+  document.querySelectorAll('.property-item').forEach(el => el.classList.remove('active'));
+  const item = document.querySelector(`.property-item[data-id="${id}"]`);
+  if (item) {
+    item.classList.add('active');
+    item.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+
+  // 找到对应 marker 并打开 popup
+  const marker = markers.find(m => m.propertyId === id);
+  if (marker) {
+    marker.openPopup();
+    map.flyTo(marker.getLatLng(), 14, { duration: 0.8 });
+  }
+}
+
+// ═══════════════════════════════════════════
+// 地图标记
+// ═══════════════════════════════════════════
+function renderMarkers() {
+  // 清除旧标记
+  markers.forEach(m => m.remove());
+  markers = [];
+
+  const filtered = getFilteredProperties();
+  if (filtered.length === 0) return;
+
+  const bounds = [];
+
+  filtered.forEach(p => {
+    const lat = Number(p.latitude);
+    const lng = Number(p.longitude);
+    if (isNaN(lat) || isNaN(lng)) return;
+
+    const color = TYPE_COLORS[p.property_type] || DEFAULT_COLOR;
+    const typeLabel = TYPE_LABELS[p.property_type] || p.property_type || '?';
+    const price = Number(p.price_monthly || 0);
+    const city = extractCity(p);
+
+    // 自定义圆形标记
+    const marker = L.circleMarker([lat, lng], {
+      radius: 7,
+      fillColor: color,
+      color: '#fff',
+      weight: 1.5,
+      opacity: 1,
+      fillOpacity: 0.85,
+    }).addTo(map);
+
+    marker.propertyId = p.id;
+    marker.bindPopup(`
+      <div class="popup-title">${escHtml(p.title || '未命名')}</div>
+      <div class="popup-price">${fmtPrice(p)}/月</div>
+      <div class="popup-row">📍 ${escHtml(p.address || p.district || '')}</div>
+      <div class="popup-row">🏠 ${typeLabel} · ${p.bedrooms || 0}室${p.bathrooms || 0}卫 · ${p.area_sqm || '?'}㎡</div>
+      <div class="popup-badges">
+        <span class="popup-badge">${city}</span>
+        <span class="popup-badge">${typeLabel}</span>
+        ${p.id ? `<span class="popup-badge">#${p.id}</span>` : ''}
+      </div>
+    `);
+
+    markers.push(marker);
+    bounds.push([lat, lng]);
+  });
+
+  // 自适应视野（仅房源，不含大学）
+  if (bounds.length > 0) {
+    map.fitBounds(bounds, { padding: [40, 40], maxZoom: 14 });
+  }
+
+  // 刷新大学标记（跟随筛选）
+  renderUniversities();
+}
+
+// ═══════════════════════════════════════════
+// 大学标记
+// ═══════════════════════════════════════════
+function renderUniversities() {
+  // 清除旧标记
+  uniMarkers.forEach(m => m.remove());
+  uniMarkers = [];
+
+  if (!showUniversities) return;
+
+  // 如果当前有城市筛选，只显示该城市的大学
+  let unis = UNIVERSITIES;
+  if (activeFilter !== 'all') {
+    unis = UNIVERSITIES.filter(u => u.city === activeFilter);
+  }
+
+  unis.forEach(u => {
+    const color = UNI_CITY_COLORS[u.city] || '#fff';
+
+    // 大学用菱形标记 + 校名标注
+    const icon = L.divIcon({
+      className: 'uni-marker',
+      html: `<div style="
+        width:14px;height:14px;transform:rotate(45deg);
+        background:${color};border:2px solid #fff;
+        border-radius:2px;
+      "></div>`,
+      iconSize: [14, 14],
+      iconAnchor: [7, 7],
+    });
+
+    const label = L.divIcon({
+      className: 'uni-label',
+      html: `<div style="
+        font-size:10px;font-weight:700;color:#fff;
+        text-shadow:0 0 4px #000,0 0 4px #000;
+        white-space:nowrap;margin-left:10px;margin-top:-5px;
+      ">${u.abbr}</div>`,
+      iconSize: [80, 14],
+      iconAnchor: [0, 5],
+    });
+
+    const m = L.marker([u.lat, u.lng], { icon }).addTo(map);
+    // 标签单独加一层
+    L.marker([u.lat, u.lng], { icon: label, interactive: false }).addTo(map);
+
+    m.bindPopup(`
+      <div class="popup-title">🎓 ${escHtml(u.name)}</div>
+      <div class="popup-row">📍 ${u.city} · 约 ${u.students} 学生</div>
+      <div class="popup-row">🛰️ ${u.lat.toFixed(4)}, ${u.lng.toFixed(4)}</div>
+      <div class="popup-badges">
+        <span class="popup-badge" style="background:${color}22;color:${color}">${u.city}</span>
+        <span class="popup-badge">${u.abbr}</span>
+      </div>
+    `);
+
+    uniMarkers.push(m);
+  });
+}
+
+function toggleUniversities() {
+  showUniversities = document.getElementById('chkUni').checked;
+  renderUniversities();
+}
+
+// ═══════════════════════════════════════════
+// 工具函数
+// ═══════════════════════════════════════════
+function escHtml(str) {
+  if (!str) return '';
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+// ═══════════════════════════════════════════
+// 启动
+// ═══════════════════════════════════════════
+initMap();
+renderUniversities();
+
+// 检测 file:// 协议并警告
+if (location.protocol === 'file:') {
+  document.getElementById('fileWarn').style.display = 'block';
+  debug('检测到 file:// 协议 - 请改用 http://localhost:8080/PROPERTY_MAP.html', 'err');
+  document.getElementById('baseUrl').value = 'http://localhost:8001/api/v1';
+} else {
+  debug('页面加载: ' + location.protocol + '//' + location.host, 'ok');
+  // 自动加载房源
+  setTimeout(loadProperties, 500);
+}
+</script>
+</body>
+</html>

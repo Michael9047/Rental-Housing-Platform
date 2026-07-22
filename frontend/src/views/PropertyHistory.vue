@@ -408,7 +408,7 @@ const fieldLabelMap: Record<string, string> = {
 }
 
 const propertyTypeLabels: Record<string, string> = {
-  apartment: '公寓', house: '独栋', studio: '开间', shared: '合租',
+  studio: '单间', '1-bed': '一室', '2-bed': '两室+', shared: '合租', house: '别墅',
 }
 const depositTypeLabels: Record<string, string> = {
   one_month: '押一付一', one_three: '押一付三', two_month: '押二付一',

@@ -8,10 +8,11 @@ from app.models.unit_type import DepositType
 # 以下枚举已废弃，保留兼容定义
 import enum as _enum
 class PropertyType(str, _enum.Enum):
-    apartment = "apartment"
-    house = "house"
-    studio = "studio"
-    shared = "shared"
+    studio = "studio"      # 单间/开间
+    one_bed = "1-bed"      # 一室一厅
+    two_bed = "2-bed"      # 两室及以上
+    shared = "shared"      # 合租单间
+    house = "house"        # 独栋/联排别墅
 class RentType(str, _enum.Enum):
     monthly = "monthly"
     quarterly = "quarterly"
@@ -24,10 +25,11 @@ class PropertyBase(BaseModel):
     district: str = Field(default="", max_length=100)
     price_monthly: Decimal = Field(ge=0)
     country: str = Field(default="CN", min_length=2, max_length=2)
+    currency: str | None = Field(default=None, max_length=3)
     area_sqm: Decimal | None = Field(default=None, gt=0)
     bedrooms: int = Field(default=0, ge=0)
     bathrooms: int = Field(default=0, ge=0)
-    property_type: PropertyType = PropertyType.apartment
+    property_type: PropertyType = PropertyType.one_bed
     status: PropertyStatus = PropertyStatus.available
     latitude: Decimal | None = Field(default=None, ge=-90, le=90)
     longitude: Decimal | None = Field(default=None, ge=-180, le=180)

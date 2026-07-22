@@ -237,7 +237,7 @@ class ImportService:
                     price_val = self._to_num(valid_rows[i].get("price_monthly", ""))
                     area_val = self._to_num(valid_rows[i].get("area_sqm", ""))
                     district = str(valid_rows[i].get("district", ""))
-                    ptype = str(valid_rows[i].get("property_type", "apartment")).lower()
+                    ptype = str(valid_rows[i].get("property_type", "1-bed")).lower()
 
                     # IQR 宽松检测
                     price_iqr_hit = i in iqr_price_loose
@@ -1050,7 +1050,7 @@ class ImportService:
             area_sqm=data.get("area_sqm"),
             bedrooms=data.get("bedrooms", 0),
             bathrooms=data.get("bathrooms", 0),
-            property_type=PropertyType(data.get("property_type", "apartment")),
+            property_type=PropertyType(data.get("property_type", "1-bed")),
             status=PropertyStatus(data.get("status", "available")),
             latitude=data.get("latitude"),
             longitude=data.get("longitude"),

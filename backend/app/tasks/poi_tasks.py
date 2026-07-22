@@ -10,7 +10,6 @@ from app.celery_app import celery_app
 from app.core.config import get_settings
 from app.models.poi import PropertyPOI
 from app.models.property import Property
-from app.services.poi_service import POIService
 from app.services.google_poi_service import GooglePOIService
 
 logger = logging.getLogger(__name__)
@@ -212,32 +211,14 @@ def generate_map_pois_for_property(property_id: int) -> None:
                 logger.warning("Map POI task: property %s not found", property_id)
                 return
 
-            poi_service = POIService(session)
-            data = await poi_service.generate_map_pois(prop)
-            if not data:
+            poi_service = GooglePOIService()
+            saved = await poi_service.generate_and_save(prop, session)
+            if not saved:
                 logger.warning("Map POI task: empty results for property %s", property_id)
                 return
 
-            # Upsert 到 PropertyPOI
-            result = await session.execute(
-                select(PropertyPOI).where(PropertyPOI.property_id == property_id)
-            )
-            poi = result.scalar_one_or_none()
-            if poi:
-                poi.map_poi_data = data
-            else:
-                poi = PropertyPOI(
-                    property_id=property_id,
-                    content="",
-                    map_poi_data=data,
-                    generated_at=datetime.now(timezone.utc),
-                    reviewed=False,
-                )
-                session.add(poi)
-
-            await session.commit()
             logger.info("Map POI generated for property %s: %d categories",
-                        property_id, len(data.get("categories", {})))
+                        property_id, len((saved.map_poi_data or {}).get("categories", {})))
 
         await engine.dispose()
 

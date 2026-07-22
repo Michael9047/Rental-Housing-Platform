@@ -117,7 +117,7 @@
                     placeholder="选择类型"
                     clearable
                   >
-                    <el-option label="公寓" value="apartment" />
+                    <el-option label="一室" value="1-bed" /><el-option label="两室+" value="2-bed" />
                     <el-option label="别墅" value="house" />
                     <el-option label="单间" value="studio" />
                     <el-option label="合租" value="shared" />
@@ -267,7 +267,7 @@ const filledFields = computed(() => {
   }
   if (p.bedrooms != null) fields.push({ field: 'bedrooms', label: '户型', value: p.bedrooms + '室' })
   if (p.property_type) {
-    const typeMap: Record<string, string> = { apartment: '公寓', house: '别墅', studio: '单间', shared: '合租' }
+    const typeMap: Record<string, string> = { studio: '单间', '1-bed': '一室', '2-bed': '两室+', shared: '合租', house: '别墅' }
     fields.push({ field: 'property_type', label: '类型', value: typeMap[p.property_type] || p.property_type })
   }
   return fields

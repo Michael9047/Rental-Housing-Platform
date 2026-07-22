@@ -95,10 +95,11 @@ const agentChatStore = useAgentChatStore()
 const cartStore = useCartStore()
 
 const typeLabels: Record<PropertyType, string> = {
-  apartment: '公寓',
-  house: '别墅',
   studio: '单间',
+  '1-bed': '一室',
+  '2-bed': '两室+',
   shared: '合租',
+  house: '别墅',
 }
 
 function imageUrl(property: PropertySearchResult): string | null {

@@ -80,7 +80,7 @@ async function handleAiSearch() {
 async function loadRecommendations() {
   loading.value = true
   try {
-    const r = await api.get('/buildings/public', { params: { limit: 12 } })
+    const r = await api.get('/public/buildings', { params: { limit: 12 } })
     buildings.value = Array.isArray(r.data) ? r.data : []
   } catch (e) {
     console.error('[Home] load failed', e)

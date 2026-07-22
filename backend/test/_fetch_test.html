@@ -1,0 +1,19 @@
+<!DOCTYPE html><html><head>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🧪</text></svg>">
+<meta charset="UTF-8"><title>Fetch Test</title></head><body>
+<h1>Fetch Test</h1>
+<div id="result"></div>
+<script>
+const r = document.getElementById('result');
+r.textContent = 'Fetching...';
+fetch('http://localhost:8001/api/v1/properties/search?limit=2')
+  .then(res => res.json())
+  .then(data => {
+    r.innerHTML = '<b style=color:green>OK! ' + data.length + ' properties</b><br>'
+      + data.map(p => '#'+p.id+' '+p.title.substring(0,30)+' type='+p.property_type).join('<br>');
+  })
+  .catch(err => {
+    r.innerHTML = '<b style=color:red>FAILED: ' + err.message + '</b>';
+  });
+</script>
+</body></html>

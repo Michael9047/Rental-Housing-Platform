@@ -189,8 +189,6 @@
       </el-main>
     </el-container>
 
-    <!-- 浮动 AI 管家（登录可见） -->
-    <AssistantBubble />
   </el-container>
 </template>
 
@@ -207,7 +205,6 @@ import { notificationService } from '@/services/notification'
 import api from '@/services/api'
 import GlobalFooter from '@/components/GlobalFooter.vue'
 import GlobalSidebar from '@/components/GlobalSidebar.vue'
-import AssistantBubble from '@/components/AssistantBubble.vue'
 
 interface SuggestionSchool {
   type: string

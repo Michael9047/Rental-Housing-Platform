@@ -1,5 +1,5 @@
 // Matches backend: app/models/property.py
-export type PropertyType = 'apartment' | 'house' | 'studio' | 'shared'
+export type PropertyType = 'studio' | '1-bed' | '2-bed' | 'shared' | 'house'
 export type PropertyStatus = 'available' | 'pending_review' | 'rented' | 'maintenance' | 'offline'
 export type RentType = 'monthly' | 'quarterly' | 'yearly'
 export type DepositType = 'one_month' | 'one_three' | 'two_month' | 'three_month' | 'half_month' | 'free' | 'custom'

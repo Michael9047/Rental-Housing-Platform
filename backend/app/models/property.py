@@ -3,7 +3,7 @@ import enum
 from datetime import date, datetime
 from decimal import Decimal
 
-from sqlalchemy import Date, DateTime, Enum, Float, ForeignKey, Integer, Numeric, String, Text
+from sqlalchemy import Boolean, Date, DateTime, Enum, Float, ForeignKey, Integer, Numeric, String, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -43,7 +43,12 @@ class Room(TimestampMixin, Base):
     # ── 房间独有信息 ──
     room_number: Mapped[str | None] = mapped_column(String(20), nullable=True)
     institute_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
-    # 兼容旧代码的字段
+    # institute 冗余（搜索扁平化）
+    institute_name: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    institute_amenities: Mapped[str | None] = mapped_column(Text, nullable=True)
+    female_only: Mapped[bool] = mapped_column(Boolean, default=False)
+    safety_score: Mapped[float | None] = mapped_column(Numeric(3, 2), nullable=True)
+    # 兼容旧代码
     title: Mapped[str | None] = mapped_column(String(200), nullable=True)
     address: Mapped[str | None] = mapped_column(String(500), nullable=True)
     district: Mapped[str | None] = mapped_column(String(100), nullable=True)
@@ -57,6 +62,7 @@ class Room(TimestampMixin, Base):
     service_fee_rate: Mapped[float | None] = mapped_column(Float, nullable=True)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     country: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    currency: Mapped[str | None] = mapped_column(String(3), nullable=True, default="CNY")
     latitude: Mapped[Decimal | None] = mapped_column(Numeric(9, 6), nullable=True)
     longitude: Mapped[Decimal | None] = mapped_column(Numeric(9, 6), nullable=True)
     rent_type: Mapped[str | None] = mapped_column(String(50), nullable=True)
@@ -101,10 +107,11 @@ VALID_STATUS_TRANSITIONS = VALID_ROOM_STATUS_TRANSITIONS
 # 旧枚举别名
 import enum as _enum2
 class PropertyType(str, _enum2.Enum):
-    apartment = "apartment"
-    house = "house"
-    studio = "studio"
-    shared = "shared"
+    studio = "studio"      # 单间/开间
+    one_bed = "1-bed"      # 一室一厅公寓
+    two_bed = "2-bed"      # 两室及以上公寓
+    shared = "shared"      # 合租单间
+    house = "house"        # 独栋/联排别墅
 # DepositType 从 unit_type 导入
 from app.models.unit_type import DepositType as _DT
 DepositType = _DT

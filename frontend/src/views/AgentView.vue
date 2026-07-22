@@ -76,7 +76,7 @@
         </el-form-item>
         <el-form-item label="类型">
           <el-select v-model="filters.property_type" placeholder="不限" clearable style="width: 100px">
-            <el-option label="公寓" value="apartment" />
+            <el-option label="一室" value="1-bed" /><el-option label="两室+" value="2-bed" />
             <el-option label="别墅" value="house" />
             <el-option label="单间" value="studio" />
             <el-option label="合租" value="shared" />
@@ -360,10 +360,11 @@ const agentChat = useAgentChatStore()
 const { sessionId, messages, aiAvailable } = storeToRefs(agentChat)
 
 const typeLabels: Record<PropertyType, string> = {
-  apartment: '公寓',
-  house: '别墅',
   studio: '单间',
+  '1-bed': '一室',
+  '2-bed': '两室+',
   shared: '合租',
+  house: '别墅',
 }
 
 // ── 状态 ────────────────────────────────────────────────────────

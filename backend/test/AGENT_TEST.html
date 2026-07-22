@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<text y=%22.9em%22 font-size=%2290%22>🤖</text></svg>">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🤖</text></svg>">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Agent 联调测试</title>
+<style>
+:root{--bg:#0f1117;--card:#161822;--border:#252836;--text:#cdd6f4;--muted:#6c7086;--accent:#89b4fa;--green:#a6e3a1;--red:#f38ba8;--yellow:#f9e2af;--purple:#cba6f7;--teal:#94e2d5}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:var(--bg);color:var(--text);font:14px/1.6 system-ui;display:flex;height:100vh}
+.left{width:380px;border-right:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden}
+.right{flex:1;display:flex;flex-direction:column;overflow:hidden}
+.panel{border-bottom:1px solid var(--border);padding:12px}
+.panel h3{font-size:13px;color:var(--muted);margin-bottom:8px}
+input,textarea,button,select{background:var(--card);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:8px 12px;font:13px system-ui;outline:none;width:100%}
+input:focus,textarea:focus{border-color:var(--accent)}
+button{cursor:pointer;background:var(--accent);color:var(--bg);font-weight:600;border:none}
+button:disabled{opacity:.4;cursor:default}
+button.sm{padding:4px 10px;font-size:11px}
+.msg-list{flex:1;overflow-y:auto;padding:16px}
+.msg{margin-bottom:16px;padding:12px;border-radius:8px;max-width:90%}
+.msg.user{background:#1a2a38;border:1px solid #1e3a5a;margin-left:auto}
+.msg.assistant{background:var(--card);border:1px solid var(--border)}
+.msg .role{font-size:11px;color:var(--muted);margin-bottom:4px}
+.msg .text{white-space:pre-wrap;word-break:break-word}
+.msg .meta{font-size:11px;color:var(--muted);margin-top:8px;padding-top:8px;border-top:1px solid var(--border)}
+.props{display:flex;gap:8px;overflow-x:auto;margin-top:8px}
+.prop-card{min-width:180px;background:#0a0b10;border:1px solid var(--border);border-radius:8px;padding:10px}
+.prop-card .title{font-weight:600;font-size:12px}
+.prop-card .price{color:var(--accent);font-weight:700}
+.prop-card .info{font-size:11px;color:var(--muted)}
+.flow-box{font-size:11px;color:var(--muted);padding:8px;background:#0a0b10;border-radius:6px;margin-top:4px;font-family:monospace;white-space:pre-line}
+.badge{display:inline-block;padding:1px 6px;border-radius:4px;font-size:10px;font-weight:600}
+.b-s{background:#1a3824;color:var(--green)}.b-f{background:#3a1a1a;color:var(--red)}
+.stats{display:flex;gap:12px;font-size:11px;color:var(--muted)}
+.stat{text-align:center}.stat b{display:block;font-size:18px;color:var(--text)}
+#loader{display:none;text-align:center;padding:8px;color:var(--yellow)}
+</style>
+</head>
+<body>
+
+<div class="left">
+  <div class="panel">
+    <h3>🔌 连接</h3>
+    <input id="baseUrl" value="http://localhost:8000/api/v1" placeholder="Base URL">
+    <div style="display:flex;gap:8px;margin-top:8px">
+      <input id="email" placeholder="邮箱/用户名" style="flex:1">
+      <input id="password" type="password" placeholder="密码" style="flex:1">
+    </div>
+    <div style="display:flex;gap:8px;margin-top:8px">
+      <button id="btnLogin" onclick="login()">登录</button>
+      <button onclick="autoLogin()" style="background:#1a3824;color:var(--green)">🚀 一键登录</button>
+    </div>
+    <div id="loginStatus" style="font-size:11px;color:var(--muted);margin-top:4px"></div>
+  </div>
+
+  <div class="panel">
+    <h3>📊 统计</h3>
+    <div class="stats">
+      <div class="stat"><b id="statMsgs">0</b>消息</div>
+      <div class="stat"><b id="statRecs">0</b>推荐</div>
+      <div class="stat"><b id="statCart">0</b>购物车</div>
+      <div class="stat"><b id="statTime">0ms</b>延迟</div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h3>🛒 购物车</h3>
+    <button class="sm" onclick="viewCart()">刷新</button>
+    <button class="sm" onclick="compareCart()" style="margin-left:4px">对比全部</button>
+    <div id="cartInfo" style="font-size:11px;color:var(--muted);margin-top:4px">未登录</div>
+  </div>
+
+  <div class="panel" style="flex:1;overflow-y:auto">
+    <h3>⚡ 执行链路</h3>
+    <div id="pipeline" class="flow-box">等待消息...</div>
+  </div>
+</div>
+
+<div class="right">
+  <div class="msg-list" id="messages">
+    <div style="text-align:center;color:var(--muted);padding:60px 0">
+      <div style="font-size:48px">🏠</div>
+      <div style="margin-top:16px">租房 AI Agent 联调测试</div>
+      <div style="font-size:12px;margin-top:4px">先登录，然后输入找房需求</div>
+      <div style="font-size:11px;color:var(--yellow);margin-top:12px">
+        示例：<br>
+        "园区2000以内的单间"<br>
+        "学校附近1500左右能养猫的"<br>
+        "对比一下购物车"
+      </div>
+    </div>
+  </div>
+  <div id="loader">⏳ 处理中...</div>
+  <div class="panel">
+    <div style="display:flex;gap:8px">
+      <input id="msgInput" placeholder="输入找房需求..." onkeydown="if(event.key==='Enter')send()">
+      <button id="btnSend" onclick="send()" style="width:80px" disabled>发送</button>
+    </div>
+  </div>
+</div>
+
+<script>
+let token = '', sessionId = null, msgCount = 0, recCount = 0;
+const $ = id => document.getElementById(id);
+function val(id, text) { const el=$(id); if (!el) return ''; if (text!==undefined) { if(el.tagName==='INPUT'||el.tagName==='TEXTAREA') el.value=text; else el.textContent=text; } return el.value||el.textContent||''; }
+
+async function autoLogin() {
+  const base = val('baseUrl');
+  const u = 'test_agent', p = 'test123456';
+  const status = $('loginStatus');
+  status.style.color = 'var(--yellow)';
+  status.textContent = '⏳ 正在连接...';
+
+  try {
+    // 尝试登录
+    status.textContent = '⏳ 尝试登录...';
+    let r = await fetch(`${base}/auth/login`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({username_or_email:u, password:p}) });
+
+    if (!r.ok) {
+      // 注册
+      status.textContent = '⏳ 注册新账号...';
+      r = await fetch(`${base}/auth/register`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({username:u, email:u+'@test.com', password:p}) });
+      if (!r.ok) {
+        const err = await r.json().catch(()=>({detail:'网络错误'}));
+        status.style.color = 'var(--red)';
+        status.textContent = '❌ 注册失败: ' + (err.detail || r.status);
+        return;
+      }
+      status.textContent = '⏳ 注册成功，登录中...';
+      r = await fetch(`${base}/auth/login`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({username_or_email:u, password:p}) });
+      if (!r.ok) {
+        status.style.color = 'var(--red)';
+        status.textContent = '❌ 登录失败: ' + r.status;
+        return;
+      }
+    }
+
+    const d = await r.json();
+    if (!d.access_token) {
+      status.style.color = 'var(--red)';
+      status.textContent = '❌ 响应无 token: ' + JSON.stringify(d).slice(0,100);
+      return;
+    }
+    token = d.access_token;
+    val('email',u+'@test.com'); val('password',p);
+    status.style.color = 'var(--green)';
+    status.textContent = '✅ 已登录 (test_agent, uid='+(d.user_id||'?')+')';
+    $('btnSend').disabled = false;
+
+    // 创建会话
+    status.textContent = '⏳ 创建会话...';
+    r = await fetch(`${base}/agent/sessions`, { method:'POST', headers:{'Authorization':'Bearer '+token} });
+    if (!r.ok) {
+      status.style.color = 'var(--red)';
+      status.textContent = '❌ 创建会话失败: ' + r.status;
+      return;
+    }
+    const sd = await r.json();
+    sessionId = sd.session_id;
+    status.style.color = 'var(--green)';
+    status.textContent = '✅ 就绪 (会话#'+sessionId+')';
+    $('pipeline').textContent = '✅ 会话 #'+sessionId+' 已创建\n🛒 购物车 #'+sd.cart_id+'\n\n输入找房需求开始测试...';
+
+    viewCart();
+  } catch(e) {
+    status.style.color = 'var(--red)';
+    status.textContent = '❌ 连接失败: ' + e.message + ' (检查后端是否启动)';
+  }
+}
+
+async function login() {
+  const base = val('baseUrl');
+  const payload = { username_or_email: val('email'), password: val('password') };
+  const status = $('loginStatus');
+  status.style.color = 'var(--yellow)';
+  status.textContent = '⏳ 登录中...';
+  try {
+    const r = await fetch(`${base}/auth/login`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload) });
+    if (!r.ok) { status.style.color='var(--red)'; status.textContent='❌ '+(await r.json().catch(()=>({detail:'HTTP '+r.status}))).detail; return; }
+    const d = await r.json();
+    token = d.access_token;
+    status.style.color='var(--green)'; status.textContent='✅ 已登录 (uid='+d.user_id+')';
+    $('btnSend').disabled = false;
+    await createSession(); viewCart();
+  } catch(e) { status.style.color='var(--red)'; status.textContent='❌ 连接失败: '+e.message; }
+}
+
+async function createSession() {
+  const r = await fetch(val('baseUrl')+'/agent/sessions', { method:'POST', headers:{'Authorization':'Bearer '+token} });
+  const d = await r.json();
+  sessionId = d.session_id;
+  $('pipeline').textContent = '✅ 会话已创建 #'+sessionId+'\n购物车 #'+d.cart_id;
+}
+
+async function send() {
+  const msg = $('msgInput').value.trim();
+  if (!msg || !sessionId) return;
+  $('msgInput').value = '';
+  addMsg('user', msg);
+  $('loader').style.display = 'block';
+  $('btnSend').disabled = true;
+
+  const t0 = performance.now();
+  try {
+    const r = await fetch(val('baseUrl')+'/agent/sessions/'+sessionId+'/messages', {
+      method:'POST', headers:{'Authorization':'Bearer '+token,'Content-Type':'application/json'},
+      body:JSON.stringify({message:msg})
+    });
+    const d = await r.json();
+    const ms = Math.round(performance.now()-t0);
+    addMsg('assistant', d.reply, d);
+    $('statTime').textContent = ms+'ms';
+    $('statMsgs').textContent = ++msgCount;
+    if (d.recommendations?.length) { recCount += d.recommendations.length; $('statRecs').textContent = recCount; }
+    if (d.cart_changed) viewCart();
+    showPipeline(d);
+  } catch(e) { addMsg('assistant','错误: '+e.message); }
+  $('loader').style.display = 'none';
+  $('btnSend').disabled = false;
+}
+
+function addMsg(role, text, data) {
+  const el = document.createElement('div');
+  el.className = 'msg '+role;
+  el.innerHTML = '<div class="role">'+(role==='user'?'🧑 你':'🤖 助手')+'</div><div class="text">'+escapeHtml(text)+'</div>';
+  if (data?.recommendations?.length) {
+    const div = document.createElement('div');
+    div.className = 'props';
+    data.recommendations.slice(0,5).forEach(r => {
+      var p = r.property||r;
+      div.innerHTML += '<div class="prop-card"><div class="title">'+(p.title||'#'+r.property_id)+'</div><div class="price">¥'+(p.price_monthly||'?')+'/月</div><div class="info">'+(p.district||'')+' · '+(p.bedrooms||'')+'室</div></div>';
+    });
+    el.appendChild(div);
+  }
+  if (data?.intent) el.innerHTML += '<div class="meta">意图: '+data.intent+' | 推荐: '+(data.recommendations?.length||0)+'套 | 购物车变更: '+(data.cart_changed?'是':'否')+'</div>';
+  $('messages').appendChild(el);
+  el.scrollIntoView({behavior:'smooth'});
+}
+
+function showPipeline(d) {
+  const intent = d.intent||'?';
+  const recs = d.recommendations?.length||0;
+  let flow = '📨 消息 → 🧠 classify_message()\n';
+  if (intent==='recommend') flow += '  └─ intent=search\n     ├─ SearchAgent.search()\n     │   ├─ extract_filters(LLM)\n     │   ├─ geo/relax search(DB)\n     │   └─ score → LLM推荐回复\n     └─ ✅ '+recs+'套推荐';
+  else if (intent==='compare') flow += '  └─ intent=compare\n     └─ CompareAgent.compare()\n         ├─ metrics聚合(POI+评价)\n         ├─ compute_scores\n         └─ LLM解释+7维分析';
+  else if (intent==='manage_cart') flow += '  └─ intent=manage_cart\n     └─ CartService (tool)';
+  else if (intent==='faq') flow += '  └─ intent=faq\n     └─ agent_faq.match_faq() (tool)';
+  else flow += '  └─ intent=general\n     └─ LLM complete_text';
+  flow += '\n📤 回复 ('+(d.reply||'').length+'字)';
+  $('pipeline').textContent = flow;
+}
+
+async function viewCart() {
+  if (!token) return;
+  const r = await fetch(val('baseUrl')+'/agent/cart', { headers:{'Authorization':'Bearer '+token} });
+  const d = await r.json();
+  val('cartInfo',d.items?.length ? d.items.map(i=>'#'+i.property_id).join(', ') : '空');
+  val('statCart',d.items?.length||0);
+}
+
+async function compareCart() {
+  if (!token) return;
+  val('msgInput','对比购物车');
+  send();
+}
+
+function escapeHtml(s) { const d=document.createElement('div'); d.textContent=s; return d.innerHTML; }
+</script>
+</body>
+</html>

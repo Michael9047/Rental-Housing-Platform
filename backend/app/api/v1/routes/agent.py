@@ -1,6 +1,6 @@
 """租房推荐 Agent —— 会话、推荐、购物车、对比接口
 
-统一使用多 Agent DAG 编排（Supervisor + MoE 专家组）。
+轻量架构：Router 分类 → Dispatcher 分发 → Agent/Service/Tool 直接执行。
 """
 import logging
 
@@ -75,7 +75,11 @@ async def send_agent_message(
     if chat_session is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Agent 会话不存在")
 
-    result = await _handle_with_supervisor(session, chat_session, current_user.id, body)
+    from app.services.agentic.dispatcher import dispatch
+    filters = body.filters.model_dump(exclude_none=True) if body.filters else None
+    result = await dispatch(session=session, chat_session=chat_session, user_id=current_user.id,
+                            message=body.message, filters=filters,
+                            compare_property_ids=body.compare_property_ids)
 
     return AgentMessageResponse(
         reply=result["reply"],
@@ -108,84 +112,6 @@ async def send_agent_message(
             ThinkingStep(**step) for step in result.get("thinking_steps", [])
         ],
     )
-
-
-async def _handle_with_supervisor(
-    session: AsyncSession,
-    chat_session,
-    user_id: int,
-    body: AgentMessageRequest,
-) -> dict:
-    """使用 Supervisor 多 Agent DAG 编排处理消息。"""
-    from app.models.chat import ChatMessage, ChatMessageRole
-    from app.services.agentic.orchestration.supervisor import Supervisor
-    from app.services.agentic.agents.registry import register_all_agents
-    from app.services.agentic.orchestration.agent_registry import AgentRegistry
-    from app.services.agentic.orchestration.tool_registry import ToolRegistry, bind_tool_handlers
-
-    # 注册 Agent + 绑定工具
-    registry = AgentRegistry()
-    register_all_agents(registry)
-    tool_registry = ToolRegistry.get_instance()
-    bind_tool_handlers(tool_registry, session, user_id)
-
-    # 构建对话历史
-    history = await _build_chat_history(session, chat_session.id, user_id)
-
-    # 提取筛选条件
-    filters = body.filters.model_dump(exclude_none=True) if body.filters else None
-
-    supervisor = Supervisor(
-        session=session, registry=registry, tool_registry=tool_registry,
-        chat_session=chat_session,
-    )
-    result = await supervisor.handle_message(
-        message=body.message,
-        history=history,
-        filters=filters,
-        user_id=user_id,
-        compare_property_ids=body.compare_property_ids,
-    )
-
-    # 持久化消息到数据库（与 legacy 行为一致）
-    user_msg = ChatMessage(
-        session_id=chat_session.id,
-        role=ChatMessageRole.user,
-        content=body.message,
-        metadata_={"filters": filters or {}, "pipeline": "agentic"},
-    )
-    assistant_msg = ChatMessage(
-        session_id=chat_session.id,
-        role=ChatMessageRole.assistant,
-        content=result["reply"],
-        metadata_={
-            "intent": result.get("intent"),
-            "pipeline": "agentic",
-            "orchestration": result.get("_orchestration"),
-            "recommendations": [
-                {"property_id": r["property_id"], "match_reason": r.get("match_reason", "")}
-                for r in result.get("recommendations", [])
-            ],
-        },
-    )
-    session.add_all([user_msg, assistant_msg])
-    await session.commit()
-
-    return result
-
-
-async def _build_chat_history(
-    session: AsyncSession, chat_session_id: int, user_id: int
-) -> list[dict]:
-    """从数据库获取对话历史，转为 Supervisor 需要的格式。"""
-    from app.services.chat_service import ChatService as Cs
-    chat_svc = Cs(session)
-    messages = await chat_svc.get_messages(chat_session_id, user_id)
-    history = []
-    for msg in messages:
-        role = "user" if msg.role.value == "user" else "assistant"
-        history.append({"role": role, "content": msg.content})
-    return history
 
 
 @router.get("/faqs", response_model=list[FaqChip])

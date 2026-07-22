@@ -6,7 +6,7 @@
         <div v-if="building.images?.length" class="hero-carousel">
           <el-carousel :interval="5000" height="420px" indicator-position="none" arrow="always">
             <el-carousel-item v-for="img in building.images" :key="img.id">
-              <img :src="'/api/v1/uploads/'+img.filename" class="hero-img" alt="" />
+              <img :src="img.filename?.startsWith('http') ? img.filename : '/api/v1/uploads/'+img.filename" class="hero-img" alt="" />
             </el-carousel-item>
           </el-carousel>
           <div class="hero-overlay">
@@ -21,13 +21,18 @@
         </div>
       </div>
 
-      <!-- ═══════ 快捷标签行 ═══════ -->
-      <div class="quick-info-bar" v-if="building.female_only || building.couples_allowed || building.contact_phone">
+      <!-- ═══════ 快捷操作行 ═══════ -->
+      <div class="quick-info-bar">
         <div class="quick-tags">
           <span v-if="building.female_only" class="quick-tag tag-pink">👩 女生独栋</span>
           <span v-if="building.couples_allowed" class="quick-tag tag-purple">💑 支持情侣入住</span>
         </div>
-        <span class="quick-phone" v-if="building.contact_phone">📞 {{ building.contact_phone }}</span>
+        <div class="quick-actions">
+          <el-button type="success" round :icon="inCart ? 'Check' : 'Plus'" :loading="cartLoading" @click.stop="toggleCart">
+            {{ inCart ? '已加入候选' : '加入候选' }}
+          </el-button>
+          <span class="quick-phone" v-if="building.contact_phone">📞 {{ building.contact_phone }}</span>
+        </div>
       </div>
 
       <!-- ═══════ 公寓简介 ═══════ -->
@@ -166,6 +171,12 @@
             </div>
           </div>
         </div>
+        <!-- 预定按钮 -->
+        <div class="ut-book-bar">
+          <el-button type="primary" size="large" round @click="goBook" style="min-width:200px;font-weight:600">
+            🏠 立即预定 · {{ cur(selectedUnitType.currency) }}{{ Number(selectedUnitType.base_rent).toLocaleString() }}/月
+          </el-button>
+        </div>
       </div>
 
       <!-- 底部占位 -->
@@ -177,14 +188,47 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, nextTick } from 'vue'
-import { useRoute } from 'vue-router'
+import { ref, computed, onMounted, nextTick } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import { ElMessage } from 'element-plus'
+import { Plus, Check } from '@element-plus/icons-vue'
 import api from '@/services/api'
+import { useCartStore } from '@/stores/cart'
 
 const route = useRoute()
+const router = useRouter()
+const cartStore = useCartStore()
 const building = ref<any>(null)
 const selectedUnitType = ref<any>(null)
 const loading = ref(false)
+const cartLoading = ref(false)
+const inCart = computed(() => building.value ? cartStore.has(building.value.id) : false)
+
+async function toggleCart() {
+  if (cartLoading.value || !building.value) return
+  cartLoading.value = true
+  try {
+    if (inCart.value) {
+      await cartStore.remove(building.value.id)
+      ElMessage.info('已移出候选清单')
+    } else {
+      await cartStore.add(building.value.id)
+      ElMessage.success('已加入候选清单')
+    }
+  } catch { /* */ }
+  finally { cartLoading.value = false }
+}
+
+function goBook() {
+  if (!building.value || !selectedUnitType.value) return
+  router.push({
+    path: '/booking/confirm',
+    query: {
+      property_id: String(building.value.id),
+      unit_type_id: String(selectedUnitType.value.id),
+    }
+  })
+}
 
 function depositLabel(t: string) {
   const m: any = { one_month: '押一付一', one_three: '押一付三', two_month: '押二付一', three_month: '押三付一', half_month: '押半付一', free: '免押金', custom: '自定义' }
@@ -217,14 +261,39 @@ async function loadBuilding() {
   loading.value = true
   try {
     const id = route.params.id
-    const r = await api.get(`/buildings/public/${id}`)
-    building.value = r.data
-    if (r.data.unit_types?.length) selectedUnitType.value = r.data.unit_types[0]
-    if (r.data.latitude && r.data.longitude) {
-      await nextTick()
-      initMap(r.data.latitude, r.data.longitude)
+    // 用 properties API 取房源（兼容 room/:id 路由）
+    const r = await api.get(`/properties/${id}`)
+    const room = r.data
+    building.value = {
+      id: room.id, name: room.title || room.address,
+      address: room.address, description: room.description,
+      latitude: room.latitude, longitude: room.longitude,
+      amenities: room.amenities || [], images: room.images || [],
+      contact_phone: null, female_only: false, couples_allowed: false,
+      unit_types: [],
     }
-  } catch { /* */ }
+    if (room.latitude && room.longitude) {
+      await nextTick(); initMap(room.latitude, room.longitude)
+    }
+    // 取户型信息
+    if (room.unit_type_id) {
+      try {
+        const utRes = await api.get(`/unit-types/${room.unit_type_id}`)
+        building.value.unit_types = [{ ...utRes.data, room_count: 1,
+          rooms: [{ id: room.id, room_number: room.room_number, floor: room.floor,
+            special_discount: room.special_discount, available_from: room.available_from,
+            status: room.status }]
+        }]
+        selectedUnitType.value = building.value.unit_types[0]
+      } catch { /* */ }
+    }
+    if (!building.value.unit_types?.length && room.institute_id) {
+      try {
+        const utsRes = await api.get('/unit-types', { params: { institute_id: room.institute_id, page_size: 20 } })
+        building.value.unit_types = (utsRes.data.items || []).map((ut: any) => ({ ...ut, room_count: 0, rooms: [] }))
+      } catch { /* */ }
+    }
+  } catch (e: any) { console.error('PropertyDetail load failed:', e?.message || e) }
   finally { loading.value = false }
 }
 
@@ -401,6 +470,17 @@ onMounted(() => {
   font-weight: 600;
   padding: 6px 16px;
   border-radius: 8px;
+}
+
+.quick-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.ut-book-bar {
+  margin-top: 24px;
+  text-align: center;
 }
 
 .tag-pink {

@@ -67,6 +67,8 @@ class UnitType(TimestampMixin, Base):
     available_from: Mapped[date | None] = mapped_column(Date, nullable=True)
     min_stay_months: Mapped[int] = mapped_column(Integer, default=3, nullable=False)
 
+    embedding: Mapped[str | None] = mapped_column(Text, nullable=True)
+
     # ── 状态 ──
     status: Mapped[UnitTypeStatus] = mapped_column(
         Enum(UnitTypeStatus, name="room_type_status"),
