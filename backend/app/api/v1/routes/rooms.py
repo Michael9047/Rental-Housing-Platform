@@ -22,19 +22,20 @@ def _get(obj, attr, default=None):
 
 def _to_read(room) -> RoomRead:
     # 对于 create 路径，数据预加载在 _ut_* / _inst_* 属性上（避免 MissingGreenlet）
-    # 对于 get/list 路径，通过 selectinload 加载后直接安全访问 relationship
-    has_preload = hasattr(room, '_ut_name') and room._ut_name is not None
-
+    # 安全获取关联数据 — 兜底 _ut_name / _inst_name 等预加载字段
     ut_name = None
     ut = None
     inst = None
-    if has_preload:
-        ut_name = room._ut_name
-    else:
-        # get/list 路径: relationship 已通过 selectinload 加载
+    try:
         ut = room.unit_type if room.unit_type else None
         inst = ut.institute if ut and ut.institute else None
         ut_name = ut.name if ut else None
+    except Exception:
+        ut = None
+        inst = None
+    # 如果懒加载失败，回退到预加载的私有属性
+    if not ut_name:
+        ut_name = getattr(room, '_ut_name', None) or '?'
 
     primary = None
     try:
@@ -331,6 +332,30 @@ async def check_duplicate(
     return {"duplicate": is_dup}
 
 
+@router.get("/recycle-bin", response_model=RoomListResponse)
+async def list_deleted_rooms(
+    session: AsyncSession = Depends(get_db_session),
+    current_user: User = Depends(require_landlord),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=20, ge=1, le=2000),
+):
+    skip = (page - 1) * page_size
+    result = await RoomService(session).list(
+        skip=skip, limit=page_size, include_deleted=True,
+    )
+    items = []
+    for r in result["items"]:
+        if r.deleted_at is not None:
+            try:
+                items.append(_to_read(r))
+            except Exception:
+                pass  # 跳过无法序列化的项
+    return RoomListResponse(
+        items=items, total=len(items), page=page,
+        page_size=page_size, total_pages=max(1, (len(items) + page_size - 1) // page_size),
+    )
+
+
 
 @router.get("/{room_id}", response_model=RoomRead)
 async def get_room(room_id: int, session: AsyncSession = Depends(get_db_session)):
@@ -371,16 +396,24 @@ async def delete_room(
         raise HTTPException(404, "房间不存在或已删除")
 
 
-@router.post("/{room_id}/restore", response_model=RoomRead)
+@router.post("/{room_id}/restore")
 async def restore_room(
     room_id: int,
     session: AsyncSession = Depends(get_db_session),
-    _current_user: User = Depends(require_landlord),
+    current_user: User = Depends(require_landlord),
 ):
-    room = await RoomService(session).restore(room_id)
-    if not room:
-        raise HTTPException(404, "房间不存在或未被删除")
-    return _to_read(room)
+    import logging
+    _log = logging.getLogger(__name__)
+    try:
+        room = await RoomService(session).restore(room_id)
+        if not room:
+            raise HTTPException(404, "房间不存在或未被删除")
+        return _to_read(room)
+    except HTTPException:
+        raise
+    except Exception as e:
+        _log.exception(f"Restore room {room_id} failed")
+        raise HTTPException(500, f"恢复失败: {e}")
 
 
 @router.delete("/{room_id}/hard", status_code=204)
@@ -389,9 +422,19 @@ async def hard_delete_room(
     session: AsyncSession = Depends(get_db_session),
     _current_user: User = Depends(require_landlord),
 ):
+    room = await session.get(Room, room_id)
+    if not room:
+        raise HTTPException(404, "房间不存在")
+    room_number = room.room_number
     ok = await RoomService(session).hard_delete(room_id)
     if not ok:
         raise HTTPException(404, "房间不存在")
+    try:
+        from app.models.audit_log import AuditLog
+        log = AuditLog(action="硬删除房间", resource_type="room", resource_id=room_id,
+                       details={"房号": room_number})
+        session.add(log); await session.commit()
+    except Exception: pass
 
 
 @router.post("/batch/status")
@@ -428,21 +471,3 @@ async def batch_delete(
     result = await session.execute(stmt)
     await session.commit()
     return {"success": result.rowcount, "failed": len(data.ids) - result.rowcount}
-
-
-@router.get("/recycle-bin", response_model=RoomListResponse)
-async def list_deleted_rooms(
-    session: AsyncSession = Depends(get_db_session),
-    _current_user: User = Depends(require_landlord),
-    page: int = Query(default=1, ge=1),
-    page_size: int = Query(default=20, ge=1, le=500),
-):
-    skip = (page - 1) * page_size
-    result = await RoomService(session).list(
-        skip=skip, limit=page_size, include_deleted=True,
-    )
-    items = [_to_read(r) for r in result["items"] if r.deleted_at is not None]
-    return RoomListResponse(
-        items=items, total=len(items), page=page,
-        page_size=page_size, total_pages=max(1, (len(items) + page_size - 1) // page_size),
-    )

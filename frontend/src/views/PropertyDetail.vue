@@ -1,127 +1,178 @@
 <template>
   <div class="detail-page" v-loading="loading">
     <div v-if="building">
-      <!-- ═══ 第一层：公寓头部 ═══ -->
-      <!-- 图片轮播 -->
-      <div class="image-carousel" v-if="building.images?.length">
-        <el-carousel :interval="4000" height="360px" indicator-position="outside">
-          <el-carousel-item v-for="img in building.images" :key="img.id">
-            <img :src="'/api/v1/uploads/'+img.filename" style="width:100%;height:360px;object-fit:cover;border-radius:12px" />
-          </el-carousel-item>
-        </el-carousel>
-      </div>
-      <div v-else class="no-image">🏢</div>
-
-      <!-- 公寓基础信息 -->
-      <div class="building-header">
-        <h1>{{ building.name }}</h1>
-        <p class="addr" v-if="building.address">📍 {{ building.address }}</p>
-        <p class="desc" v-if="building.description">{{ building.description }}</p>
-        <p class="phone" v-if="building.contact_phone">📞 前台：{{ building.contact_phone }}</p>
-      </div>
-
-      <!-- 公寓特殊标记 -->
-      <div class="special-tags" v-if="building.female_only || building.couples_allowed">
-        <el-tag v-if="building.female_only" size="large" effect="dark" type="danger">👩 女生独栋</el-tag>
-        <el-tag v-if="building.couples_allowed" size="large" effect="dark" type="warning">💑 支持情侣入住</el-tag>
+      <!-- ═══════ 第一层：公寓头部 — 全宽大图 ═══════ -->
+      <div class="hero-section">
+        <div v-if="building.images?.length" class="hero-carousel">
+          <el-carousel :interval="5000" height="420px" indicator-position="none" arrow="always">
+            <el-carousel-item v-for="img in building.images" :key="img.id">
+              <img :src="'/api/v1/uploads/'+img.filename" class="hero-img" alt="" />
+            </el-carousel-item>
+          </el-carousel>
+          <div class="hero-overlay">
+            <h1 class="hero-title">{{ building.name }}</h1>
+            <p class="hero-addr" v-if="building.address">📍 {{ building.address }}</p>
+          </div>
+        </div>
+        <div v-else class="hero-placeholder">
+          <span class="hero-icon">🏢</span>
+          <h1 class="hero-title">{{ building.name }}</h1>
+          <p class="hero-addr" v-if="building.address">📍 {{ building.address }}</p>
+        </div>
       </div>
 
-      <!-- 公寓配套 — 四大板块 -->
+      <!-- ═══════ 快捷标签行 ═══════ -->
+      <div class="quick-info-bar" v-if="building.female_only || building.couples_allowed || building.contact_phone">
+        <div class="quick-tags">
+          <span v-if="building.female_only" class="quick-tag tag-pink">👩 女生独栋</span>
+          <span v-if="building.couples_allowed" class="quick-tag tag-purple">💑 支持情侣入住</span>
+        </div>
+        <span class="quick-phone" v-if="building.contact_phone">📞 {{ building.contact_phone }}</span>
+      </div>
+
+      <!-- ═══════ 公寓简介 ═══════ -->
+      <div class="intro-section" v-if="building.description">
+        <p class="intro-text">{{ building.description }}</p>
+      </div>
+
+      <!-- ═══════ 公寓配套 — 卡片式四大板块 ═══════ -->
       <div class="amenities-section" v-if="building.amenities?.length">
-        <h3>🏗️ 公寓配套 & 服务</h3>
-        <div v-if="getCategoryAmenities(building.amenities, 'security').length" class="amenity-cat">
-          <span class="cat-label">🛡️ 安保</span>
-          <div class="amenity-tags">
-            <el-tag v-for="a in getCategoryAmenities(building.amenities, 'security')" :key="a" size="small" effect="plain" type="primary">{{ a }}</el-tag>
+        <h2 class="section-heading">🏗️ 公寓配套 & 服务</h2>
+        <div class="amenity-cards">
+          <div class="amenity-card" v-if="getCategoryAmenities(building.amenities, 'security').length">
+            <div class="amenity-card-icon">🛡️</div>
+            <div class="amenity-card-title">安保</div>
+            <div class="amenity-card-tags">
+              <span v-for="a in getCategoryAmenities(building.amenities, 'security')" :key="a" class="amenity-tag">{{ a }}</span>
+            </div>
           </div>
-        </div>
-        <div v-if="getCategoryAmenities(building.amenities, 'service').length" class="amenity-cat">
-          <span class="cat-label">🛎️ 服务</span>
-          <div class="amenity-tags">
-            <el-tag v-for="a in getCategoryAmenities(building.amenities, 'service')" :key="a" size="small" effect="plain" type="success">{{ a }}</el-tag>
+          <div class="amenity-card" v-if="getCategoryAmenities(building.amenities, 'service').length">
+            <div class="amenity-card-icon">🛎️</div>
+            <div class="amenity-card-title">服务</div>
+            <div class="amenity-card-tags">
+              <span v-for="a in getCategoryAmenities(building.amenities, 'service')" :key="a" class="amenity-tag">{{ a }}</span>
+            </div>
           </div>
-        </div>
-        <div v-if="getCategoryAmenities(building.amenities, 'facility').length" class="amenity-cat">
-          <span class="cat-label">🏠 公用设施</span>
-          <div class="amenity-tags">
-            <el-tag v-for="a in getCategoryAmenities(building.amenities, 'facility')" :key="a" size="small" effect="plain" type="info">{{ a }}</el-tag>
+          <div class="amenity-card" v-if="getCategoryAmenities(building.amenities, 'facility').length">
+            <div class="amenity-card-icon">🏠</div>
+            <div class="amenity-card-title">公用设施</div>
+            <div class="amenity-card-tags">
+              <span v-for="a in getCategoryAmenities(building.amenities, 'facility')" :key="a" class="amenity-tag">{{ a }}</span>
+            </div>
           </div>
-        </div>
-        <div v-if="getCategoryAmenities(building.amenities, 'sport').length" class="amenity-cat">
-          <span class="cat-label">⚽ 运动娱乐</span>
-          <div class="amenity-tags">
-            <el-tag v-for="a in getCategoryAmenities(building.amenities, 'sport')" :key="a" size="small" effect="plain" type="warning">{{ a }}</el-tag>
+          <div class="amenity-card" v-if="getCategoryAmenities(building.amenities, 'sport').length">
+            <div class="amenity-card-icon">⚽</div>
+            <div class="amenity-card-title">运动娱乐</div>
+            <div class="amenity-card-tags">
+              <span v-for="a in getCategoryAmenities(building.amenities, 'sport')" :key="a" class="amenity-tag">{{ a }}</span>
+            </div>
           </div>
         </div>
       </div>
 
-      <!-- 地图 -->
+      <!-- ═══════ 地图 ═══════ -->
       <div class="map-section" v-if="building.latitude && building.longitude">
-        <h3>🗺️ 位置</h3>
-        <div id="detail-map" style="width:100%;height:240px;border-radius:8px;border:1px solid #dcdfe6"></div>
+        <h2 class="section-heading">🗺️ 位置</h2>
+        <div id="detail-map" class="map-container"></div>
       </div>
 
-      <el-divider />
-
-      <!-- ═══ 第二层：户型切换 ═══ -->
+      <!-- ═══════ 第二层：可选户型 ═══════ -->
       <div class="unit-types-section">
-        <h3>📐 可选户型</h3>
-        <div class="unit-tabs">
-          <div v-for="ut in building.unit_types" :key="ut.id"
-            :class="['unit-tab', { active: selectedUnitType?.id === ut.id }]"
-            @click="selectUnitType(ut)">
-            <div class="ut-name">{{ ut.name }}</div>
-            <div class="ut-info">{{ ut.bedrooms }}室{{ ut.hall_count }}厅{{ ut.bathrooms }}卫 · {{ ut.area_sqm }}㎡</div>
-            <div class="ut-rent">{{ cur(ut.currency) }}{{ Number(ut.base_rent).toLocaleString() }}/月</div>
-            <el-tag size="small" :type="ut.room_count > 0 ? 'success' : 'warning'">
-              {{ ut.room_count > 0 ? ut.room_count+'间可租' : '暂无可租' }}
-            </el-tag>
+        <h2 class="section-heading">📐 可选户型 <span class="heading-badge" v-if="building.unit_types?.length">{{ building.unit_types.length }} 种</span></h2>
+        <div class="unit-type-grid" v-if="building.unit_types?.length">
+          <div
+            v-for="ut in building.unit_types" :key="ut.id"
+            :class="['unit-type-card', { active: selectedUnitType?.id === ut.id }]"
+            @click="selectUnitType(ut)"
+          >
+            <!-- 户型图缩略图 -->
+            <div class="ut-card-cover">
+              <img v-if="ut.image_urls?.[0]" :src="ut.image_urls[0]" alt="" class="ut-cover-img" />
+              <div v-else class="ut-cover-placeholder">🏠</div>
+              <div class="ut-card-status">
+                <span :class="ut.room_count > 0 ? 'status-available' : 'status-full'">
+                  {{ ut.room_count > 0 ? ut.room_count+'间可租' : '暂满' }}
+                </span>
+              </div>
+            </div>
+            <!-- 户型信息 -->
+            <div class="ut-card-body">
+              <h3 class="ut-card-name">{{ ut.name }}</h3>
+              <div class="ut-card-specs">
+                <span class="spec-item">{{ ut.bedrooms }}室{{ ut.hall_count }}厅{{ ut.bathrooms }}卫</span>
+                <span class="spec-divider">·</span>
+                <span class="spec-item">{{ ut.area_sqm }}㎡</span>
+              </div>
+              <div class="ut-card-price">
+                <span class="price-value">{{ cur(ut.currency) }}{{ Number(ut.base_rent).toLocaleString() }}</span>
+                <span class="price-period">/月</span>
+              </div>
+              <div class="ut-card-tags" v-if="ut.amenities?.length">
+                <span v-for="a in ut.amenities.slice(0, 4)" :key="a" class="ut-tag">{{ a }}</span>
+                <span v-if="ut.amenities.length > 4" class="ut-tag ut-tag-more">+{{ ut.amenities.length - 4 }}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <el-empty v-else description="暂无户型数据" :image-size="80" />
+      </div>
+
+      <!-- ═══════ 第三层：选中户型详情 ═══════ -->
+      <div class="ut-detail-section" v-if="selectedUnitType">
+        <h2 class="section-heading">{{ selectedUnitType.name }} — 户型详情</h2>
+
+        <!-- 户型图集 -->
+        <div class="ut-gallery" v-if="selectedUnitType.image_urls?.length">
+          <el-image
+            v-for="(url, i) in selectedUnitType.image_urls" :key="i"
+            :src="url" fit="cover"
+            class="ut-gallery-img"
+            preview-teleported :preview-src-list="selectedUnitType.image_urls"
+          />
+        </div>
+
+        <!-- 户型参数卡 -->
+        <div class="ut-specs-grid">
+          <div class="spec-card">
+            <div class="spec-icon">🛏️</div>
+            <div class="spec-label">户型格局</div>
+            <div class="spec-value">{{ selectedUnitType.bedrooms }}室{{ selectedUnitType.hall_count }}厅{{ selectedUnitType.bathrooms }}卫</div>
+          </div>
+          <div class="spec-card">
+            <div class="spec-icon">📐</div>
+            <div class="spec-label">面积</div>
+            <div class="spec-value">{{ selectedUnitType.area_sqm }}㎡</div>
+          </div>
+          <div class="spec-card">
+            <div class="spec-icon">💰</div>
+            <div class="spec-label">标准月租</div>
+            <div class="spec-value price">{{ cur(selectedUnitType.currency) }}{{ Number(selectedUnitType.base_rent).toLocaleString() }}</div>
+          </div>
+          <div class="spec-card">
+            <div class="spec-icon">🔒</div>
+            <div class="spec-label">押金</div>
+            <div class="spec-value">{{ selectedUnitType.deposit_amount ? cur(selectedUnitType.currency)+selectedUnitType.deposit_amount : '-' }} / {{ depositLabel(selectedUnitType.deposit_type) }}</div>
+          </div>
+          <div class="spec-card">
+            <div class="spec-icon">📅</div>
+            <div class="spec-label">最短租期</div>
+            <div class="spec-value">{{ selectedUnitType.min_stay_months }} 个月</div>
+          </div>
+          <div class="spec-card full-width" v-if="selectedUnitType.amenities?.length">
+            <div class="spec-icon">✨</div>
+            <div class="spec-label">户型配套</div>
+            <div class="spec-value">
+              <span v-for="a in selectedUnitType.amenities" :key="a" class="spec-amenity-tag">{{ a }}</span>
+            </div>
           </div>
         </div>
       </div>
 
-      <!-- ═══ 第三层：选中户型详情 ═══ -->
-      <div class="ut-detail" v-if="selectedUnitType">
-        <el-divider />
-        <h3>{{ selectedUnitType.name }} — 户型详情</h3>
-
-        <!-- 户型图 -->
-        <div class="ut-images" v-if="selectedUnitType.image_urls?.length">
-          <el-image v-for="(url, i) in selectedUnitType.image_urls" :key="i"
-            :src="url" fit="cover"
-            style="width:200px;height:140px;border-radius:8px;margin-right:8px"
-            preview-teleported :preview-src-list="selectedUnitType.image_urls" />
-        </div>
-
-        <!-- 户型参数 -->
-        <el-descriptions :column="4" border size="small" style="margin:16px 0">
-          <el-descriptions-item label="室/厅/卫">{{ selectedUnitType.bedrooms }}室{{ selectedUnitType.hall_count }}厅{{ selectedUnitType.bathrooms }}卫</el-descriptions-item>
-          <el-descriptions-item label="面积">{{ selectedUnitType.area_sqm }}㎡</el-descriptions-item>
-          <el-descriptions-item label="标准月租">{{ cur(selectedUnitType.currency) }}{{ Number(selectedUnitType.base_rent).toLocaleString() }}</el-descriptions-item>
-          <el-descriptions-item label="押金">{{ selectedUnitType.deposit_amount ? cur(selectedUnitType.currency)+selectedUnitType.deposit_amount : '-' }} / {{ depositLabel(selectedUnitType.deposit_type) }}</el-descriptions-item>
-          <el-descriptions-item label="最短租期">{{ selectedUnitType.min_stay_months }}个月</el-descriptions-item>
-          <el-descriptions-item label="户型配套" :span="3">
-            <el-tag v-for="a in (selectedUnitType.amenities||[])" :key="a" size="small" style="margin-right:4px">{{ a }}</el-tag>
-            <span v-if="!selectedUnitType.amenities?.length">-</span>
-          </el-descriptions-item>
-        </el-descriptions>
-
-        <!-- ═══ 第四层：可租房间 ═══ -->
-        <h4 style="margin-top:20px">🛏️ {{ selectedUnitType.room_count > 0 ? '可租房间 ('+selectedUnitType.room_count+'间)' : '暂无房间' }}</h4>
-        <el-table v-if="selectedUnitType.rooms?.length" :data="selectedUnitType.rooms" stripe size="small">
-          <el-table-column prop="room_number" label="房号" width="100" />
-          <el-table-column prop="floor" label="楼层" width="80"><template #default="{row}">{{ row.floor ?? '-' }}</template></el-table-column>
-          <el-table-column label="专属优惠" width="100"><template #default="{row}">{{ row.special_discount || '-' }}</template></el-table-column>
-          <el-table-column prop="available_from" label="可入住" width="120" />
-          <el-table-column prop="status" label="状态" width="80">
-            <template #default="{row}"><el-tag size="small" :type="row.status==='available'?'success':'warning'">{{ row.status==='available'?'可租':'已租' }}</el-tag></template>
-          </el-table-column>
-        </el-table>
-        <div v-else style="color:#c0c4cc;padding:16px 0">该户型暂无在售房间</div>
-      </div>
+      <!-- 底部占位 -->
+      <div class="page-bottom" />
     </div>
 
-    <el-empty v-else description="公寓不存在或已下架" />
+    <el-empty v-else description="公寓不存在或已下架" :image-size="120" />
   </div>
 </template>
 
@@ -140,11 +191,19 @@ function depositLabel(t: string) {
   return m[t] || t || '-'
 }
 
-function selectUnitType(ut: any) { selectedUnitType.value = ut }
+function selectUnitType(ut: any) {
+  selectedUnitType.value = ut
+  // 滚动到详情区
+  nextTick(() => {
+    const el = document.querySelector('.ut-detail-section')
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  })
+}
+
 const curMap: Record<string,string> = { CNY:'¥', USD:'$', GBP:'£', EUR:'€', AUD:'A$', SGD:'S$', CAD:'C$', HKD:'HK$', JPY:'¥', KRW:'₩' }
 function cur(c?: string) { return curMap[c||'CNY'] || '¥' }
 
-// 四大板块 amenity 分类定义
+// 四大板块 amenity 分类
 const secAmenities = ['24小时安保','监控系统(CCTV)','智能门禁','电子门锁','前台/礼宾','消防系统','夜间巡逻']
 const svcAmenities = ['代收包裹','维修服务','公共区域保洁','定期社交活动','接机服务','班车接驳','入住礼包','管家服务']
 const facAmenities = ['电梯','洗衣房','自行车库','停车场','公共厨房','快递柜/信箱','自习室','影音室','公共休闲区','屋顶露台','庭院/花园','会议室']
@@ -161,7 +220,6 @@ async function loadBuilding() {
     const r = await api.get(`/buildings/public/${id}`)
     building.value = r.data
     if (r.data.unit_types?.length) selectedUnitType.value = r.data.unit_types[0]
-    // 初始化地图
     if (r.data.latitude && r.data.longitude) {
       await nextTick()
       initMap(r.data.latitude, r.data.longitude)
@@ -204,32 +262,497 @@ onMounted(() => {
 </script>
 
 <style scoped>
-.detail-page { max-width: 960px; margin: 0 auto; padding-bottom: 40px }
-.no-image { height: 200px; background: #f5f6f8; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 64px }
-.building-header { margin: 20px 0 }
-.building-header h1 { font-size: 24px; color: #303133; margin: 0 0 8px }
-.addr { color: #909399; margin: 0 0 4px }
-.desc { color: #606266; margin: 8px 0 }
-.phone { color: #909399; font-size: 14px }
+/* ═══════════════════════════════════════════════
+   全局
+   ═══════════════════════════════════════════════ */
+.detail-page {
+  max-width: 1060px;
+  margin: 0 auto;
+  padding: 0 24px 60px;
+}
 
-.special-tags { display: flex; gap: 10px; margin: 12px 0 }
-.amenities-section { margin: 16px 0 }
-.amenities-section h3 { font-size: 16px; color: #303133; margin: 0 0 10px }
-.amenity-cat { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 8px }
-.cat-label { font-size: 13px; color: #606266; font-weight: 600; white-space: nowrap; min-width: 80px; padding-top: 2px }
-.amenity-tags { display: flex; flex-wrap: wrap; gap: 6px }
+.page-bottom { height: 1px }
 
-.map-section { margin: 20px 0 }
-.map-section h3 { font-size: 16px; color: #303133; margin: 0 0 10px }
+/* ═══════════════════════════════════════════════
+   章节标题
+   ═══════════════════════════════════════════════ */
+.section-heading {
+  font-size: 22px;
+  font-weight: 700;
+  color: #1a1a2e;
+  margin: 0 0 20px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
 
-.unit-tabs { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 12px }
-.unit-tab { border: 2px solid #e4e7ed; border-radius: 12px; padding: 12px 16px; cursor: pointer; min-width: 160px; transition: all 0.2s }
-.unit-tab:hover { border-color: #FF6B35 }
-.unit-tab.active { border-color: #FF6B35; background: #fff4ed }
-.ut-name { font-weight: 600; font-size: 15px; color: #303133 }
-.ut-info { font-size: 13px; color: #909399; margin: 2px 0 }
-.ut-rent { font-size: 16px; font-weight: 700; color: #f56c6c; margin: 4px 0 }
+.heading-badge {
+  font-size: 14px;
+  font-weight: 600;
+  color: #909399;
+  background: #f0f2f5;
+  padding: 4px 12px;
+  border-radius: 20px;
+}
 
-.ut-detail h3, .ut-detail h4 { font-size: 16px; color: #303133; margin: 0 0 10px }
-.ut-images { margin: 10px 0; display: flex; flex-wrap: wrap }
+/* ═══════════════════════════════════════════════
+   Hero 图片轮播
+   ═══════════════════════════════════════════════ */
+.hero-section {
+  margin: 0 -24px 28px;
+  position: relative;
+}
+
+.hero-carousel {
+  position: relative;
+}
+
+.hero-carousel :deep(.el-carousel__container) {
+  border-radius: 0;
+}
+
+.hero-img {
+  width: 100%;
+  height: 420px;
+  object-fit: cover;
+}
+
+.hero-overlay {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  padding: 40px 60px 32px;
+  background: linear-gradient(transparent, rgba(0,0,0,0.65));
+  color: #fff;
+  border-radius: 0 0 16px 16px;
+}
+
+.hero-overlay .hero-title {
+  font-size: 30px;
+  font-weight: 700;
+  margin: 0 0 6px;
+  text-shadow: 0 2px 8px rgba(0,0,0,0.3);
+  color: #fff;
+}
+
+.hero-overlay .hero-addr {
+  font-size: 15px;
+  opacity: 0.9;
+  margin: 0;
+  color: #fff;
+}
+
+/* 无图 placeholder */
+.hero-placeholder {
+  height: 340px;
+  background: linear-gradient(135deg, #2c3e50 0%, #34495e 40%, #4a6fa5 100%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  border-radius: 0;
+}
+
+.hero-placeholder .hero-icon {
+  font-size: 72px;
+  margin-bottom: 16px;
+  opacity: 0.6;
+}
+
+.hero-placeholder .hero-title {
+  font-size: 30px;
+  font-weight: 700;
+  margin: 0 0 8px;
+  color: #fff;
+}
+
+.hero-placeholder .hero-addr {
+  font-size: 15px;
+  opacity: 0.8;
+  margin: 0;
+  color: #fff;
+}
+
+/* ═══════════════════════════════════════════════
+   快捷标签行
+   ═══════════════════════════════════════════════ */
+.quick-info-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 28px;
+  padding: 16px 20px;
+  background: #fafbfc;
+  border-radius: 14px;
+  border: 1px solid #ebeef5;
+}
+
+.quick-tags {
+  display: flex;
+  gap: 10px;
+}
+
+.quick-tag {
+  font-size: 14px;
+  font-weight: 600;
+  padding: 6px 16px;
+  border-radius: 8px;
+}
+
+.tag-pink {
+  background: #fef0f0;
+  color: #e0485c;
+  border: 1px solid #fcd4da;
+}
+
+.tag-purple {
+  background: #f4f0fe;
+  color: #7c3aed;
+  border: 1px solid #e0d4fc;
+}
+
+.quick-phone {
+  font-size: 15px;
+  color: #606266;
+  font-weight: 500;
+}
+
+/* ═══════════════════════════════════════════════
+   公寓简介
+   ═══════════════════════════════════════════════ */
+.intro-section {
+  margin-bottom: 32px;
+}
+
+.intro-text {
+  font-size: 16px;
+  line-height: 1.8;
+  color: #4a5568;
+  margin: 0;
+}
+
+/* ═══════════════════════════════════════════════
+   公寓配套 — 卡片式
+   ═══════════════════════════════════════════════ */
+.amenities-section {
+  margin-bottom: 36px;
+}
+
+.amenity-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 16px;
+}
+
+.amenity-card {
+  background: #fff;
+  border: 1px solid #ebeef5;
+  border-radius: 14px;
+  padding: 20px;
+  transition: box-shadow 0.2s, transform 0.2s;
+}
+
+.amenity-card:hover {
+  box-shadow: 0 4px 16px rgba(0,0,0,0.06);
+  transform: translateY(-1px);
+}
+
+.amenity-card-icon {
+  font-size: 28px;
+  margin-bottom: 8px;
+}
+
+.amenity-card-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: #303133;
+  margin-bottom: 12px;
+}
+
+.amenity-card-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.amenity-tag {
+  display: inline-block;
+  font-size: 13px;
+  padding: 4px 10px;
+  background: #f5f7fa;
+  border: 1px solid #e4e7ed;
+  border-radius: 6px;
+  color: #606266;
+}
+
+/* ═══════════════════════════════════════════════
+   地图
+   ═══════════════════════════════════════════════ */
+.map-section {
+  margin-bottom: 40px;
+}
+
+.map-container {
+  width: 100%;
+  height: 280px;
+  border-radius: 14px;
+  border: 1px solid #e4e7ed;
+  overflow: hidden;
+}
+
+/* ═══════════════════════════════════════════════
+   户型卡片网格
+   ═══════════════════════════════════════════════ */
+.unit-types-section {
+  margin-bottom: 40px;
+}
+
+.unit-type-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 18px;
+}
+
+.unit-type-card {
+  background: #fff;
+  border: 2px solid #ebeef5;
+  border-radius: 16px;
+  overflow: hidden;
+  cursor: pointer;
+  transition: all 0.25s ease;
+}
+
+.unit-type-card:hover {
+  border-color: #FF6B35;
+  box-shadow: 0 6px 24px rgba(255,107,53,0.1);
+  transform: translateY(-3px);
+}
+
+.unit-type-card.active {
+  border-color: #FF6B35;
+  background: #fff9f6;
+  box-shadow: 0 6px 24px rgba(255,107,53,0.18);
+}
+
+/* 户型卡片封面 */
+.ut-card-cover {
+  position: relative;
+  height: 180px;
+  background: #f5f6f8;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.ut-cover-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.ut-cover-placeholder {
+  font-size: 56px;
+  opacity: 0.25;
+}
+
+.ut-card-status {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+}
+
+.status-available {
+  font-size: 13px;
+  font-weight: 600;
+  padding: 4px 12px;
+  border-radius: 20px;
+  background: rgba(103, 194, 58, 0.15);
+  color: #529b2e;
+}
+
+.status-full {
+  font-size: 13px;
+  font-weight: 600;
+  padding: 4px 12px;
+  border-radius: 20px;
+  background: rgba(144, 147, 153, 0.15);
+  color: #909399;
+}
+
+/* 户型卡片内容 */
+.ut-card-body {
+  padding: 18px 20px 20px;
+}
+
+.ut-card-name {
+  font-size: 18px;
+  font-weight: 700;
+  color: #1a1a2e;
+  margin: 0 0 8px;
+}
+
+.ut-card-specs {
+  font-size: 15px;
+  color: #606266;
+  margin-bottom: 10px;
+  display: flex;
+  align-items: center;
+  gap: 0;
+}
+
+.spec-divider {
+  margin: 0 8px;
+  color: #c0c4cc;
+}
+
+.ut-card-price {
+  margin-bottom: 12px;
+}
+
+.price-value {
+  font-size: 22px;
+  font-weight: 700;
+  color: #f56c6c;
+}
+
+.price-period {
+  font-size: 14px;
+  color: #909399;
+  margin-left: 2px;
+}
+
+.ut-card-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.ut-tag {
+  font-size: 12px;
+  padding: 3px 10px;
+  background: #f5f7fa;
+  border-radius: 6px;
+  color: #909399;
+}
+
+.ut-tag-more {
+  background: #fffaeb;
+  color: #e6a23c;
+}
+
+/* ═══════════════════════════════════════════════
+   选中户型详情
+   ═══════════════════════════════════════════════ */
+.ut-detail-section {
+  background: #fafbfc;
+  border: 1px solid #ebeef5;
+  border-radius: 18px;
+  padding: 32px;
+  margin-bottom: 40px;
+}
+
+.ut-detail-section .section-heading {
+  font-size: 20px;
+  margin-bottom: 24px;
+}
+
+/* 户型图集 */
+.ut-gallery {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 28px;
+}
+
+.ut-gallery-img {
+  width: 220px;
+  height: 150px;
+  border-radius: 12px;
+  object-fit: cover;
+  cursor: pointer;
+  transition: transform 0.2s;
+}
+
+.ut-gallery-img:hover {
+  transform: scale(1.03);
+}
+
+/* 户型参数卡片网格 */
+.ut-specs-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+}
+
+.spec-card {
+  background: #fff;
+  border: 1px solid #ebeef5;
+  border-radius: 14px;
+  padding: 20px;
+  transition: box-shadow 0.2s;
+}
+
+.spec-card:hover {
+  box-shadow: 0 2px 12px rgba(0,0,0,0.04);
+}
+
+.spec-card.full-width {
+  grid-column: 1 / -1;
+}
+
+.spec-icon {
+  font-size: 24px;
+  margin-bottom: 8px;
+}
+
+.spec-label {
+  font-size: 13px;
+  color: #909399;
+  font-weight: 500;
+  margin-bottom: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.spec-value {
+  font-size: 16px;
+  font-weight: 600;
+  color: #303133;
+}
+
+.spec-value.price {
+  color: #f56c6c;
+  font-size: 18px;
+}
+
+.spec-amenity-tag {
+  display: inline-block;
+  font-size: 13px;
+  padding: 5px 12px;
+  background: #fff;
+  border: 1px solid #e4e7ed;
+  border-radius: 8px;
+  color: #606266;
+  margin: 3px 4px 3px 0;
+  font-weight: 500;
+}
+
+@media (max-width: 768px) {
+  .detail-page { padding: 0 12px 40px }
+  .hero-section { margin: 0 -12px 20px }
+  .hero-img, .hero-carousel :deep(.el-carousel__container) { height: 260px !important }
+  .hero-overlay { padding: 24px 28px 20px }
+  .hero-overlay .hero-title, .hero-placeholder .hero-title { font-size: 24px }
+  .hero-placeholder { height: 240px }
+  .unit-type-grid { grid-template-columns: 1fr }
+  .ut-specs-grid { grid-template-columns: repeat(2, 1fr) }
+  .amenity-cards { grid-template-columns: 1fr }
+  .ut-detail-section { padding: 20px }
+  .ut-gallery-img { width: 100%; height: auto; aspect-ratio: 4/3 }
+}
 </style>

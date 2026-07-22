@@ -2,9 +2,18 @@
   <div class="building-page">
     <h2>🏢 公寓管理</h2>
     <p class="sub">管理公寓信息，配置户型与人员。</p>
-    <el-button type="primary" @click="openCreate" style="margin-bottom:20px">+ 新建公寓</el-button>
 
-    <el-table :data="buildings" v-loading="loading" border stripe>
+    <!-- 管理/回收站 切换 -->
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px">
+      <el-radio-group v-model="viewMode" size="small">
+        <el-radio-button value="active">📋 管理中</el-radio-button>
+        <el-radio-button value="trash">🗑️ 回收站</el-radio-button>
+      </el-radio-group>
+      <el-button v-if="viewMode==='active'" type="primary" @click="openCreate">+ 新建公寓</el-button>
+    </div>
+
+    <!-- 管理模式：正常列表 -->
+    <el-table v-if="viewMode==='active'" :data="buildings" v-loading="loading" border stripe>
       <el-table-column prop="name" label="公寓名称" min-width="160" />
       <el-table-column prop="address" label="地址" min-width="200" show-overflow-tooltip />
       <el-table-column prop="contact_phone" label="电话" width="130" />
@@ -17,6 +26,37 @@
         </template>
       </el-table-column>
     </el-table>
+
+    <!-- 回收站模式 -->
+    <div v-if="viewMode==='trash'" v-loading="trashLoading">
+      <div v-if="!trashItems.length && !trashLoading" style="text-align:center;padding:40px;color:#909399">
+        🗑️ 回收站为空
+      </div>
+      <div class="trash-cards" v-if="trashItems.length">
+        <div v-for="b in trashItems" :key="b.id" class="trash-card">
+          <div class="trash-card-left">
+            <span class="trash-icon">🏢</span>
+            <div class="trash-card-info">
+              <div class="trash-card-name">{{ b.name }}</div>
+              <div class="trash-card-meta" v-if="b.address">📍 {{ b.address }}</div>
+              <div class="trash-card-meta" v-if="b.contact_phone">📞 {{ b.contact_phone }}</div>
+            </div>
+          </div>
+          <div class="trash-card-right">
+            <div style="text-align:right">
+              <el-tag size="small" type="info">已删除</el-tag>
+              <div class="trash-time" v-if="b.updated_at">{{ fmtTime(b.updated_at) }}</div>
+            </div>
+            <el-button size="small" type="primary" @click="restoreBuilding(b.id)">🔄 恢复</el-button>
+            <el-popconfirm title="确定永久删除？不可恢复！" @confirm="hardDeleteBuilding(b.id)">
+              <template #reference>
+                <el-button size="small" type="danger" plain>💥 硬删除</el-button>
+              </template>
+            </el-popconfirm>
+          </div>
+        </div>
+      </div>
+    </div>
 
     <el-dialog v-model="show" :title="editId?'编辑公寓':'新建公寓'" width="720px" :close-on-click-modal="false" @closed="onClose">
       <el-form ref="fRef" :model="f" label-width="100px">
@@ -109,15 +149,18 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted, nextTick } from 'vue'
+import { ref, reactive, onMounted, nextTick, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { buildingService } from '@/services/building'
 import api from '@/services/api'
 import ImageUploader from '@/components/ImageUploader.vue'
 
 const buildings = ref<any[]>([])
-const loading = ref(false); const show = ref(false); const saving = ref(false); const geoLoading = ref(false)
+const trashItems = ref<any[]>([])
+const loading = ref(false); const trashLoading = ref(false)
+const show = ref(false); const saving = ref(false); const geoLoading = ref(false)
 const editId = ref<number|null>(null)
+const viewMode = ref<'active'|'trash'>('active')
 const selectedAmenities = ref<string[]>([])
 const uploadedImages = ref<string[]>([])
 const imageUploaderRef = ref<InstanceType<typeof ImageUploader>>()
@@ -165,6 +208,10 @@ async function revGeo(lat:number,lng:number){try{const r=await fetch(`https://no
 
 // ── CRUD ──
 async function load(){loading.value=true;try{buildings.value=await buildingService.list({limit:200})}catch(e){console.error('load err',e)}finally{loading.value=false}}
+async function loadTrash(){trashLoading.value=true;try{const r=await api.get('/buildings/recycle-bin',{params:{limit:2000}});trashItems.value=r.data||[]}catch(e){console.error('trash load err',e)}finally{trashLoading.value=false}}
+function fmtTime(iso:string):string{try{return new Date(iso).toLocaleString('zh-CN',{hour12:false})}catch{return iso}}
+async function restoreBuilding(id:number){try{await api.post('/buildings/'+id+'/restore');ElMessage.success('已恢复');loadTrash();load()}catch(e:any){ElMessage.error(e?.response?.data?.detail||'恢复失败')}}
+async function hardDeleteBuilding(id:number){try{await api.delete('/buildings/'+id+'/hard');ElMessage.success('已永久删除');loadTrash();load()}catch(e:any){ElMessage.error(e?.response?.data?.detail||'删除失败')}}
 function openCreate(){editId.value=null;Object.assign(f,{name:'',address:'',contact_phone:'',description:'',mgrName:'',mgrPhone:'',mgrEmail:'',lat:null,lng:null,femaleOnly:false,couplesAllowed:false});selectedAmenities.value=[];uploadedImages.value=[];show.value=true;nextTick(()=>initMap(null,null))}
 async function openEdit(b:any){
   editId.value=b.id
@@ -195,8 +242,9 @@ async function save(){
     ElMessage.error(typeof msg==='string'?msg:'保存失败')
   }finally{saving.value=false}
 }
-async function del(id:number){try{await ElMessageBox.confirm('确定删除？','确认',{type:'warning'});await buildingService.remove(id);ElMessage.success('已删除');load()}catch(e){}}
-onMounted(()=>{if(!document.getElementById('leaflet-css')){const c=document.createElement('link');c.id='leaflet-css';c.rel='stylesheet';c.href='https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';document.head.appendChild(c)};load()})
+async function del(id:number){try{await ElMessageBox.confirm('确定删除？该公寓将进入回收站。','确认',{type:'warning'});await buildingService.remove(id);ElMessage.success('已移至回收站');load();loadTrash()}catch(e){}}
+watch(viewMode, (v) => { if (v === 'trash') loadTrash() })
+onMounted(()=>{if(!document.getElementById('leaflet-css')){const c=document.createElement('link');c.id='leaflet-css';c.rel='stylesheet';c.href='https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';document.head.appendChild(c)};load();loadTrash()})
 </script>
 
 <style scoped>
@@ -205,4 +253,16 @@ h2{font-size:22px;color:#303133;margin-bottom:8px}
 .sub{color:#909399;margin-bottom:20px;font-size:14px}
 .amenity-group{display:flex;flex-wrap:wrap;gap:6px}
 .amenity-group .el-checkbox{margin-right:0}
+
+/* 回收站卡片 */
+.trash-cards{display:flex;flex-direction:column;gap:8px}
+.trash-card{display:flex;justify-content:space-between;align-items:center;padding:14px 18px;background:#fff;border:1px solid #ebeef5;border-radius:12px;transition:box-shadow 0.15s}
+.trash-card:hover{box-shadow:0 2px 12px rgba(0,0,0,0.06)}
+.trash-card-left{display:flex;align-items:center;gap:14px;flex:1;min-width:0}
+.trash-icon{font-size:28px;opacity:0.6}
+.trash-card-info{min-width:0}
+.trash-card-name{font-size:16px;font-weight:600;color:#303133}
+.trash-card-meta{font-size:13px;color:#909399;margin-top:2px}
+.trash-card-right{display:flex;align-items:center;gap:12px;flex-shrink:0}
+.trash-time{font-size:11px;color:#c0c4cc;margin-top:3px;white-space:nowrap}
 </style>
