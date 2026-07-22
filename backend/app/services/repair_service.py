@@ -226,3 +226,38 @@ class RepairService:
         repair.status = RepairStatus.cancelled
         await self.session.commit()
         return await self.get_repair(repair.id)
+
+    async def confirm_repair(self, repair_id: int, tenant_id: int) -> RepairRequest | None:
+        """租客确认维修完成"""
+        repair = await self.get_repair(repair_id)
+        if not repair:
+            return None
+        if repair.tenant_id != tenant_id:
+            raise ValueError("Only the tenant who created this repair can confirm it")
+        if repair.status != RepairStatus.completed:
+            raise ValueError("Can only confirm a completed repair")
+        repair.status = RepairStatus.confirmed
+        await self.session.commit()
+
+        # 更新维修师傅评分
+        if repair.assigned_worker_id:
+            from app.models.repair import RepairWorker
+            worker_stmt = select(RepairWorker).where(
+                RepairWorker.user_id == repair.assigned_worker_id
+            )
+            worker_result = await self.session.execute(worker_stmt)
+            worker = worker_result.scalar_one_or_none()
+            if worker and worker.total_jobs > 0:
+                # 简单评分：每次确认 +0.1，上限 5.0
+                worker.rating = min(5.0, round(worker.rating + 0.1, 1))
+
+        # 通知房东
+        notif_svc = NotificationService(self.session)
+        await notif_svc.create_notification(
+            user_id=repair.landlord_id,
+            type=NotificationType.repair_completed,
+            title="维修已确认",
+            content=f"租客已确认维修完成，工单#{repair.id}已关闭",
+        )
+
+        return await self.get_repair(repair.id)

@@ -227,3 +227,23 @@ async def cancel_repair(
 
     repair = await svc.cancel_repair(repair_id)
     return await _repair_to_read(repair)
+
+
+@router.patch("/repairs/{repair_id}/confirm", response_model=RepairRead)
+async def confirm_repair(
+    repair_id: int,
+    session: AsyncSession = Depends(get_db_session),
+    current_user: User = Depends(require_tenant),
+):
+    """租客确认维修完成"""
+    svc = RepairService(session)
+    repair = await svc.get_repair(repair_id)
+    if not repair:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repair not found")
+    if repair.tenant_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+    try:
+        repair = await svc.confirm_repair(repair_id, current_user.id)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    return await _repair_to_read(repair)

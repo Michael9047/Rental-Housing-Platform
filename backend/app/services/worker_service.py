@@ -3,7 +3,9 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.models.repair import RepairWorker, WorkerStatus
+from sqlalchemy import or_
+
+from app.models.repair import RepairWorker, WorkerScope, WorkerStatus
 from app.models.user import User, UserRole
 from app.schemas.repair import WorkerCreate, WorkerUpdate, WorkerStatusUpdate
 
@@ -43,6 +45,7 @@ class WorkerService:
             phone=worker_in.phone,
             skills=worker_in.skills or [],
             status=WorkerStatus.available,
+            scope=worker_in.scope,  # platform 或 apartment
         )
         self.session.add(worker)
         await self.session.commit()
@@ -52,10 +55,15 @@ class WorkerService:
         return await self.get_worker(worker.id)
 
     async def list_workers(self, manager_id: int) -> list[RepairWorker]:
-        """查看某 manager 管理的维修师傅列表"""
+        """查看某 manager 可用的维修师傅列表（自己的apartment工人 + 所有platform工人）"""
         stmt = (
             select(RepairWorker)
-            .where(RepairWorker.manager_id == manager_id)
+            .where(
+                or_(
+                    RepairWorker.scope == WorkerScope.platform,
+                    (RepairWorker.manager_id == manager_id) & (RepairWorker.scope == WorkerScope.apartment),
+                )
+            )
             .options(selectinload(RepairWorker.user))
             .order_by(RepairWorker.created_at.desc())
         )

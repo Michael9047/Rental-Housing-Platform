@@ -11,7 +11,7 @@ from alembic import op
 import sqlalchemy as sa
 
 revision: str = 'f7ca5aa62eee'
-down_revision: Union[str, None] = '20260708_0012'
+down_revision: Union[str, None] = '20260708_0012_add_rent_type_to_properties'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

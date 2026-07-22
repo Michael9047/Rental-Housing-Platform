@@ -13,6 +13,7 @@ export type RepairStatus =
   | 'assigned'
   | 'in_progress'
   | 'completed'
+  | 'confirmed'
   | 'rejected'
   | 'cancelled'
 
@@ -48,11 +49,19 @@ export interface RepairRead {
   property_title: string | null
 }
 
+export type WorkerScope = 'platform' | 'apartment'
+
+export const WORKER_SCOPE_LABELS: Record<WorkerScope, string> = {
+  platform: '网站管理',
+  apartment: '公寓管理',
+}
+
 export interface RepairWorker {
   id: number
   user_id: number
   manager_id: number
   status: WorkerStatus
+  scope: WorkerScope
   skills: string[] | null
   phone: string
   total_jobs: number
@@ -66,6 +75,7 @@ export interface WorkerCreate {
   password: string
   phone: string
   skills?: string[]
+  scope?: WorkerScope
 }
 
 export interface WorkerStatusUpdate {
@@ -85,7 +95,8 @@ export const REPAIR_STATUS_LABELS: Record<RepairStatus, string> = {
   pending: '待处理',
   assigned: '已派单',
   in_progress: '维修中',
-  completed: '已完成',
+  completed: '待确认',
+  confirmed: '已确认',
   rejected: '已拒绝',
   cancelled: '已取消',
 }
@@ -94,7 +105,8 @@ export const REPAIR_STATUS_TAGS: Record<RepairStatus, string> = {
   pending: 'danger',
   assigned: 'warning',
   in_progress: '',
-  completed: 'success',
+  completed: 'warning',
+  confirmed: 'success',
   rejected: 'info',
   cancelled: 'info',
 }
