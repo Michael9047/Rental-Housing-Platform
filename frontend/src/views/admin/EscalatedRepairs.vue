@@ -59,7 +59,7 @@ function formatDate(d: string) { return d ? new Date(d).toLocaleDateString('zh-C
 async function fetchData() {
   loading.value = true
   try {
-    repairs.value = await repairService.list({ status: 'pending_escalated' })
+    repairs.value = await repairService.list({ status: 'pending_escalated', limit: 200 })
   } catch { repairs.value = [] }
   // 加载所有platform工人供选择
   try {
