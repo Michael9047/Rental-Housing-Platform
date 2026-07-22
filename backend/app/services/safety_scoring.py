@@ -110,7 +110,6 @@ class SafetyScoringService:
         country: str | None = None,
         latitudes: dict[int, float] | None = None,
         longitudes: dict[int, float] | None = None,
-        addresses: dict[int, str] | None = None,
     ) -> dict[int, SafetyResult]:
         country_upper = (country or "").upper()
 
@@ -118,7 +117,7 @@ class SafetyScoringService:
             return self._score_sg_batch(property_ids, latitudes, longitudes)
 
         if country_upper in ("GB", "UK"):
-            return await self._score_uk_batch(property_ids, addresses)
+            return await self._score_uk_batch(property_ids, latitudes, longitudes)
 
         logger.info("安全评分: %d 套房源, country=%s → 中性分", len(property_ids), country)
         return {pid: SafetyResult(property_id=pid, score=NEUTRAL_SAFETY) for pid in property_ids}
@@ -149,69 +148,118 @@ class SafetyScoringService:
         logger.info("安全评分 SG: %d 套房源完成（本地数据）", len(results))
         return results
 
-    # ── 英国（CrystalRoof 实时，仅 crime）────────────
+    # ── 英国（Police.uk 1英里半径原始案件）───────────
+
+    # 评分权重（设计文档定义）
+    UK_WEIGHTS = {
+        "violent-crime": 0.35,
+        "burglary": 0.25,
+        "robbery": 0.15,
+        "anti-social-behaviour": 0.15,
+        "vehicle-crime": 0.10,
+    }
+    UK_DIVISOR = 150  # 加权总数/150 = 扣分
 
     async def _score_uk_batch(
         self, property_ids: list[int],
-        addresses: dict[int, str] | None,
+        latitudes: dict[int, float] | None,
+        longitudes: dict[int, float] | None,
     ) -> dict[int, SafetyResult]:
-        if not addresses:
-            logger.warning("安全评分 UK: 缺少地址数据，返回中性分")
+        if not latitudes or not longitudes:
+            logger.warning("安全评分 UK: 缺少坐标数据，返回中性分")
             return {pid: SafetyResult(property_id=pid, score=NEUTRAL_SAFETY) for pid in property_ids}
         try:
-            from app.services.crystalroof_service import get_crystalroof_score
+            import httpx
             results: dict[int, SafetyResult] = {}
-            for pid in property_ids:
-                addr = addresses.get(pid, "")
-                if not addr:
-                    results[pid] = SafetyResult(property_id=pid, score=NEUTRAL_SAFETY)
-                    continue
-                try:
-                    cr = await get_crystalroof_score(addr)
-                    subscores = cr.subscores or {}
-                    crime_100 = float(subscores.get("crime", 0))
-                    if crime_100 > 0:
-                        if crime_100 >= 80:      uk_crime = 5.0
-                        elif crime_100 >= 60:    uk_crime = 4.5
-                        elif crime_100 >= 40:    uk_crime = 4.0
-                        elif crime_100 >= 20:    uk_crime = 3.5
-                        else:                    uk_crime = 3.0
-                        score = uk_crime
-                    else:
-                        score = NEUTRAL_SAFETY
-                        uk_crime = 0
-                    summary = (
-                        f"街区犯罪评分 {uk_crime}/5.0。详细报告: {cr.search_url}"
-                    ) if cr.fetched else f"CrystalRoof 数据抓取失败，请手动查看: {cr.search_url}"
-                    results[pid] = SafetyResult(
-                        property_id=pid,
-                        score=score,
-                        data_source="crystalroof.co.uk",
-                        data_period="",
-                        uk_crime_score=uk_crime,
-                        report_url=cr.search_url,
-                        summary=summary,
-                        raw_data={"crystalroof": cr.to_dict()},
-                    )
-                except Exception:
-                    logger.exception("CrystalRoof 评分失败 pid=%s", pid)
-                    results[pid] = SafetyResult(property_id=pid, score=NEUTRAL_SAFETY)
+            async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:
+                for pid in property_ids:
+                    lat = latitudes.get(pid)
+                    lng = longitudes.get(pid)
+                    if lat is None or lng is None:
+                        results[pid] = SafetyResult(property_id=pid, score=NEUTRAL_SAFETY)
+                        continue
+                    try:
+                        r = await client.get(
+                            "https://data.police.uk/api/crimes-street/all-crime",
+                            params={"lat": lat, "lng": lng, "date": self._latest_police_month()},
+                        )
+                        if r.status_code != 200:
+                            logger.warning("Police.uk API: HTTP %s for pid=%s", r.status_code, pid)
+                            results[pid] = SafetyResult(property_id=pid, score=NEUTRAL_SAFETY)
+                            continue
+                        crimes = r.json()
+                        # 按类别计数
+                        counts: dict[str, int] = {}
+                        for c in crimes:
+                            cat = c.get("category", "other-crime")
+                            counts[cat] = counts.get(cat, 0) + 1
+                        # 加权
+                        weighted = sum(
+                            counts.get(cat, 0) * w
+                            for cat, w in self.UK_WEIGHTS.items()
+                        )
+                        raw_score = 5.0 - weighted / self.UK_DIVISOR
+                        score = round(max(1.0, min(5.0, raw_score)), 1)
+
+                        # 明细
+                        breakdown = {
+                            "violent_crime": counts.get("violent-crime", 0),
+                            "burglary": counts.get("burglary", 0),
+                            "robbery": counts.get("robbery", 0),
+                            "anti_social_behaviour": counts.get("anti-social-behaviour", 0),
+                            "vehicle_crime": counts.get("vehicle-crime", 0),
+                        }
+                        total = sum(counts.values())
+                        summary = (
+                            f"1英里半径内近一月记录 {total} 起案件，"
+                            f"其中暴力犯罪 {breakdown['violent_crime']} 起、"
+                            f"入室盗窃 {breakdown['burglary']} 起。"
+                            f"安全评分 {score}/5.0。"
+                        )
+                        results[pid] = SafetyResult(
+                            property_id=pid,
+                            score=score,
+                            data_source="data.police.uk",
+                            data_period=self._latest_police_month(),
+                            uk_crime_score=score,
+                            summary=summary,
+                            raw_data={
+                                "counts": counts,
+                                "weighted": round(weighted, 1),
+                                "total": total,
+                                "lat": lat, "lng": lng,
+                            },
+                        )
+                    except Exception:
+                        logger.exception("Police.uk 评分失败 pid=%s", pid)
+                        results[pid] = SafetyResult(property_id=pid, score=NEUTRAL_SAFETY)
             logger.info("安全评分 UK: %d 套房源完成", len(results))
             return results
         except Exception:
             logger.exception("安全评分 UK 失败，回退中性分")
             return {pid: SafetyResult(property_id=pid, score=NEUTRAL_SAFETY) for pid in property_ids}
 
+    @staticmethod
+    def _latest_police_month() -> str:
+        """Police.uk 数据通常滞后 1-2 个月，返回最近可用月份"""
+        from datetime import datetime, timezone
+        now = datetime.now(timezone.utc)
+        # 回退 2 个月确保数据已发布
+        target = now.replace(day=1)
+        if target.month <= 2:
+            target = target.replace(year=target.year - 1, month=target.month + 10)
+        else:
+            target = target.replace(month=target.month - 2)
+        return target.strftime("%Y-%m")
+
     async def score_single(
         self, property_id: int, lat: float | None = None,
-        lng: float | None = None, address: str = "",
-        country: str | None = None,
+        lng: float | None = None, country: str | None = None,
     ) -> SafetyResult:
         lats = {property_id: lat} if lat is not None else {}
         lngs = {property_id: lng} if lng is not None else {}
-        addrs = {property_id: address} if address else {}
         results = await self.score_properties(
-            [property_id], country, lats, lngs, addrs,
+            [property_id], country, lats, lngs,
         )
         return results[property_id]
 

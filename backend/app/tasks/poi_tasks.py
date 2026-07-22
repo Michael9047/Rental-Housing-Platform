@@ -139,7 +139,6 @@ def generate_full_poi_for_property(property_id: int) -> None:
                         result = await safety_svc.score_single(
                             property_id,
                             lat=lat, lng=lng,
-                            address=prop.address or prop.title or "",
                             country=country,
                         )
                         safety_data = result.to_dict()
