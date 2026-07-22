@@ -21,38 +21,39 @@
 
 | 层级 | 关键词 | Google 搜索词 | 端点 | 上限 | 备注 |
 |------|--------|-------------|------|------|------|
-| **L1 美食** | 餐厅 | `"restaurant"` | searchText | 240 (2×2格) | 网格分割 |
-| | cafe | `"cafe"` | searchText | 240 (2×2格) | 网格分割 |
-| | 烘焙 | `"bakery"` | searchText | 240 (2×2格) | 网格分割 |
-| | 快餐 | `"fast food"` | searchText | 240 (2×2格) | 网格分割 |
-| | 食阁 | `"food centre"` | searchText | 240 (2×2格) | 网格分割，含小贩中心摊位 |
+| **L1 美食** | 餐厅 | `"restaurant"` | searchText | 240 (2×2格×3页) | 网格分割 |
+| | cafe | `"cafe"` | searchText | 240 (2×2格×3页) | 网格分割 |
+| | 烘焙 | `"bakery"` | searchText | 240 (2×2格×3页) | 网格分割 |
+| | 快餐 | `"fast food"` | searchText | 240 (2×2格×3页) | 网格分割 |
+| | 食阁 | `"food centre"` | searchText | 240 (2×2格×3页) | 网格分割，含小贩中心摊位 |
 | **L2 便利** | 超市 | `"supermarket"` | searchText | 160 (2×2格×2页) | 网格分割 |
 | | 便利店 | `"convenience store"` | searchText | 160 (2×2格×2页) | 网格分割 |
-| | 市场 | `["market"]` | searchNearby | 20 | 圆形搜索 |
+| | 市场 | `"market"` | searchText | 160 (2×2格×2页) | 网格分割 |
 | | 药店 | `"pharmacy"` | searchText | 160 (2×2格×2页) | 网格分割 |
 | | 健身房 | `"gym"` | searchText | 160 (2×2格×2页) | 网格分割 |
-| | 酒吧 | `["bar"]` | searchNearby | 20 | 圆形搜索 |
-| **L3 出行** | 地铁站 | `["subway_station"]` | searchNearby | 20 | 圆形搜索，150m去重 |
+| | 酒吧 | `"bar"` | searchText | 160 (2×2格×2页) | 网格分割 |
+| **L3 出行** | 地铁站 | `"subway station"` | searchText | 160 (2×2格×2页) | 网格分割，150m去重 |
 | | 公交站 | `"bus stop"` + `"bus station"` | searchText | 320 (双词×2×2格×2页) | 网格分割，80m去重 |
-| **L4 地标** | 商场 | `["shopping_mall"]` | searchNearby | 20 | 150m去重 |
-| | 小贩中心 | `"hawker centre"` + `"food centre"` | searchText | 120 (双词×3页) | `includedType: "food_court"` 过滤 |
-| **L5 医疗** | 医院 | `["hospital"]` | searchNearby | 20 | 200m去重 |
+| **L4 地标** | 商场 | `"shopping mall"` | searchText | 160 (2×2格×2页) | 网格分割，150m去重 |
+| | 小贩中心 | `"hawker centre"` + `"food centre"` | searchText | 120 (双词×3页, 单矩形) | 不走网格，`includedType: "food_court"` 过滤 |
+| **L5 医疗** | 医院 | `"hospital"` | searchText | 160 (2×2格×2页) | 网格分割，200m去重 |
 
 ---
 
 ## 二、端点选择策略
 
+> **已完全舍弃 `searchNearby` 圆形搜索**，全关键词统一走 `searchText` 矩形搜索。
+
 | 端点 | 适用场景 | 优势 | 限制 |
 |------|---------|------|------|
-| **searchNearby** | 结构化类型（医院、商场、地铁站、市场、酒吧） | 自动去重，一个POI一条 | 最多 **20 条**，不可翻页，仅圆形搜索 |
-| **searchText** | 高密度自由文本（餐厅、cafe、超市、便利店、药店、健身房、公交站） | 可翻页（2-3页），可网格分割突破上限 | 最多 **60 条/次**，仅矩形搜索 |
+| **searchText** | 全部 16 个关键词 | 矩形搜索、可翻页、可网格分割突破 20 条上限 | 需手动 `place_id` 去重 |
 
-**选择规则**：
-- 有明确 `includedTypes` 且预期结果 < 20 且密度低 → `searchNearby`
-- 高密度（餐饮类、便利类、公交）→ `searchText` + 2×2 网格分割
-  - L1 美食类翻 **3 页** → 最高 **240 条**
-  - L2 便利类 + L3 公交站翻 **2 页** → 最高 **160 条**
-- 无 `includedTypes`（如小贩中心）→ `searchText` + `includedType` 过滤
+**两条执行路径**：
+
+| 路径 | 关键词 | 搜索方式 | 翻页 | 上限 |
+|------|--------|---------|------|------|
+| **A — 特殊** | 小贩中心 | 单矩形 + `includedType: "food_court"` | 3 页 × 双词 | 120 |
+| **B — 通用** | 其余 15 个 | 2×2 网格分割 | L1 美食 3 页 / 其余 2 页 | 160 / 240 |
 
 ---
 
@@ -108,6 +109,8 @@
 
 ### 4.5 去重规则
 
+> 全关键词走 searchText 后无自动去重，所有去重均为手动 post-search。
+
 | 关键词 | 去重方式 | 阈值 |
 |--------|---------|------|
 | 地铁站 | proximity | 150m |
@@ -115,8 +118,7 @@
 | 医院 | proximity | 200m |
 | 商场 | proximity | 150m |
 | 市场 | proximity | 150m |
-| 美食类全关键词 | 同名 + proximity | 50m |
-| 超市 / 便利店 / 药店 / 健身房 | 同名 + proximity | 50m |
+| 全 searchText 关键词 | 同名 + proximity | 50m |
 
 ### 4.6 后续规划
 
@@ -128,15 +130,18 @@
 
 ## 五、搜索参数速查
 
-| 参数 | searchNearby | searchText |
-|------|-------------|------------|
-| 请求方式 | `POST places:searchNearby` | `POST places:searchText` |
-| 搜索形状 | `circle` (center + radius) | `rectangle` (low + high) |
-| 结果上限 | `maxResultCount: 20`（不可翻页） | `pageSize: 20` × 3 页 = 60 |
-| 网格突破 | 不支持 | 2×2 分割 → 240 |
-| 类型过滤 | `includedTypes` | `includedType`（可选） |
-| 文本搜索 | 不支持 | `textQuery` |
-| 去重 | 自动（结构化） | 需手动 `place_id` 去重 |
+> 全关键词统一使用 `POST places:searchText`，`searchNearby` 已废弃。
+
+| 参数 | 值 | 说明 |
+|------|-----|------|
+| 请求方式 | `POST places:searchText` | Google Places API (New) |
+| 搜索形状 | `rectangle` (low + high) | 由圆心 + 半径换算矩形 |
+| 网格分割 | 2×2 = 4 格 | 每格独立搜索，cross-cell `place_id` 去重 |
+| 每页条数 | `pageSize: 20` | Google 单页上限 |
+| 翻页 | L1: 3 页 / 其余: 2 页 | 小贩中心特殊：单矩形 3 页 |
+| 类型过滤 | `includedType`（可选） | 仅小贩中心使用 `"food_court"` |
+| 文本搜索 | `textQuery` | 双词关键词独立搜索后取并集 |
+| 去重 | 手动 `place_id` + proximity | searchText 无自动去重 |
 
 ---
 
@@ -150,5 +155,5 @@
 
 ---
 
-> 最后更新：2026-07-20
+> 最后更新：2026-07-22
 > 测试区域：Clementi MRT (1.3153, 103.7648)
