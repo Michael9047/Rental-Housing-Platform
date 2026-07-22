@@ -134,14 +134,17 @@ def generate_full_poi_for_property(property_id: int) -> None:
                 try:
                     from app.services.safety_scoring import SafetyScoringService
                     safety_svc = SafetyScoringService()
-                    country = prop.country or ""
-                    if country.upper() == "SG" and lat is not None and lng is not None:
-                        s_result = await safety_svc.score_single(
-                            property_id, lat=lat, lng=lng, country=country
+                    country = (prop.country or "").upper()
+                    if country in ("SG", "GB", "UK"):
+                        result = await safety_svc.score_single(
+                            property_id,
+                            lat=lat, lng=lng,
+                            address=prop.address or prop.title or "",
+                            country=country,
                         )
-                        safety_data = s_result.to_dict()
-                        logger.info("Safety score for property %s: %.0f (NPC: %s)",
-                                    property_id, s_result.score, s_result.npc)
+                        safety_data = result.to_dict()
+                        logger.info("Safety score for property %s: %.0f (source: %s)",
+                                    property_id, result.score, result.data_source)
                 except Exception:
                     logger.exception("Safety scoring failed for property %s", property_id)
 
@@ -287,6 +290,58 @@ def backfill_all_map_pois() -> int:
             generate_map_pois_for_property.delay(pid)
 
         logger.info("Backfill enqueued: %d properties for map POI generation", len(missing))
+        return len(missing)
+
+    return asyncio.run(_run())
+
+
+# ═══════════════════════════════════════════════════════
+# 安全评分回填
+# ═══════════════════════════════════════════════════════
+
+@celery_app.task(
+    name="backfill_safety_scores",
+    autoretry_for=(Exception,),
+    retry_backoff=True,
+    max_retries=1,
+)
+def backfill_safety_scores() -> int:
+    """存量房源批量补生成安全评分——遍历有坐标房源，逐条 dispatch"""
+
+    import asyncio
+
+    async def _run() -> int:
+        settings = get_settings()
+        engine = create_async_engine(settings.database_url)
+        async_session = async_sessionmaker(engine, expire_on_commit=False)
+
+        async with async_session() as session:
+            result = await session.execute(
+                select(Property.id)
+                .where(
+                    Property.latitude.isnot(None),
+                    Property.longitude.isnot(None),
+                )
+            )
+            all_ids = [row[0] for row in result.all()]
+
+            # 过滤已有 safety_data 的房源
+            missing = []
+            for pid in all_ids:
+                poi_result = await session.execute(
+                    select(PropertyPOI.safety_data)
+                    .where(PropertyPOI.property_id == pid)
+                )
+                row = poi_result.first()
+                if not row or not row[0]:
+                    missing.append(pid)
+
+        await engine.dispose()
+
+        for pid in missing:
+            generate_full_poi_for_property.delay(pid)
+
+        logger.info("Safety backfill enqueued: %d properties", len(missing))
         return len(missing)
 
     return asyncio.run(_run())

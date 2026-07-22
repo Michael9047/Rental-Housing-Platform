@@ -119,9 +119,11 @@ async def gather_comprehensive_metrics(
         try:
             lats = {pid: lat for pid, (lat, _) in uncached_coords.items()}
             lngs = {pid: lng for pid, (_, lng) in uncached_coords.items()}
+            addrs = {p.id: (p.address or p.title or "") for p in props if p.id in uncached_ids}
             country = props[0].country if props else None
             results = await safety_service.score_properties(
-                uncached_ids, country=country, latitudes=lats, longitudes=lngs
+                uncached_ids, country=country,
+                latitudes=lats, longitudes=lngs, addresses=addrs,
             )
             for pid, r in results.items():
                 safety_map[pid] = r.score

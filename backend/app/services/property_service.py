@@ -173,7 +173,7 @@ class PropertyService:
             clauses.append(Property.deleted_at.is_(None))
 
         if district:
-            clauses.append(Property.district == district)
+            clauses.append(Property.district.ilike(f"%{district}%"))
         if status:
             clauses.append(Property.status == status)
         elif landlord_id is None and not include_deleted:
@@ -369,7 +369,7 @@ class PropertyService:
             stmt = stmt.order_by(Property.created_at.desc())
 
         if district:
-            stmt = stmt.where(Property.district == district)
+            stmt = stmt.where(Property.district.ilike(f"%{district}%"))
         if price_min is not None:
             stmt = stmt.where(Property.price_monthly >= price_min)
         if price_max is not None:
@@ -447,7 +447,7 @@ class PropertyService:
                 Property.description.ilike(kw),
             ))
             if district:
-                fallback_stmt = fallback_stmt.where(Property.district == district)
+                fallback_stmt = fallback_stmt.where(Property.district.ilike(f"%{district}%"))
             if price_min is not None:
                 fallback_stmt = fallback_stmt.where(Property.price_monthly >= price_min)
             if price_max is not None:
