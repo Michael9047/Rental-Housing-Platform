@@ -1,5 +1,5 @@
 <template>
-  <div class="property-card" @click="goDetail">
+  <div class="property-card" :class="{ 'is-compare-mode': compareMode, selected }" @click="handleCardClick">
     <!-- Image -->
     <div class="card-image">
       <img
@@ -18,6 +18,13 @@
       </span>
       <!-- District Tag -->
       <span class="district-badge">{{ property.district }}</span>
+      <label v-if="compareMode" class="compare-check" @click.stop>
+        <el-checkbox
+          :model-value="selected"
+          size="large"
+          @change="(value: boolean) => emit('toggle-select', value)"
+        />
+      </label>
     </div>
 
     <!-- Info -->
@@ -119,10 +126,14 @@ const props = defineProps<{
   commute?: CommuteInfo | null
   /** 跳转详情页时附加的 query 参数（如 school 信息） */
   linkQuery?: Record<string, string>
+  /** 多选对比模式：点击卡片切换选中状态 */
+  compareMode?: boolean
+  selected?: boolean
 }>()
 
 const emit = defineEmits<{
   (e: 'book', property: Property | PropertySearchResult): void
+  (e: 'toggle-select', value: boolean): void
 }>()
 
 const router = useRouter()
@@ -225,6 +236,14 @@ function goDetail() {
   })
 }
 
+function handleCardClick() {
+  if (props.compareMode) {
+    emit('toggle-select', !props.selected)
+    return
+  }
+  goDetail()
+}
+
 function handleBook() {
   emit('book', props.property)
 }
@@ -247,6 +266,22 @@ function handleBook() {
   transform: translateY(-4px);
   box-shadow: var(--shadow-lg);
   border-color: var(--primary);
+}
+
+.property-card.is-compare-mode.selected {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 2px var(--primary);
+}
+
+.compare-check {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  z-index: 2;
+  padding: 3px 5px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.92);
+  line-height: 1;
 }
 
 /* ── Image ────────────────────────── */

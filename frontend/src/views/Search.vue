@@ -100,7 +100,7 @@
           <div class="chip-row">
             <span v-for="opt in propertyTypes" :key="opt.value"
               class="chip" :class="{ on: filters.property_type === opt.value }"
-              @click="filters.property_type = filters.property_type === opt.value ? undefined : opt.value; doSearch()"
+              @click="filters.property_type = filters.property_type === opt.value ? undefined : opt.value as PropertyType; doSearch()"
             >{{ opt.label }}</span>
           </div>
         </div>
@@ -190,6 +190,19 @@
       <main class="results-area" :class="{ 'map-layout': viewMode === 'map' }">
         <div class="results-top">
           <span class="results-count">共 <strong>{{ filteredAndSortedResults.length }}</strong> 套房源</span>
+          <div class="compare-toggle">
+            <el-button v-if="!compareMode" size="small" :icon="Select" @click="compareMode = true">
+              多选对比
+            </el-button>
+            <template v-else>
+              <el-checkbox :model-value="allPagedSelected" @change="toggleSelectAll">全选本页</el-checkbox>
+              <span class="compare-count">已选 {{ selectedIds.length }} 套</span>
+              <el-button size="small" type="primary" :disabled="selectedIds.length < 2" @click="goCompareSelected">
+                去对比
+              </el-button>
+              <el-button size="small" text @click="exitCompareMode">取消</el-button>
+            </template>
+          </div>
         </div>
 
         <div v-if="loading" class="loading-wrap">
@@ -230,10 +243,13 @@
           <div :class="viewMode === 'grid' ? 'card-grid' : 'card-list'">
             <PropertyCard
               v-for="p in pagedResults" :key="p.id" :property="p"
-              :show-quick-book="true"
+              :show-quick-book="!compareMode"
               :commute="commuteMap[p.id] || null"
               :link-query="schoolLinkQuery"
+              :compare-mode="compareMode"
+              :selected="selectedIds.includes(p.id)"
               @book="openBookingDialog"
+              @toggle-select="(value: boolean) => toggleSelect(p.id, value)"
             />
           </div>
           <div v-if="searchResults.length > pageSize" class="pag">
@@ -259,7 +275,8 @@
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Search, School, Grid, List, Location, Loading, ChatDotRound } from '@element-plus/icons-vue'
+import { Search, School, Grid, List, Location, Loading, ChatDotRound, Select } from '@element-plus/icons-vue'
+import { ElMessage } from 'element-plus'
 import { usePropertyStore } from '@/stores/property'
 import { storeToRefs } from 'pinia'
 import PropertyCard from '@/components/PropertyCard.vue'
@@ -285,11 +302,50 @@ const router = useRouter()
 const propertyStore = usePropertyStore()
 const { searchResults, loading } = storeToRefs(propertyStore)
 
+// ── 房源多选对比 ──
+const compareMode = ref(false)
+const selectedIds = ref<number[]>([])
+
+const allPagedSelected = computed(
+  () => pagedResults.value.length > 0 && pagedResults.value.every((property) => selectedIds.value.includes(property.id)),
+)
+
+function toggleSelect(id: number, checked: boolean) {
+  if (checked) {
+    if (!selectedIds.value.includes(id)) selectedIds.value.push(id)
+  } else {
+    selectedIds.value = selectedIds.value.filter((selectedId) => selectedId !== id)
+  }
+}
+
+function toggleSelectAll(checked: boolean) {
+  const pageIds = pagedResults.value.map((property) => property.id)
+  if (checked) {
+    for (const id of pageIds) if (!selectedIds.value.includes(id)) selectedIds.value.push(id)
+  } else {
+    selectedIds.value = selectedIds.value.filter((id) => !pageIds.includes(id))
+  }
+}
+
+function exitCompareMode() {
+  compareMode.value = false
+  selectedIds.value = []
+}
+
+function goCompareSelected() {
+  if (selectedIds.value.length < 2) {
+    ElMessage.warning('请至少选择 2 套房源再对比')
+    return
+  }
+  router.push({ name: 'compare', query: { ids: selectedIds.value.join(',') } })
+  exitCompareMode()
+}
+
 // ── 模式 ──
 const searchMode = ref<'city' | 'school' | 'agent'>('city')
 const schoolId = ref<number | null>(null)
 const schoolName = ref('')
-const viewMode = ref<'grid' | 'list'>('grid')
+const viewMode = ref<'grid' | 'list' | 'map'>('grid')
 /** 是否来自 Agent 推荐（显示 AI 推荐横幅） */
 const fromAgent = ref(false)
 const agentContext = ref<{ filters?: Record<string, unknown>; total?: number } | null>(null)
@@ -392,13 +448,6 @@ watch(viewMode, (mode) => {
     })
   } else {
     destroyMap()
-  }
-})
-
-// 地图模式下筛选结果变化时刷新标记
-watch(filteredAndSortedResults, (results) => {
-  if (viewMode.value === 'map' && mapReady.value) {
-    nextTick(() => renderMarkers())
   }
 })
 
@@ -641,6 +690,13 @@ const pagedResults = computed(() => {
   return filteredAndSortedResults.value.slice(s, s + pageSize)
 })
 
+// 地图模式下筛选结果变化时刷新标记（需在 computed 声明后注册）
+watch(filteredAndSortedResults, () => {
+  if (viewMode.value === 'map' && mapReady.value) {
+    nextTick(() => renderMarkers())
+  }
+})
+
 // ── 搜索 ──
 function doSearch() {
   currentPage.value = 1
@@ -873,6 +929,8 @@ watch(() => route.query, () => initFromRoute())
 .results-area.map-layout { overflow-y: hidden; } /* 地图模式由 map-body 控制滚动 */
 .results-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; padding: 0 4px; flex-shrink: 0; }
 .results-count { font-size: 14px; color: var(--text-secondary); }
+.compare-toggle { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+.compare-count { font-size: 13px; color: var(--text-secondary); white-space: nowrap; }
 .loading-wrap { display: flex; flex-direction: column; align-items: center; padding: 60px; color: var(--text-muted); gap: 10px; }
 .card-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
 .card-list { display: flex; flex-direction: column; gap: 14px; }

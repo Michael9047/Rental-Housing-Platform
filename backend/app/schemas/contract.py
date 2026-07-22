@@ -16,6 +16,7 @@ class ContractResponse(BaseModel):
     property_id: int
     template_name: str
     content: str
+    property_snapshot: dict | None = None
     status: str
     signed_at: datetime | None = None
     file_path: str | None = None

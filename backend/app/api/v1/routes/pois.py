@@ -78,9 +78,10 @@ async def get_map_pois(
             detail="地图周边数据暂不可用，请稍后重试",
         )
 
+    poi = await poi_service.get_poi(property_id)
     return MapPOIResponse(
         property_id=property_id,
-        generated_at=None,  # 由 POI 记录的 generated_at 提供，此处简化
+        generated_at=poi.generated_at if poi else None,
         search_radius_m=data.get("search_radius_m", 3000),
         categories=data.get("categories", {}),
     )

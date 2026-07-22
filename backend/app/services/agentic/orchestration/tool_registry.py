@@ -524,8 +524,8 @@ def bind_tool_handlers(
         **kwargs: Any,
     ) -> dict[str, Any]:
         """对候选房源进行确定性质量评分。"""
-        from app.services.agent_service import _score_properties as score_fn
         from app.models.property import Property
+        from app.services.scoring_service import ScoringService
         from sqlalchemy import select
 
         sess = _current_session.get()
@@ -543,7 +543,7 @@ def bind_tool_handlers(
             if price_max is not None:
                 filters["price_max"] = price_max
 
-            scored = score_fn(candidates, filters, {})
+            scored = ScoringService.score_recommendations(candidates, filters, {})
             return {"top3": scored[:3], "total": len(scored)}
         except Exception as exc:
             logger.exception("score_properties 失败")

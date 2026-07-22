@@ -3,10 +3,10 @@ from datetime import date, datetime
 from decimal import Decimal
 
 from sqlalchemy import Boolean, CheckConstraint, Date, DateTime, Enum, Float, ForeignKey, Index, Integer, Numeric, String, Text as SAText
-from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.types import TypeDecorator
 
+from app.models.types import string_array
 from app.models.mixins import TimestampMixin
 from app.db.session import Base
 
@@ -139,7 +139,7 @@ class Property(TimestampMixin, Base):
     )
 
     # ── 新增字段 ──
-    amenities: Mapped[list[str] | None] = mapped_column(ARRAY(String(30)), nullable=True)
+    amenities: Mapped[list[str] | None] = mapped_column(string_array(30), nullable=True)
     available_from: Mapped[date | None] = mapped_column(Date, nullable=True)
     min_stay_months: Mapped[int] = mapped_column(Integer, default=3, nullable=False)
     deposit_type: Mapped[DepositType | None] = mapped_column(
@@ -149,7 +149,7 @@ class Property(TimestampMixin, Base):
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
 
     # ── 新增字段 ──
-    amenities: Mapped[list[str] | None] = mapped_column(ARRAY(String(30)), nullable=True)
+    amenities: Mapped[list[str] | None] = mapped_column(string_array(30), nullable=True)
     available_from: Mapped[date | None] = mapped_column(Date, nullable=True)
     min_stay_months: Mapped[int] = mapped_column(Integer, default=3, nullable=False)
     deposit_type: Mapped[DepositType | None] = mapped_column(

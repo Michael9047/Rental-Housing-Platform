@@ -7,6 +7,7 @@ from typing import Sequence, Union
 
 from alembic import op
 import sqlalchemy as sa
+from sqlalchemy import inspect
 from sqlalchemy.dialects import postgresql
 
 
@@ -18,6 +19,10 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
+    # 部分历史开发库已经手工/通过旧分支创建了 reviews，但版本表没有记录该分支。
+    # 合并迁移时保留现有表，避免重复创建枚举和表。
+    if "reviews" in inspect(op.get_bind()).get_table_names():
+        return
     op.create_table(
         "reviews",
         sa.Column("id", sa.Integer(), nullable=False),

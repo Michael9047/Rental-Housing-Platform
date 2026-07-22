@@ -11,6 +11,8 @@ from __future__ import annotations
 import asyncio
 import logging
 import math
+import weakref
+from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -20,6 +22,42 @@ from app.core.config import get_settings
 from app.services.geocoding_service import _is_amap_primary
 
 logger = logging.getLogger(__name__)
+
+_api_semaphores: weakref.WeakKeyDictionary[
+    asyncio.AbstractEventLoop,
+    tuple[int, asyncio.Semaphore],
+] = weakref.WeakKeyDictionary()
+
+
+def _get_api_semaphore() -> asyncio.Semaphore:
+    """每个事件循环共享一个外部路线 API 并发上限。"""
+    loop = asyncio.get_running_loop()
+    limit = get_settings().commute_api_max_concurrency
+    current = _api_semaphores.get(loop)
+    if current is None or current[0] != limit:
+        current = (limit, asyncio.Semaphore(limit))
+        _api_semaphores[loop] = current
+    return current[1]
+
+
+@asynccontextmanager
+async def _commute_api_slot():
+    """限制所有通勤引擎的出站请求，避免批量候选耗尽 API 配额。
+
+    排队等待必须有 deadline：httpx 的 timeout 只从 client.get 开始计时，
+    在信号量外面等多久都不算。地图 API 整体不可达时，50 个目的地 × 4 请求
+    在并发 8 下会串成约 200 秒；而所有调用点本来就会 except 后降级，
+    与其让用户干等，不如等不到槽位就放弃这次外部调用、直接走降级路径。
+
+    也顺带保护交互式单条路线请求，不被批量任务无限期堵在队尾。
+    """
+    semaphore = _get_api_semaphore()
+    timeout = get_settings().commute_api_queue_timeout_seconds
+    await asyncio.wait_for(semaphore.acquire(), timeout=timeout)
+    try:
+        yield
+    finally:
+        semaphore.release()
 
 # ── 数据类 ────────────────────────────────────────────────────────────
 
@@ -41,7 +79,8 @@ class CommuteResult:
     bike_min: int
     drive_min: int
     transit_min: int
-    source: str = "api"  # "api" | "haversine_fallback"
+    source: str = "api"  # "amap_api" | "ors_api" | "haversine_fallback"
+    transit_verified: bool = False
 
 
 @dataclass
@@ -240,7 +279,8 @@ class AmapCommuteService:
         params.update({k: str(v) for k, v in extra_params.items() if v is not None})
 
         try:
-            resp = await client.get(url, params=params)
+            async with _commute_api_slot():
+                resp = await client.get(url, params=params)
             resp.raise_for_status()
             data = resp.json()
         except Exception as exc:
@@ -308,6 +348,7 @@ class AmapCommuteService:
                 drive_min=max(1, round(d[0] / 60)),
                 transit_min=max(1, round(t[0] / 60)) if t else max(1, round(dist * _DETOUR_FACTOR / _TRANSIT_SPEED * 60)),
                 source="api",
+                transit_verified=t is not None,
             )
 
         # API 部分失败 → 全部降级为 Haversine
@@ -324,7 +365,8 @@ class AmapCommuteService:
         timeout = httpx.Timeout(self.settings.amap_direction_timeout_seconds)
         try:
             async with httpx.AsyncClient(timeout=timeout) as client:
-                resp = await client.get(url, params=params)
+                async with _commute_api_slot():
+                    resp = await client.get(url, params=params)
                 resp.raise_for_status()
                 data = resp.json()
             if data.get("status") != "1":
@@ -493,7 +535,8 @@ class GoogleCommuteService:
             "mode": mode,
         }
         try:
-            resp = await client.get(self.settings.gm_distance_matrix_url, params=params)
+            async with _commute_api_slot():
+                resp = await client.get(self.settings.gm_distance_matrix_url, params=params)
             resp.raise_for_status()
             data = resp.json()
         except Exception as exc:
@@ -570,6 +613,7 @@ class GoogleCommuteService:
                     drive_min=max(1, round(d[0] / 60)),
                     transit_min=max(1, round(t[0] / 60)) if t else max(1, round(dist * _DETOUR_FACTOR / _TRANSIT_SPEED * 60)),
                     source="api",
+                    transit_verified=t is not None,
                 ))
             else:
                 # Google API 部分失败 → Haversine 兜底
@@ -606,7 +650,8 @@ class GoogleCommuteService:
         timeout = httpx.Timeout(self.settings.gm_direction_timeout_seconds)
         try:
             async with httpx.AsyncClient(timeout=timeout) as client:
-                resp = await client.get(self.settings.gm_directions_url, params=params)
+                async with _commute_api_slot():
+                    resp = await client.get(self.settings.gm_directions_url, params=params)
                 resp.raise_for_status()
                 data = resp.json()
         except Exception as exc:
@@ -722,7 +767,8 @@ class ORSCommuteService:
         body = {"coordinates": [[origin_lng, origin_lat], [dest_lng, dest_lat]]}
         headers = {"Authorization": self.api_key, "Content-Type": "application/json"}
         try:
-            resp = await client.post(url, json=body, headers=headers)
+            async with _commute_api_slot():
+                resp = await client.post(url, json=body, headers=headers)
             resp.raise_for_status()
             data = resp.json()
             route = data["routes"][0]
@@ -833,12 +879,14 @@ async def calculate_commute_batch(
                     results.append(fb)
                 else:
                     r.dest_id = destinations[i].dest_id
-                    results.append(r)
                     if r.source == "api":
+                        r.source = "amap_api"
+                    results.append(r)
+                    if r.source == "amap_api":
                         api_ok = True
             return BatchCommuteResult(
                 results=results,
-                source="api" if api_ok else "haversine_fallback",
+                source="amap_api" if api_ok else "haversine_fallback",
             )
         else:
             service = ORSCommuteService()
@@ -847,9 +895,12 @@ async def calculate_commute_batch(
                 return _fallback_batch(origin_lat, origin_lng, destinations)
 
             results = await service.get_batch(origin_lat, origin_lng, destinations)
+            for r in results:
+                if r.source == "api":
+                    r.source = "ors_api"
             return BatchCommuteResult(
                 results=results,
-                source=results[0].source if results else "api",
+                source="ors_api" if any(r.source == "ors_api" for r in results) else "haversine_fallback",
             )
     except Exception:
         logger.exception("通勤计算异常，降级为 Haversine 估算")
@@ -949,10 +1000,11 @@ async def _probe_amap_reachable() -> bool:
 
     try:
         async with httpx.AsyncClient(timeout=_AMAP_PROBE_TIMEOUT) as client:
-            await client.get(
-                "https://restapi.amap.com/v3/geocode/geo",
-                params={"key": settings.amap_web_key, "address": "北京"},
-            )
+            async with _commute_api_slot():
+                await client.get(
+                    "https://restapi.amap.com/v3/geocode/geo",
+                    params={"key": settings.amap_web_key, "address": "北京"},
+                )
         _amap_reachable_cache = True
         logger.info("高德 API 可达 → 国内网络环境")
         return True
@@ -984,8 +1036,10 @@ async def _try_engine(
                     results.append(fb)
                 else:
                     r.dest_id = destinations[i].dest_id
-                    results.append(r)
                     if r.source == "api":
+                        r.source = f"{engine}_api"
+                    results.append(r)
+                    if r.source == f"{engine}_api":
                         api_ok = True
             return BatchCommuteResult(results=results, source=f"{engine}_api") if api_ok else None
 
@@ -994,7 +1048,10 @@ async def _try_engine(
             if not service.api_key:
                 return None
             results = await service.get_batch(origin_lat, origin_lng, destinations)
-            api_ok = any(r.source == "api" for r in results)
+            for r in results:
+                if r.source == "api":
+                    r.source = f"{engine}_api"
+            api_ok = any(r.source == f"{engine}_api" for r in results)
             return BatchCommuteResult(results=results, source=f"{engine}_api") if api_ok else None
 
     except Exception:
@@ -1002,7 +1059,7 @@ async def _try_engine(
     return None
 
 
-async def calculate_commute_batch_resilient(
+async def _calculate_commute_batch_resilient_uncached(
     origin_lat: float, origin_lng: float,
     destinations: list[CommuteDestination],
     country: str | None = None, city: str | None = None,
@@ -1015,12 +1072,16 @@ async def calculate_commute_batch_resilient(
     if not destinations:
         return BatchCommuteResult(source="api")
 
-    amap_reachable = await _probe_amap_reachable()
+    # 有国家代码时按房源所在地选主引擎；缺失时用网络探测兜底。
+    amap_primary = _is_amap_primary(country) if country else await _probe_amap_reachable()
 
-    if amap_reachable:
-        chain = ["amap", "ors"]
-    else:
-        chain = ["ors", "amap"]
+    # 但高德要当主引擎，还得本机确实连得上。海外部署遇到 CN 房源时，少了这一步
+    # 就会每批都先吃满高德超时再回落 ORS —— 探测有进程级缓存，代价接近零。
+    if amap_primary and not await _probe_amap_reachable():
+        logger.info("高德不可达，改用 ORS 作为主引擎（country=%s）", country)
+        amap_primary = False
+
+    chain = ["amap", "ors"] if amap_primary else ["ors", "amap"]
 
     for engine in chain:
         result = await _try_engine(origin_lat, origin_lng, destinations, engine, city)
@@ -1030,3 +1091,76 @@ async def calculate_commute_batch_resilient(
     # 全部失败 → Haversine 兜底
     logger.warning("所有路线引擎均失败，使用 Haversine 估算")
     return _fallback_batch(origin_lat, origin_lng, destinations)
+
+
+def _summarize_batch_source(results: list[CommuteResult]) -> str:
+    """兼容旧批次 source，同时允许缓存合并多个真实引擎的结果。"""
+    api_sources = sorted({result.source for result in results if result.source.endswith("_api")})
+    if len(api_sources) == 1:
+        return api_sources[0]
+    if len(api_sources) > 1:
+        return "mixed_api"
+    return "haversine_fallback"
+
+
+async def calculate_commute_batch_resilient(
+    origin_lat: float,
+    origin_lng: float,
+    destinations: list[CommuteDestination],
+    country: str | None = None,
+    city: str | None = None,
+) -> BatchCommuteResult:
+    """带逐目的地 Redis 缓存的弹性批量通勤公共入口。"""
+    if not destinations:
+        return BatchCommuteResult(source="api")
+
+    from app.services.commute_cache_service import CommuteCacheService
+
+    cache = CommuteCacheService()
+    try:
+        hits = await cache.get_many(
+            origin_lat,
+            origin_lng,
+            destinations,
+            country=country,
+            city=city,
+        )
+        misses = [destination for destination in destinations if destination.dest_id not in hits]
+        computed = BatchCommuteResult(results=[], source="api")
+        if misses:
+            computed = await _calculate_commute_batch_resilient_uncached(
+                origin_lat,
+                origin_lng,
+                misses,
+                country=country,
+                city=city,
+            )
+            await cache.set_many(
+                origin_lat,
+                origin_lng,
+                misses,
+                computed.results,
+                country=country,
+                city=city,
+            )
+
+        computed_by_id = {result.dest_id: result for result in computed.results}
+        merged: list[CommuteResult] = []
+        for destination in destinations:
+            cached = hits.get(destination.dest_id)
+            if cached is not None:
+                merged.append(CommuteResult(dest_id=destination.dest_id, **cached))
+            elif destination.dest_id in computed_by_id:
+                merged.append(computed_by_id[destination.dest_id])
+            else:
+                fallback = _haversine_estimate(
+                    origin_lat,
+                    origin_lng,
+                    destination.lat,
+                    destination.lng,
+                )
+                fallback.dest_id = destination.dest_id
+                merged.append(fallback)
+        return BatchCommuteResult(results=merged, source=_summarize_batch_source(merged))
+    finally:
+        await cache.close()

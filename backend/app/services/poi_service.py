@@ -1,11 +1,13 @@
 import asyncio
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.concurrency import run_in_threadpool
 
+from app.core.config import get_settings
 from app.models.poi import PropertyPOI
 from app.models.property import Property
 from app.services.geocoding_service import (BaseGeocodingService, get_primary_service)
@@ -29,6 +31,8 @@ MAP_POI_CATEGORIES: dict[str, list[str]] = {
     "supermarket": ["超市"],
     "restaurant": ["餐厅", "快餐"],
     "pharmacy": ["药店"],
+    "gym": ["健身房"],
+    "medical": ["医院", "诊所", "药店"],
 }
 MAP_POI_SEARCH_RADIUS = 3000  # 米
 
@@ -220,10 +224,85 @@ class POIService:
 
     # ── 地图小卡片 POI 预生成 ───────────────────────────────
 
-    async def generate_map_pois(self, property_obj: Property) -> dict | None:
-        """生成地图小卡片 POI 数据（6 大类，3km 半径，含 lat/lng）。
+    @staticmethod
+    def is_map_poi_fresh(
+        poi: PropertyPOI | None,
+        *,
+        now: datetime | None = None,
+        ttl_hours: int | None = None,
+    ) -> bool:
+        """判断地图 POI 缓存是否仍在有效期内。"""
+        if poi is None or not poi.map_poi_data or poi.generated_at is None:
+            return False
+        generated_at = poi.generated_at
+        if generated_at.tzinfo is None:
+            generated_at = generated_at.replace(tzinfo=timezone.utc)
+        current = now or datetime.now(timezone.utc)
+        if current.tzinfo is None:
+            current = current.replace(tzinfo=timezone.utc)
+        max_age = timedelta(hours=ttl_hours or get_settings().poi_map_cache_ttl_hours)
+        return generated_at >= current - max_age
 
-        与 AI 分析面板的 _build_poi_payload 独立，仅搜 6 个前端 Tab 分类。
+    @staticmethod
+    async def _acquire_refresh_lock(property_id: int) -> bool:
+        """SETNX 短锁，保证同一房源同时只有一个刷新任务在飞。
+
+        Redis 不可用时一律放行：去重是优化，不该成为刷新的前置条件。
+        """
+        settings = get_settings()
+        try:
+            from redis.asyncio import Redis as AsyncRedis
+
+            client = AsyncRedis.from_url(settings.redis_url, decode_responses=False)
+        except Exception:
+            return True
+
+        try:
+            acquired = await client.set(
+                f"poi:refresh:{property_id}",
+                b"1",
+                nx=True,
+                ex=settings.poi_refresh_lock_seconds,
+            )
+            return bool(acquired)
+        except Exception:
+            return True
+        finally:
+            try:
+                await client.aclose()
+            except Exception:
+                pass
+
+    @staticmethod
+    async def _enqueue_map_poi_refresh(property_id: int) -> None:
+        """请求链路只投递刷新任务；测试 eager 模式下避免同步触发外部地图请求。
+
+        必须去重：热门房源缓存过期的瞬间，每个并发请求都会走到这里，
+        没有锁就是 N 个请求投 N 个任务、每个任务再打 9 次外部地图搜索。
+        """
+        try:
+            from app.celery_app import celery_app
+
+            if celery_app.conf.task_always_eager:
+                logger.debug("Celery eager 模式下跳过 POI 后台刷新 property_id=%s", property_id)
+                return
+
+            if not await POIService._acquire_refresh_lock(property_id):
+                logger.debug("POI 刷新已在进行中，跳过重复投递 property_id=%s", property_id)
+                return
+
+            from app.tasks.poi_tasks import generate_map_pois_for_property
+
+            # .delay() 是 kombu 的同步 broker publish；直接在事件循环里调用，
+            # Redis 挂掉时会用 broker_connection_timeout（2s）卡住整个 worker 进程。
+            await run_in_threadpool(generate_map_pois_for_property.delay, property_id)
+        except Exception:
+            logger.warning("POI 后台刷新投递失败 property_id=%s", property_id, exc_info=True)
+
+    async def generate_map_pois(self, property_obj: Property) -> dict | None:
+        """生成地图小卡片 POI 数据（含健身与医疗，3km 半径，含 lat/lng）。
+
+        与 AI 分析面板的 _build_poi_payload 独立，分类兼容前端地图与推荐摘要。
         返回的 dict 存入 PropertyPOI.map_poi_data。
         """
         geo_service = get_primary_service(property_obj.country)
@@ -293,14 +372,16 @@ class POIService:
         }
 
     async def get_or_generate_map_pois(self, property_id: int) -> dict | None:
-        """获取或生成地图 POI 数据。已缓存则直接返回，否则实时生成并持久化。"""
+        """获取地图 POI；新鲜缓存直返，过期缓存先返回并异步刷新。"""
         result = await self.session.execute(
             select(PropertyPOI).where(PropertyPOI.property_id == property_id)
         )
         poi = result.scalar_one_or_none()
 
-        # 已有缓存 → 直接返回
+        # stale-while-revalidate：避免用户请求等待外部地图搜索。
         if poi and poi.map_poi_data:
+            if not self.is_map_poi_fresh(poi):
+                await self._enqueue_map_poi_refresh(property_id)
             return poi.map_poi_data
 
         prop = await self.session.get(Property, property_id)
@@ -314,6 +395,7 @@ class POIService:
         # 持久化到 map_poi_data
         if poi:
             poi.map_poi_data = data
+            poi.generated_at = datetime.now(timezone.utc)
         else:
             poi = PropertyPOI(
                 property_id=property_id,
@@ -326,6 +408,3 @@ class POIService:
 
         await self.session.commit()
         return data
-
-
-

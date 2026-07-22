@@ -383,7 +383,8 @@ class PropertyService:
         if institute_id is not None:
             stmt = stmt.where(Property.institute_id == institute_id)
         if amenities:
-            stmt = stmt.where(Property.amenities.op("&&")(amenities))
+            # 硬设施要求必须全部满足，PostgreSQL JSONB/ARRAY contains 语义。
+            stmt = stmt.where(Property.amenities.op("@>")(amenities))
         if available_from:
             # 入住月份：YYYYMM → 当月及之前可入住的房源
             year = int(available_from[:4])
@@ -461,7 +462,7 @@ class PropertyService:
             if institute_id is not None:
                 fallback_stmt = fallback_stmt.where(Property.institute_id == institute_id)
             if amenities:
-                fallback_stmt = fallback_stmt.where(Property.amenities.op("&&")(amenities))
+                fallback_stmt = fallback_stmt.where(Property.amenities.op("@>")(amenities))
             if available_from:
                 year = int(available_from[:4])
                 month = int(available_from[4:6])

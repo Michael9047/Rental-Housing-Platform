@@ -24,7 +24,7 @@ class PropertyPOI(TimestampMixin, Base):
         DateTime(timezone=True), nullable=False, default=datetime.utcnow
     )
     reviewed: Mapped[bool] = mapped_column(Boolean, default=False)
-    # 地图小卡片预生成数据：6 大类 POI（含 lat/lng），创建房源时 Celery 异步生成
+    # 地图小卡片预生成数据（含 lat/lng），创建房源时 Celery 异步生成
     map_poi_data: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
     property: Mapped["Property"] = relationship()

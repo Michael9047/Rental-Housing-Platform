@@ -29,11 +29,9 @@ INTENT_DAG_TEMPLATES: dict[Intent, list[dict]] = {
     Intent.SEARCH: [
         {"agent_id": "filter_agent", "dependencies": [], "can_parallelize": False},
         {"agent_id": "search_agent", "dependencies": ["filter_agent"], "can_parallelize": False},
-        {"agent_id": "synthesizer_agent", "dependencies": ["search_agent"], "can_parallelize": False},
     ],
     Intent.COMPARE: [
         {"agent_id": "compare_agent", "dependencies": [], "can_parallelize": False},
-        {"agent_id": "synthesizer_agent", "dependencies": ["compare_agent"], "can_parallelize": False},
     ],
     Intent.MANAGE_CART: [
         {"agent_id": "cart_agent", "dependencies": [], "can_parallelize": False},

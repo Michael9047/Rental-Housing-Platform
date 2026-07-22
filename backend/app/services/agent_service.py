@@ -22,20 +22,25 @@ from app.models.chat import ChatMessage, ChatMessageRole, ChatSession
 from app.models.poi import PropertyPOI
 from app.models.property import Property, PropertyStatus
 from app.models.review import Review, ReviewStatus
-from app.services.agent_faq import FaqEntry, get_faq, match_faq
 from app.services.compare_scoring import (
     DIMENSION_LABELS,
     PRIORITY_LABELS,
     PropertyMetrics,
-    compute_scores,
     format_commute,
     nearest_transit_meters,
     normalize_priority,
 )
 from app.services.llm_service import get_llm_service
+from app.services.preference_state import build_preference_views
 from app.services.property_service import PropertyService
+from app.services.property_fact_service import (
+    PropertyFactBundle,
+    PropertyFactService,
+    satisfies_poi_requirements,
+)
 from app.services.safe_fallback import SafeFallback
 from app.services.score_gap import detect_score_gap
+from app.services.scoring_service import ScoringService
 
 logger = logging.getLogger(__name__)
 
@@ -156,8 +161,8 @@ RECOMMEND_SYSTEM_PROMPT = """你是面向留学生的海外租房推荐助手。
 ══════════════════════════════
 
 1. 开头：总结匹配情况，数量+价格范围+区域。语气像朋友聊天。
-2. 逐套：<亮点标签> — <位置>，<户型> ¥<价格>/月，<卖点1，卖点2>
-   每套突出差异化优势，不要重复。
+2. 逐套：<亮点标签> — <位置>，<户型> ¥<价格>/月，补充面积、房屋简介、租期、房内设施，
+   以及有真实数据支持的通勤和周边设施。每套突出差异化优势，不要重复。
 3. 收尾：引导下一步。结果多→引导细化条件；结果少→给放宽建议。
 
 ══════════════════════════════
@@ -168,7 +173,7 @@ RECOMMEND_SYSTEM_PROMPT = """你是面向留学生的海外租房推荐助手。
 3. 价格用"¥"，不要用"元"或"块"。
 4. 候选为空→recommendations=[], reply 给具体放宽建议（见示例3）。
 5. 精选最多 3 套，按匹配度降序。
-6. 回复 150-250 字。结果少时不要强行凑字数，诚实告知+给建议。
+6. 回复 250-400 字。结果少或周边数据缺失时不要强行凑字数，诚实告知+给建议。
 7. 不要用"为你找到""亲爱的用户"等客服腔。
 
 只输出 JSON：
@@ -339,7 +344,7 @@ _COMPARE_PATTERN = re.compile(r"(对比|比较|哪个好|哪套好|哪一?[个�
 _CART_PATTERN = re.compile(r"(购物车|候选|清单|收藏)")
 # 找房信号词：命中即直接走 recommend，跳过 LLM 意图分类（省一次串行调用，显著降低延迟）
 _RECOMMEND_SIGNAL = re.compile(
-    r"找|推荐|租|房源|房子|居室|单间|公寓|合租|别墅|预算|地铁|学校|大学|附近|[0-9一二两三四五]\s*室|元|块|㎡|平米|平方"
+    r"找|搜|推荐|租|房源|房子|居室|单间|公寓|合租|别墅|预算|地铁|公交|通勤|学校|大学|附近|周边|配套|超市|健身|医院|医疗|阳台|独卫|重新|去掉|不要|[0-9一二两三四五]\s*室|元|块|㎡|平米|平方"
 )
 
 
@@ -401,10 +406,99 @@ def _props_text(props: list[Property]) -> str:
         )
         commute_time = getattr(p, '_commute_time', None)
         if commute_time is not None:
-            source_note = "（路线API实时计算）" if getattr(p, '_commute_source', None) == "api" else "（估算）"
+            commute_source = getattr(p, '_commute_source', None)
+            source_note = "（路线API批量计算）" if commute_source in {"amap_api", "ors_api"} else "（估算）"
             line += f" | 通勤: {commute_time}分钟{source_note}"
+        facts = getattr(p, "_property_facts", None)
+        if isinstance(facts, dict):
+            poi = facts.get("poi") or {}
+            poi_parts: list[str] = []
+            for key, label in (
+                ("nearest_transit_m", "交通"),
+                ("nearest_supermarket_m", "超市"),
+                ("nearest_gym_m", "健身房"),
+                ("nearest_medical_m", "医疗"),
+            ):
+                if poi.get(key) is not None:
+                    poi_parts.append(f"最近{label}{poi[key]}米")
+            if poi_parts:
+                line += " | 周边: " + "、".join(poi_parts)
+            completeness = facts.get("data_completeness") or {}
+            if not completeness.get("poi_cache_available", False):
+                line += " | 周边数据: 待补充"
         lines.append(line)
     return "\n".join(lines)
+
+
+def _build_deterministic_recommendation_reply(
+    top_picks: list[dict[str, Any]],
+    candidate_count: int,
+) -> str:
+    """LLM 不可用时也用真实字段生成较完整的房源介绍。"""
+    if not top_picks:
+        return "当前没有找到完全符合条件的房源，可以适当放宽预算、区域或户型后再试。"
+
+    type_labels = {
+        "apartment": "公寓",
+        "house": "别墅",
+        "studio": "单间",
+        "shared": "合租",
+    }
+    lines = [f"共匹配到 {candidate_count} 套房源，先重点看看下面 {len(top_picks)} 套："]
+    for index, item in enumerate(top_picks, 1):
+        property_obj = item["property"]
+        property_type = (
+            property_obj.property_type.value
+            if hasattr(property_obj.property_type, "value")
+            else str(property_obj.property_type)
+        )
+        specs = [
+            f"¥{float(property_obj.price_monthly):,.0f}/月",
+            f"{property_obj.bedrooms or 0}室{property_obj.bathrooms or 0}卫",
+            type_labels.get(property_type, property_type),
+        ]
+        if property_obj.area_sqm is not None:
+            specs.append(f"{float(property_obj.area_sqm):g}㎡")
+
+        line = f"{index}. **{property_obj.title}**｜{'｜'.join(specs)}，位于{property_obj.district}。"
+        description = " ".join((property_obj.description or "").split())
+        if description:
+            line += description[:90] + ("…" if len(description) > 90 else "") + "。"
+
+        highlights = [str(value) for value in item.get("highlights", []) if value]
+        if highlights:
+            line += "推荐点：" + "、".join(highlights[:3]) + "。"
+
+        facts = getattr(property_obj, "_property_facts", None)
+        if isinstance(facts, dict):
+            completeness = facts.get("data_completeness") or {}
+            poi = facts.get("poi") or {}
+            nearby: list[str] = []
+            for key, label in (
+                ("nearest_transit_m", "公共交通"),
+                ("nearest_supermarket_m", "超市"),
+                ("nearest_gym_m", "健身房"),
+                ("nearest_medical_m", "医疗设施"),
+            ):
+                distance = poi.get(key)
+                if distance is not None:
+                    nearby.append(f"最近{label}约{distance}米")
+            if completeness.get("poi_cache_available") and nearby:
+                line += "周边：" + "、".join(nearby) + "。"
+            else:
+                line += "真实周边数据待补充。"
+
+            commute = facts.get("commute")
+            if isinstance(commute, dict):
+                source_note = "估算" if commute.get("source") == "haversine_fallback" else "路线数据"
+                line += (
+                    f"通勤（{source_note}）：驾车约{commute.get('drive_min')}分钟，"
+                    f"公交约{commute.get('transit_min')}分钟。"
+                )
+        lines.append(line)
+
+    lines.append("房源卡片可以横向滑动查看更多，也可以加入候选清单后统一对比。")
+    return "\n\n".join(lines)
 
 
 def _build_dimension_analysis(
@@ -566,61 +660,17 @@ def _score_properties(
     candidates: list[Property],
     filters: dict[str, Any],
     extracted: dict[str, Any],
+    soft_constraints: list[dict[str, Any]] | None = None,
+    fact_bundles: dict[int, PropertyFactBundle] | None = None,
 ) -> list[dict[str, Any]]:
-    """对候选房源进行确定性质量评分，返回 top 3 附带亮点理由。"""
-    if not candidates:
-        return []
-
-    price_min = filters.get("price_min") or extracted.get("price_min")
-    price_max = filters.get("price_max") or extracted.get("price_max")
-
-    prices = [float(p.price_monthly) for p in candidates]
-    median_price = sorted(prices)[len(prices) // 2]
-
-    target_price = median_price
-    if price_min is not None and price_max is not None:
-        target_price = (float(price_min) + float(price_max)) / 2
-    elif price_min is not None:
-        target_price = float(price_min) * 1.1
-    elif price_max is not None:
-        target_price = float(price_max) * 0.9
-
-    price_range = max(prices) - min(prices) if len(prices) > 1 else max(prices) or 1
-
-    scored: list[dict[str, Any]] = []
-    for p in candidates:
-        price_diff = abs(float(p.price_monthly) - target_price)
-        price_score = max(0, 100 - (price_diff / max(price_range, 1)) * 100)
-        area = float(p.area_sqm) if p.area_sqm else 0
-        space_score = min(100, (min(area / max((p.bedrooms or 0) * 20 + 15, 1), 2.0)) * 60 + 20) if area > 0 else 60
-        facility_score = 60
-        if p.images and len(p.images) > 0:
-            facility_score += 15
-        if p.address:
-            facility_score += 10
-        if p.description and len(p.description) > 20:
-            facility_score += 10
-        facility_score = min(100, facility_score)
-        total = price_score * 0.40 + space_score * 0.20 + facility_score * 0.20 + 60 * 0.20
-
-        highlights: list[str] = []
-        if price_score >= 80:
-            highlights.append("租金贴合预算")
-        elif price_score >= 60:
-            highlights.append("价格在可接受范围")
-        if area > 0 and space_score >= 75:
-            highlights.append(f"{p.bedrooms or 0}室{p.bathrooms or 0}卫布局合理")
-        if p.images and len(p.images) > 0:
-            highlights.append("有实拍图片")
-        if p.district:
-            highlights.append(f"位于{p.district}")
-        if not highlights:
-            highlights.append("符合筛选条件")
-
-        scored.append({"property": p, "score": round(total, 1), "highlights": highlights[:3]})
-
-    scored.sort(key=lambda x: x["score"], reverse=True)
-    return scored[:3]
+    """兼容旧调用方；实际算法统一由 ScoringService 承载。"""
+    return ScoringService.score_recommendations(
+        candidates,
+        filters,
+        extracted,
+        soft_constraints=soft_constraints,
+        fact_bundles=fact_bundles,
+    )
 
 
 class AgentService:
@@ -759,12 +809,17 @@ class AgentService:
         return kwargs
 
     async def _search_with_relaxation(
-        self, query: str | None, filters: dict[str, Any], limit: int = 500,
+        self,
+        query: str | None,
+        filters: dict[str, Any],
+        limit: int = 500,
+        protected_fields: set[str] | None = None,
     ) -> dict[str, Any]:
-        """渐进放宽检索条件，直到找到足够的结果。"""
+        """渐进放宽非硬条件；protected_fields 中的硬约束绝不删除。"""
         rows: list = []
         relaxation_level = 0
         relaxed_fields: list[str] = []
+        protected_fields = protected_fields or set()
 
         has_structured = any(
             filters.get(k) is not None and filters.get(k) != ""
@@ -808,13 +863,17 @@ class AgentService:
             if len(rows) >= RELAXATION_MIN_RESULTS:
                 break
             key = relax_spec["key"]
-            if key in relaxed:
-                del relaxed[key]
-                relaxed_fields.append(relax_spec["label"])
-            elif key == "price_max" and relaxed.get("price_max") is not None:
+            if key in protected_fields:
+                continue
+            if relaxed.get(key) is None:
+                continue
+            if key == "price_max" and relax_spec.get("expand_factor"):
                 factor = relax_spec.get("expand_factor", 1.2)
                 relaxed["price_max"] = int(float(relaxed["price_max"]) * factor)
                 relaxed_fields.append(f"{relax_spec['label']} 扩大 {int((factor-1)*100)}%")
+            else:
+                del relaxed[key]
+                relaxed_fields.append(relax_spec["label"])
             relaxation_level += 1
             search_kwargs = self._build_search_kwargs(relaxed, limit=limit)
             has_any = any(relaxed.get(k) is not None and relaxed.get(k) != ""
@@ -836,7 +895,10 @@ class AgentService:
                 relaxation_level += 1
                 relaxed_fields.append("关键词回退搜索")
                 try:
-                    keyword_rows = await self.property_service.search(query=short_query, limit=limit)
+                    keyword_rows = await self.property_service.search(
+                        query=short_query,
+                        **self._build_search_kwargs(relaxed, limit=limit),
+                    )
                     rows = [(prop, 0.5) for prop, _ in keyword_rows] if keyword_rows else []
                 except Exception:
                     pass
@@ -1006,15 +1068,18 @@ class AgentService:
     # ── 推荐 ──────────────────────────────────────────────────────
 
     async def recommend_properties(
-        self, message: str, filters: dict[str, Any] | None = None
+        self,
+        message: str,
+        filters: dict[str, Any] | None = None,
+        extracted_filters: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """检索 + LLM 推荐。"""
         filters = filters or {}
         llm = get_llm_service()
 
-        # ── LLM 提取结构化筛选条件 ──
-        extracted: dict[str, Any] = {}
-        if llm.is_available:
+        # Supervisor 已传入 FilterAgent 结果时不重复调用 LLM；保留旧调用方兼容路径。
+        extracted: dict[str, Any] = extracted_filters or {}
+        if extracted_filters is None and llm.is_available:
             try:
                 extracted = await llm.complete_json(EXTRACT_FILTERS_PROMPT, message, temperature=0.0, max_tokens=400)
                 if not isinstance(extracted, dict):
@@ -1022,35 +1087,46 @@ class AgentService:
             except Exception:
                 logger.debug("LLM 提取搜索条件失败")
 
-        # 前端 filters 优先级高于 LLM 提取
-        district = filters.get("district") or extracted.get("district") or None
+        # 前端 Filter Bar 始终视为硬约束；FilterAgent 的软偏好只参与排序。
+        preference_views = build_preference_views(extracted, filters)
+        all_preferences = preference_views.all_values
+        hard_values = preference_views.hard_values
+        resolved_preferences = {
+            **all_preferences,
+            "hard_filters": list(hard_values.keys()),
+            "soft_preferences": list(dict.fromkeys(
+                constraint["field"] for constraint in preference_views.soft_constraints
+            )),
+            "preference_constraints": preference_views.constraints,
+        }
+
+        district = hard_values.get("district") or None
         if district and district.lower().strip() in _EN_TO_CN_CITY:
             district = _EN_TO_CN_CITY[district.lower().strip()]
-        price_min = filters.get("price_min") or extracted.get("price_min")
-        price_max = filters.get("price_max") or extracted.get("price_max")
-        bedrooms = filters.get("bedrooms") or extracted.get("bedrooms")
-        property_type = filters.get("property_type") or extracted.get("property_type") or None
+        price_min = hard_values.get("price_min")
+        price_max = hard_values.get("price_max")
+        bedrooms = hard_values.get("bedrooms")
+        property_type = hard_values.get("property_type") or None
 
-        # ── 硬约束字段合并（filters 优先，extracted 兜底） ──
-        amenities: list[str] | None = filters.get("amenities") or extracted.get("amenities") or None
-        room_type: str | None = filters.get("room_type") or extracted.get("room_type") or None
-        bathrooms: int | None = filters.get("bathrooms") or extracted.get("bathrooms") or None
-        area_min: float | None = filters.get("area_min") or extracted.get("area_min") or None
-        area_max: float | None = filters.get("area_max") or extracted.get("area_max") or None
-        min_lease_months: int | None = filters.get("min_lease_months") or extracted.get("min_lease_months") or None
-        max_lease_months: int | None = filters.get("max_lease_months") or extracted.get("max_lease_months") or None
-        available_from: str | None = filters.get("available_from") or extracted.get("available_from") or None
+        amenities: list[str] | None = hard_values.get("amenities") or None
+        room_type: str | None = hard_values.get("room_type") or None
+        bathrooms: int | None = hard_values.get("bathrooms")
+        area_min: float | None = hard_values.get("area_min")
+        area_max: float | None = hard_values.get("area_max")
+        min_lease_months: int | None = hard_values.get("min_lease_months")
+        max_lease_months: int | None = hard_values.get("max_lease_months")
+        available_from: str | None = hard_values.get("available_from")
 
         # ── 学校/机构查找 ──
-        institution_name = filters.get("institution") or extracted.get("institution") or None
-        distance_km = extracted.get("distance_km", 3.0)
+        institution_name = all_preferences.get("institution") or None
+        distance_km = all_preferences.get("distance_km", 3.0)
         if not isinstance(distance_km, (int, float)) or distance_km < 0.5 or distance_km > 10.0:
             distance_km = 3.0
         institute_id: int | None = None
 
         # ── 通勤约束提取 ──
-        commute_mode = extracted.get("commute_mode") or None
-        commute_minutes = extracted.get("commute_minutes") or None
+        commute_mode = all_preferences.get("commute_mode") or None
+        commute_minutes = all_preferences.get("commute_minutes") or None
         if commute_minutes is not None:
             try:
                 commute_minutes = int(commute_minutes)
@@ -1058,7 +1134,7 @@ class AgentService:
                 commute_minutes = None
         institute_info: dict[str, Any] | None = None
 
-        if institution_name and not district:
+        if institution_name:
             try:
                 inst = await self._lookup_institution(institution_name)
                 if inst:
@@ -1073,18 +1149,22 @@ class AgentService:
 
         # 查询文本：学校名加入 query 增强语义（降级路径）
         query_parts = [message]
-        if filters.get("country"):
-            query_parts.append(str(filters["country"]))
+        if all_preferences.get("country"):
+            query_parts.append(str(all_preferences["country"]))
         if institution_name and not institute_id:
             query_parts.append(institution_name)
         query_text = " ".join(p for p in query_parts if p)
 
         # 搜索：有机构时走地理半径，否则走 v2 渐进放宽检索
+        use_geo_prefilter = bool(
+            institute_id is not None
+            and ("institution" in hard_values or commute_minutes is not None)
+        )
         merged_filters = {
             "district": district, "price_min": price_min, "price_max": price_max,
             "bedrooms": bedrooms, "property_type": property_type,
-            "institute_id": institute_id, "distance_km": distance_km,
-            # 硬约束字段（不会在放宽流程中被删除，只会在最终兜底时放宽）
+            "institute_id": institute_id if use_geo_prefilter else None,
+            "distance_km": distance_km,
             "amenities": amenities, "room_type": room_type,
             "bathrooms": bathrooms,
             "area_min": area_min, "area_max": area_max,
@@ -1092,7 +1172,7 @@ class AgentService:
             "available_from": available_from,
         }
 
-        if institute_id is not None:
+        if use_geo_prefilter and institute_id is not None:
             search_kwargs: dict[str, Any] = {
                 "district": district,
                 "price_min": Decimal(str(price_min)) if price_min is not None else None,
@@ -1116,7 +1196,8 @@ class AgentService:
             except Exception:
                 logger.exception("地理搜索失败，降级")
                 rows = []
-            if len(rows) < 5:
+            # 默认半径只是预筛选；用户显式给出硬距离时不得自动扩大。
+            if len(rows) < 5 and "distance_km" not in hard_values:
                 for expand_km in (5.0, 10.0, 20.0, 50.0):
                     if len(rows) >= 5:
                         break
@@ -1127,55 +1208,114 @@ class AgentService:
             relaxation_level = 0
             relaxed_fields: list[str] = []
         else:
-            relax_result = await self._search_with_relaxation(query=query_text, filters=merged_filters)
+            relax_result = await self._search_with_relaxation(
+                query=query_text,
+                filters=merged_filters,
+                protected_fields=set(hard_values),
+            )
             rows = relax_result["rows"]
             relaxation_level = relax_result["relaxation_level"]
             relaxed_fields = relax_result["relaxed_fields"]
 
-        candidates = [prop for prop, _sim in rows]
+        # POI 摘要和路线 API 都是批量路径；控制候选池，避免逐房源外部请求失控。
+        candidates = [prop for prop, _sim in rows][:50]
+        fact_bundles = await PropertyFactService(self.session).build_bundles(
+            candidates,
+            origin_lat=institute_info.get("lat") if institute_info else None,
+            origin_lng=institute_info.get("lng") if institute_info else None,
+            country=(candidates[0].country if candidates else None) or all_preferences.get("country"),
+            city=institute_info.get("city_cn") if institute_info else None,
+        )
+        for prop in candidates:
+            bundle = fact_bundles[prop.id]
+            object.__setattr__(prop, "_property_facts", bundle.to_dict())
+            if commute_mode and bundle.commute:
+                commute_value = bundle.commute.minutes_for(commute_mode)
+                if commute_value is not None:
+                    object.__setattr__(prop, "_commute_time", commute_value)
+                    object.__setattr__(prop, "_commute_source", bundle.commute.source)
 
-        # ── 通勤时间过滤（仅当有学校 + 通勤约束时触发）──
-        if commute_mode and commute_minutes and institute_info:
-            candidates = await self._filter_by_commute(
-                origin_lat=institute_info["lat"],
-                origin_lng=institute_info["lng"],
-                candidates=candidates,
-                mode=commute_mode,
-                max_minutes=commute_minutes,
-                country=institute_info.get("country"),
-                city=institute_info.get("city_cn"),
+        # 硬 POI/通勤条件在真实事实返回后严格执行，不做自动放宽。
+        hard_poi_requirements = hard_values.get("poi_requirements") or []
+        if hard_poi_requirements:
+            candidates = [
+                prop for prop in candidates
+                if satisfies_poi_requirements(fact_bundles[prop.id], hard_poi_requirements)
+            ]
+        hard_commute_minutes = hard_values.get("commute_minutes")
+        # 没有起点坐标就算不出通勤时间，此时 fact_bundles 里 commute 全是 None，
+        # 硬过滤会把候选清空。用户常说"通勤30分钟以内"却不提学校（FilterAgent 的
+        # prompt 又明确把"以内"判为 hard），所以这不是边角情况：无起点时跳过该约束，
+        # 而不是返回 0 套房源。
+        if hard_commute_minutes is not None and institute_info:
+            selected_mode = commute_mode or "transit"
+            candidates = [
+                prop for prop in candidates
+                if fact_bundles[prop.id].commute is not None
+                and fact_bundles[prop.id].commute.minutes_for(selected_mode) is not None
+                and fact_bundles[prop.id].commute.minutes_for(selected_mode) <= int(hard_commute_minutes)
+            ]
+        elif hard_commute_minutes is not None:
+            logger.info(
+                "通勤硬约束 %s 分钟被跳过：未识别到起点机构（原始输入 institution=%r）",
+                hard_commute_minutes, institution_name,
             )
-            logger.info("通勤过滤: mode=%s max=%smin result=%s", commute_mode, commute_minutes, len(candidates))
+        if commute_mode:
+            candidates.sort(key=lambda prop: getattr(prop, "_commute_time", 10**9))
 
         # ── 得分间隙检测 ──
-        scores = [float(sim) if sim is not None else 0.0 for _prop, sim in rows]
+        candidate_ids_for_score = {prop.id for prop in candidates}
+        scores = [
+            float(sim) if sim is not None else 0.0
+            for prop, sim in rows
+            if prop.id in candidate_ids_for_score
+        ]
         score_gap = detect_score_gap(scores)
 
         # ── 安全兜底判断 ──
         if self._safe_fallback.should_fallback(documents=candidates, top_score=score_gap["top_score"], relaxation_level=relaxation_level):
             fallback_reply = self._safe_fallback.build_fallback_response(query=message, active_filters=merged_filters, relaxation_level=relaxation_level)
             return {
-                "reply": fallback_reply, "recommendations": [], "ai_available": True,
-                "extracted_filters": extracted, "top_picks": [],
+                "reply": fallback_reply, "recommendations": [], "ai_available": llm.is_available,
+                "extracted_filters": resolved_preferences, "top_picks": [],
                 "score_gap": score_gap, "relaxation_level": relaxation_level, "source_info": "",
             }
 
         # ── AI 精选 Top 3（确定性评分） ──
-        top_picks = _score_properties(candidates, filters, extracted)
+        top_picks = ScoringService.score_recommendations(
+            candidates,
+            filters,
+            resolved_preferences,
+            soft_constraints=preference_views.soft_constraints,
+            fact_bundles=fact_bundles,
+        )
         top_picks_payload = [
             {"property_id": tp["property"].id, "match_reason": " · ".join(tp["highlights"]),
-             "pros": tp["highlights"], "cons": [], "property": tp["property"]}
+             "pros": tp["highlights"], "cons": [], "property": tp["property"],
+             "facts": fact_bundles[tp["property"].id].to_dict()}
             for tp in top_picks
         ]
 
         # ── 全部匹配房源（完整返回，"查看所有"展开使用） ──
         all_recs = [
-            {"property_id": p.id, "match_reason": "", "pros": [], "cons": [], "property": p}
+            {"property_id": p.id, "match_reason": "", "pros": [], "cons": [], "property": p,
+             "facts": fact_bundles[p.id].to_dict()}
             for p in candidates
         ]
 
         candidate_ids = [p.id for p in candidates]
         source_info = self._build_source_info(len(candidates), merged_filters, relaxation_level, relaxed_fields)
+        poi_cache_count = sum(
+            fact_bundles[prop.id].data_completeness.poi_cache_available for prop in candidates
+        )
+        commute_sources = sorted({
+            fact_bundles[prop.id].commute.source
+            for prop in candidates
+            if fact_bundles[prop.id].commute is not None
+        })
+        source_info += f"\n[事实] POI缓存覆盖 {poi_cache_count}/{len(candidates)} 套"
+        if commute_sources:
+            source_info += f" | 通勤来源: {', '.join(commute_sources)}"
 
         # ── LLM 生成回复（基于 Top 3 精选） ──
         if llm.is_available:
@@ -1190,13 +1330,21 @@ class AgentService:
                 reply = str(result.get("reply") or f"为您找到 {len(candidates)} 套符合需求的房源。") + source_info
             except Exception:
                 logger.exception("LLM 推荐生成失败")
-                reply = f"为您找到 {len(candidates)} 套符合需求的房源。{AI_UNAVAILABLE_HINT}{source_info}"
+                reply = (
+                    _build_deterministic_recommendation_reply(top_picks, len(candidates))
+                    + AI_UNAVAILABLE_HINT
+                    + source_info
+                )
         else:
-            reply = f"为您找到 {len(candidates)} 套符合需求的房源。{AI_UNAVAILABLE_HINT}{source_info}"
+            reply = (
+                _build_deterministic_recommendation_reply(top_picks, len(candidates))
+                + AI_UNAVAILABLE_HINT
+                + source_info
+            )
 
         return {
             "reply": reply, "recommendations": all_recs, "ai_available": llm.is_available,
-            "extracted_filters": extracted, "top_picks": top_picks_payload,
+            "extracted_filters": resolved_preferences, "top_picks": top_picks_payload,
             "score_gap": score_gap, "relaxation_level": relaxation_level,
             "candidate_snapshot": candidate_ids, "source_info": source_info,
         }
@@ -1212,9 +1360,8 @@ class AgentService:
         if not inst or inst.latitude is None or inst.longitude is None:
             return []
 
-        # 先用宽松条件获取候选（不传 district 以免过滤掉）
+        # 先用 SQL 条件获取候选；显式 district 属于硬约束，必须保留。
         search_kwargs = dict(base_kwargs)
-        search_kwargs.pop("district", None)
         search_kwargs["limit"] = search_kwargs.get("limit", 500) * 3  # 多取候选
         rows = await self.property_service.search(query=None, **search_kwargs)
 
@@ -1405,7 +1552,7 @@ class AgentService:
         by_id = {p.id: p for p in props}
         pr = normalize_priority(priority)
         metrics, extras = await self._gather_compare_metrics(props)
-        scores = compute_scores(metrics, pr)
+        scores = ScoringService.score_comparison(metrics, pr)
 
         def _base_item(pid: int) -> dict[str, Any]:
             return {
@@ -1590,246 +1737,3 @@ class AgentService:
                 if 1 <= ref <= len(rec_ids):
                     ids.append(rec_ids[ref - 1])
         return list(dict.fromkeys(ids))
-
-    @staticmethod
-    def _faq_answer(entry: FaqEntry) -> dict[str, Any]:
-        """FAQ 强命中：返回占位政策答案 + 页面深链 + 后续建议 chips"""
-        return {
-            "reply": entry.answer,
-            "quick_replies": list(entry.next_chips),
-            "links": [{"label": link.label, "to": link.to} for link in entry.links],
-            "faq_id": entry.id,
-        }
-
-    @staticmethod
-    def _faq_confirm(hits: list[FaqEntry]) -> dict[str, Any]:
-        """FAQ 弱命中：不硬答，反问确认，chips 一点即精确进入工作流"""
-        if len(hits) == 1:
-            reply = f"你是想了解「{hits[0].chip}」吗？点下面的按钮确认，或者换个说法描述你的问题。"
-        else:
-            names = "、".join(f"「{e.chip}」" for e in hits)
-            reply = f"你想了解的是 {names} 中的哪一个？点下面的按钮选择，或补充说明你的问题。"
-        return {
-            "reply": reply,
-            "quick_replies": [e.chip for e in hits],
-            "links": [],
-            "faq_id": None,
-        }
-
-    async def handle_message(
-        self,
-        chat_session: ChatSession,
-        user_id: int,
-        message: str,
-        filters: dict[str, Any] | None = None,
-        search_state: Any = None,
-        compare_property_ids: list[int] | None = None,
-    ) -> dict[str, Any]:
-        """Agent 消息主入口：意图识别 → 分发处理 → 持久化对话（v2 漏斗架构）"""
-        history = await self._history(chat_session.id)
-        explicit_ids = _parse_property_ids(message)
-
-        recommendations: list[dict] = []
-        cart_changed = False
-        ai_available = True
-        quick_replies: list[str] = []
-        links: list[dict] = []
-        faq_id: str | None = None
-        extracted_filters: dict | None = None
-        top_picks: list[dict] = []
-        source_info = ""
-        score_gap: dict | None = None
-        relaxation_level = 0
-        candidate_snapshot: list[int] = []
-
-        # ── 统一分类（v2：意图 + 阶段 + 路由） ──
-        classify_result = await self.classify_message(message, history)
-
-        # 更新 SearchState 漏斗阶段
-        stage_result = {"stage": classify_result["stage"], "confidence": classify_result["confidence"],
-                        "reasoning": classify_result.get("reasoning", "")}
-        if search_state is not None:
-            from app.services.search_state import FunnelStage
-            stage_val = classify_result["stage"]
-            if stage_val in FunnelStage.__members__.values():
-                search_state.funnel_stage = FunnelStage(stage_val)
-
-        new_intent = classify_result["intent"]
-        sub_intent = classify_result["sub_intent"]
-        refs = classify_result["refs"]
-        routing = classify_result["routing"]
-        faq_topic = classify_result.get("faq_topic")
-
-        # FAQ 规则匹配优先
-        faq_payload: dict[str, Any] | None = None
-        strength, faq_hits = match_faq(message)
-        if strength == "strong":
-            intent, refs = "faq", []
-            faq_payload = self._faq_answer(faq_hits[0])
-        elif strength == "weak":
-            intent, refs = "faq", []
-            faq_payload = self._faq_confirm(faq_hits)
-        elif new_intent == "manage_cart":
-            intent = "add_to_cart" if sub_intent == "add" else "remove_from_cart" if sub_intent == "remove" else "compare_cart"
-        elif new_intent == "compare":
-            intent = "compare_cart"
-        elif new_intent == "search":
-            intent = "recommend"
-        elif new_intent == "faq":
-            if faq_topic and get_faq(faq_topic) is not None:
-                intent = "faq"
-                faq_payload = self._faq_answer(faq_topic)
-            else:
-                intent = "general"
-        else:
-            intent = "general"
-
-        # 前端候选清单显式触发对比（点击"对比所选"按钮）→ 强制对比意图
-        if compare_property_ids and len(compare_property_ids) >= 2:
-            intent = "compare_cart"
-
-        if intent == "faq" and faq_payload is not None:
-            reply = faq_payload["reply"]
-            quick_replies = faq_payload["quick_replies"]
-            links = faq_payload["links"]
-            faq_id = faq_payload["faq_id"]
-
-        elif intent == "recommend":
-            result = await self.recommend_properties(message, filters)
-            reply = result["reply"]
-            recommendations = result["recommendations"]
-            ai_available = result["ai_available"]
-            extracted_filters = result.get("extracted_filters")
-            top_picks = result.get("top_picks", [])
-            source_info = result.get("source_info", "")
-            score_gap = result.get("score_gap")
-            relaxation_level = result.get("relaxation_level", 0)
-            candidate_snapshot = result.get("candidate_snapshot", [])
-            # 更新 SearchState
-            if search_state is not None and candidate_snapshot:
-                search_state.candidate_snapshot = candidate_snapshot
-                search_state.last_result_count = len(candidate_snapshot)
-                search_state.last_relaxation_level = relaxation_level
-                search_state.last_score_gap = score_gap
-                if extracted_filters:
-                    for k, v in extracted_filters.items():
-                        if v is not None and v != "" and v != 0:
-                            search_state.active_filters[k] = v
-
-        elif intent == "add_to_cart":
-            last_recs = await self._last_recommendations(chat_session.id)
-            target_ids = self._resolve_refs(refs, explicit_ids, last_recs)
-            if not target_ids and len(last_recs) == 1:
-                target_ids = [last_recs[0]["property_id"]]
-            if not target_ids:
-                reply = "请告诉我要加入哪套房源，比如「把第一个加入购物车」。"
-            else:
-                added_titles = []
-                reason_by_id = {
-                    r["property_id"]: r.get("match_reason") for r in last_recs
-                }
-                for pid in target_ids:
-                    try:
-                        await self.add_to_cart(user_id, pid, reason_by_id.get(pid))
-                        prop = await self.session.get(Property, pid)
-                        added_titles.append(prop.title if prop else f"房源 {pid}")
-                        cart_changed = True
-                    except ValueError:
-                        continue
-                if added_titles:
-                    reply = f"已将「{'」「'.join(added_titles)}」加入候选清单。需要继续找房还是对比一下？"
-                else:
-                    reply = "没有找到对应的房源，请确认序号或房源编号。"
-
-        elif intent == "remove_from_cart":
-            _cart, items = await self.get_cart_items(user_id)
-            cart_ids = [it.property_id for it in items]
-            target_ids = list(explicit_ids)
-            if -1 in refs:
-                target_ids.extend(cart_ids)
-            else:
-                for ref in refs:
-                    if 1 <= ref <= len(cart_ids):
-                        target_ids.append(cart_ids[ref - 1])
-            target_ids = list(dict.fromkeys(target_ids))
-            if not target_ids:
-                reply = "请告诉我要移除哪套房源，比如「把第一个从清单里移除」。"
-            else:
-                removed = 0
-                for pid in target_ids:
-                    if await self.remove_from_cart(user_id, pid):
-                        removed += 1
-                        cart_changed = True
-                reply = f"已从候选清单移除 {removed} 套房源。" if removed else "候选清单中没有找到对应的房源。"
-
-        elif intent == "compare_cart":
-            try:
-                # 若前端传了 compare_property_ids，则只对比这些房源（来自候选清单勾选）
-                compare = await self.compare_cart(user_id, property_ids=compare_property_ids)
-                ai_available = compare["ai_available"]
-                # 优先使用维度组织的分析文本，降级时用逐房源描述
-                dim_text = compare.get("dimension_analysis", "")
-                if dim_text:
-                    reply = dim_text
-                else:
-                    lines = [compare["summary"]]
-                    for it in compare["items"]:
-                        lines.append(
-                            f"「{it['title']}」推荐指数 {it['score']}：优势 {'、'.join(it['pros']) or '—'}；"
-                            f"劣势 {'、'.join(it['cons']) or '—'}"
-                            + (f"；适合{it['best_for']}" if it.get("best_for") else "")
-                        )
-                    lines.append(compare["recommendation"])
-                    reply = "\n".join(x for x in lines if x)
-            except ValueError as e:
-                reply = str(e)
-
-        else:  # general
-            llm = get_llm_service()
-            if llm.is_available:
-                try:
-                    msgs = [{"role": "system", "content": GENERAL_SYSTEM_PROMPT}]
-                    msgs.extend(history)
-                    msgs.append({"role": "user", "content": message})
-                    reply = await llm.complete_text(msgs)
-                except Exception:
-                    logger.exception("LLM 普通咨询回复失败")
-                    reply = "我是租房推荐助手，可以告诉我您想找的地区、预算和户型，我来帮您推荐房源。"
-            else:
-                reply = "我是租房推荐助手，可以告诉我您想找的地区、预算和户型，我来帮您推荐房源。"
-                ai_available = False
-
-        # 持久化对话（推荐列表存 metadata，供后续"把第一个加入购物车"引用）
-        user_msg = ChatMessage(
-            session_id=chat_session.id,
-            role=ChatMessageRole.user,
-            content=message,
-            metadata_={"filters": filters or {}},
-        )
-        assistant_msg = ChatMessage(
-            session_id=chat_session.id,
-            role=ChatMessageRole.assistant,
-            content=reply,
-            metadata_={
-                "intent": intent, "faq_id": faq_id,
-                "funnel_stage": stage_result.get("stage", "explore"),
-                "relaxation_level": relaxation_level, "score_gap": score_gap,
-                "candidate_snapshot": candidate_snapshot,
-                "recommendations": [
-                    {"property_id": r["property_id"], "match_reason": r.get("match_reason", "")}
-                    for r in recommendations
-                ],
-            },
-        )
-        self.session.add_all([user_msg, assistant_msg])
-        await self.session.commit()
-
-        return {
-            "reply": reply, "intent": intent, "recommendations": recommendations,
-            "cart_changed": cart_changed, "ai_available": ai_available,
-            "quick_replies": quick_replies, "links": links,
-            "extracted_filters": extracted_filters, "top_picks": top_picks,
-            "funnel_stage": stage_result.get("stage", "explore"),
-            "score_gap": score_gap, "relaxation_level": relaxation_level,
-            "candidate_snapshot": candidate_snapshot, "source_info": source_info,
-        }

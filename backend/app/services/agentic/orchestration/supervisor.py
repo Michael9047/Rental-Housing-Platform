@@ -18,6 +18,13 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.services.agent_faq import (
+    build_faq_answer,
+    build_faq_confirm,
+    get_faq,
+    match_faq,
+)
+
 from .types import (
     AgentContext,
     AgentError,
@@ -172,7 +179,10 @@ class Supervisor:
             filters=filters,
             user_id=user_id,
             search_state=self.search_state,
-            extra={"compare_property_ids": compare_property_ids} if compare_property_ids else {},
+            extra={
+                "explicit_filters": filters or {},
+                **({"compare_property_ids": compare_property_ids} if compare_property_ids else {}),
+            },
         )
 
         agent_results: dict[str, AgentResult] = {}
@@ -534,10 +544,29 @@ class Supervisor:
     async def _classify(
         self, message: str, history: list[dict[str, Any]]
     ) -> dict[str, Any]:
-        """意图分类：复用现有 AgentService.classify_message()。
+        """意图分类：FAQ 规则优先，其余复用 AgentService.classify_message()。
 
-        现有统一分类器已支持：intent + sub_intent + stage + complexity + routing。
+        FAQ 走确定性规则而不是 LLM，是刻意的：政策类问答必须稳定命中，
+        不能因为 LLM 超时/欠费/抖动就退化成普通闲聊。match_faq 只在明确
+        命中（strong）或短消息主题词（weak）时才拦截，长句找房需求不会被误拦，
+        所以放在 LLM 之前是安全的。
         """
+        strength, hits = match_faq(message)
+        if strength in ("strong", "weak") and hits:
+            return {
+                "intent": "faq",
+                "sub_intent": hits[0].id if strength == "strong" else "confirm",
+                "stage": "general",
+                "complexity": 0.1,
+                "confidence": 0.95 if strength == "strong" else 0.6,
+                "routing": "fast",
+                "faq_topic": hits[0].id if strength == "strong" else None,
+                "faq_confidence": "high" if strength == "strong" else "low",
+                "refs": [],
+                "reasoning": f"规则命中 FAQ（{strength}）",
+                "used_llm": False,
+            }
+
         try:
             from app.services.agent_service import AgentService
             agent_svc = AgentService(self.session)
@@ -629,6 +658,7 @@ class Supervisor:
                 try:
                     result = await self._execute_agent(node.agent_name, context)
                     results[node.agent_name] = result
+                    self._apply_context_updates(context, result)
 
                 except Exception as exc:
                     logger.warning("Agent %s 执行失败: %s", node.agent_name, exc)
@@ -661,8 +691,19 @@ class Supervisor:
                 for item in level_results:
                     if isinstance(item, tuple):
                         results[item[0]] = item[1]
+                        self._apply_context_updates(context, item[1])
 
         return results
+
+    @staticmethod
+    def _apply_context_updates(context: AgentContext, result: AgentResult) -> None:
+        """把上游 Agent 的确定性输出传给后续节点。"""
+        updates = result.context_updates if isinstance(result.context_updates, dict) else {}
+        if isinstance(updates.get("filters"), dict):
+            context.filters = updates["filters"]
+        for key, value in updates.items():
+            if key != "filters":
+                context.extra[key] = value
 
     async def _execute_agent(
         self, agent_name: str, context: AgentContext
@@ -729,35 +770,35 @@ class Supervisor:
             ))
 
     async def _run_faq_agent(self, context: AgentContext) -> AgentResult:
-        """FAQ 规则匹配（委托现有 agent_faq）。"""
-        from app.services.agent_faq import match_faq, get_faq
+        """FAQ 规则匹配（委托现有 agent_faq）。
+
+        data 里带齐 quick_replies / links / faq_id，由 _build_response 透传给前端 ——
+        chips 和站内深链是 FAQ 工作流的一半，只回文本等于功能残废。
+        """
         message = context.user_message
         strength, hits = match_faq(message)
 
         if strength == "strong" and hits:
-            entry = hits[0]
-            return AgentResult(
-                content=entry.answer,
-                success=True,
-                data={"faq_id": entry.id, "strength": "strong"},
-            )
+            payload = build_faq_answer(hits[0])
         elif strength == "weak" and hits:
-            chips = [e.chip for e in hits[:5]]
-            return AgentResult(
-                content=f"你想了解的是 {' / '.join(chips)} 中的哪个？",
-                success=True,
-                data={"faq_id": None, "strength": "weak", "chips": chips},
-            )
+            payload = build_faq_confirm(hits)
         else:
-            # 尝试精确匹配
             entry = get_faq(message)
             if entry:
-                return AgentResult(content=entry.answer, success=True, data={"faq_id": entry.id})
-            return AgentResult(
-                content="这是平台使用问题，建议查看帮助中心或联系客服。",
-                success=True,
-                data={"faq_id": None},
-            )
+                payload = build_faq_answer(entry)
+            else:
+                payload = {
+                    "reply": "这是平台使用问题，建议查看帮助中心或联系客服。",
+                    "quick_replies": [],
+                    "links": [],
+                    "faq_id": None,
+                }
+
+        return AgentResult(
+            content=payload["reply"],
+            success=True,
+            data={**payload, "strength": strength},
+        )
 
     async def _run_compare_agent(self, context: AgentContext) -> AgentResult:
         """房源对比（委托现有 AgentService.compare_cart）。"""
@@ -783,16 +824,16 @@ class Supervisor:
     async def _run_search_agent(self, context: AgentContext) -> AgentResult:
         """房源搜索（复用现有 AgentService.recommend_properties，绕过 ReAct loop）。
 
-        现有 recommend_properties 已经包含：
-        extract_filters → search_with_relaxation → score → gap_detect → LLM 推荐回复。
-        这是经过验证的成熟链路，直接复用比 ReAct 重新编排更可靠。
+        FilterAgent 已完成一次结构化提取；这里把结果直接交给检索服务，
+        避免 recommend_properties 再调用一次 EXTRACT_FILTERS_PROMPT。
         """
         from app.services.agent_service import AgentService
         agent_svc = AgentService(self.session)
         try:
             result = await agent_svc.recommend_properties(
                 message=context.user_message,
-                filters=context.filters,
+                filters=context.extra.get("explicit_filters"),
+                extracted_filters=context.filters,
             )
             return AgentResult(
                 content=result.get("reply", ""),
@@ -817,8 +858,8 @@ class Supervisor:
         FilterAgent.handle() 直接调用 llm_service.complete_json() 做单次 JSON 提取，
         含完整的设施口语映射表 + 硬约束/软偏好区分逻辑。不走 ReAct loop。
 
-        支持跨轮上下文记忆：从 chat_session.accumulated_filters 读取上轮条件，
-        传给 FilterAgent 做增量合并，结果写回 chat_session.accumulated_filters。
+        支持跨轮上下文记忆：LLM 只提取本轮操作，PreferenceState 服务负责合并，
+        结构化状态写回 chat_session.accumulated_filters。
         """
         from app.services.agentic.agents.filter_agent import FilterAgent
         try:
@@ -827,9 +868,10 @@ class Supervisor:
             if self.chat_session is not None:
                 prev_filters = self.chat_session.accumulated_filters
             result = await agent.handle(context, prev_filters=prev_filters)
-            # 写回合并后的 filters 到 session
-            if self.chat_session is not None and result.data and isinstance(result.data, dict):
-                self.chat_session.accumulated_filters = result.data
+            if self.chat_session is not None:
+                state = result.context_updates.get("preference_state")
+                if isinstance(state, dict):
+                    self.chat_session.accumulated_filters = state
             return result
         except Exception as exc:
             logger.exception("filter_agent 失败")
@@ -1072,14 +1114,27 @@ class Supervisor:
         if search_result and search_result.success and search_result.content:
             reply = search_result.content
 
+        # FAQ：chips + 站内深链是工作流的一半，必须透传；答案本身也直接用规则产物，
+        # 不走 synthesizer 拼接，避免把确定性的政策文案改写掉。
+        links: list[dict] = []
+        faq_id: str | None = None
+        faq_result = agent_results.get("faq_agent")
+        if faq_result and faq_result.success and isinstance(faq_result.data, dict):
+            quick_replies = faq_result.data.get("quick_replies", []) or quick_replies
+            links = faq_result.data.get("links", []) or []
+            faq_id = faq_result.data.get("faq_id")
+            if faq_result.content:
+                reply = faq_result.content
+
         return {
             "reply": reply,
             "intent": intent,
+            "faq_id": faq_id,
             "recommendations": recommendations,
             "cart_changed": "cart_agent" in agent_results,
             "ai_available": self.llm_service.is_available,
             "quick_replies": quick_replies,
-            "links": [],
+            "links": links,
             "extracted_filters": extracted_filters,
             "needs_refinement": needs_refinement,
             "top_picks": top_picks,

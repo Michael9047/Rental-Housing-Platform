@@ -17,6 +17,7 @@ export interface CommuteItem {
   drive_min: number
   transit_min: number
   source: string
+  transit_verified: boolean
 }
 
 /** 批量通勤计算请求 */

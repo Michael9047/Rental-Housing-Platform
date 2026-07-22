@@ -16,7 +16,6 @@ from app.models.property import Property
 from app.services.compare_scoring import (
     DIMENSION_LABELS,
     PRIORITY_LABELS,
-    compute_scores,
     normalize_priority,
 )
 from app.services.comparison_data import (
@@ -25,6 +24,7 @@ from app.services.comparison_data import (
 )
 from app.services.llm_service import get_llm_service
 from app.services.safety_scoring import SafetyScoringService
+from app.services.scoring_service import ScoringService
 
 logger = logging.getLogger(__name__)
 
@@ -310,7 +310,7 @@ class ComparisonService:
         await self._ensure_cache(pids)
 
         metrics = [self._cache[pid].metrics for pid in pids if pid in self._cache]
-        scores = compute_scores(metrics, priority)
+        scores = ScoringService.score_comparison(metrics, priority)
 
         # 附加维度标签和权重信息
         from app.services.compare_scoring import PRIORITY_WEIGHTS
@@ -398,7 +398,7 @@ class ComparisonService:
 
         # 确定性计算最终评分（前端需要权威分数用于雷达图）
         metrics = [self._cache[pid].metrics for pid in property_ids if pid in self._cache]
-        scores = compute_scores(metrics, priority)
+        scores = ScoringService.score_comparison(metrics, priority)
 
         # 构建前端渲染数据
         property_data: dict[int, dict] = {}

@@ -86,6 +86,7 @@ async def send_agent_message(
                 pros=r.get("pros", []),
                 cons=r.get("cons", []),
                 property=_to_search_result(r["property"]),
+                facts=r.get("facts"),
             )
             for r in result.get("recommendations", [])
         ],
@@ -96,6 +97,7 @@ async def send_agent_message(
                 pros=tp.get("pros", []),
                 cons=tp.get("cons", []),
                 property=_to_search_result(tp["property"]),
+                facts=tp.get("facts"),
             )
             for tp in result.get("top_picks", [])
         ],

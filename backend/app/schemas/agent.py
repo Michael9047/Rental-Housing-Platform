@@ -1,5 +1,6 @@
 """租房推荐 Agent —— 请求/响应 schema"""
 from datetime import datetime
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -71,6 +72,7 @@ class AgentRecommendation(BaseModel):
     pros: list[str] = []
     cons: list[str] = []
     property: PropertySearchResult
+    facts: dict[str, Any] | None = None
 
 
 class AgentLink(BaseModel):

@@ -182,3 +182,32 @@ def match_faq(message: str) -> tuple[str, list[FaqEntry]]:
             return "weak", weak_hits
 
     return "none", []
+
+
+def build_faq_answer(entry: FaqEntry) -> dict:
+    """FAQ 强命中：占位政策答案 + 页面深链 + 后续建议 chips。
+
+    放在这里而不是各调用方本地实现，避免 Supervisor 与 FaqAgent 两条路的
+    回复结构再次漂移（历史上就出现过其中一条丢掉 links/quick_replies）。
+    """
+    return {
+        "reply": entry.answer,
+        "quick_replies": list(entry.next_chips),
+        "links": [{"label": link.label, "to": link.to} for link in entry.links],
+        "faq_id": entry.id,
+    }
+
+
+def build_faq_confirm(hits: list[FaqEntry]) -> dict:
+    """FAQ 弱命中：不硬答，反问确认，chips 一点即精确进入工作流。"""
+    if len(hits) == 1:
+        reply = f"你是想了解「{hits[0].chip}」吗？点下面的按钮确认，或者换个说法描述你的问题。"
+    else:
+        names = "、".join(f"「{e.chip}」" for e in hits)
+        reply = f"你想了解的是 {names} 中的哪一个？点下面的按钮选择，或补充说明你的问题。"
+    return {
+        "reply": reply,
+        "quick_replies": [e.chip for e in hits],
+        "links": [],
+        "faq_id": None,
+    }

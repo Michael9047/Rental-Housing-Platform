@@ -23,6 +23,13 @@
         <el-menu-item v-if="authStore.isLoggedIn" index="/cart">
           <el-icon><ShoppingCart /></el-icon>
           <span>候选清单</span>
+          <span v-if="cartStore.count > 0" class="cart-menu-badge">
+            {{ cartStore.count > 99 ? '99+' : cartStore.count }}
+          </span>
+        </el-menu-item>
+        <el-menu-item v-if="authStore.isLoggedIn" index="/compare">
+          <el-icon><Histogram /></el-icon>
+          <span>房源对比</span>
         </el-menu-item>
         <el-menu-item index="/search">
           <el-icon><Search /></el-icon>
@@ -125,15 +132,19 @@ import {
   HomeFilled, ChatDotRound, MagicStick, ShoppingCart, Search,
   Location, User, List, Bell, DataAnalysis, OfficeBuilding,
   Plus, Tickets, Fold, Expand, Cpu,
+  Histogram,
 } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
+import { useCartStore } from '@/stores/cart'
 
 const route = useRoute()
 const authStore = useAuthStore()
+const cartStore = useCartStore()
 
 // 侧边栏折叠状态 —— 持久化到 localStorage
 const SIDEBAR_KEY = 'sidebar_collapsed'
-const collapsed = ref(localStorage.getItem(SIDEBAR_KEY) !== 'false')
+// 视频版默认展开；用户主动折叠后仍记住选择。
+const collapsed = ref(localStorage.getItem(SIDEBAR_KEY) === 'true')
 
 watch(collapsed, (v) => localStorage.setItem(SIDEBAR_KEY, String(v)))
 
@@ -193,5 +204,21 @@ const activeMenu = computed(() => {
 /* 折叠状态下菜单项居中 */
 .layout-sidebar.collapsed .sidebar-menu :deep(.el-menu-item) {
   justify-content: center;
+}
+
+.cart-menu-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  margin-left: 8px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: var(--el-color-danger, #f56c6c);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
 }
 </style>

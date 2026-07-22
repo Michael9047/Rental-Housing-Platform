@@ -3,8 +3,8 @@ from datetime import datetime
 
 from sqlalchemy import DateTime, ForeignKey, String, Text as SAText
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from sqlalchemy.sql import func
 
+from app.models.types import jsonb
 from app.models.mixins import TimestampMixin
 from app.db.session import Base
 
@@ -26,6 +26,7 @@ class Contract(TimestampMixin, Base):
     )
     template_name: Mapped[str] = mapped_column(String(100), default="standard_lease")
     content: Mapped[str] = mapped_column(SAText, nullable=False)
+    property_snapshot: Mapped[dict | None] = mapped_column(jsonb(), nullable=True)
     status: Mapped[str] = mapped_column(
         String(20), default="draft", nullable=False
     )

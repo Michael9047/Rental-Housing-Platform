@@ -4,7 +4,7 @@ from datetime import date
 from decimal import Decimal
 
 from sqlalchemy import Date, Enum, ForeignKey, Integer, Numeric, String, Text as SAText
-from sqlalchemy.dialects.postgresql import ARRAY
+from app.models.types import string_array
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.mixins import TimestampMixin
@@ -70,7 +70,7 @@ class RoomType(TimestampMixin, Base):
     )
 
     # 设施与描述
-    amenities: Mapped[list[str] | None] = mapped_column(ARRAY(String(30)), nullable=True)
+    amenities: Mapped[list[str] | None] = mapped_column(string_array(30), nullable=True)
     description: Mapped[str | None] = mapped_column(SAText, nullable=True)
 
     # 状态

@@ -51,11 +51,12 @@ class CommuteItem(BaseModel):
     drive_min: int
     transit_min: int
     source: str
+    transit_verified: bool = False
 
 
 class CommuteCalculateResponse(BaseModel):
     results: list[CommuteItem]
-    source: str  # "api" | "haversine_fallback"
+    source: str  # "amap_api" | "ors_api" | "haversine_fallback"
 
 
 # ── 路由 ──────────────────────────────────────────────────────────────
@@ -95,6 +96,7 @@ async def calculate_commute(body: CommuteCalculateRequest):
                 drive_min=r.drive_min,
                 transit_min=r.transit_min,
                 source=r.source,
+                transit_verified=r.transit_verified,
             )
             for r in result.results
         ],

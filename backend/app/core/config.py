@@ -203,6 +203,58 @@ class Settings(BaseSettings):
         validation_alias="ORS_TIMEOUT_SECONDS",
     )
 
+    # ========== 通勤缓存与外部 API 保护 ==========
+    commute_cache_enabled: bool = Field(
+        default=True,
+        validation_alias="COMMUTE_CACHE_ENABLED",
+    )
+    commute_cache_ttl_seconds: int = Field(
+        default=6 * 60 * 60,
+        validation_alias="COMMUTE_CACHE_TTL_SECONDS",
+    )
+    commute_fallback_cache_ttl_seconds: int = Field(
+        default=7 * 24 * 60 * 60,
+        validation_alias="COMMUTE_FALLBACK_CACHE_TTL_SECONDS",
+    )
+    commute_api_max_concurrency: int = Field(
+        default=8,
+        ge=1,
+        le=64,
+        validation_alias="COMMUTE_API_MAX_CONCURRENCY",
+    )
+    # 等不到并发槽位就放弃本次外部调用、走降级路径。没有这个上限时，
+    # 地图 API 不可达会让批量通勤从秒级退化到分钟级（详见 _commute_api_slot）。
+    commute_api_queue_timeout_seconds: float = Field(
+        default=10.0,
+        gt=0,
+        validation_alias="COMMUTE_API_QUEUE_TIMEOUT_SECONDS",
+    )
+
+    # ========== POI 缓存刷新 ==========
+    poi_map_cache_ttl_hours: int = Field(
+        default=7 * 24,
+        ge=1,
+        validation_alias="POI_MAP_CACHE_TTL_HOURS",
+    )
+    poi_refresh_interval_seconds: int = Field(
+        default=6 * 60 * 60,
+        ge=60,
+        validation_alias="POI_REFRESH_INTERVAL_SECONDS",
+    )
+    poi_refresh_batch_size: int = Field(
+        default=200,
+        ge=1,
+        le=5000,
+        validation_alias="POI_REFRESH_BATCH_SIZE",
+    )
+    # 同一房源刷新任务的 single-flight 锁时长；需覆盖一次生成的耗时，
+    # 否则热门房源缓存过期瞬间会被并发请求重复投递。
+    poi_refresh_lock_seconds: int = Field(
+        default=600,
+        ge=1,
+        validation_alias="POI_REFRESH_LOCK_SECONDS",
+    )
+
     upload_dir: str = Field(default="./uploads", validation_alias="UPLOAD_DIR")
     max_upload_size: int = Field(default=5 * 1024 * 1024, validation_alias="MAX_UPLOAD_SIZE")
     allowed_image_types: list[str] = Field(

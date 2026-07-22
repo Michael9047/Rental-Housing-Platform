@@ -14,7 +14,7 @@
 底层复用：
     - PropertyService.search() — 向量 + 结构化检索
     - _search_with_relaxation() — 渐进放宽
-    - _score_properties() — 评分算法
+    - ScoringService — 确定性推荐评分
 """
 from __future__ import annotations
 

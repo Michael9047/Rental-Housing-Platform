@@ -115,7 +115,7 @@ services:
       celery -A app.celery_app worker
       --loglevel=info
       --concurrency=4
-      --queues=celery,embedding,import
+      --queues=celery,embedding,import,poi
     depends_on:
       postgres:
         condition: service_healthy

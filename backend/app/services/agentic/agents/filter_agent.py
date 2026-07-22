@@ -1,7 +1,4 @@
-"""筛选 Agent —— NL → 结构化筛选条件（含硬约束）。
-
-支持跨轮上下文记忆：接收上轮 accumulated_filters，由 LLM 判断合并/修改/重置。
-"""
+"""筛选 Agent —— LLM 只提取偏好操作，状态合并由确定性服务完成。"""
 from __future__ import annotations
 
 import json
@@ -9,6 +6,12 @@ import logging
 
 from app.services.agentic.agents.base_agent import BaseAgent
 from app.services.agentic.orchestration.types import AgentContext, AgentResult
+from app.services.preference_state import (
+    apply_explicit_filters,
+    apply_preference_operations,
+    flatten_preference_state,
+    normalize_preference_state,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -58,56 +61,35 @@ class FilterAgent(BaseAgent):
     description = "从自然语言提取结构化筛选条件（含硬约束设施/房型/周边/通勤）"
     tools = ["extract_filters", "query_rewrite"]
 
-    FILTER_PROMPT = """你是租房搜索条件提取助手。从用户消息中提取结构化条件，区分硬约束和软偏好。
+    FILTER_PROMPT = """你是租房偏好操作提取器。只判断用户本轮要对偏好状态做哪些操作，不负责合并最终状态。
 
 ══════════════════════════════
-示例（Few-Shot）
+当前偏好状态
 ══════════════════════════════
+{PREV_FILTERS_PLACEHOLDER}
 
-示例1：
-用户：「园区2000以内一定要独卫的单间」
-→ {"district":"园区","price_max":2000,"amenities":["独立卫浴"],"property_type":"studio","price_min":null,"bedrooms":null,"room_type":null,"bathrooms":null,"area_min":null,"area_max":null,"min_lease_months":null,"institution":null,"commute_mode":null,"commute_minutes":null,"hard_filters":["amenities","district"],"soft_preferences":["price"]}
+只输出 JSON：
+{"operations":[{"op":"set|update|add|remove|clear","field":"字段名","value":任意值,"strength":"hard|soft","weight":0.0到1.0}]}
 
-示例2：
-用户：「文星附近能养猫的房子，最好1500左右，合租也行」
-→ {"district":"文星","price_min":1350,"price_max":1650,"amenities":["宠物友好"],"property_type":"shared","bedrooms":null,"room_type":null,"bathrooms":null,"area_min":null,"area_max":null,"min_lease_months":null,"institution":null,"commute_mode":null,"commute_minutes":null,"hard_filters":["amenities"],"soft_preferences":["price","district","property_type"]}
+允许字段：country, district, price_min, price_max, bedrooms, property_type,
+amenities, room_type, bathrooms, area_min, area_max, min_lease_months,
+max_lease_months, available_from, institution, distance_km, commute_mode,
+commute_minutes, poi_requirements。
 
-示例3：
-用户：「学校步行15分钟内，2500预算，要带阳台和独卫，精装修最好」
-→ {"district":null,"price_max":2500,"amenities":["独立卫浴","阳台"],"property_type":null,"bedrooms":null,"room_type":null,"bathrooms":null,"area_min":null,"area_max":null,"min_lease_months":null,"institution":"悉尼大学","commute_mode":"walking","commute_minutes":15,"hard_filters":["amenities","commute"],"soft_preferences":["price","精装修"]}
+操作规则：
+- set/update：设置或修改标量；update 也可按 POI type 更新距离。
+- add：给 amenities 或 poi_requirements 追加一项，不返回整份旧列表。
+- remove：只移除用户点名的标量或列表项。
+- clear：用户说“重新搜/清空条件”时输出 {"op":"clear"}，不要附 field。
+- 用户没有修改的旧条件不要输出，后端会自动保留。
 
-══════════════════════════════
-只输出 JSON
-══════════════════════════════
-{
-  "district": "区域名，null=未提及",
-  "price_min": 最低月租整数，null=未提及,
-  "price_max": 最高月租整数，null=未提及,
-  "bedrooms": 卧室数整数，null=未提及,
-  "property_type": "apartment/house/studio/shared 或 null",
-  "amenities": ["标准设施名"],
-  "room_type": "studio/ensuite/1bed/2bed/3bed+/shared 或 null",
-  "bathrooms": 卫生间数整数，null=未提及,
-  "area_min": 最小面积(㎡)，null=未提及,
-  "area_max": 最大面积(㎡)，null=未提及,
-  "min_lease_months": 最短租期(月)，null=未提及,
-  "institution": "学校名，null=未提及",
-  "commute_mode": "walking/bicycling/driving/transit 或 null",
-  "commute_minutes": 通勤时间上限(分钟)，null=未提及,
-  "hard_filters": ["硬约束字段名"],
-  "soft_preferences": ["软偏好字段名"]
-}
+强度规则：
+- “必须/一定/没有就不考虑/预算内/不超过/以内”是 hard。
+- “最好/尽量/有的话/也行/优先”是 soft，weight 默认 0.6。
+- 明确的总预算上限默认 hard；普通配套（超市、健身房、医疗）默认 soft。
+- 用户明确说配套“必须在 X 米内”时才是 hard。
 
-══════════════════════════════
-关键规则
-══════════════════════════════
-
-1. 硬约束 vs 软偏好：
-   - 硬约束：用户说"必须""一定要""没有就不考虑" → amenities, room_type, bathrooms, commute
-   - 软偏好：用户说"最好""尽量""便宜点就行""XX也行" → price, district, area, bedrooms
-   - 默认：amenities/room_type/commute=硬约束, price/district/area=软偏好
-
-2. 设施映射（输出标准值，不要用用户原词）：
+设施映射（value 输出标准值）：
    "养猫"/"养狗" → "宠物友好"
    "做饭"/"厨房" → "独立厨房"
    "独卫"/"独立卫生间" → "独立卫浴"
@@ -119,39 +101,17 @@ class FilterAgent(BaseAgent):
    "精装"/"装修好" → "精装修"
    "禁烟"/"无烟" → "禁烟"
 
-3. "1500左右" → price_min=1350, price_max=1650（±10%）
-4. 英文城市名转中文
-5. 不确定时填 null
+POI value 格式：{"type":"supermarket|gym|medical|transit","target_m":500,"acceptable_m":1200}。
 
-══════════════════════════════
-上下文合并规则（上轮条件存在时适用）
-══════════════════════════════
-上轮已提取的筛选条件（JSON）：
-{PREV_FILTERS_PLACEHOLDER}
+示例：
+- “预算不超过3500” → {"operations":[{"op":"set","field":"price_max","value":3500,"strength":"hard"}]}
+- “最好500米内有超市” → {"operations":[{"op":"add","field":"poi_requirements","value":{"type":"supermarket","target_m":500,"acceptable_m":1200},"strength":"soft","weight":0.6}]}
+- “健身房不重要了” → {"operations":[{"op":"remove","field":"poi_requirements","value":{"type":"gym"}}]}
+- “还要阳台” → {"operations":[{"op":"add","field":"amenities","value":"阳台","strength":"soft","weight":0.6}]}
+- “预算提高到4000” → {"operations":[{"op":"update","field":"price_max","value":4000,"strength":"hard"}]}
+- “重新搜” → {"operations":[{"op":"clear"}]}
 
-示例4（增量修改）：
-上轮：{"institution":"悉尼大学","price_max":20000,"amenities":["健身房"],...}
-用户：「那健身房不带也就算了」
-→ 合并："institution":"悉尼大学","price_max":20000 — 保留；"amenities":[] — 移除健身房。只去掉这一项，其余不动。
-
-示例5（数值修改）：
-上轮：{"institution":"悉尼大学","price_max":20000,...}
-用户：「预算提到25000吧」
-→ 合并："price_max":25000 — 更新；其余全部保留。
-
-示例6（追加条件）：
-上轮：{"institution":"悉尼大学","price_max":20000,...}
-用户：「还要阳台」
-→ 合并："amenities":["阳台"] — 在上轮基础上追加。
-
-用户可能在当前消息中对上轮条件做增量修改。合并策略：
-- 用户说"那XX不带也就算了""算了不要XX了""XX去掉吧" → 移除该条件，其余全部保留
-- 用户说"XX也加上""还要XX""顺便看看有没有XX" → 在上轮基础上追加该条件
-- 用户说"预算提到X""价格改到X以内" → 仅更新 price 字段，其余保留
-- 用户说"换成XX附近""还是XX学校吧" → 仅更新 district/institution，其余保留
-- 用户说"重新搜""从零开始""清掉之前的条件" → 丢弃上轮全部条件，只从当前消息提取
-- 用户消息没有引用/修改上轮条件 → 保留上轮条件，仅从当前消息补充新条件
-- 上轮为 null → 忽略本节，当前消息独立提取"""
+不要输出解释、markdown 或最终合并状态。"""
 
 
     async def handle(
@@ -161,36 +121,42 @@ class FilterAgent(BaseAgent):
 
         Args:
             context: Agent 上下文（含 user_message）
-            prev_filters: 上轮累积的筛选条件，由 LLM 判断合并/修改/重置
+            prev_filters: 上轮结构化偏好状态，由 reducer 确定性合并
         """
-        if not self.llm_service.is_available:
-            return AgentResult(content="{}", success=True, data={})
-
-        # 构建 prompt：注入上轮条件（如果有）
-        if prev_filters and isinstance(prev_filters, dict) and len(prev_filters) > 0:
-            prev_json = json.dumps(prev_filters, ensure_ascii=False, indent=2)
+        state = normalize_preference_state(prev_filters)
+        explicit_filters = context.filters if isinstance(context.filters, dict) else {}
+        if state["filters"]:
+            prev_json = json.dumps(state["filters"], ensure_ascii=False, indent=2)
         else:
             prev_json = "null（首轮对话，无上轮条件）"
         prompt = self.FILTER_PROMPT.replace("{PREV_FILTERS_PLACEHOLDER}", prev_json)
 
-        try:
-            result = await self.llm_service.complete_json(
-                prompt, context.user_message,
-                temperature=0.0, max_tokens=500,
-            )
-            if not isinstance(result, dict):
-                return AgentResult(content="{}", success=True, data={})
+        operations: list[dict] = []
+        if self.llm_service.is_available:
+            try:
+                result = await self.llm_service.complete_json(
+                    prompt, context.user_message,
+                    temperature=0.0, max_tokens=500,
+                )
+                if isinstance(result, dict) and isinstance(result.get("operations"), list):
+                    operations = [op for op in result["operations"] if isinstance(op, dict)]
+            except Exception:
+                logger.exception("filter_agent LLM 操作提取失败，保留现有偏好")
 
-            # 标准化 amenities 值
-            raw_amenities: list[str] = result.get("amenities") or []
-            if raw_amenities:
-                result["amenities"] = _normalize_amenities(raw_amenities)
+        # 设施别名标准化只影响本轮操作；最终合并由 reducer 确定性执行。
+        for operation in operations:
+            if operation.get("field") != "amenities" or operation.get("value") is None:
+                continue
+            raw = operation["value"] if isinstance(operation["value"], list) else [operation["value"]]
+            normalized = _normalize_amenities(raw)
+            operation["value"] = normalized if isinstance(operation["value"], list) else (normalized[0] if normalized else None)
 
-            return AgentResult(
-                content=str(result),
-                success=True,
-                data=result,
-            )
-        except Exception:
-            logger.exception("filter_agent LLM 提取失败")
-            return AgentResult(content="{}", success=True, data={})
+        state = apply_preference_operations(state, operations)
+        state = apply_explicit_filters(state, explicit_filters)
+        payload = flatten_preference_state(state)
+        return AgentResult(
+            content="",
+            success=True,
+            data=payload,
+            context_updates={"filters": payload, "preference_state": state},
+        )

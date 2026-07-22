@@ -351,7 +351,6 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { UserFilled } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 import { bookingService } from '@/services/booking'
-import { contractService } from '@/services/contract'
 import { propertyService } from '@/services/property'
 import { repairService } from '@/services/repair'
 import { storeToRefs } from 'pinia'
@@ -376,6 +375,7 @@ const contractFilter = ref('active')
 const billTab = ref('unpaid')
 
 const bookings = ref<Booking[]>([])
+const bookingProperties = ref<Record<number, Property>>({})
 const favorites = ref<Property[]>([])
 const repairs = ref<RepairRead[]>([])
 const repairForm = ref({ property_id: 0, issue_type: 'other' as RepairIssueType, description: '', scheduled_time: '' })
@@ -408,9 +408,11 @@ const contracts = computed(() => {
   return bookings.value
     .filter(b => b.deposit_status === 'paid' || b.deposit_status === 'confirmed' || b.status === 'completed')
     .map(b => ({
-      bookingId: b.id, propertyId: b.property_id, propertyTitle: `房源 #${b.property_id}`,
+      bookingId: b.id, propertyId: b.property_id,
+      propertyTitle: bookingProperties.value[b.property_id]?.title || `房源 #${b.property_id}`,
       startDate: b.scheduled_date || '—', endDate: b.status === 'completed' ? '已到期' : '续租中',
-      rent: `¥${b.deposit_amount || 0}`, deposit: `¥${b.deposit_amount || 0}`,
+      rent: `¥${Number(bookingProperties.value[b.property_id]?.price_monthly || 0).toLocaleString('zh-CN')}`,
+      deposit: `¥${Number(b.deposit_amount || 0).toLocaleString('zh-CN')}`,
       status: b.status === 'completed' ? '已结束' : '生效中',
     }))
 })
@@ -431,8 +433,20 @@ const paidOrders = computed(() => bookings.value
 // ── Actions ──
 async function fetchAll() {
   pageLoading.value = true
-  try { bookings.value = (await bookingService.list()).filter(b => b.deposit_status !== 'paid' && b.deposit_status !== 'confirmed') }
-  catch { bookings.value = [] }
+  try {
+    bookings.value = await bookingService.list()
+    const propertyIds = [...new Set(bookings.value.map((booking) => booking.property_id))]
+    const propertyResults = await Promise.allSettled(
+      propertyIds.map((propertyId) => propertyService.getById(propertyId)),
+    )
+    bookingProperties.value = propertyResults.reduce<Record<number, Property>>((items, result) => {
+      if (result.status === 'fulfilled') items[result.value.id] = result.value
+      return items
+    }, {})
+  } catch {
+    bookings.value = []
+    bookingProperties.value = {}
+  }
   try {
     const favItems = await favoriteService.list()
     const ids = favItems.map((f) => f.property_id)
@@ -456,9 +470,8 @@ async function cancelBooking(b: Booking) {
   } catch { /* cancelled */ }
 }
 function goPay(b: Booking) { router.push({ path: `/booking/payment/${b.id}` }) }
-async function downloadContract(row: any) {
-  try { await contractService.download(row.id); ElMessage.success('正在下载...') }
-  catch { ElMessage.info('下载功能接入中') }
+function downloadContract(row: any) {
+  router.push(`/contract/${row.bookingId}`)
 }
 function openBookingDialog(p: Property) { router.push({ path: '/booking/confirm', query: { property_id: String(p.id) } }) }
 function viewRepair(row: RepairRead) { router.push(`/repairs/${row.id}`) }

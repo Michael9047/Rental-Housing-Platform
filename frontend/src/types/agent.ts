@@ -15,21 +15,84 @@ export interface AgentFilters {
   price_max?: number | null
   bedrooms?: number | null
   property_type?: PropertyType | null
+  amenities?: string[] | null
+  room_type?: string | null
+  bathrooms?: number | null
+  area_min?: number | null
+  area_max?: number | null
+  min_lease_months?: number | null
+  max_lease_months?: number | null
+  available_from?: string | null
+  institution?: string | null
+  distance_km?: number | null
+  commute_mode?: 'walking' | 'bicycling' | 'driving' | 'transit' | null
+  commute_minutes?: number | null
+  poi_requirements?: Array<{
+    type: 'supermarket' | 'gym' | 'medical' | 'transit' | string
+    target_m?: number
+    acceptable_m?: number
+  }> | null
 }
 
 export interface AgentMessageRequest {
   message: string
   filters?: AgentFilters | null
   compare_property_ids?: number[]  // 候选清单勾选后传，触发对比意图
+  mode?: string | null  // 兼容现有快速/专家模式参数，后端可按路由策略忽略
+  /** 引导面板一次提交的字段值；旧后端会安全忽略该字段 */
+  slot_answers?: Record<string, string> | null
 }
 
 export type AgentIntent =
   | 'recommend'
+  | 'elicit'
   | 'add_to_cart'
   | 'remove_from_cart'
   | 'compare_cart'
   | 'faq'
   | 'general'
+
+/** 会话列表项（AI 管家左侧历史对话） */
+export interface AgentSessionSummary {
+  id: number
+  title: string | null
+  created_at: string
+  updated_at: string
+}
+
+/** 引导找房条件的候选项 */
+export interface ElicitOption {
+  label: string
+  value: string
+}
+
+/** 引导找房条件的一组字段 */
+export interface ElicitGroup {
+  field: string
+  label: string
+  question: string
+  options: ElicitOption[]
+}
+
+/** 视频中的多条件找房引导面板 */
+export interface AgentElicit {
+  groups: ElicitGroup[]
+  allow_custom: boolean
+}
+
+export type MessageFeedback = 'up' | 'down' | null
+
+/** 历史消息（切换会话时回放） */
+export interface AgentHistoryMessage {
+  id: number | null
+  role: 'user' | 'assistant'
+  content: string
+  recommendations: AgentRecommendation[]
+  elicit: AgentElicit | null
+  feedback: MessageFeedback
+  intent: AgentIntent | null
+  created_at: string
+}
 
 export interface AgentRecommendation {
   property_id: number
@@ -37,6 +100,37 @@ export interface AgentRecommendation {
   pros: string[]
   cons: string[]
   property: PropertySearchResult
+  facts?: PropertyFactBundle | null
+}
+
+export interface PropertyFactBundle {
+  property_id: number
+  poi: {
+    nearest_transit_m: number | null
+    nearest_supermarket_m: number | null
+    supermarket_count_1km: number | null
+    nearest_gym_m: number | null
+    gym_count_1km: number | null
+    nearest_medical_m: number | null
+    medical_count_2km: number | null
+  }
+  commute: {
+    dist_km: number
+    walk_min: number
+    bike_min: number
+    drive_min: number
+    transit_min: number
+    source: 'amap_api' | 'ors_api' | 'haversine_fallback' | string
+    transit_verified: boolean
+  } | null
+  data_completeness: {
+    poi_cache_available: boolean
+    poi_categories_available: string[]
+    poi_coverage: number
+    coordinates_available: boolean
+    commute_available: boolean
+    commute_source: string | null
+  }
 }
 
 /** 回复中附带的站内页面深链 */
@@ -61,6 +155,8 @@ export interface ThinkingStep {
 }
 
 export interface AgentMessageResponse {
+  /** 新版接口返回；当前后端未返回时为 undefined */
+  message_id?: number | null
   reply: string
   intent: AgentIntent
   recommendations: AgentRecommendation[]   // 全部匹配房源（"查看所有"展开使用）
@@ -70,6 +166,8 @@ export interface AgentMessageResponse {
   quick_replies: string[]
   links: AgentLink[]
   thinking_steps: ThinkingStep[]
+  /** 视频版找房条件面板；当前接口未返回时由前端兼容生成 */
+  elicit?: AgentElicit | null
 }
 
 export interface CartItem {
@@ -117,6 +215,8 @@ export interface CompareResponse {
 
 /** 聊天气泡（前端本地状态） */
 export interface AgentChatMessage {
+  /** 后端消息 id；欢迎语等本地消息没有 id */
+  id?: number | null
   role: 'user' | 'assistant'
   content: string
   /** 精选 Top 3 房源（首屏横向卡片） */
@@ -133,4 +233,12 @@ export interface AgentChatMessage {
   links?: AgentLink[]
   /** 专家模式思考步骤 */
   thinkingSteps?: ThinkingStep[]
+  /** 引导找房条件面板 */
+  elicit?: AgentElicit | null
+  /** 点赞 / 点踩状态 */
+  feedback?: MessageFeedback
+  /** 消息意图，用于 FAQ 卡片等差异化展示 */
+  intent?: AgentIntent | null
+  /** 本地欢迎语，下方显示三个快捷入口 */
+  isWelcome?: boolean
 }

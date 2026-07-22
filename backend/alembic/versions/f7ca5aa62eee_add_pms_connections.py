@@ -1,7 +1,7 @@
 """add_pms_connections
 
 Revision ID: f7ca5aa62eee
-Revises: 20260708_0012_add_rent_type_to_properties
+Revises: 20260708_0012
 Create Date: 2026-07-09 05:31:31.020874
 
 """
@@ -11,7 +11,7 @@ from alembic import op
 import sqlalchemy as sa
 
 revision: str = 'f7ca5aa62eee'
-down_revision: Union[str, None] = '20260708_0012_add_rent_type_to_properties'
+down_revision: Union[str, None] = '20260708_0012'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
