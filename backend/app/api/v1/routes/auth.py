@@ -194,7 +194,7 @@ async def send_sms_code(
 
     # 发送验证码短信
     sms = SmsService()
-    result = await sms.send_verification_code(phone, code=code, ttl_minutes=5)
+    result = await sms.send(phone, template_param={"code": code, "min": "5"})
 
     if result.get("status") == "failed":
         raise HTTPException(

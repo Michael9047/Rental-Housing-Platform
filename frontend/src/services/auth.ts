@@ -8,8 +8,6 @@ import type {
   PhoneRegisterRequest,
   SendSmsCodeRequest,
   VerifySmsCodeRequest,
-  ForgotPasswordRequest,
-  ResetPasswordRequest,
 } from '@/types/auth'
 import type { User } from '@/types/user'
 
@@ -49,15 +47,5 @@ export const authService = {
   /** 新用户手机号注册（验证码验证后设置用户名密码） */
   phoneRegister(data: PhoneRegisterRequest): Promise<TokenResponse> {
     return api.post('/auth/phone-register', data).then((r) => r.data)
-  },
-
-  /** 忘记密码 - 发送重置链接到邮箱 */
-  forgotPassword(data: ForgotPasswordRequest): Promise<{ detail: string }> {
-    return api.post('/auth/forgot-password', data).then((r) => r.data)
-  },
-
-  /** 重置密码 */
-  resetPassword(data: ResetPasswordRequest): Promise<{ detail: string }> {
-    return api.post('/auth/reset-password', data).then((r) => r.data)
   },
 }

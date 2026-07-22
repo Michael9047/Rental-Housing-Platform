@@ -41,7 +41,7 @@ class User(TimestampMixin, Base):
         default=UserStatus.active,
         nullable=False,
     )
-    properties: Mapped[list["Property"]] = relationship(
+    rooms: Mapped[list["Room"]] = relationship(
         back_populates="landlord",
         cascade="all, delete-orphan",
     )

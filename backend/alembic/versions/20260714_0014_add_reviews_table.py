@@ -18,6 +18,11 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
+    # 如果 reviews 表已存在（来自其他分支的迁移），跳过创建
+    conn = op.get_bind()
+    inspector = sa.inspect(conn)
+    if "reviews" in inspector.get_table_names():
+        return
     op.create_table(
         "reviews",
         sa.Column("id", sa.Integer(), nullable=False),

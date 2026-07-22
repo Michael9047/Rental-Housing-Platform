@@ -61,10 +61,6 @@
         >
           登录
         </el-button>
-
-        <div class="forgot-row">
-          <router-link to="/forgot-password">忘记密码？</router-link>
-        </div>
       </el-form>
 
       <!-- ========== 手机登录表单 ========== -->

@@ -3,7 +3,19 @@ from decimal import Decimal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.models.property import DepositType, PropertyStatus, PropertyType, RentType
+from app.models.property import RoomStatus as PropertyStatus
+from app.models.unit_type import DepositType
+# 以下枚举已废弃，保留兼容定义
+import enum as _enum
+class PropertyType(str, _enum.Enum):
+    apartment = "apartment"
+    house = "house"
+    studio = "studio"
+    shared = "shared"
+class RentType(str, _enum.Enum):
+    monthly = "monthly"
+    quarterly = "quarterly"
+    yearly = "yearly"
 from app.schemas.property_image import PropertyImageRead
 class PropertyBase(BaseModel):
     title: str = Field(min_length=1, max_length=200)

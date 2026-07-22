@@ -104,12 +104,6 @@
         <el-table-column label="操作" width="250" fixed="right">
           <template #default="{ row }">
             <el-button size="small" text type="primary" @click="showDetail(row)">查看详情</el-button>
-            <el-button
-              size="small" text type="warning"
-              :disabled="!canRevert(row)"
-              :loading="revertingId === row.id"
-              @click="confirmRevert(row)"
-            >撤销</el-button>
             <el-popconfirm
               title="确定删除该记录？"
               confirm-button-text="删除"
@@ -282,13 +276,6 @@
         <!-- 操作按钮 -->
         <div class="drawer-actions">
           <el-button
-            type="warning"
-            :icon="RefreshLeft"
-            :disabled="!canRevert(detailItem)"
-            :loading="revertingId === detailItem.id"
-            @click="confirmRevert(detailItem)"
-          >撤销此操作</el-button>
-          <el-button
             v-if="detailItem.resource_id"
             @click="goProperty(detailItem.resource_id); detailVisible = false"
           >查看房源</el-button>
@@ -338,13 +325,17 @@ const batchProperties = computed<BatchProperty[]>(() => {
 /** 摘要图标 */
 const summaryIcon = computed(() => {
   const a = detailItem.value?.action || ''
+  if (a.includes('创建')) return '➕'
+  if (a.includes('编辑')) return '✏️'
+  if (a.includes('硬删除')) return '💥'
+  if (a.includes('删除')) return '🗑'
+  if (a.includes('恢复') || a.includes('撤销')) return '♻️'
+  if (a.includes('批量')) return '📋'
   if (a.includes('create')) return '➕'
   if (a.includes('update')) return '✏️'
-  if (a.includes('hard_delete')) return '💥'
   if (a.includes('delete')) return '🗑'
   if (a.includes('restore')) return '♻️'
   if (a.includes('revert')) return '↩'
-  if (a.includes('batch')) return '📋'
   return '📌'
 })
 
@@ -354,37 +345,19 @@ const operationSummary = computed(() => {
   if (!item) return ''
   const who = operatorName.value
   const when = formatTime(item.created_at)
+  // 优先使用 details 里的大白话描述
+  if (item.details?.描述) return `${who} 于 ${when} ${item.details.描述}`
   const name = item.property_title || item.details?.title || `#${item.resource_id || '?'}`
+  const resType = item.resource_type || '房源'
   switch (item.action) {
-    case 'property_create': return `${who} 于 ${when} 创建了房源「${name}」`
-    case 'property_update': {
-      const n = item.details?.changed_fields?.length || 0
-      return `${who} 于 ${when} 修改了房源「${name}」，共改动 ${n} 个字段`
+    case '创建公寓': case '创建户型': case '创建房间': return `${who} 于 ${when} 创建了${resType}「${name}」`
+    case '编辑公寓': case '编辑户型': case '编辑房间': {
+      const desc = item.details?.描述 || ''
+      return desc ? `${who} 于 ${when} ${desc}` : `${who} 于 ${when} 修改了${resType}「${name}」`
     }
-    case 'property_delete': return `${who} 于 ${when} 删除了房源「${name}」`
-    case 'property_restore': return `${who} 于 ${when} 恢复了房源「${name}」`
-    case 'property_hard_delete': return `${who} 于 ${when} 永久删除了房源「${name}」（不可恢复）`
-    case 'property_revert': {
-      const rev = actionLabel(item.details?.reverted_action || '')
-      return `${who} 于 ${when} 撤销了「${rev}」操作`
-    }
-    case 'property_batch_status': {
-      const n = item.details?.ids?.length || 0
-      return `${who} 于 ${when} 批量修改了 ${n} 个房源的状态为「${item.details?.new_status || '?'}」`
-    }
-    case 'property_batch_delete': {
-      const n = item.details?.ids?.length || 0
-      return `${who} 于 ${when} 批量删除了 ${n} 个房源`
-    }
-    case 'property_batch_restore': {
-      const n = item.details?.ids?.length || 0
-      return `${who} 于 ${when} 批量恢复了 ${n} 个房源`
-    }
-    case 'property_batch_hard_delete': {
-      const n = item.details?.ids?.length || 0
-      return `${who} 于 ${when} 批量永久删除了 ${n} 个房源（不可恢复）`
-    }
-    default: return `${who} 于 ${when} 执行了「${actionLabel(item.action)}」操作`
+    case '删除公寓': case '删除户型': case '删除房间': return `${who} 于 ${when} 删除了${resType}「${name}」`
+    case '撤销删除': case '撤销编辑': return `${who} 于 ${when} 撤销了对${resType}「${name}」的操作`
+    default: return `${who} 于 ${when} 执行了「${item.action}」操作，对象：${resType}「${name}」`
   }
 })
 
@@ -441,7 +414,10 @@ const showAllFields = ref(false)
 
 const changedFields = computed<FieldChange[]>(() => {
   const item = detailItem.value
-  if (!item || item.action !== 'property_update') return []
+  if (!item) return []
+  // 新格式：details.修改内容 = {field: {新值, 旧值}}
+  const changes = item.details?.修改内容 || item.details?.changed_fields || {}
+  if (typeof changes !== 'object' || Object.keys(changes).length === 0) return []
   const oldVals = item.details?.old_values as Record<string, any> | undefined
   const newVals = item.details?.new_values as Record<string, any> | undefined
   if (!oldVals || !newVals) return []
@@ -545,8 +521,11 @@ async function clearAll() {
   finally { clearing.value = false }
 }
 
+// 撤销白名单：只允许撤销编辑和删除操作（创建不可撤销）
 const revertableActions = new Set([
-  'property_create', 'property_update', 'property_delete', 'property_restore',
+  '编辑房间', '删除房间',
+  '编辑户型', '删除户型',
+  '编辑公寓', '删除公寓',
 ])
 
 function canRevert(row: PropertyHistoryItem): boolean {
@@ -559,7 +538,7 @@ async function confirmRevert(row: PropertyHistoryItem) {
   const actionName = actionLabelMap[row.action] || row.action
   try {
     await ElMessageBox.confirm(
-      `确定要撤销此操作吗？将撤消"${actionName}"对房源 #${row.resource_id} 的影响。`,
+      `确定要撤销此操作吗？将撤消"${actionName}"对 #${row.resource_id} 的影响。`,
       '确认撤销',
       { confirmButtonText: '确定撤销', cancelButtonText: '取消', type: 'warning' },
     )
@@ -570,7 +549,8 @@ async function confirmRevert(row: PropertyHistoryItem) {
     ElMessage.success(result.message || '撤销成功')
     await loadList()
   } catch (e: any) {
-    // 错误信息由 axios 拦截器自动展示
+    const msg = e?.response?.data?.detail || e?.message || '撤销失败，请稍后重试'
+    ElMessage.error(typeof msg === 'string' ? msg : '撤销失败')
   } finally {
     revertingId.value = null
   }

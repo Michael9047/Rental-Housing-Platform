@@ -80,13 +80,21 @@
           <el-icon><DataAnalysis /></el-icon>
           <span>运营工作台</span>
         </el-menu-item>
-        <el-menu-item index="/property/manage">
-          <el-icon><OfficeBuilding /></el-icon>
-          <span>房源管理</span>
+        <el-menu-item index="/buildings">
+          <el-icon><HomeFilled /></el-icon>
+          <span>公寓管理</span>
         </el-menu-item>
-        <el-menu-item index="/property/create">
-          <el-icon><Plus /></el-icon>
-          <span>发布房源</span>
+        <el-menu-item index="/unit-type/manage">
+          <el-icon><Grid /></el-icon>
+          <span>户型管理</span>
+        </el-menu-item>
+        <el-menu-item index="/rooms/manage">
+          <el-icon><OfficeBuilding /></el-icon>
+          <span>房间管理</span>
+        </el-menu-item>
+        <el-menu-item index="/property/history">
+          <el-icon><Clock /></el-icon>
+          <span>修改记录</span>
         </el-menu-item>
         <el-menu-item index="/bookings/landlord">
           <el-icon><Tickets /></el-icon>
@@ -124,7 +132,7 @@ import { useRoute } from 'vue-router'
 import {
   HomeFilled, ChatDotRound, MagicStick, ShoppingCart, Search,
   Location, User, List, Bell, DataAnalysis, OfficeBuilding,
-  Plus, Tickets, Fold, Expand, Cpu,
+  Plus, Tickets, Fold, Expand, Cpu, Grid, Upload, Document, Clock,
 } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 
@@ -148,6 +156,12 @@ const activeMenu = computed(() => {
     return '/search'
   }
   if (path.startsWith('/bookings/')) return path
+  if (path.startsWith('/buildings')) return '/buildings'
+  if (path.startsWith('/unit-type')) return path.startsWith('/unit-type/create') ? '/unit-type/create' : '/unit-type/manage'
+  if (path.startsWith('/rooms/')) return '/rooms/manage'
+  if (path.startsWith('/room/')) return '/room/import'
+  if (path.startsWith('/tenants')) return '/tenants'
+  if (path.startsWith('/orders')) return '/orders'
   if (path.startsWith('/workspace')) return '/workspace'
   return path
 })

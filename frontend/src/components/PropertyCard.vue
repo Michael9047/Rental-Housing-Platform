@@ -5,7 +5,7 @@
       <img
         v-if="primaryImageUrl"
         :src="primaryImageUrl"
-        :alt="property.title"
+        :alt="p.title"
         class="property-img"
       />
       <div v-else class="image-placeholder">
@@ -17,15 +17,15 @@
         匹配 {{ (property.similarity * 100).toFixed(0) }}%
       </span>
       <!-- District Tag -->
-      <span class="district-badge">{{ property.district }}</span>
+      <span class="district-badge">{{ p.district }}</span>
     </div>
 
     <!-- Info -->
     <div class="card-body">
-      <h3 class="card-title" :title="property.title">{{ property.title }}</h3>
+      <h3 class="card-title" :title="p.title">{{ p.title }}</h3>
 
       <div class="card-tags">
-        <el-tag size="small" type="info">{{ typeLabels[property.property_type] || property.property_type }}</el-tag>
+        <el-tag size="small" type="info">{{ typeLabels[p.property_type] || p.property_type }}</el-tag>
         <el-tag size="small">{{ property.bedrooms }}室{{ property.bathrooms }}卫</el-tag>
         <el-tag size="small" type="info" v-if="property.area_sqm">{{ property.area_sqm }}㎡</el-tag>
       </div>
@@ -55,14 +55,14 @@
         >{{ tag }}</el-tag>
       </div>
 
-      <p class="card-address" :title="property.address">
+      <p class="card-address" :title="p.address">
         <el-icon :size="14"><LocationFilled /></el-icon>
-        {{ property.address }}
+        {{ p.address }}
       </p>
 
       <div class="card-footer">
         <div class="price-block">
-          <span class="card-price">¥{{ property.price_monthly }}</span>
+          <span class="card-price">¥{{ p.price_monthly }}</span>
           <span class="price-unit">/月</span>
         </div>
         <div class="card-actions" @click.stop>
@@ -130,6 +130,15 @@ const authStore = useAuthStore()
 const cartStore = useCartStore()
 
 const busy = ref(false)
+// 兼容新旧字段名 — 房间数据用 unit_type_name/base_rent，旧数据用 title/price_monthly
+const p = computed(() => ({
+  ...props.property,
+  title: props.property.title || props.property.unit_type_name || props.property.room_number || '未命名',
+  price_monthly: props.property.price_monthly ?? props.property.base_rent ?? 0,
+  district: props.property.district || props.property.institute_name || '',
+  property_type: props.property.property_type || 'apartment',
+  address: props.property.address || props.property.institute_address || '',
+}))
 const inCart = computed(() => cartStore.has(props.property.id))
 
 async function handleToggleCart() {
@@ -138,10 +147,10 @@ async function handleToggleCart() {
   try {
     if (inCart.value) {
       await cartStore.remove(props.property.id)
-      ElMessage.info(`已从候选清单移出「${props.property.title}」`)
+      ElMessage.info(`已从候选清单移出「${p.value.title}」`)
     } else {
       await cartStore.add(props.property.id)
-      ElMessage.success(`已将「${props.property.title}」加入候选清单`)
+      ElMessage.success(`已将「${p.value.title}」加入候选清单`)
     }
   } catch {
     // 错误提示由 api 拦截器统一处理
@@ -220,7 +229,7 @@ const amenityTags = computed(() => {
 
 function goDetail() {
   router.push({
-    path: `/property/${props.property.id}`,
+    path: `/room/${props.property.id}`,
     query: props.linkQuery || {},
   })
 }
