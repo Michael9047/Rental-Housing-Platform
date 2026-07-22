@@ -80,31 +80,8 @@ async function handleAiSearch() {
 async function loadRecommendations() {
   loading.value = true
   try {
-    // 用 /properties 按 institute 去重聚合（/public/buildings 需后端重启）
-    const r = await api.get('/properties', { params: { page_size: 200 } })
-    const items = r?.data?.items || r?.data || []
-    const rooms = Array.isArray(items) ? items : []
-    // 按 institute_id 分组去重，取每个公寓的第一个 room 作为代表
-    const seen = new Map()
-    rooms.forEach((p: any) => {
-      const iid = p.institute_id || p.id
-      if (!seen.has(iid)) {
-        seen.set(iid, {
-          id: iid,
-          name: p.institute_name || p.title || p.address,
-          address: p.address,
-          amenities: p.amenities || [],
-          female_only: p.female_only || false,
-          couples_allowed: p.couples_allowed || false,
-          unit_type_count: 1,
-          primary_image: p.images?.[0] ? { filename: p.images[0].filename } : null,
-        })
-      } else {
-        const b = seen.get(iid)
-        b.unit_type_count++
-      }
-    })
-    buildings.value = Array.from(seen.values())
+    const r = await api.get('/public/buildings', { params: { limit: 12 } })
+    buildings.value = Array.isArray(r.data) ? r.data : []
   } catch (e) {
     console.error('[Home] load failed', e)
   } finally { loading.value = false }
