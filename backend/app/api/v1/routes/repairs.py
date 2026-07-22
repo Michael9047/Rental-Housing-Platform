@@ -175,7 +175,7 @@ async def assign_worker(
     repair = await svc.get_repair(repair_id)
     if not repair:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repair not found")
-    if repair.landlord_id != current_user.id:
+    if repair.landlord_id != current_user.id and current_user.role != UserRole.admin:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
 
     try:

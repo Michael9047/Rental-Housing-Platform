@@ -162,6 +162,12 @@
                 <el-dropdown-item v-if="authStore.isAdmin" @click="router.push('/admin')">
                   <el-icon><DataAnalysis /></el-icon> 系统管理
                 </el-dropdown-item>
+                <el-dropdown-item v-if="authStore.isAdmin" @click="router.push('/admin/escalated-repairs')">
+                  <el-icon><Tickets /></el-icon> 待派单工单
+                </el-dropdown-item>
+                <el-dropdown-item v-if="authStore.isAdmin" @click="router.push('/admin/landlord-workers')">
+                  <el-icon><List /></el-icon> 房东维修工看板
+                </el-dropdown-item>
                 <el-dropdown-item divided @click="authStore.logout()">
                   <el-icon><SwitchButton /></el-icon> 退出登录
                 </el-dropdown-item>

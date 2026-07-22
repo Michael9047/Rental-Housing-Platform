@@ -8,6 +8,7 @@
         <el-radio-button value="assigned">已派单</el-radio-button>
         <el-radio-button value="in_progress">维修中</el-radio-button>
         <el-radio-button value="completed">已完成</el-radio-button>
+        <el-radio-button v-if="authStore.isAdmin" value="pending_escalated">待派单</el-radio-button>
       </el-radio-group>
     </div>
 
@@ -28,7 +29,7 @@
       <el-table-column label="操作" width="180">
         <template #default="{ row }">
           <el-button size="small" text type="primary" @click="$router.push(`/repairs/${row.id}`)">详情</el-button>
-          <el-button v-if="row.status === 'pending'" size="small" text type="warning" @click="showAssign(row)">派单</el-button>
+          <el-button v-if="row.status === 'pending' || row.status === 'pending_escalated'" size="small" text type="warning" @click="showAssign(row)">派单</el-button>
         </template>
       </el-table-column>
     </el-table>
@@ -50,9 +51,11 @@
 import { ref, computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { repairService, workerService } from '@/services/repair'
+import { useAuthStore } from '@/stores/auth'
 import { ISSUE_TYPE_LABELS, REPAIR_STATUS_LABELS, REPAIR_STATUS_TAGS } from '@/types/repair'
 import type { RepairRead, RepairWorker } from '@/types/repair'
 
+const authStore = useAuthStore()
 const repairs = ref<RepairRead[]>([])
 const workers = ref<RepairWorker[]>([])
 const loading = ref(false)

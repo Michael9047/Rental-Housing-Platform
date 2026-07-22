@@ -215,9 +215,10 @@
                 <el-tag :type="repairTag(row.status)" size="small">{{ repairStatusLabel(row.status) }}</el-tag>
               </template>
             </el-table-column>
-            <el-table-column label="操作" width="120">
+            <el-table-column label="操作" width="160">
               <template #default="{ row }">
                 <el-button size="small" text type="primary" @click="viewRepair(row)">查看详情</el-button>
+                <el-button v-if="row.status === 'pending'" size="small" text type="danger" @click="cancelRepairFromList(row)">取消</el-button>
               </template>
             </el-table-column>
           </el-table>
@@ -462,6 +463,15 @@ async function downloadContract(row: any) {
 }
 function openBookingDialog(p: Property) { router.push({ path: '/booking/confirm', query: { property_id: String(p.id) } }) }
 function viewRepair(row: RepairRead) { router.push(`/repairs/${row.id}`) }
+
+async function cancelRepairFromList(row: RepairRead) {
+  try {
+    await ElMessageBox.confirm('确定取消这个报修吗？', '取消报修', { confirmButtonText: '确定', cancelButtonText: '我再想想', type: 'warning' })
+    await repairService.cancel(row.id)
+    ElMessage.success('报修已取消')
+    await fetchRepairs()
+  } catch { /* cancelled */ }
+}
 
 async function fetchRepairs() {
   try { repairs.value = await repairService.list() }
