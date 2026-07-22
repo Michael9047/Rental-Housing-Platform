@@ -26,14 +26,14 @@
 | | 烘焙 | `"bakery"` | searchText | 240 (2×2格) | 网格分割 |
 | | 快餐 | `"fast food"` | searchText | 240 (2×2格) | 网格分割 |
 | | 食阁 | `"food centre"` | searchText | 240 (2×2格) | 网格分割，含小贩中心摊位 |
-| **L2 便利** | 超市 | `["supermarket"]` | searchNearby | 20 | 圆形搜索 |
-| | 便利店 | `["convenience_store"]` | searchNearby | 20 | 圆形搜索 |
+| **L2 便利** | 超市 | `"supermarket"` | searchText | 160 (2×2格×2页) | 网格分割 |
+| | 便利店 | `"convenience store"` | searchText | 160 (2×2格×2页) | 网格分割 |
 | | 市场 | `["market"]` | searchNearby | 20 | 圆形搜索 |
-| | 药店 | `["pharmacy"]` | searchNearby | 20 | 圆形搜索 |
-| | 健身房 | `["gym"]` | searchNearby | 20 | 圆形搜索 |
+| | 药店 | `"pharmacy"` | searchText | 160 (2×2格×2页) | 网格分割 |
+| | 健身房 | `"gym"` | searchText | 160 (2×2格×2页) | 网格分割 |
 | | 酒吧 | `["bar"]` | searchNearby | 20 | 圆形搜索 |
 | **L3 出行** | 地铁站 | `["subway_station"]` | searchNearby | 20 | 圆形搜索，150m去重 |
-| | 公交站 | `["bus_stop","bus_station"]` | searchNearby | 20 | 圆形搜索，80m去重 |
+| | 公交站 | `"bus stop"` + `"bus station"` | searchText | 320 (双词×2×2格×2页) | 网格分割，80m去重 |
 | **L4 地标** | 商场 | `["shopping_mall"]` | searchNearby | 20 | 150m去重 |
 | | 小贩中心 | `"hawker centre"` + `"food centre"` | searchText | 120 (双词×3页) | `includedType: "food_court"` 过滤 |
 | **L5 医疗** | 医院 | `["hospital"]` | searchNearby | 20 | 200m去重 |
@@ -44,12 +44,14 @@
 
 | 端点 | 适用场景 | 优势 | 限制 |
 |------|---------|------|------|
-| **searchNearby** | 结构化类型（医院、商场、地铁站） | 自动去重，一个POI一条 | 最多 **20 条**，不可翻页，仅圆形搜索 |
-| **searchText** | 高密度自由文本（餐厅、cafe） | 可翻页（3页），可网格分割突破上限 | 最多 **60 条/次**，仅矩形搜索 |
+| **searchNearby** | 结构化类型（医院、商场、地铁站、市场、酒吧） | 自动去重，一个POI一条 | 最多 **20 条**，不可翻页，仅圆形搜索 |
+| **searchText** | 高密度自由文本（餐厅、cafe、超市、便利店、药店、健身房、公交站） | 可翻页（2-3页），可网格分割突破上限 | 最多 **60 条/次**，仅矩形搜索 |
 
 **选择规则**：
-- 有明确 `includedTypes` 且预期结果 < 20 → `searchNearby`
-- 高密度（餐饮类）→ `searchText` + 2×2 网格分割 → 最高 **240 条**
+- 有明确 `includedTypes` 且预期结果 < 20 且密度低 → `searchNearby`
+- 高密度（餐饮类、便利类、公交）→ `searchText` + 2×2 网格分割
+  - L1 美食类翻 **3 页** → 最高 **240 条**
+  - L2 便利类 + L3 公交站翻 **2 页** → 最高 **160 条**
 - 无 `includedTypes`（如小贩中心）→ `searchText` + `includedType` 过滤
 
 ---
@@ -114,6 +116,7 @@
 | 商场 | proximity | 150m |
 | 市场 | proximity | 150m |
 | 美食类全关键词 | 同名 + proximity | 50m |
+| 超市 / 便利店 / 药店 / 健身房 | 同名 + proximity | 50m |
 
 ### 4.6 后续规划
 
