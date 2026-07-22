@@ -16,7 +16,7 @@ class PropertyPOI(TimestampMixin, Base):
         String(36), primary_key=True, default=lambda: str(uuid.uuid4())
     )
     property_id: Mapped[int] = mapped_column(
-        ForeignKey("rooms.id", ondelete="CASCADE"), unique=True, index=True
+        ForeignKey("properties.id", ondelete="CASCADE"), unique=True, index=True
     )
     content: Mapped[str] = mapped_column(SAText, nullable=False)
     poi_data: Mapped[dict | None] = mapped_column(JSON, nullable=True)

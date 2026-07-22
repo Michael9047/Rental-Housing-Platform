@@ -12,7 +12,7 @@ class RoomTransfer(TimestampMixin, Base):
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     room_id: Mapped[int] = mapped_column(
-        ForeignKey("rooms.id", ondelete="CASCADE"), index=True, nullable=False
+        ForeignKey("properties.id", ondelete="CASCADE"), index=True, nullable=False
     )
     from_status: Mapped[str | None] = mapped_column(String(30), nullable=True)
     to_status: Mapped[str] = mapped_column(String(30), nullable=False)

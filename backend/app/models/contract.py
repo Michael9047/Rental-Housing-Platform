@@ -22,7 +22,7 @@ class Contract(TimestampMixin, Base):
         ForeignKey("users.id", ondelete="CASCADE"), index=True
     )
     property_id: Mapped[int] = mapped_column(
-        ForeignKey("rooms.id", ondelete="CASCADE"), index=True
+        ForeignKey("properties.id", ondelete="CASCADE"), index=True
     )
     template_name: Mapped[str] = mapped_column(String(100), default="standard_lease")
     content: Mapped[str] = mapped_column(SAText, nullable=False)

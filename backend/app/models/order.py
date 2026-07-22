@@ -15,7 +15,7 @@ class Order(TimestampMixin, Base):
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     room_id: Mapped[int | None] = mapped_column(
-        ForeignKey("rooms.id", ondelete="SET NULL"), index=True, nullable=True
+        ForeignKey("properties.id", ondelete="SET NULL"), index=True, nullable=True
     )
     tenant_id: Mapped[int | None] = mapped_column(
         ForeignKey("tenants.id", ondelete="SET NULL"), index=True, nullable=True

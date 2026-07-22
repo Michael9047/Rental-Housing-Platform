@@ -12,7 +12,7 @@ class RoomImage(TimestampMixin, Base):
 
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
     room_id: Mapped[int] = mapped_column(
-        ForeignKey("rooms.id", ondelete="CASCADE"), index=True
+        ForeignKey("properties.id", ondelete="CASCADE"), index=True
     )
     filename: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
     original_name: Mapped[str] = mapped_column(String(255), nullable=False)
