@@ -206,13 +206,27 @@ class RoomService:
         return True
 
     async def restore(self, room_id: int) -> Room | None:
+        # 第一步：找到已删除房间并恢复
         room = await self.session.get(Room, room_id)
         if not room or room.deleted_at is None:
             return None
         room.deleted_at = None
         room.status = RoomStatus.available
         await self.session.commit()
-        return room
+        await self._audit("恢复房间", room.id, {"房号": room.room_number})
+        # 第二步：重新用 eager load 查询，commit 后所有属性已 expire，
+        #         必须重新加载关联以免 _to_read 触发 MissingGreenlet
+        from app.models.unit_type import UnitType
+        stmt = (
+            select(Room)
+            .options(
+                selectinload(Room.images),
+                selectinload(Room.unit_type).selectinload(UnitType.institute),
+            )
+            .where(Room.id == room_id)
+        )
+        result = await self.session.scalars(stmt)
+        return result.unique().first()
 
     async def hard_delete(self, room_id: int) -> bool:
         room = await self.session.get(Room, room_id)

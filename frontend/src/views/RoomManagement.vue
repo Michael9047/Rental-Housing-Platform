@@ -2,23 +2,76 @@
   <div class="page-container">
     <div class="page-header">
       <h2>房间管理</h2>
-      <div style="display:flex;gap:8px">
-        <el-dropdown style="margin-right:8px">
-          <el-button type="warning" size="small" :disabled="!selectedIds.length">
-            批量操作{{ selectedIds.length ? ' ('+selectedIds.length+')' : '' }}
-          </el-button>
-          <template #dropdown>
-            <el-dropdown-menu>
-              <el-dropdown-item @click="doBatch('available')" :disabled="!selectedIds.length">批量上架</el-dropdown-item>
-              <el-dropdown-item @click="doBatch('offline')" :disabled="!selectedIds.length">批量下架</el-dropdown-item>
-              <el-dropdown-item @click="doBatch('delete')" :disabled="!selectedIds.length" style="color:#f56c6c">批量删除</el-dropdown-item>
-            </el-dropdown-menu>
-          </template>
-        </el-dropdown>
-        <el-button type="primary" @click="openAddDialog">+ 新增房间</el-button>
+      <div style="display:flex;gap:8px;align-items:center">
+        <el-radio-group v-model="viewMode" size="small">
+          <el-radio-button value="active">📋 管理中</el-radio-button>
+          <el-radio-button value="trash">🗑️ 回收站</el-radio-button>
+        </el-radio-group>
+        <template v-if="viewMode==='active'">
+          <el-dropdown style="margin-right:8px">
+            <el-button type="warning" size="small" :disabled="!selectedIds.length">
+              批量操作{{ selectedIds.length ? ' ('+selectedIds.length+')' : '' }}
+            </el-button>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item @click="doBatch('available')" :disabled="!selectedIds.length">批量上架</el-dropdown-item>
+                <el-dropdown-item @click="doBatch('offline')" :disabled="!selectedIds.length">批量下架</el-dropdown-item>
+                <el-dropdown-item @click="doBatch('delete')" :disabled="!selectedIds.length" style="color:#f56c6c">批量删除</el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
+          <el-button type="primary" @click="openAddDialog">+ 新增房间</el-button>
+        </template>
       </div>
     </div>
 
+    <!-- 回收站模式 -->
+    <div v-if="viewMode==='trash'" v-loading="trashLoading">
+      <div v-if="!trashRooms.length && !trashLoading" style="text-align:center;padding:40px;color:#909399">🗑️ 回收站为空</div>
+      <div class="room-cards" v-if="trashRooms.length">
+        <div v-for="room in trashRooms" :key="room.id" class="room-card trash-room-card">
+          <div class="rmc-check">🗑️</div>
+          <!-- 房间标识 -->
+          <div class="rmc-id trash-room-id">
+            <div class="rmc-room-number">{{ room.room_number || '-' }}</div>
+            <div class="rmc-meta-line">
+              <span v-if="room.building_block" class="rmc-meta-tag">🏗️ {{ room.building_block }}</span>
+              <span v-if="room.floor != null" class="rmc-meta-tag">🔢 {{ room.floor }}楼</span>
+            </div>
+          </div>
+          <!-- 归属信息：公寓 → 户型 -->
+          <div class="trash-room-belong">
+            <div class="trash-belong-row">
+              <span class="trash-belong-icon">🏢</span>
+              <span class="trash-belong-text">{{ room.institute_name || '未知公寓' }}</span>
+            </div>
+            <div class="trash-belong-row">
+              <span class="trash-belong-icon">📐</span>
+              <span class="trash-belong-text">{{ room.unit_type_name || '未知户型' }}</span>
+            </div>
+          </div>
+          <!-- 状态+删除时间 -->
+          <div class="rmc-status">
+            <el-tag size="small" type="info">已删除</el-tag>
+            <div class="trash-time" v-if="room.deleted_at">{{ fmtTime(room.deleted_at) }}</div>
+          </div>
+          <div class="rmc-actions">
+            <el-button size="small" type="primary" @click="restoreRoom(room.id)">🔄 恢复</el-button>
+            <el-popconfirm title="确定永久删除？不可恢复！" @confirm="hardDeleteRoom(room.id)">
+              <template #reference>
+                <el-button size="small" type="danger" plain>💥 硬删除</el-button>
+              </template>
+            </el-popconfirm>
+          </div>
+        </div>
+      </div>
+      <!-- 分页提示 -->
+      <div v-if="trashTotal > trashRooms.length" style="text-align:center;padding:12px;color:#909399;font-size:13px">
+        仅显示最近 {{ trashRooms.length }} 项，回收站共 {{ trashTotal }} 项
+      </div>
+    </div>
+
+    <template v-if="viewMode==='active'">
     <!-- 全局展开/折叠 -->
     <div style="margin-bottom:12px;display:flex;gap:8px">
       <el-button size="small" @click="expandAll">全部展开</el-button>
@@ -55,40 +108,47 @@
                   <span :class="['arrow', { rotated: expandedUnits.has(ut.id) }]">▼</span>
                 </div>
 
-                <!-- 房间表格 -->
+                <!-- 房间卡片列表 — 无需横向滚动 -->
                 <div v-show="expandedUnits.has(ut.id)" style="margin:6px 0 0 16px">
-                  <el-table :data="sortedRooms(ut.id)" stripe size="small" @selection-change="onSelChange">
-                    <el-table-column type="selection" width="36" />
-                    <el-table-column prop="building_block" label="楼栋" width="80">
-                      <template #default="{ row }">{{ row.building_block || '-' }}</template>
-                    </el-table-column>
-                    <el-table-column prop="room_number" label="房号" width="100">
-                      <template #default="{ row }"><span :style="{color:row.room_number?'#303133':'#c0c4cc'}">{{ row.room_number || '-' }}</span></template>
-                    </el-table-column>
-                    <el-table-column prop="floor" label="楼层" width="70">
-                      <template #default="{ row }">{{ row.floor ?? '-' }}</template>
-                    </el-table-column>
-                    <el-table-column label="专属优惠" width="100">
-                      <template #default="{ row }">{{ row.special_discount || '-' }}</template>
-                    </el-table-column>
-                    <el-table-column label="可入住" width="110">
-                      <template #default="{ row }">{{ row.available_from || '-' }}</template>
-                    </el-table-column>
-                    <el-table-column label="状态" width="80">
-                      <template #default="{ row }">
-                        <el-tag size="small" :type="statusType(row.status)">{{ statusLabel(row.status) }}</el-tag>
-                      </template>
-                    </el-table-column>
-                    <el-table-column label="操作" width="180" fixed="right">
-                      <template #default="{ row }">
-                        <el-button size="small" @click="openEdit(row)">编辑</el-button>
-                        <el-button size="small" :type="row.status==='offline'?'success':'warning'" @click="toggleStatus(row)">
-                          {{ row.status==='offline'?'上架':'下架' }}
+                  <div class="room-cards" v-if="sortedRooms(ut.id).length">
+                    <div v-for="room in sortedRooms(ut.id)" :key="room.id" :class="['room-card', { selected: selectedIds.includes(room.id) }]">
+                      <!-- 选择框 -->
+                      <div class="rmc-check" @click.stop>
+                        <el-checkbox :model-value="selectedIds.includes(room.id)" @change="toggleSelect(room)" />
+                      </div>
+                      <!-- 房间标识 -->
+                      <div class="rmc-id">
+                        <div class="rmc-room-number">{{ room.room_number || '-' }}</div>
+                        <div class="rmc-meta-line">
+                          <span v-if="room.building_block" class="rmc-meta-tag">🏗️ {{ room.building_block }}</span>
+                          <span v-if="room.floor != null" class="rmc-meta-tag">🔢 {{ room.floor }}楼</span>
+                        </div>
+                      </div>
+                      <!-- 信息 -->
+                      <div class="rmc-info">
+                        <div class="rmc-info-row" v-if="room.special_discount">
+                          <span class="rmc-label">优惠</span>
+                          <span class="rmc-value highlight">{{ room.special_discount }}</span>
+                        </div>
+                        <div class="rmc-info-row" v-if="room.available_from">
+                          <span class="rmc-label">可入住</span>
+                          <span class="rmc-value">{{ room.available_from }}</span>
+                        </div>
+                      </div>
+                      <!-- 状态 -->
+                      <div class="rmc-status">
+                        <el-tag size="small" :type="statusType(room.status)">{{ statusLabel(room.status) }}</el-tag>
+                      </div>
+                      <!-- 操作 -->
+                      <div class="rmc-actions">
+                        <el-button size="small" @click="openEdit(room)">编辑</el-button>
+                        <el-button size="small" :type="room.status==='offline'?'success':'warning'" @click="toggleStatus(room)">
+                          {{ room.status==='offline'?'上架':'下架' }}
                         </el-button>
-                        <el-button size="small" type="danger" plain @click="handleDelete(row)">删除</el-button>
-                      </template>
-                    </el-table-column>
-                  </el-table>
+                        <el-button size="small" type="danger" plain @click="handleDelete(room)">删除</el-button>
+                      </div>
+                    </div>
+                  </div>
                   <div v-if="!getRooms(ut.id).length" style="color:#c0c4cc;padding:12px 0">该户型下暂无房间</div>
                 </div>
               </div>
@@ -98,8 +158,9 @@
         </el-card>
       </template>
     </div>
+    </template>
 
-    <el-empty v-if="!loading && !buildings.length" description="暂无公寓数据" />
+    <el-empty v-if="!loading && !buildings.length && viewMode==='active'" description="暂无公寓数据" />
 
     <!-- ═══════ 新增/编辑房间弹窗 ═══════ -->
     <el-dialog v-model="dialogVisible" :title="editingRoom ? '编辑房间' : '新增房间'" width="680px" :close-on-click-modal="false" @closed="onDialogClosed">
@@ -201,7 +262,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import api from '@/services/api'
 import { buildingService, type Building } from '@/services/building'
@@ -219,6 +280,10 @@ const authStore = useAuthStore()
 const buildings = ref<Building[]>([])
 const allUnitTypes = ref<any[]>([])
 const allRooms = ref<any[]>([])
+const trashRooms = ref<any[]>([])
+const trashTotal = ref(0)
+const trashLoading = ref(false)
+const viewMode = ref<'active'|'trash'>('active')
 const loading = ref(false)
 const expandedBuildings = ref(new Set<number>())
 const expandedUnits = ref(new Set<number>())
@@ -287,14 +352,21 @@ function statusType(s: string) { const m: any = { available: 'success', rented: 
 function statusLabel(s: string) { const m: any = { available: '可租', rented: '已租', maintenance: '维护中', offline: '已下线' }; return m[s] || s }
 
 function onSelChange(rows: any[]) { selectedIds.value = rows.map(r => r.id) }
+function toggleSelect(room: any) {
+  const ids = [...selectedIds.value]
+  const idx = ids.indexOf(room.id)
+  if (idx >= 0) ids.splice(idx, 1)
+  else ids.push(room.id)
+  selectedIds.value = ids
+}
 
 async function doBatch(action: string) {
   if (!selectedIds.value.length) { ElMessage.warning('请先选择房间'); return }
   if (action === 'delete') { try { await ElMessageBox.confirm(`确认删除 ${selectedIds.value.length} 个房间？`, '确认', { type: 'warning' }) } catch { return } }
   try {
-    if (action === 'delete') await api.post('/properties/batch/delete', { ids: selectedIds.value })
-    else await api.post('/properties/batch/status', { ids: selectedIds.value, status: action })
-    ElMessage.success('操作成功'); selectedIds.value = []; loadRooms()
+    if (action === 'delete') await api.post('/rooms/batch/delete', { ids: selectedIds.value })
+    else await api.post('/rooms/batch/status', { ids: selectedIds.value, status: action })
+    ElMessage.success('操作成功'); selectedIds.value = []; loadRooms(); loadTrashRooms()
   } catch { /* */ }
 }
 
@@ -304,7 +376,7 @@ async function toggleStatus(row: any) {
 }
 
 async function handleDelete(row: any) {
-  try { await ElMessageBox.confirm('确定删除此房间？', '确认', { type: 'warning' }); await api.delete('/properties/' + row.id); ElMessage.success('已删除'); loadRooms() } catch { /* */ }
+  try { await ElMessageBox.confirm('确定删除此房间？该房间将进入回收站。', '确认', { type: 'warning' }); await api.delete('/rooms/' + row.id); ElMessage.success('已移至回收站'); loadRooms(); loadTrashRooms() } catch { /* */ }
 }
 
 // ═══ 房间弹窗 ═══
@@ -363,7 +435,7 @@ async function saveRoom() {
     try {
       const params: any = { unit_type_id: roomForm.unit_type_id, room_number: roomForm.room_number.trim() }
       if (editingRoom.value) params.exclude_id = editingRoom.value.id
-      const r = await api.get('/properties/check-duplicate', { params })
+      const r = await api.get('/rooms/check-duplicate', { params })
       if (r.data.duplicate) { ElMessage.warning(`房号「${roomForm.room_number.trim()}」已在当前户型下存在，请勿重复录入`); return }
     } catch { /* */ }
   }
@@ -386,7 +458,7 @@ async function saveRoom() {
     if (editingRoom.value) {
       // 不发送version，避免乐观锁冲突
       console.log('PATCH /rooms/' + editingRoom.value.id, JSON.stringify(data))
-      await api.patch('/properties/' + editingRoom.value.id, data)
+      await api.patch('/rooms/' + editingRoom.value.id, data)
     } else {
       await api.post('/rooms', data)
     }
@@ -519,7 +591,7 @@ async function doBatchImport() {
     try {
       const rn = String(r.room_number || '').trim()
       const params = { unit_type_id: roomForm.unit_type_id, room_number: rn }
-      const check = await api.get('/properties/check-duplicate', { params })
+      const check = await api.get('/rooms/check-duplicate', { params })
       if (check.data.duplicate) {
         r._error = (r._error || '') + '；房号「' + rn + '」在当前户型下已存在'
         continue
@@ -586,6 +658,46 @@ async function loadRooms() {
   } catch { /* */ }
   finally { loading.value = false }
 }
+
+watch(viewMode, (v) => { if (v === 'trash') loadTrashRooms() })
+
+async function loadTrashRooms() {
+  trashLoading.value = true
+  try {
+    const r = await api.get('/rooms/recycle-bin', { params: { page_size: 2000 } })
+    trashRooms.value = r.data.items || []
+    trashTotal.value = r.data.total || 0
+  } catch (e: any) {
+    console.error('loadTrashRooms failed:', e?.response?.status, e?.response?.data)
+  } finally { trashLoading.value = false }
+}
+
+function fmtTime(iso: string): string {
+  try { return new Date(iso).toLocaleString('zh-CN', { hour12: false }) } catch { return iso }
+}
+
+async function restoreRoom(id: number) {
+  try {
+    await api.post('/rooms/' + id + '/restore')
+    ElMessage.success('已恢复')
+    loadTrashRooms()
+    loadRooms()
+  } catch (e: any) {
+    const msg = e?.response?.data?.detail || e?.response?.data?.error?.message || e?.message || '恢复失败'
+    ElMessage.error(typeof msg === 'string' ? msg : '恢复失败')
+  }
+}
+
+async function hardDeleteRoom(id: number) {
+  try {
+    await api.delete('/rooms/' + id + '/hard')
+    ElMessage.success('已永久删除')
+    loadTrashRooms()
+    loadRooms()
+  } catch (e: any) {
+    ElMessage.error(e?.response?.data?.detail || '删除失败')
+  }
+}
 </script>
 
 <style scoped>
@@ -610,4 +722,159 @@ h2 { font-size: 22px; color: #303133; margin: 0 }
   cursor: pointer; transition: all 0.2s;
 }
 .drop-zone:hover, .drop-zone.active { border-color: var(--primary, #FF6B35); background: #fff8f2 }
+
+/* ═══════════ 房间卡片 ═══════════ */
+.room-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.room-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  background: #fff;
+  border: 1px solid #ebeef5;
+  border-radius: 10px;
+  padding: 10px 16px;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.room-card:hover {
+  background: #fafbfc;
+  border-color: #d0d5dd;
+}
+
+.room-card.selected {
+  background: #fff9f6;
+  border-color: #FF6B35;
+}
+
+/* 选择框 */
+.rmc-check {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+}
+
+/* 房间标识 */
+.rmc-id {
+  width: 130px;
+  flex-shrink: 0;
+}
+
+.rmc-room-number {
+  font-size: 16px;
+  font-weight: 700;
+  color: #1a1a2e;
+  line-height: 1.3;
+}
+
+.rmc-meta-line {
+  display: flex;
+  gap: 6px;
+  margin-top: 2px;
+}
+
+.rmc-meta-tag {
+  font-size: 12px;
+  color: #909399;
+}
+
+/* 信息区 */
+.rmc-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 20px;
+}
+
+.rmc-info-row {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.rmc-label {
+  font-size: 12px;
+  color: #909399;
+  white-space: nowrap;
+}
+
+.rmc-value {
+  font-size: 14px;
+  color: #606266;
+  font-weight: 500;
+}
+
+.rmc-value.highlight {
+  color: #e6a23c;
+  font-weight: 600;
+}
+
+/* 状态 */
+.rmc-status {
+  flex-shrink: 0;
+  min-width: 60px;
+  display: flex;
+  justify-content: center;
+}
+
+/* 操作按钮 */
+.rmc-actions {
+  flex-shrink: 0;
+  display: flex;
+  gap: 6px;
+}
+
+/* 回收站房间专属归属信息 */
+.trash-room-card {
+  align-items: center;
+}
+.trash-room-id {
+  width: 130px;
+}
+.trash-room-belong {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.trash-belong-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.trash-belong-icon {
+  font-size: 13px;
+  width: 22px;
+  text-align: center;
+  flex-shrink: 0;
+}
+.trash-belong-text {
+  font-size: 14px;
+  color: #606266;
+  font-weight: 500;
+}
+.trash-time {
+  font-size: 11px;
+  color: #c0c4cc;
+  margin-top: 4px;
+  white-space: nowrap;
+}
+
+@media (max-width: 768px) {
+  .room-card {
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 12px;
+  }
+  .rmc-id { width: 100% }
+  .rmc-info { width: 100% }
+  .trash-room-belong { width: 100% }
+  .rmc-actions { width: 100%; justify-content: flex-end }
+}
 </style>
