@@ -28,6 +28,7 @@ class RepairIssueType(str, enum.Enum):
 
 class RepairStatus(str, enum.Enum):
     pending = "pending"              # 待处理
+    pending_escalated = "pending_escalated"  # 待后台派单（房东无维修工时跳过）
     assigned = "assigned"            # 已派单
     in_progress = "in_progress"      # 维修中
     completed = "completed"          # 已完成（待租客确认）

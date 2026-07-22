@@ -17,13 +17,25 @@ class RepairService:
     async def create_repair(
         self, tenant_id: int, repair_in: RepairCreate
     ) -> RepairRequest:
-        """租客创建报修申请"""
+        """租客创建报修申请（自动检测房东是否有维修工）"""
         # 查找房源和房东
         stmt = select(Property).where(Property.id == repair_in.property_id)
         result = await self.session.execute(stmt)
         property_obj = result.scalar_one_or_none()
         if not property_obj:
             raise ValueError("Property not found")
+
+        # 检测房东是否有自己的维修工
+        from app.models.repair import RepairWorker, WorkerScope
+        worker_stmt = select(RepairWorker).where(
+            (RepairWorker.manager_id == property_obj.landlord_id) &
+            (RepairWorker.scope == WorkerScope.apartment)
+        )
+        worker_result = await self.session.execute(worker_stmt)
+        has_workers = worker_result.first() is not None
+
+        # 无维修工 → 跳过房东，进入Admin待派单
+        initial_status = RepairStatus.pending if has_workers else RepairStatus.pending_escalated
 
         repair = RepairRequest(
             property_id=repair_in.property_id,
@@ -33,19 +45,34 @@ class RepairService:
             description=repair_in.description,
             images=repair_in.images,
             scheduled_time=repair_in.scheduled_time,
-            status=RepairStatus.pending,
+            status=initial_status,
         )
         self.session.add(repair)
         await self.session.commit()
 
-        # 通知房东
         notif_svc = NotificationService(self.session)
-        await notif_svc.create_notification(
-            user_id=property_obj.landlord_id,
-            type=NotificationType.repair_created,
-            title="新报修申请",
-            content=f"租客对房源「{property_obj.title}」提交了报修：{repair_in.description[:50]}",
-        )
+
+        if has_workers:
+            # 通知房东
+            await notif_svc.create_notification(
+                user_id=property_obj.landlord_id,
+                type=NotificationType.repair_created,
+                title="新报修申请",
+                content=f"租客对房源「{property_obj.title}」提交了报修：{repair_in.description[:50]}",
+            )
+        else:
+            # 通知所有Admin：有新工单待派单
+            from app.models.user import User, UserRole
+            admin_stmt = select(User).where(User.role == UserRole.admin)
+            admin_result = await self.session.execute(admin_stmt)
+            admins = admin_result.scalars().all()
+            for admin in admins:
+                await notif_svc.create_notification(
+                    user_id=admin.id,
+                    type=NotificationType.repair_created,
+                    title="新报修待派单（房东无维修工）",
+                    content=f"租客对房源「{property_obj.title}」提交了报修，房东无维修工，请分配平台工人：{repair_in.description[:50]}",
+                )
 
         # Reload with relationships
         return await self.get_repair(repair.id)

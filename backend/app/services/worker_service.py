@@ -55,14 +55,11 @@ class WorkerService:
         return await self.get_worker(worker.id)
 
     async def list_workers(self, manager_id: int) -> list[RepairWorker]:
-        """查看某 manager 可用的维修师傅列表（自己的apartment工人 + 所有platform工人）"""
+        """查看某 manager 自己创建的维修师傅列表（仅apartment，不含platform）"""
         stmt = (
             select(RepairWorker)
             .where(
-                or_(
-                    RepairWorker.scope == WorkerScope.platform,
-                    (RepairWorker.manager_id == manager_id) & (RepairWorker.scope == WorkerScope.apartment),
-                )
+                (RepairWorker.manager_id == manager_id) & (RepairWorker.scope == WorkerScope.apartment)
             )
             .options(selectinload(RepairWorker.user))
             .order_by(RepairWorker.created_at.desc())

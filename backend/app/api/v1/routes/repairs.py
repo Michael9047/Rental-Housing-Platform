@@ -247,3 +247,14 @@ async def confirm_repair(
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     return await _repair_to_read(repair)
+
+
+@router.get("/repairs/pending-escalated")
+async def list_pending_escalated(
+    session: AsyncSession = Depends(get_db_session),
+    current_user: User = Depends(require_admin),
+):
+    """Admin查看待派单工单（房东无维修工时跳过的）"""
+    svc = RepairService(session)
+    repairs = await svc.list_repairs(status=RepairStatus.pending_escalated)
+    return [await _repair_to_read(r) for r in repairs]

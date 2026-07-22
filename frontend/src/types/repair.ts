@@ -10,6 +10,7 @@ export type RepairIssueType =
 
 export type RepairStatus =
   | 'pending'
+  | 'pending_escalated'
   | 'assigned'
   | 'in_progress'
   | 'completed'
@@ -93,6 +94,7 @@ export const ISSUE_TYPE_LABELS: Record<RepairIssueType, string> = {
 
 export const REPAIR_STATUS_LABELS: Record<RepairStatus, string> = {
   pending: '待处理',
+  pending_escalated: '待后台派单',
   assigned: '已派单',
   in_progress: '维修中',
   completed: '待确认',
@@ -103,6 +105,7 @@ export const REPAIR_STATUS_LABELS: Record<RepairStatus, string> = {
 
 export const REPAIR_STATUS_TAGS: Record<RepairStatus, string> = {
   pending: 'danger',
+  pending_escalated: 'warning',
   assigned: 'warning',
   in_progress: '',
   completed: 'warning',

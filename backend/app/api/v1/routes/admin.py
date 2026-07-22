@@ -200,3 +200,42 @@ async def list_pending_review_properties(
         }
         for p in properties
     ]
+
+
+@router.get("/landlord-workers-status")
+async def get_landlord_workers_status(
+    session: AsyncSession = Depends(get_db_session),
+    _: User = Depends(require_admin),
+) -> list[dict]:
+    """Admin查看各房东的维修工状态（Yes/No看板）"""
+    from app.models.repair import RepairWorker, WorkerScope, WorkerStatus
+
+    # 获取所有房东
+    landlord_stmt = select(User).where(User.role == UserRole.landlord, User.status == "active")
+    landlord_result = await session.execute(landlord_stmt)
+    landlords = landlord_result.scalars().all()
+
+    result = []
+    for ll in landlords:
+        # 该房东的apt工人
+        workers_stmt = (
+            select(RepairWorker)
+            .where(
+                (RepairWorker.manager_id == ll.id) &
+                (RepairWorker.scope == WorkerScope.apartment)
+            )
+        )
+        worker_result = await session.execute(workers_stmt)
+        workers = worker_result.scalars().all()
+
+        available_count = sum(1 for w in workers if w.status == WorkerStatus.available)
+
+        result.append({
+            "landlord_id": ll.id,
+            "landlord_name": ll.username,
+            "has_workers": len(workers) > 0,
+            "worker_count": len(workers),
+            "available_count": available_count,
+        })
+
+    return result
