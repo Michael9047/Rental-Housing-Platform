@@ -51,7 +51,9 @@ async def test_notifications_created_on_booking(
         headers={"Authorization": f"Bearer {landlord_token}"},
     )
     assert notif_resp.status_code == 200
-    notifications = notif_resp.json()
+    payload = notif_resp.json()
+    notifications = payload["items"]
+    assert payload["total"] >= 1
     assert len(notifications) >= 1
     assert notifications[0]["type"] == "booking_created"
 
@@ -111,7 +113,7 @@ async def test_mark_read_and_unread_count(
         "/api/v1/notifications",
         headers={"Authorization": f"Bearer {landlord_token}"},
     )
-    first_id = notifs.json()[0]["id"]
+    first_id = notifs.json()["items"][0]["id"]
 
     read_resp = await client.patch(
         f"/api/v1/notifications/{first_id}/read",

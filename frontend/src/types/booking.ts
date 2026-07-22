@@ -1,4 +1,4 @@
-export type BookingStatus = 'pending' | 'approved' | 'rejected' | 'cancelled' | 'completed'
+export type BookingStatus = 'pending' | 'approved' | 'rejected' | 'cancelled' | 'completed' | 'contract_ready' | 'contract_signed' | 'payment_pending'
 
 // Matches backend: app/schemas/booking.py BookingRead
 export interface Booking {
@@ -31,7 +31,10 @@ export interface BookingCreate {
   application_data?: any
 }
 
-export type NotificationType = 'booking_created' | 'booking_approved' | 'booking_rejected' | 'booking_cancelled'
+export type NotificationType =
+  | 'booking_created' | 'booking_approved' | 'booking_rejected' | 'booking_cancelled' | 'booking_completed'
+  | 'payment_created' | 'payment_received' | 'payment_failed' | 'payment_expired'
+  | 'contract_generated' | 'contract_signed' | 'system'
 
 export interface Notification {
   id: number
@@ -39,6 +42,15 @@ export interface Notification {
   type: NotificationType
   title: string
   content: string | null
+  body?: string | null
+  entity_type?: string | null
+  entity_id?: string | null
+  order_id?: string | null
+  agreement_id?: string | null
+  property_id?: number | null
+  can_pay?: boolean
+  payment_status?: string | null
+  order_status?: string | null
   is_read: boolean
   created_at: string
   updated_at: string

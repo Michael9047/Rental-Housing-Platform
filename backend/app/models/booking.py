@@ -1,7 +1,8 @@
 import enum
 import json
+from datetime import datetime
 
-from sqlalchemy import Enum, ForeignKey, Integer, String, Text as SAText
+from sqlalchemy import DateTime, Enum, ForeignKey, Integer, String, Text as SAText
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -15,6 +16,16 @@ class BookingStatus(str, enum.Enum):
     rejected = "rejected"
     cancelled = "cancelled"
     completed = "completed"
+    contract_ready = "contract_ready"
+    contract_signed = "contract_signed"
+    payment_pending = "payment_pending"
+    payment_processing = "payment_processing"
+    paid = "paid"
+    payment_failed = "payment_failed"
+    payment_expired = "payment_expired"
+    refund_pending = "refund_pending"
+    refunded = "refunded"
+    payment_review = "payment_review"
 
 
 class Booking(TimestampMixin, Base):
@@ -25,7 +36,7 @@ class Booking(TimestampMixin, Base):
         ForeignKey("users.id", ondelete="CASCADE"), index=True
     )
     property_id: Mapped[int] = mapped_column(
-        ForeignKey("rooms.id", ondelete="CASCADE"), index=True
+        ForeignKey("properties.id", ondelete="CASCADE"), index=True
     )
     landlord_id: Mapped[int] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE"), index=True
@@ -42,10 +53,12 @@ class Booking(TimestampMixin, Base):
     service_fee: Mapped[int | None] = mapped_column(Integer, nullable=True)
     deposit_status: Mapped[str] = mapped_column(String(20), default="unpaid")
     payment_transaction_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    payment_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    inventory_reserved: Mapped[bool] = mapped_column(default=False, nullable=False)
     lease_months: Mapped[int | None] = mapped_column(Integer, nullable=True)
     total_rent: Mapped[int | None] = mapped_column(Integer, nullable=True)
     application_data: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
 
     tenant: Mapped["User"] = relationship(foreign_keys=[tenant_id])
-    property: Mapped["Room"] = relationship()
+    property: Mapped["Property"] = relationship()
     landlord: Mapped["User"] = relationship(foreign_keys=[landlord_id])

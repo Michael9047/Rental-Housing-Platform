@@ -195,7 +195,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, onMounted } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import {
   Search, User, UserFilled, ArrowDown, ArrowLeft, Setting, SwitchButton,
@@ -356,8 +356,11 @@ async function fetchUnreadCount() {
 
 onMounted(() => {
   fetchUnreadCount()
+  window.addEventListener('notifications:changed', fetchUnreadCount)
   if (authStore.isLoggedIn) cartStore.fetch()
 })
+
+onUnmounted(() => window.removeEventListener('notifications:changed', fetchUnreadCount))
 
 // 每次路由变化刷新未读数（从通知页回来时数字更新）
 watch(() => route.path, () => {
