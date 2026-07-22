@@ -180,15 +180,13 @@ async function loadRecommendations() {
         sectionTitle.value = `💰 根据你的预算 — ¥${prefs.price_min}-${prefs.price_max}`
       }
     } else {
-      // 默认推荐：按评分排序
-      params.sort_by = 'rating'
-      params.sort_order = 'desc'
+      sectionTitle.value = '🏠 热门房源推荐'
     }
 
     const r = await api.get('/properties', { params })
-    properties.value = (r.data.items || []).map((p: any) => ({
+    const items = r?.data?.items || r?.data || []
+    properties.value = (Array.isArray(items) ? items : []).map((p: any) => ({
       ...p,
-      // 兼容字段
       title: p.title || p.name || p.address,
       price_monthly: p.price_monthly || p.base_rent,
     }))
@@ -204,7 +202,7 @@ onMounted(() => loadRecommendations())
 </script>
 
 <style scoped>
-.home-page { max-width: 1200px; margin: 0 auto; padding: 0 24px 60px }
+.home-page { width: 100%; max-width: 1200px; margin: 0 auto; padding: 0 24px 60px }
 
 /* ═══════════ Hero ═══════════ */
 .hero {
