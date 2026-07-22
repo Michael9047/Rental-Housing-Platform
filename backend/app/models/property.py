@@ -29,7 +29,7 @@ VALID_ROOM_STATUS_TRANSITIONS: dict[RoomStatus, set[RoomStatus]] = {
 
 class Room(TimestampMixin, Base):
     """房间 — 最底层出租单元，绑定户型"""
-    __tablename__ = "rooms"
+    __tablename__ = "properties"
 
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
     landlord_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
