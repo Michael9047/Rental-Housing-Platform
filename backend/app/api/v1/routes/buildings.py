@@ -41,6 +41,39 @@ def _validate_phone(phone: str | None) -> str | None:
     )
 
 
+@router.get("/public")
+async def list_public_buildings(
+    session: AsyncSession = Depends(get_db_session),
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=50, ge=1, le=200),
+) -> list[dict]:
+    """公开端点——首页展示公寓列表，无需登录"""
+    stmt = (select(Institute)
+            .options(selectinload(Institute.images))
+            .options(selectinload(Institute.unit_types))
+            .where(Institute.status == InstituteStatus.active)
+            .order_by(Institute.id.desc())
+            .offset(skip).limit(limit))
+    result = await session.scalars(stmt)
+    buildings = []
+    for b in result:
+        buildings.append({
+            "id": b.id, "name": b.name, "name_cn": b.name_cn, "address": b.address,
+            "logo_url": b.logo_url, "description": b.description,
+            "latitude": float(b.latitude) if b.latitude else None,
+            "longitude": float(b.longitude) if b.longitude else None,
+            "amenities": b.amenities,
+            "female_only": bool(b.female_only) if b.female_only is not None else False,
+            "couples_allowed": bool(b.couples_allowed) if b.couples_allowed is not None else False,
+            "unit_type_count": len(b.unit_types) if b.unit_types else 0,
+            "primary_image": next(({
+                "id": img.id, "filename": img.filename,
+                "is_primary": img.is_primary,
+            } for img in sorted(b.images or [], key=lambda x: x.sort_order)), None),
+        })
+    return buildings
+
+
 @router.get("")
 async def list_buildings(
     session: AsyncSession = Depends(get_db_session),

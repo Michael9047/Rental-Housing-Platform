@@ -40,12 +40,17 @@
       </div>
 
       <div class="card-grid" v-else-if="properties.length">
-        <PropertyCard
-          v-for="p in properties"
-          :key="p.id"
-          :property="p"
-          :show-quick-book="authStore.isLoggedIn"
-        />
+        <div
+          v-for="b in properties"
+          :key="b.id"
+          class="card-wrapper"
+          @click="goBuilding(b)"
+        >
+          <PropertyCard
+            :property="cardProp(b)"
+            :show-quick-book="false"
+          />
+        </div>
       </div>
 
       <el-empty v-else description="暂无推荐房源" :image-size="80">
@@ -92,21 +97,41 @@ async function handleAiSearch() {
 async function loadRecommendations() {
   loading.value = true
   try {
-    const r = await api.get('/properties', { params: { page_size: 12 } })
-    const data = r.data
-    // API 返回 { items: [...], total: N } 或直接是数组
-    const items = Array.isArray(data) ? data : (data?.items || [])
-    properties.value = items.map((p: any) => ({
-      ...p,
-      title: p.title || p.name || p.address || '未命名',
+    const r = await api.get('/buildings/public', { params: { limit: 12 } })
+    // API 直接返回 list[dict]
+    const items = Array.isArray(r.data) ? r.data : []
+    properties.value = items.map((b: any) => ({
+      ...b,
+      title: b.name_cn || b.name,
+      price_monthly: null, // 公寓层面没有单个价格
+      primary_image: b.primary_image,
     }))
-    console.log('[Home] loaded', properties.value.length, 'properties')
+    console.log('[Home] loaded', properties.value.length, 'buildings')
   } catch (e) {
     console.error('[Home] load failed', e)
     properties.value = []
   } finally {
     loading.value = false
   }
+}
+
+function cardProp(b: any) {
+  return {
+    id: b.id,
+    title: b.name_cn || b.name,
+    address: b.address,
+    price_monthly: null,
+    images: b.primary_image ? [{ filename: b.primary_image.filename, is_primary: true }] : [],
+    amenities: b.amenities || [],
+    female_only: b.female_only,
+    couples_allowed: b.couples_allowed,
+    unit_type_count: b.unit_type_count,
+  }
+}
+
+function goBuilding(b: any) {
+  router.push({ path: '/search', query: { keyword: b.name_cn || b.name } })
+}
 }
 
 onMounted(() => loadRecommendations())
@@ -161,6 +186,7 @@ onMounted(() => loadRecommendations())
 
 /* ═══════════ 卡片网格 ═══════════ */
 .card-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px }
+.card-wrapper { cursor: pointer }
 
 @media (max-width: 1024px) { .card-grid { grid-template-columns: repeat(2, 1fr) } }
 @media (max-width: 768px) {
