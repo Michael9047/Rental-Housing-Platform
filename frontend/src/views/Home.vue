@@ -132,7 +132,6 @@ function cardProp(b: any) {
 function goBuilding(b: any) {
   router.push({ path: '/search', query: { keyword: b.name_cn || b.name } })
 }
-}
 
 onMounted(() => loadRecommendations())
 </script>
