@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 
-from app.api.v1.routes import admin, agent, ai_search, auth, bookings, buildings, chat, commute, contracts, dashboard, favorites, geocoding, health, images, imports, map_routes, ml, notifications, payments, pms, pois, properties, repair_workers, repairs, room_types, search_suggestions, upload, users, wechat
+from app.api.v1.routes import admin, agent, ai_search, auth, bookings, buildings, chat, commute, contracts, crystalroof, dashboard, favorites, geocoding, health, images, imports, map_routes, ml, notifications, payments, pms, pois, properties, repair_workers, repairs, room_types, search_suggestions, upload, users, wechat
 
 api_router = APIRouter()
 api_router.include_router(health.router, tags=["health"])
@@ -32,3 +32,4 @@ api_router.include_router(repair_workers.router, tags=["repair-workers"])
 api_router.include_router(upload.router, tags=["upload"])
 api_router.include_router(pms.router, prefix="/pms", tags=["pms"])
 api_router.include_router(commute.router, prefix="/commute", tags=["commute"])
+api_router.include_router(crystalroof.router, prefix="/crystalroof", tags=["crystalroof"])

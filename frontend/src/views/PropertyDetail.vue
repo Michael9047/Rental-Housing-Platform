@@ -88,33 +88,64 @@
 
       <!-- Key Specs Grid -->
       <el-card shadow="never" class="info-card">
-        <el-row :gutter="16">
-          <el-col :span="6">
+        <el-row :gutter="16" :class="{ 'spec-row-uk': showCrystalRoof }">
+          <el-col :span="showCrystalRoof ? 4 : 6">
             <div class="spec-item">
               <span class="spec-icon">📐</span>
               <span class="spec-label">户型</span>
               <span class="spec-value">{{ roomTypeSummary }}</span>
             </div>
           </el-col>
-          <el-col :span="6">
+          <el-col :span="showCrystalRoof ? 4 : 6">
             <div class="spec-item">
               <span class="spec-icon">📏</span>
               <span class="spec-label">面积</span>
               <span class="spec-value">{{ property.area_sqm ? property.area_sqm + '㎡' : '暂无' }}</span>
             </div>
           </el-col>
-          <el-col :span="6">
+          <el-col :span="showCrystalRoof ? 4 : 6">
             <div class="spec-item">
               <span class="spec-icon">🏢</span>
               <span class="spec-label">类型</span>
               <span class="spec-value">{{ typeLabel }}</span>
             </div>
           </el-col>
-          <el-col :span="6">
+          <el-col :span="showCrystalRoof ? 4 : 6">
             <div class="spec-item">
               <span class="spec-icon">✅</span>
               <span class="spec-label">状态</span>
               <span class="spec-value">{{ statusLabel }}</span>
+            </div>
+          </el-col>
+          <el-col v-if="showCrystalRoof" :span="4">
+            <div
+              class="spec-item spec-item-clickable"
+              :class="{ loading: crystalRoofLoading }"
+              @click="openCrystalRoofDialog"
+            >
+              <span class="spec-icon">⭐</span>
+              <span class="spec-label">
+                CrystalRoof
+                <el-tooltip
+                  content="基于 crystalroof.co.uk 的英国地址评分"
+                  placement="top"
+                >
+                  <span class="spec-info-icon">ⓘ</span>
+                </el-tooltip>
+              </span>
+              <span v-if="crystalRoofLoading" class="spec-value spec-loading">
+                加载中…
+              </span>
+              <span
+                v-else-if="crystalRoofScore?.overall_score != null"
+                class="spec-value crystalroof-score"
+                :class="crystalRoofScoreClass"
+              >
+                {{ crystalRoofScore.overall_score }}/100
+              </span>
+              <span v-else class="spec-value crystalroof-unknown">
+                查看报告
+              </span>
             </div>
           </el-col>
         </el-row>
@@ -405,6 +436,100 @@
       :property-price="property?.price_monthly"
       @confirm="handleBookingConfirm"
     />
+
+    <!-- CrystalRoof 评分详情弹窗 -->
+    <el-dialog
+      v-model="showCrystalRoofDialog"
+      title="CrystalRoof 评分详情"
+      width="640px"
+      :close-on-click-modal="false"
+    >
+      <div v-if="crystalRoofScore" class="crystalroof-dialog">
+        <div class="crystalroof-header">
+          <div class="crystalroof-score-big" :class="crystalRoofScoreClass">
+            <span class="score-num">{{ crystalRoofScore.overall_score ?? '—' }}</span>
+            <span class="score-suffix">/100</span>
+          </div>
+          <div class="crystalroof-meta">
+            <div class="meta-row">
+              <span class="meta-label">📍 地址</span>
+              <span class="meta-value">{{ crystalRoofScore.address }}</span>
+            </div>
+            <div v-if="crystalRoofScore.postcode" class="meta-row">
+              <span class="meta-label">📮 邮编</span>
+              <span class="meta-value">{{ crystalRoofScore.postcode }}</span>
+            </div>
+            <div class="meta-row">
+              <span class="meta-label">🔗 数据源</span>
+              <span class="meta-value">{{ crystalRoofScore.source }}</span>
+            </div>
+            <div class="meta-row">
+              <span class="meta-label">📊 抓取状态</span>
+              <span class="meta-value">
+                <el-tag v-if="crystalRoofScore.fetched" type="success" size="small">
+                  成功解析
+                </el-tag>
+                <el-tag v-else type="warning" size="small">
+                  仅提供链接
+                </el-tag>
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <el-divider />
+
+        <div v-if="crystalRoofScore.subscores && Object.keys(crystalRoofScore.subscores).length > 0" class="crystalroof-subscores">
+          <h4>子项评分</h4>
+          <div class="subscore-grid">
+            <div
+              v-for="(value, key) in crystalRoofScore.subscores"
+              :key="key"
+              class="subscore-item"
+            >
+              <div class="subscore-label">{{ subscoreLabel(key) }}</div>
+              <el-progress
+                :percentage="value"
+                :color="subscoreColor(value)"
+                :stroke-width="10"
+              />
+              <div class="subscore-value">{{ value }}/100</div>
+            </div>
+          </div>
+        </div>
+
+        <el-alert
+          v-else-if="!crystalRoofScore.fetched"
+          type="info"
+          :closable="false"
+          show-icon
+          class="crystalroof-tip"
+        >
+          <template #title>
+            未能在服务器端自动解析该地址的详细评分（受 Cloudflare 反爬保护限制）。
+          </template>
+          <p>
+            点击下方按钮直接跳转到 CrystalRoof 官网，查看该地址的完整评分报告
+            （包括犯罪率、学校、交通、生活设施等多维度数据）。
+          </p>
+        </el-alert>
+
+        <div class="crystalroof-actions">
+          <el-link
+            type="primary"
+            :href="crystalRoofRedirectUrl"
+            target="_blank"
+            class="crystalroof-link-btn"
+          >
+            前往 CrystalRoof 查看完整报告 ↗
+          </el-link>
+          <el-button size="large" @click="showCrystalRoofDialog = false">
+            关闭
+          </el-button>
+        </div>
+      </div>
+      <el-empty v-else description="暂无评分数据" />
+    </el-dialog>
   </div>
 </template>
 
@@ -419,6 +544,8 @@ import { useCartStore } from '@/stores/cart'
 import api from '@/services/api'
 import { propertyService, type PropertyPOI } from '@/services/property'
 import { commuteService } from '@/services/commute'
+import { favoriteService } from '@/services/favorite'
+import { crystalRoofService, type CrystalRoofScore } from '@/services/crystalroof'
 import { storeToRefs } from 'pinia'
 import PropertyCard from '@/components/PropertyCard.vue'
 import type { CommuteInfo } from '@/components/PropertyCard.vue'
@@ -571,6 +698,106 @@ const poiFailed = ref(false)
 const commuteInfo = ref<CommuteInfo | null>(null)
 const commuteLoading = ref(false)
 
+// CrystalRoof 评分
+const crystalRoofScore = ref<CrystalRoofScore | null>(null)
+const crystalRoofLoading = ref(false)
+const showCrystalRoofDialog = ref(false)
+
+// UK 邮编正则
+const ukPostcodeRegex = /\b([A-Z]{1,2}\d{1,2}[A-Z]?\s*\d[A-Z]{2})\b/i
+
+function extractUKPostcode(text: string): string | null {
+  const match = ukPostcodeRegex.exec(text)
+  return match ? match[1].toUpperCase() : null
+}
+
+// 判断是否显示 CrystalRoof 徽章：仅含邮编的房源
+const showCrystalRoof = computed(() => {
+  if (!property.value) return false
+  const country = (property.value.country || '').toUpperCase()
+  const address = property.value.address || ''
+  const district = property.value.district || ''
+  const combined = `${address} ${district}`
+
+  if (country === 'GB' || country === 'UK') {
+    return extractUKPostcode(combined) !== null
+  }
+
+  if (extractUKPostcode(combined) !== null) {
+    const ukKeywords = [
+      'london', 'uk', 'united kingdom', 'england', 'scotland', 'wales',
+      'britain', 'manchester', 'birmingham', 'edinburgh', 'liverpool',
+      'leeds', 'sheffield', 'newcastle', 'bristol', 'cardiff', 'glasgow',
+      '伦敦', '英国', '英格兰', '苏格兰', '威尔士', '曼彻斯特', '伯明翰',
+      '爱丁堡', '利物浦', '利兹', '谢菲尔德', '布里斯托尔', '加的夫', '格拉斯哥',
+    ]
+    const lower = combined.toLowerCase()
+    return ukKeywords.some((k) => lower.includes(k))
+  }
+
+  return false
+})
+
+// CrystalRoof 跳转 URL（指向中间页面）
+const crystalRoofRedirectUrl = computed(() => {
+  if (!crystalRoofScore.value) return '#';
+  const postcode = crystalRoofScore.value.postcode || '';
+  const params = new URLSearchParams();
+  if (postcode) params.set('postcode', postcode);
+  return `/crystalroof-redirect.html?${params.toString()}`;
+})
+
+// 评分等级样式（颜色编码）
+const crystalRoofScoreClass = computed(() => {
+  const score = crystalRoofScore.value?.overall_score
+  if (score == null) return 'score-unknown'
+  if (score >= 80) return 'score-excellent'
+  if (score >= 60) return 'score-good'
+  if (score >= 40) return 'score-medium'
+  return 'score-low'
+})
+
+function subscoreLabel(key: string): string {
+  const labels: Record<string, string> = {
+    crime: '治安',
+    schools: '学校',
+    transport: '交通',
+    restaurants: '餐饮',
+    shopping: '购物',
+  }
+  return labels[key] || key
+}
+
+function subscoreColor(value: number): string {
+  if (value >= 80) return '#67c23a'
+  if (value >= 60) return '#409eff'
+  if (value >= 40) return '#e6a23c'
+  return '#f56c6c'
+}
+
+function openCrystalRoofDialog() {
+  showCrystalRoofDialog.value = true
+}
+
+async function loadCrystalRoof() {
+  if (!property.value || !showCrystalRoof.value) {
+    crystalRoofScore.value = null
+    return
+  }
+  crystalRoofLoading.value = true
+  try {
+    const data = await crystalRoofService.getScore(
+      property.value.address,
+      property.value.country,
+    )
+    crystalRoofScore.value = data
+  } catch (err) {
+    crystalRoofScore.value = null
+  } finally {
+    crystalRoofLoading.value = false
+  }
+}
+
 // Similar properties
 const similarProperties = ref<Property[]>([])
 
@@ -706,6 +933,7 @@ async function loadProperty(id: number) {
   loadingProperty.value = true
   try {
     await propertyStore.fetchById(id)
+    crystalRoofScore.value = null
     if (property.value) {
       saveRecentId(property.value.id)
       loadPOI(property.value.id)
@@ -713,6 +941,8 @@ async function loadProperty(id: number) {
       loadRoomTypes(property.value.id)
       loadRecentlyViewed()
       fetchCommute()
+      loadCrystalRoof()
+      await checkFavoriteStatus()
     }
   } catch { /* handled */ }
   finally { loadingProperty.value = false }
@@ -1559,6 +1789,174 @@ onUnmounted(() => stopWatch())
   align-items: center;
   z-index: 50;
   box-shadow: 0 -2px 12px rgba(0,0,0,0.04);
+}
+
+/* ── CrystalRoof ───────────────────── */
+
+.spec-item-clickable {
+  cursor: pointer;
+  border-radius: 8px;
+  transition: all 0.2s;
+  position: relative;
+}
+
+.spec-item-clickable:hover {
+  background: linear-gradient(180deg, #f0f5ff 0%, #fff 100%);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(64, 158, 255, 0.12);
+}
+
+.spec-item-clickable.loading {
+  cursor: wait;
+}
+
+.spec-info-icon {
+  font-size: 10px;
+  color: var(--text-muted);
+  cursor: help;
+  margin-left: 2px;
+  vertical-align: super;
+}
+
+.spec-loading {
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: normal;
+}
+
+.crystalroof-score {
+  font-size: 16px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.crystalroof-unknown {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--primary);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.crystalroof-score.score-excellent { color: #67c23a; }
+.crystalroof-score.score-good      { color: #409eff; }
+.crystalroof-score.score-medium    { color: #e6a23c; }
+.crystalroof-score.score-low       { color: #f56c6c; }
+.crystalroof-score.score-unknown   { color: var(--text-muted); font-weight: 500; }
+
+.crystalroof-dialog {
+  padding: 4px 0;
+}
+
+.crystalroof-header {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+}
+
+.crystalroof-score-big {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  padding: 18px 24px;
+  background: var(--primary-light);
+  border-radius: 12px;
+  border-left: 4px solid var(--primary);
+}
+
+.crystalroof-score-big .score-num {
+  font-size: 48px;
+  font-weight: 800;
+  line-height: 1;
+  color: var(--primary);
+}
+
+.crystalroof-score-big.score-excellent .score-num { color: #67c23a; }
+.crystalroof-score-big.score-good      .score-num { color: #409eff; }
+.crystalroof-score-big.score-medium    .score-num { color: #e6a23c; }
+.crystalroof-score-big.score-low       .score-num { color: #f56c6c; }
+.crystalroof-score-big.score-unknown   .score-num { color: var(--text-muted); }
+
+.crystalroof-score-big .score-suffix {
+  font-size: 16px;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.crystalroof-meta {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.meta-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.meta-label {
+  color: var(--text-muted);
+  min-width: 80px;
+  font-weight: 500;
+}
+
+.meta-value {
+  color: var(--text-primary);
+  word-break: break-word;
+}
+
+.crystalroof-subscores h4 {
+  font-size: 15px;
+  font-weight: 600;
+  margin: 0 0 12px;
+  color: var(--text-primary);
+}
+
+.subscore-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 14px;
+}
+
+.subscore-item {
+  background: #fafbfc;
+  border: 1px solid var(--border-light);
+  border-radius: 8px;
+  padding: 12px 14px;
+}
+
+.subscore-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  margin-bottom: 6px;
+}
+
+.subscore-value {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 4px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.crystalroof-tip {
+  margin-bottom: 16px;
+}
+
+.crystalroof-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 16px;
+}
+
+.crystalroof-link-btn {
+  font-size: 14px;
+  font-weight: 500;
 }
 </style>
 

@@ -137,7 +137,7 @@
                   查看详情
                 </el-button>
                 <el-button size="small" type="primary" @click.stop="openBookingDialog(p)">
-                  一键预订
+                  预约看房
                 </el-button>
               </div>
             </div>
