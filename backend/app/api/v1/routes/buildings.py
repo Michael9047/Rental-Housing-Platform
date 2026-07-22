@@ -106,6 +106,9 @@ async def create_building(
         )
 
     # ── 3. 创建入库 ──
+    from decimal import Decimal
+    lat = body.get("latitude")
+    lng = body.get("longitude")
     building = Institute(
         name=name,
         address=address,
@@ -115,6 +118,8 @@ async def create_building(
         amenities=amenities,
         female_only=bool(body.get("female_only", False)),
         couples_allowed=bool(body.get("couples_allowed", False)),
+        latitude=Decimal(str(lat)) if lat is not None and str(lat).strip() else None,
+        longitude=Decimal(str(lng)) if lng is not None and str(lng).strip() else None,
         status=InstituteStatus.active,
         created_by=current_user.id,
     )
@@ -131,6 +136,18 @@ async def create_building(
         await session.rollback()
         logger.exception("Failed to create building")
         raise HTTPException(status_code=500, detail="创建公寓失败，服务器内部错误，请稍后重试")
+
+    # ── 图片写入 ──
+    image_urls = body.get("image_urls") or []
+    logger.info(f"[CREATE] image_urls={image_urls}, lat={building.latitude}, lng={building.longitude}")
+    if image_urls:
+        from app.models.building_image import BuildingImage
+        for i, url in enumerate(image_urls):
+            fn = url.rsplit("/", 1)[-1] if "/" in url else url
+            img = BuildingImage(institute_id=building.id, filename=fn, original_name=fn, mime_type="image/jpeg", file_size=0, sort_order=i, is_primary=(i == 0))
+            session.add(img)
+        await session.commit()
+        logger.info(f"[CREATE] saved {len(image_urls)} images for building {building.id}")
 
     # 审计日志
     try:
