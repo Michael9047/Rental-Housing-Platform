@@ -631,8 +631,18 @@ class SearchAgent(BaseAgent):
                 result = await llm.complete_json(RECOMMEND_SYSTEM_PROMPT, user_prompt, max_tokens=1500)
                 reply = str(result.get("reply") or f"为您找到 {len(unit_results)} 种户型。") + source_info
             except Exception:
-                logger.exception("LLM 推荐生成失败")
-                reply = f"为您找到 {len(unit_results)} 种户型。{AI_UNAVAILABLE_HINT}{source_info}"
+                logger.exception("LLM 推荐生成失败，降级为规则摘要")
+                # 规则降级：列出 top 3 结果的关键信息
+                lines = [f"为您找到 {len(unit_results)} 种户型（AI 暂不可用，以下是筛选结果摘要）：", ""]
+                for i, ut in enumerate(unit_results[:5], 1):
+                    t = ut["unit_type"]; inst = ut["institute"]
+                    sym = get_symbol(getattr(t, 'currency', None))
+                    commute = _lookup_commute(school, inst.district or "")
+                    commute_str = f" | 到{school}: 步行{commute[0]}分钟/公交{commute[1]}分钟" if commute else ""
+                    lines.append(f"{i}. {t.name} — {sym}{float(t.base_rent):.0f}/月 | {t.bedrooms}室{t.bathrooms}卫 | {inst.district}{commute_str}")
+                if len(unit_results) > 5:
+                    lines.append(f"...还有 {len(unit_results)-5} 种")
+                reply = "\n".join(lines) + source_info
         elif not llm.is_available:
             reply = f"为您找到 {len(unit_results)} 种户型。{AI_UNAVAILABLE_HINT}{source_info}"
         else:
