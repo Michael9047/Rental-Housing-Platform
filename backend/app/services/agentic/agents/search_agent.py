@@ -474,6 +474,15 @@ class SearchAgent(BaseAgent):
             except Exception:
                 logger.exception("大学查找失败: %s", institution_name)
 
+        # 大学匹配成功后，district 改为大学所在城市
+        # 避免 LLM 把 "NUS" 之类当作 district → ILIKE 匹配注定 0 结果
+        # 精确位置由 bounding box 保证，district 只负责城市级筛选
+        if uni_info:
+            uni_city = (uni_info.get("city") or "").strip()
+            uni_city_cn = _EN_TO_CN_CITY.get(uni_city.lower(), uni_city)
+            if uni_city_cn:
+                district = uni_city_cn
+
         # 查询文本
         query_parts = [message]
         if filters.get("country"):
@@ -572,7 +581,7 @@ class SearchAgent(BaseAgent):
                 for i, ut in enumerate(unit_results[:top_n], 1):
                     inst = ut["institute"]
                     t = ut["unit_type"]
-                    sym = get_symbol(getattr(t, 'currency', None)) or _CURRENCY_SYMBOLS.get(target_currency, "£")
+                    sym = get_symbol(getattr(t, 'currency', None))
                     district = inst.district or ""
 
                     # 通勤数据：查表 → room_commutes → '暂无'

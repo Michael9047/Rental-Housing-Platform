@@ -36,6 +36,33 @@ router = APIRouter()
 
 
 def _to_search_result(prop) -> PropertySearchResult:
+    """兼容 UnitType 和 Property/Room 两种模型。"""
+    # UnitType 对象 → 转为 PropertySearchResult 兼容 dict
+    if hasattr(prop, 'institute_id') and not hasattr(prop, 'landlord_id'):
+        # 这是 UnitType — 映射到 PropertySearchResult 的字段
+        inst = getattr(prop, 'institute', None)
+        return PropertySearchResult(
+            id=prop.id,
+            landlord_id=0,  # UnitType 没有 landlord，填 0
+            title=prop.name,
+            description=getattr(prop, 'description', None),
+            address=getattr(inst, 'address', None) if inst else None,
+            district=getattr(inst, 'district', None) if inst else None,
+            price_monthly=prop.base_rent,
+            area_sqm=prop.area_sqm,
+            bedrooms=prop.bedrooms,
+            bathrooms=prop.bathrooms,
+            property_type=None,
+            status=getattr(prop, 'status', 'available'),
+            currency=getattr(prop, 'currency', None),
+            latitude=getattr(inst, 'latitude', None) if inst else None,
+            longitude=getattr(inst, 'longitude', None) if inst else None,
+            created_at=getattr(prop, 'created_at', None),
+            updated_at=getattr(prop, 'updated_at', None),
+            images=[],
+            institute_id=prop.institute_id,
+            institute_name=getattr(inst, 'name', None) if inst else None,
+        )
     return PropertySearchResult.model_validate(prop)
 
 
