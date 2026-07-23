@@ -8,7 +8,7 @@ from datetime import date, datetime, timezone
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import func, select, text
+from sqlalchemy import cast, func, select, String, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.property import VALID_STATUS_TRANSITIONS, DepositType, Property, PropertyStatus, PropertyType
@@ -313,8 +313,8 @@ class PropertyService:
             .join(Institute, UnitType.institute_id == Institute.id)
             .outerjoin(Room, Room.unit_type_id == UnitType.id)
             .where(
-                UnitType.status == UnitTypeStatus.available.value,
-                Institute.status == InstituteStatus.active.value,
+                cast(UnitType.status, String) == UnitTypeStatus.available.value,
+                cast(Institute.status, String) == InstituteStatus.active.value,
                 UnitType.deleted_at.is_(None),
             )
         )
@@ -507,10 +507,12 @@ class PropertyService:
             )
         if room_type:
             mapped_type = PropertyService._ROOM_TYPE_MAP.get(room_type, room_type)
-            from app.models.room_type import RoomType
+            from app.models.room_type import RoomType, RoomTypeEnum
+            from sqlalchemy import cast, String
             # 使用子查询避免 JOIN 产生重复行
+            # PostgreSQL enum 不能直接和 varchar 比较，需要 cast
             room_sub = select(RoomType.property_id).where(
-                RoomType.room_type == mapped_type
+                cast(RoomType.room_type, String) == mapped_type
             ).subquery()
             stmt = stmt.where(Property.id.in_(select(room_sub)))
         if min_lease_months is not None:

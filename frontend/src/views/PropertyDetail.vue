@@ -262,7 +262,7 @@ async function loadBuilding() {
   try {
     const id = route.params.id
     // 用 properties API 取房源（兼容 room/:id 路由）
-    const r = await api.get(`/properties/${id}`)
+    const r = await api.get(`/public/rooms/${id}`)
     const room = r.data
     building.value = {
       id: room.id, name: room.title || room.address,

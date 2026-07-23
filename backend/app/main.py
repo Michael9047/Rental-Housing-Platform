@@ -95,6 +95,23 @@ def create_app() -> FastAPI:
                     for img in sorted(b.images or [], key=lambda x: x.sort_order)), None),
             } for b in result]
 
+    # 临时直出端点 — 绕过 Pydantic schema 兼容问题
+    @app.get("/api/v1/public/rooms/{room_id}")
+    async def public_room_detail(room_id: int):
+        from app.db.session import async_session_maker
+        from sqlalchemy import select as sa_select, text
+        async with async_session_maker() as session:
+            r = await session.execute(text(
+                "SELECT r.*, COALESCE(r.safety_score,0) as s_score FROM rooms r WHERE r.id = :id AND r.deleted_at IS NULL"
+            ), {"id": room_id})
+            row = r.first()
+            if not row:
+                from fastapi import HTTPException
+                raise HTTPException(404, "Room not found")
+            # Return as dict using column names
+            cols = r.keys()
+            return dict(zip(cols, row))
+
     app.include_router(api_router, prefix=settings.api_v1_prefix)
 
     # Mount uploads directory for static file serving
