@@ -92,7 +92,7 @@ async function loadBuildings() {
 }
 
 function goBuilding(b: any) {
-  router.push({ path: '/search', query: { keyword: b.name_cn || b.name } })
+  router.push({ path: '/search', query: { institute_id: b.id, institute_name: b.name_cn || b.name } })
 }
 
 onMounted(() => loadBuildings())

@@ -29,7 +29,7 @@ def create_app() -> FastAPI:
     cors_origins: list[str] = (
         settings.cors_origins
         if settings.environment == "production"
-        else ["http://localhost:5173", "http://localhost:8080", "http://127.0.0.1:8080", "http://localhost:8001", "null"]
+        else ["http://localhost:5173", "http://localhost:8080", "http://127.0.0.1:8080", "http://localhost:8012", "null"]
     )
     allow_creds = settings.environment == "production"
     app.add_middleware(

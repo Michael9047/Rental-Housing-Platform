@@ -789,6 +789,10 @@ function initFromRoute() {
     searchMode.value = 'school'; schoolId.value = Number(q.school_id)
     filters.institute_id = schoolId.value; filters.district = undefined
     schoolName.value = SCHOOL_INFO[schoolId.value]?.name || ''
+  } else if (q.institute_id) {
+    searchMode.value = 'school'; schoolId.value = Number(q.institute_id)
+    filters.institute_id = schoolId.value; filters.district = undefined
+    schoolName.value = (q.institute_name as string) || ''
   } else if (q.district) {
     searchMode.value = 'city'; filters.district = q.district as string
     filters.institute_id = undefined; schoolName.value = ''

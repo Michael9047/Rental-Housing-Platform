@@ -6,7 +6,7 @@
 <script>
 const r = document.getElementById('result');
 r.textContent = 'Fetching...';
-fetch('http://localhost:8001/api/v1/properties/search?limit=2')
+fetch('http://localhost:8012/api/v1/properties/search?limit=2')
   .then(res => res.json())
   .then(data => {
     r.innerHTML = '<b style=color:green>OK! ' + data.length + ' properties</b><br>'
