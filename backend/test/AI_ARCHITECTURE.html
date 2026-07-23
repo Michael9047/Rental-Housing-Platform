@@ -56,17 +56,17 @@
 <div class="section-nav">
   <strong>导航</strong>
   <a href="#overview">总览</a> <a href="#flow">请求链路</a> <a href="#agents">Agent 清单</a>
-  <a href="#tools">工具层</a> <a href="#dag">DAG</a> <a href="#refactor">重构记录</a>
+  <a href="#tools">工具层</a> <a href="#dag">DAG</a> <a href="#frontend">前端集成</a> <a href="#refactor">重构记录</a>
 </div>
 
 <h1>🏠 租房平台 AI Agent 架构全景图</h1>
-<p class="subtitle">v3 重构完成 | 2026-07-22 | 6 Agent · 6 DAG · 16 工具 | 全部独立闭环 · 0 AgentService 依赖 | ReAct 已启用 · Handoff 已启用</p>
+<p class="subtitle">v3.1 架构重组 | 2026-07-23 | 7 Agent · 6 DAG · 16 工具 | orchestration/ 子目录 | dispatcher 统一入口 | 首页 AI 搜索已接入</p>
 
 <!-- ═══════════════════ OVERVIEW ═══════════════════ -->
 <h2 id="overview">1. 架构总览</h2>
 
 <div class="grid grid-4" style="margin-bottom:16px">
-  <div class="card g" style="text-align:center"><div class="count-big" style="color:var(--green)">6</div><div class="count-label">Agent（全部真实实现）</div></div>
+  <div class="card g" style="text-align:center"><div class="count-big" style="color:var(--green)">7</div><div class="count-label">Agent（全部真实实现）</div></div>
   <div class="card b" style="text-align:center"><div class="count-big" style="color:var(--blue)">6</div><div class="count-label">DAG 模板（含 1 个并行）</div></div>
   <div class="card t" style="text-align:center"><div class="count-big" style="color:var(--teal)">16</div><div class="count-label">工具（handler 已绑定）</div></div>
   <div class="card" style="text-align:center"><div class="count-big" style="color:var(--yellow)">2</div><div class="count-label">执行模式（DAG+Handoff）</div></div>
@@ -74,11 +74,11 @@
 
 <div class="grid grid-2" style="margin-bottom:16px">
   <div class="card g">
-    <div class="verdict v-y">✅ v3 重构完成（2026-07-22）。agent_service.py（1836行单体）已删除。全部 Agent 独立闭环，零交叉依赖。</div>
+    <div class="verdict v-y">✅ v3.1 架构重组（2026-07-23）。orchestration/ 子目录：supervisor、tool_registry、handoff、agent_loop 迁入。新增 dispatcher.py 统一入口 + types.py 共享类型。前端首页 AI 搜索入口。</div>
   </div>
   <div class="card b">
     <div class="verdict" style="background:#1a2a38;color:var(--blue);border:1px solid #1e3a5a;">
-      🔄 双模式执行：低复杂度 → DAG 串行管线（快）；高复杂度 → Handoff 动态交接链（灵活）。复杂查询自动启用 ReAct Tool Loop。
+      🔄 前端首页 AI 搜索 → POST /ai-search/parse → Agent 解析。双模式执行：DAG 管线（快） / Handoff 动态交接链（灵活）。ReAct Tool Loop 处理复杂查询。
     </div>
   </div>
 </div>
@@ -87,19 +87,28 @@
 <h2 id="flow">2. 请求真实链路</h2>
 
 <div class="card">
-  <h3>POST /api/v1/agent/sessions/:id/messages → 完整执行路径</h3>
+  <h3>2.1 首页 AI 搜索入口 <span class="badge b-new">NEW</span></h3>
+  <pre style="font:13px monospace;line-height:2.2;color:var(--muted)">
+用户输入自然语言 → Home.vue → POST /api/v1/ai-search/parse
+  │
+  ▼
+<span style="color:var(--accent)">agent.py:177</span>  handle_parse()
+  ├─ LLM 解析 → parsed_params + completeness
+  ├─ is_complete → 跳转 AiSearch → 搜索+结果展示
+  └─ 不完整 → 补全表单 → 再搜索</pre>
+</div>
+
+<div class="card" style="margin-top:16px">
+  <h3>2.2 Agent 对话链路</h3>
   <pre style="font:13px monospace;line-height:2.2;color:var(--muted)">
 POST /api/v1/agent/sessions/:id/messages
   │
   ▼
 <span style="color:var(--accent)">agent.py:77</span>  _handle_with_supervisor()
-  │
-  ├─ register_all_agents(registry)           ← 注册 6 Agent 定义
+  ├─ register_all_agents(registry)           ← 注册 7 Agent 定义
   ├─ bind_tool_handlers(tool_registry)       ← 绑定 16 工具 handler
-  ├─ supervisor.handle_message(message, ...)
-  │    │
-  │    ├─ <span style="color:var(--accent)">classify_message()</span>  ← agentic/router.py（LLM / 规则兜底）→ intent + complexity + routing
-  │    │
+  ├─ <span style="color:var(--accent)">dispatcher.py</span> 统一入口 <span class="badge b-new">NEW</span>
+  │    ├─ classify_message()  ← router.py（LLM / 规则兜底）→ intent + complexity + routing
   │    ├─ <span style="color:var(--yellow)">复杂度判断</span>
   │    │    ├─ complexity &lt; 0.7 → <span style="color:var(--green)">DAG 管线</span>
   │    │    │    ├─ intent="search"      → filter → search → synthesizer
@@ -112,24 +121,11 @@ POST /api/v1/agent/sessions/:id/messages
   │    │    └─ complexity ≥ 0.7 → <span style="color:var(--purple)">Handoff 动态交接链</span>
   │    │         └─ RouterAgent 选起始 Agent → Agent 间 handoff_to 交接 → Synthesizer 收尾
   │    │
-  │    ├─ <span style="color:var(--accent)">_execute_dag(dag, context)</span>  ← 拓扑排序，同层 asyncio.gather 并行
-  │    │    └─ _execute_agent(name, context)
-  │    │         ├─ <span style="color:var(--purple)">filter_agent</span>      → FilterAgent.handle()         ← 单次 LLM JSON
-  │    │         ├─ <span style="color:var(--green)">search_agent</span>      → SearchAgent.handle()          ← search() 或 search_react()
-  │    │         │                        ├─ 简单查询 → search()         ← 直接管线（快）
-  │    │         │                        └─ 复杂查询 → search_react()   ← ReAct Tool Loop（灵活）
-  │    │         ├─ <span style="color:var(--yellow)">synthesizer_agent</span> → SynthesizerAgent.handle()    ← 漏斗语调适配
-  │    │         ├─ <span style="color:var(--teal)">cart_agent</span>        → CartAgent.handle()           ← 独立 CRUD
-  │    │         ├─ <span style="color:var(--accent)">faq_agent</span>         → FAQAgent.handle()            ← 规则匹配
-  │    │         └─ <span style="color:var(--pink)">compare_agent</span>      → CompareAgent.handle()        ← 评分+LLM解释+7维分析
-  │    │
-  │    └─ <span style="color:var(--accent)">_build_response(...)</span>  ← 组装返回（兼容前端格式）
-  │
-  └─ 持久化消息到 ChatMessage 表</pre>
+  │    └─ 持久化消息到 ChatMessage 表</pre>
 </div>
 
 <!-- ═══════════════════ AGENTS ═══════════════════ -->
-<h2 id="agents">3. Agent 完整清单（6 个，全部真实实现）</h2>
+<h2 id="agents">3. Agent 完整清单（7 个，全部真实实现）</h2>
 
 <h3>3.1 核心搜索链路</h3>
 <table>
@@ -146,7 +142,7 @@ POST /api/v1/agent/sessions/:id/messages
 <tr style="background:rgba(160,225,160,0.04)">
   <td><strong>search_agent</strong></td>
   <td><code>agents/search_agent.py</code></td>
-  <td>645 行</td>
+  <td><strong>857 行</strong> <span class="badge b-new">↑212</span></td>
   <td><span class="badge b-done">直接/ReAct 双模式</span></td>
   <td>1 次推荐生成</td>
   <td>extract→检索+渐进放宽(4级)→地理Haversine→通勤API过滤(4引擎降级)→评分→LLM推荐。复杂查询自动启用 ReAct Tool Loop</td>
@@ -169,14 +165,14 @@ POST /api/v1/agent/sessions/:id/messages
 <tr style="background:rgba(255,180,200,0.04)">
   <td><strong>compare_agent</strong></td>
   <td><code>agents/compare_agent.py</code></td>
-  <td>377 行</td>
+  <td>375 行</td>
   <td>1 次 complete_json（LLM解释优劣）</td>
   <td>POI聚合+评价聚合 → compute_scores(加权评分) → LLM解释 → 7维Markdown分析。LLM不可用时降级为规则解释</td>
 </tr>
 <tr style="background:rgba(160,225,225,0.04)">
   <td><strong>cart_agent</strong></td>
   <td><code>agents/cart_agent.py</code></td>
-  <td>135 行</td>
+  <td>81 行</td>
   <td>0（纯CRUD）</td>
   <td>购物车CRUD：get_or_create/add/remove/get_items。持自有session</td>
 </tr>
@@ -186,6 +182,13 @@ POST /api/v1/agent/sessions/:id/messages
   <td>44 行</td>
   <td>0（规则匹配）</td>
   <td>关键字匹配(strong/weak/none)→答案/chips反问/兜底</td>
+</tr>
+<tr style="background:rgba(200,200,255,0.04)">
+  <td><strong>agent_registry</strong> <span class="badge b-new">NEW</span></td>
+  <td><code>agents/registry.py</code></td>
+  <td>94 行</td>
+  <td>0</td>
+  <td>7 Agent 定义注册 + 元数据（description/tools/triggers）</td>
 </tr>
 </tbody>
 </table>
@@ -254,7 +257,7 @@ POST /api/v1/agent/sessions/:id/messages
     <p style="font-size:12px;color:var(--muted)">单节点。闲聊问候。</p>
   </div>
   <div class="card o">
-    <h3>search_and_compare <span class="badge b-new">NEW</span></h3>
+    <h3>search_and_compare <span class="badge b-new">并行</span></h3>
     <div class="flow">
       <div class="flow-node fn-p">filter</div><div class="flow-node fn-r">compare</div>
       <span class="flow-arrow">∥</span>
@@ -262,7 +265,7 @@ POST /api/v1/agent/sessions/:id/messages
       <span class="flow-arrow">→</span>
       <div class="flow-node fn-y">synth</div>
     </div>
-    <p style="font-size:12px;color:var(--muted)"><strong>Level 0: filter ∥ compare 并行</strong>。唯一触发 asyncio.gather 的模板。</p>
+    <p style="font-size:12px;color:var(--muted)">Level 0: filter ∥ compare 并行。唯一触发 asyncio.gather 的模板。</p>
   </div>
 </div>
 
@@ -270,45 +273,68 @@ POST /api/v1/agent/sessions/:id/messages
   ⚡ 复杂度 ≥ 0.7 时跳过 DAG，自动走 <strong>Handoff 动态交接链</strong>：RouterAgent → Agent → handoff_to → Agent → ... → Synthesizer。支持 Agent 间动态交接（最多 5 跳，60s 超时）。
 </div>
 
+<!-- ═══════════════════ 前端集成 ═══════════════════ -->
+<h2 id="frontend">6. 前端 AI 集成 <span class="badge b-new">NEW</span></h2>
+
+<div class="grid grid-2">
+  <div class="card">
+    <h3>首页 AI 搜索入口</h3>
+    <table>
+    <tr><td>路由</td><td><code>/</code> (Home.vue)</td></tr>
+    <tr><td>输入方式</td><td>Hero 搜索栏 + 快速标签(金文泰/NUS附近/伦敦学生公寓)</td></tr>
+    <tr><td>API</td><td>POST /ai-search/parse → 解析 NL → parsed_params</td></tr>
+    <tr><td>完成后</td><td>跳转 /ai-search?q=... → 展示房源卡片</td></tr>
+    <tr><td>降级</td><td>AI 失败 → /search?keyword=...</td></tr>
+    </table>
+  </div>
+  <div class="card">
+    <h3>Agent 对话页</h3>
+    <table>
+    <tr><td>路由</td><td><code>/agent</code> (AgentView.vue)</td></tr>
+    <tr><td>API</td><td>POST /agent/sessions → 创建会话 → POST /agent/sessions/:id/messages</td></tr>
+    <tr><td>购物车</td><td>Agent 搜索结果可加入购物车 → /cart 查看</td></tr>
+    <tr><td>对比</td><td>购物车中房源可发起 compare → Agent 7维分析</td></tr>
+    </table>
+  </div>
+</div>
+
 <!-- ═══════════════════ REFACTOR ═══════════════════ -->
-<h2 id="refactor">6. v3 重构记录（2026-07-22）</h2>
+<h2 id="refactor">7. 重构记录</h2>
 
 <table>
-<thead><tr><th>Phase</th><th>内容</th><th>变更</th><th>状态</th></tr></thead>
+<thead><tr><th>阶段</th><th>日期</th><th>内容</th><th>状态</th></tr></thead>
 <tbody>
-<tr><td>P0</td><td>删除 agent_service.py</td><td>1836行死代码删除；agentic/ + API 路由 零 AgentService import</td><td><span class="badge b-done">✅</span></td></tr>
-<tr><td>P1</td><td>CartAgent 独立</td><td>16行 stub → 135行自主 CRUD；Supervisor/ToolRegistry/Route 全部解耦</td><td><span class="badge b-done">✅</span></td></tr>
-<tr><td>P2</td><td>FAQ 收尾</td><td>验证独立性，零改动（此前已独立）</td><td><span class="badge b-done">✅</span></td></tr>
-<tr><td>P3</td><td>CompareAgent 独立</td><td>19行 stub → 377行完整对比引擎（评分+LLM+7维分析+规则降级）</td><td><span class="badge b-done">✅</span></td></tr>
-<tr><td>P4</td><td>Router 独立</td><td>新增 agentic/router.py；Supervisor 解耦分类逻辑</td><td><span class="badge b-done">✅</span></td></tr>
-<tr><td>P5</td><td>SearchAgent 独立</td><td>98行 → 645行完整搜索管线（提取→检索→通勤→评分→推荐）</td><td><span class="badge b-done">✅</span></td></tr>
-<tr><td>P6</td><td>共享层提取</td><td>新增 agentic/shared.py（property_to_dict/build_dimension_analysis 等）</td><td><span class="badge b-done">✅</span></td></tr>
-<tr><td>P7</td><td>DAG 并行模板</td><td>新增 SEARCH_AND_COMPARE 意图（filter∥compare→search→synth）</td><td><span class="badge b-done">✅</span></td></tr>
-<tr><td>P8</td><td>ReAct Tool Loop</td><td>SearchAgent 双模式：简单查询 search() 快速路径，复杂查询 search_react() Tool Loop</td><td><span class="badge b-done">✅</span></td></tr>
-<tr><td>P9</td><td>Handoff 交接链</td><td>complexity≥0.7 自动启用动态交接；最多5跳60s超时；失败降级 DAG</td><td><span class="badge b-done">✅</span></td></tr>
+<tr><td>v1-v2</td><td>07-19 ~ 07-21</td><td>agent_service.py 单体（1836行）→ Agent 拆分</td><td><span class="badge b-done">✅</span></td></tr>
+<tr><td>v3 P0-P9</td><td>07-22</td><td>6 Agent 独立闭环 · 16工具绑定 · DAG并行 · ReAct · Handoff</td><td><span class="badge b-done">✅</span></td></tr>
+<tr><td>v3.1</td><td>07-23</td><td>orchestration/ 子目录 · dispatcher 统一入口 · types.py · 首页 AI 搜索接入 · search_agent 857行</td><td><span class="badge b-done">✅</span></td></tr>
 </tbody>
 </table>
 
 <h3 style="margin-top:24px">项目结构</h3>
-<pre style="color:var(--green);margin-top:8px">agentic/ (5792 行，全部独立闭环)
-  ├─ router.py (187行) — 意图分类
-  ├─ shared.py (172行) — 共享工具
-  ├─ supervisor.py (1191行) — 编排器
-  ├─ tool_registry.py (979行) — 16工具注册
-  ├─ execution_dag.py (192行) — 6 DAG模板
-  ├─ routing_strategy.py (114行) — 5信号路由
-  ├─ handoff.py (293行) — 动态交接链
-  ├─ agent_loop.py (256行) — ReAct引擎
-  └─ agents/
-       ├─ cart_agent.py (135行) ✅
-       ├─ compare_agent.py (377行) ✅
-       ├─ search_agent.py (645行) ✅
-       ├─ filter_agent.py (196行) ✅
-       ├─ synthesizer_agent.py (82行) ✅
-       └─ faq_agent.py (44行) ✅</pre>
+<pre style="color:var(--green);margin-top:8px">agentic/ (6214 行)
+  ├─ dispatcher.py (244行) — 统一请求入口 <span class="badge b-new">NEW</span>
+  ├─ router.py (280行) — 意图分类+路由
+  ├─ shared.py (180行) — 共享工具
+  ├─ agents/
+  │    ├─ registry.py (94行) — Agent 注册表 <span class="badge b-new">NEW</span>
+  │    ├─ search_agent.py (857行) <span class="badge b-new">↑212</span>
+  │    ├─ filter_agent.py (196行)
+  │    ├─ compare_agent.py (375行)
+  │    ├─ synthesizer_agent.py (82行)
+  │    ├─ cart_agent.py (81行)
+  │    └─ faq_agent.py (44行)
+  └─ orchestration/ (3730行) <span class="badge b-new">NEW 子目录</span>
+       ├─ supervisor.py (1234行)
+       ├─ tool_registry.py (987行)
+       ├─ handoff.py (293行)
+       ├─ agent_loop.py (256行)
+       ├─ agent_registry.py (299行)
+       ├─ execution_dag.py (185行)
+       ├─ routing_strategy.py (114行)
+       └─ types.py (350行) <span class="badge b-new">NEW</span></pre>
 
 <p style="color:var(--muted);font-size:12px;margin-top:24px;text-align:center">
-  所有 Agent 独立闭环 · 零 AgentService 依赖 · Supervisor 纯编排 · ToolRegistry 16工具完整绑定 · DAG 含真正并行模板 · ReAct + Handoff 双模式运行
+  All agents independently closed-loop · Zero AgentService dependency · dispatcher unified entry · orchestration/ subdirectory · ReAct + Handoff dual mode
   <br>backend/app/services/agentic/
 </p>
 
