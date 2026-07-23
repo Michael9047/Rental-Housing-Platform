@@ -152,8 +152,9 @@ async function handleToggleCart() {
       await cartStore.add(props.property.id)
       ElMessage.success(`已将「${p.value.title}」加入候选清单`)
     }
-  } catch {
-    // 错误提示由 api 拦截器统一处理
+  } catch (e: any) {
+    const msg = e?.response?.data?.error?.message || e?.message || ''
+    ElMessage.error(msg || '操作失败，请稍后重试')
   } finally {
     busy.value = false
   }

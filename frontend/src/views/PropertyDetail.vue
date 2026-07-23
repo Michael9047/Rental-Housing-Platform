@@ -208,6 +208,11 @@ const inCart = computed(() => building.value ? cartStore.has(building.value.id) 
 
 async function toggleCart() {
   if (cartLoading.value || !building.value) return
+  const pid = building.value.id
+  if (!pid || typeof pid !== 'number') {
+    ElMessage.error('房源信息异常，请刷新页面再试')
+    return
+  }
   if (!authStore.isLoggedIn) {
     ElMessage.warning('请先登录后再使用候选清单')
     router.push('/login')
@@ -216,14 +221,15 @@ async function toggleCart() {
   cartLoading.value = true
   try {
     if (inCart.value) {
-      await cartStore.remove(building.value.id)
+      await cartStore.remove(pid)
       ElMessage.info('已移出候选清单')
     } else {
-      await cartStore.add(building.value.id)
+      await cartStore.add(pid)
       ElMessage.success('已加入候选清单')
     }
-  } catch {
-    ElMessage.error('操作失败，请稍后重试')
+  } catch (e: any) {
+    const msg = e?.response?.data?.error?.message || e?.message || ''
+    ElMessage.error(msg || '操作失败，请稍后重试')
   } finally { cartLoading.value = false }
 }
 

@@ -449,9 +449,9 @@ class SearchAgent(BaseAgent):
 
         # 2. 学校查找（查 universities 表获取坐标）
         institution_name = filters.get("institution") or extracted.get("institution") or None
-        distance_km = extracted.get("distance_km", 3.0)
+        distance_km = extracted.get("distance_km", 5.0)  # P0 硬约束：默认学校周边 5km
         if not isinstance(distance_km, (int, float)) or distance_km < 0.5 or distance_km > 50.0:
-            distance_km = 3.0
+            distance_km = 5.0
 
         commute_mode = extracted.get("commute_mode") or None
         commute_minutes = extracted.get("commute_minutes") or None
