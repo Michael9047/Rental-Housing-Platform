@@ -33,7 +33,7 @@
           v-for="room in rooms"
           :key="room.id"
           :property="room"
-          :show-quick-book="authStore.isLoggedIn"
+          :show-quick-book="false"
         />
       </div>
     </section>
@@ -44,11 +44,9 @@
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import api from '@/services/api'
-import { useAuthStore } from '@/stores/auth'
 import PropertyCard from '@/components/PropertyCard.vue'
 
 const router = useRouter()
-const authStore = useAuthStore()
 
 const searchQuery = ref('')
 const aiLoading = ref(false)
