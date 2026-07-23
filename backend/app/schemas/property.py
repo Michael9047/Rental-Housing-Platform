@@ -19,32 +19,32 @@ class RentType(str, _enum.Enum):
     yearly = "yearly"
 from app.schemas.property_image import PropertyImageRead
 class PropertyBase(BaseModel):
-    title: str = Field(min_length=1, max_length=200)
+    title: str | None = Field(default=None, max_length=200)
     description: str | None = None
-    address: str = Field(min_length=1, max_length=300)
-    district: str = Field(default="", max_length=100)
-    price_monthly: Decimal = Field(ge=0)
-    country: str = Field(default="CN", min_length=2, max_length=2)
+    address: str | None = Field(default=None, max_length=500)
+    district: str | None = Field(default=None, max_length=100)
+    price_monthly: Decimal | None = None
+    country: str | None = Field(default=None, max_length=100)
     currency: str | None = Field(default=None, max_length=3)
-    area_sqm: Decimal | None = Field(default=None, gt=0)
-    bedrooms: int = Field(default=0, ge=0)
-    bathrooms: int = Field(default=0, ge=0)
-    property_type: PropertyType = PropertyType.one_bed
-    status: PropertyStatus = PropertyStatus.available
-    latitude: Decimal | None = Field(default=None, ge=-90, le=90)
-    longitude: Decimal | None = Field(default=None, ge=-180, le=180)
+    area_sqm: Decimal | None = None
+    bedrooms: int | None = None
+    bathrooms: int | None = None
+    property_type: str | None = None
+    status: str = "available"
+    latitude: Decimal | None = None
+    longitude: Decimal | None = None
     deposit_amount: int | None = None
     service_fee_rate: float | None = None
-    min_lease_months: int = 12
-    max_lease_months: int | None = 60
-    rent_type: RentType = RentType.monthly
-    room_number: str | None = Field(default=None, max_length=20)
-    floor: int | None = Field(default=None, ge=0)
-    # ── 新增字段 ──
+    min_lease_months: int | None = None
+    max_lease_months: int | None = None
+    rent_type: str | None = None
+    room_number: str | None = None
+    floor: int | None = None
+    # 新增字段
     amenities: list[str] | None = None
     available_from: date | None = None
-    min_stay_months: int = Field(default=3, ge=1)
-    deposit_type: DepositType | None = None
+    min_stay_months: int | None = None
+    deposit_type: str | None = None
 
 class PropertyCreate(PropertyBase):
     landlord_id: int
