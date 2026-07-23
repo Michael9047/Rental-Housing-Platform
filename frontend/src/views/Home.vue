@@ -1,6 +1,6 @@
 <template>
   <div class="home-page">
-    <!-- Hero -->
+    <!-- Hero — AI 搜索 -->
     <section class="hero">
       <h1 class="hero-title">智能找房，一句话就够了</h1>
       <p class="hero-subtitle">告诉 AI 你的预算、位置和需求，秒级匹配最适合你的公寓</p>
@@ -17,38 +17,24 @@
       </div>
     </section>
 
-    <!-- 推荐 -->
+    <!-- 推荐房源 -->
     <section class="recommend-section">
       <div class="section-header">
-        <h2 class="section-title">🏠 热门公寓推荐</h2>
+        <h2 class="section-title">🏠 推荐房源</h2>
         <el-link type="primary" :underline="false" @click="$router.push('/search')">查看更多 →</el-link>
       </div>
 
       <div v-if="loading" class="loading-grid">
-        <div v-for="n in 3" :key="n" class="card-skeleton" />
+        <div v-for="n in 6" :key="n" class="card-skeleton" />
       </div>
 
-      <div v-else-if="buildings.length" class="card-grid">
-        <div v-for="b in buildings" :key="b.id" class="building-card" @click="goBuilding(b)">
-          <div class="card-cover">
-            <img v-if="b.primary_image" :src="b.primary_image.filename" alt="" />
-            <div v-else class="card-cover-placeholder">🏢</div>
-            <span v-if="b.unit_type_count" class="card-badge">{{ b.unit_type_count }} 种户型</span>
-          </div>
-          <div class="card-body">
-            <h3 class="card-name">{{ b.name_cn || b.name }}</h3>
-            <p class="card-addr" v-if="b.address">📍 {{ b.address }}</p>
-            <div class="card-footer-row">
-              <span v-if="b.female_only" class="tag tag-pink">👩 女生独栋</span>
-              <span v-if="b.couples_allowed" class="tag tag-purple">💑 情侣可住</span>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div v-else class="empty-hint">
-        <p>暂无公寓数据</p>
-        <el-button type="primary" @click="$router.push('/search')">去搜索页看看</el-button>
+      <div class="card-grid" v-else>
+        <PropertyCard
+          v-for="room in rooms"
+          :key="room.id"
+          :property="room"
+          :show-quick-book="authStore.isLoggedIn"
+        />
       </div>
     </section>
   </div>
@@ -58,12 +44,16 @@
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import api from '@/services/api'
+import { useAuthStore } from '@/stores/auth'
+import PropertyCard from '@/components/PropertyCard.vue'
 
 const router = useRouter()
+const authStore = useAuthStore()
+
 const searchQuery = ref('')
 const aiLoading = ref(false)
 const loading = ref(true)
-const buildings = ref<any[]>([])
+const rooms = ref<any[]>([])
 const quickTags = ['金文泰', 'NUS附近', '伦敦学生公寓']
 
 async function handleAiSearch() {
@@ -78,24 +68,19 @@ async function handleAiSearch() {
   } finally { aiLoading.value = false }
 }
 
-async function loadBuildings() {
+async function loadRooms() {
   try {
-    const res = await api.get('/public/buildings', { params: { limit: 12 } })
+    const res = await api.get('/properties/search', { params: { limit: 18 } })
     const data = res.data
-    buildings.value = Array.isArray(data) ? data : []
+    rooms.value = Array.isArray(data) ? data : (data?.items || [])
   } catch (e: any) {
-    console.error('[Home] API error:', e?.message || e)
-    buildings.value = []
+    console.error('[Home] load rooms failed:', e?.message || e)
   } finally {
     loading.value = false
   }
 }
 
-function goBuilding(b: any) {
-  router.push({ path: '/search', query: { institute_id: b.id, institute_name: b.name_cn || b.name } })
-}
-
-onMounted(() => loadBuildings())
+onMounted(() => loadRooms())
 </script>
 
 <style scoped>
@@ -111,35 +96,17 @@ onMounted(() => loadBuildings())
 .search-btn { border-radius: 14px; padding: 0 32px; font-weight: 600; font-size: 15px; background: linear-gradient(135deg, #6c5ce7, #e94560); border: none }
 .search-btn:hover { opacity: 0.92 }
 .hero-tags { display: flex; align-items: center; justify-content: center; gap: 10px; margin-top: 24px; flex-wrap: wrap }
-.quick-tag { cursor: pointer; border-radius: 20px; padding: 4px 18px; font-size: 14px; border: 1px solid #e0e0f0; background: #fff; color: #6c5ce7; transition: all 0.2s }
+.quick-tag { cursor: pointer; border-radius: 20px; padding: 4px 18px; font-size: 14px; border: 1px solid #e0e0f0; background: #fff; color: #6c5ce7 }
 .quick-tag:hover { background: #6c5ce7; color: #fff; border-color: #6c5ce7 }
 
 .section-header { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 24px }
 .section-title { font-size: 22px; font-weight: 700; color: #1a1a2e; margin: 0 }
 
 .loading-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px }
-.card-skeleton { height: 300px; border-radius: 16px; background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%); background-size: 200% 100%; animation: shimmer 1.5s infinite }
+.card-skeleton { height: 340px; border-radius: 16px; background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%); background-size: 200% 100%; animation: shimmer 1.5s infinite }
 @keyframes shimmer { 0% { background-position: 200% 0 } 100% { background-position: -200% 0 } }
 
 .card-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px }
-
-.building-card { border-radius: 16px; overflow: hidden; background: #fff; border: 1px solid #ebeef5; cursor: pointer; transition: all 0.25s ease }
-.building-card:hover { transform: translateY(-4px); box-shadow: 0 8px 30px rgba(0,0,0,0.1); border-color: #6c5ce7 }
-.card-cover { height: 200px; background: #f0f2f5; position: relative; overflow: hidden; display: flex; align-items: center; justify-content: center }
-.card-cover img { width: 100%; height: 100%; object-fit: cover; transition: transform 0.4s ease }
-.building-card:hover .card-cover img { transform: scale(1.05) }
-.card-cover-placeholder { font-size: 56px; opacity: 0.2 }
-.card-badge { position: absolute; bottom: 10px; right: 10px; background: rgba(0,0,0,0.65); color: #fff; padding: 4px 12px; border-radius: 8px; font-size: 13px; font-weight: 600 }
-
-.card-body { padding: 16px 18px 20px }
-.card-name { font-size: 17px; font-weight: 700; color: #1a1a2e; margin: 0 0 6px }
-.card-addr { font-size: 13px; color: #909399; margin: 0 0 10px }
-.card-footer-row { display: flex; gap: 8px }
-.tag { font-size: 12px; font-weight: 600; padding: 3px 10px; border-radius: 8px }
-.tag-pink { background: #fef0f0; color: #e0485c }
-.tag-purple { background: #f4f0fe; color: #7c3aed }
-
-.empty-hint { text-align: center; padding: 60px 20px; color: #909399 }
 
 @media (max-width: 1024px) { .card-grid, .loading-grid { grid-template-columns: repeat(2, 1fr) } }
 @media (max-width: 768px) {
