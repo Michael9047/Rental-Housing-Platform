@@ -194,10 +194,12 @@ import { ElMessage } from 'element-plus'
 import { Plus, Check } from '@element-plus/icons-vue'
 import api from '@/services/api'
 import { useCartStore } from '@/stores/cart'
+import { useAuthStore } from '@/stores/auth'
 
 const route = useRoute()
 const router = useRouter()
 const cartStore = useCartStore()
+const authStore = useAuthStore()
 const building = ref<any>(null)
 const selectedUnitType = ref<any>(null)
 const loading = ref(false)
@@ -206,6 +208,11 @@ const inCart = computed(() => building.value ? cartStore.has(building.value.id) 
 
 async function toggleCart() {
   if (cartLoading.value || !building.value) return
+  if (!authStore.isLoggedIn) {
+    ElMessage.warning('请先登录后再使用候选清单')
+    router.push('/login')
+    return
+  }
   cartLoading.value = true
   try {
     if (inCart.value) {
@@ -215,8 +222,9 @@ async function toggleCart() {
       await cartStore.add(building.value.id)
       ElMessage.success('已加入候选清单')
     }
-  } catch { /* */ }
-  finally { cartLoading.value = false }
+  } catch {
+    ElMessage.error('操作失败，请稍后重试')
+  } finally { cartLoading.value = false }
 }
 
 function goBook() {
