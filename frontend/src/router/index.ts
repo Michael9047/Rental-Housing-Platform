@@ -43,7 +43,7 @@ const routes: RouteRecordRaw[] = [
       { path: 'property/:id/edit', redirect: '/unit-type/:id/edit' },
       { path: 'property/manage', redirect: '/unit-type/manage' },
       { path: 'property/import', redirect: '/room/import' },
-      { path: 'property/:id', redirect: '/room/:id' },
+      { path: 'property/:id', redirect: (to: any) => `/room/${to.params.id}` },
 
       // 原有
       { path: 'agent', name: 'agent', component: () => import('@/views/AgentView.vue'), meta: { requiresAuth: true } },
