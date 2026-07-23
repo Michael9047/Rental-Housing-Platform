@@ -274,7 +274,7 @@ RECOMMEND_SYSTEM_PROMPT = """你是留学生租房推荐助手。根据提供的
 - 500-900字
 - 如果某维度数据缺失，写"暂无数据"不要跳过
 
-只输出 JSON：{"reply": "完整回复"}"""
+直接输出回复文本，不要 JSON 包裹。"""
 
 
 # ── 确定性评分（模块级函数，SearchAgent + ToolRegistry 共用） ──
@@ -584,7 +584,8 @@ class SearchAgent(BaseAgent):
                     sym = get_symbol(getattr(t, 'currency', None))
                     district = inst.district or ""
 
-                    # 通勤数据：查表 → room_commutes → '暂无'
+                    # 通勤数据：查表 → room_commutes → None
+                    commute_data = None
                     tbl = _lookup_commute(school, district)
                     if tbl:
                         commute_data = {"walk_min": tbl[0], "transit_min": tbl[1], "source": "lookup_table"}
@@ -628,10 +629,24 @@ class SearchAgent(BaseAgent):
                     ctx["candidates"].append(candidate)
 
                 user_prompt = json.dumps(ctx, ensure_ascii=False, indent=2)
-                result = await llm.complete_json(RECOMMEND_SYSTEM_PROMPT, user_prompt, max_tokens=1500)
-                reply = str(result.get("reply") or f"为您找到 {len(unit_results)} 种户型。") + source_info
-            except Exception:
-                logger.exception("LLM 推荐生成失败，降级为规则摘要")
+                # 用 complete_text 代替 complete_json——结构化回复太长，
+                # LLM 生成的 JSON 容易格式损坏导致解析失败
+                try:
+                    reply = await llm.complete_text(
+                        messages=[
+                            {"role": "system", "content": RECOMMEND_SYSTEM_PROMPT},
+                            {"role": "user", "content": user_prompt},
+                        ],
+                        max_tokens=2000,
+                    )
+                    reply = (reply or "").strip()
+                except Exception:
+                    raise  # 交给外层 except 做规则降级
+                if not reply or len(reply) < 20:
+                    raise ValueError("LLM 返回空回复")
+                reply = reply + source_info
+            except Exception as _e:
+                logger.exception("LLM 推荐生成失败，降级为规则摘要: %s", _e)
                 # 规则降级：列出 top 3 结果的关键信息
                 lines = [f"为您找到 {len(unit_results)} 种户型（AI 暂不可用，以下是筛选结果摘要）：", ""]
                 for i, ut in enumerate(unit_results[:5], 1):

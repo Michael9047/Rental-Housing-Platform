@@ -229,7 +229,13 @@ async function send() {
 function addMsg(role, text, data) {
   const el = document.createElement('div');
   el.className = 'msg '+role;
-  el.innerHTML = '<div class="role">'+(role==='user'?'🧑 你':'🤖 助手')+'</div><div class="text">'+escapeHtml(text)+'</div>';
+  const hasAI = text && text.length > 50 && !text.includes('AI 暂不可用');
+  const label = role==='user'?'你' : (hasAI ? 'AI 分析' : '检索结果');
+  const icon = role==='user'?'🧑' : (hasAI ? '🤖' : '📋');
+  // AI 结构化回复用 pre-wrap 保留换行和缩进
+  const isStructured = text && (text.includes('一、概览') || text.includes('P0') || text.includes('Takeaway'));
+  const textTag = isStructured ? 'pre style="white-space:pre-wrap;font:inherit;margin:0"' : 'div class="text"';
+  el.innerHTML = '<div class="role">'+icon+' '+label+'</div><'+textTag+'>'+escapeHtml(text)+'</'+textTag.split(' ')[0]+'>';
   if (data?.recommendations?.length) {
     const div = document.createElement('div');
     div.className = 'props';

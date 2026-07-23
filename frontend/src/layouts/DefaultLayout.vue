@@ -185,7 +185,7 @@
           <el-button text :icon="ArrowLeft" @click="router.back()">返回上一页</el-button>
         </div>
         <router-view />
-        <GlobalFooter />
+        <GlobalFooter v-if="!route.meta.hideFooter" />
       </el-main>
     </el-container>
 
@@ -197,7 +197,7 @@ import { ref, computed, watch, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import {
   Search, User, UserFilled, ArrowDown, ArrowLeft, Setting, SwitchButton,
-  Plus, List, Bell, DataAnalysis, Tickets, Loading,} from '@element-plus/icons-vue'
+  Plus, List, Bell, ChatDotRound, DataAnalysis, Tickets, Loading,} from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 import { useAgentChatStore } from '@/stores/agentChat'
 import { useCartStore } from '@/stores/cart'

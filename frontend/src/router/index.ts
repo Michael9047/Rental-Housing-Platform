@@ -9,7 +9,7 @@ const routes: RouteRecordRaw[] = [
     children: [
       { path: '', name: 'home', component: () => import('@/views/Home.vue') },
       { path: 'search', name: 'search', component: () => import('@/views/Search.vue') },
-      { path: 'ai-search', name: 'ai-search', component: () => import('@/views/AiSearch.vue') },
+      { path: 'ai-search', name: 'ai-search', component: () => import('@/views/AiSearch.vue'), meta: { hideFooter: true } },
       { path: 'map', name: 'map-search', component: () => import('@/views/MapSearch.vue') },
 
       // ── 三层架构核心 ──
