@@ -12,7 +12,7 @@ class RoomImage(TimestampMixin, Base):
 
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
     room_id: Mapped[int] = mapped_column(
-        ForeignKey("rooms.id", ondelete="CASCADE"), index=True
+        ForeignKey("properties.id", ondelete="CASCADE"), index=True
     )
     filename: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
     original_name: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -22,6 +22,11 @@ class RoomImage(TimestampMixin, Base):
     is_primary: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     room: Mapped["Room"] = relationship(back_populates="images")
+
+    # 向后兼容：Pydantic schema 期望 property_id
+    @property
+    def property_id(self) -> int:
+        return self.room_id
 
 # 向后兼容别名
 PropertyImage = RoomImage

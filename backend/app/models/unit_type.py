@@ -1,9 +1,9 @@
 """户型模型 — 三层架构中间核心录入主体"""
 import enum
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 
-from sqlalchemy import Date, Enum, ForeignKey, Integer, Numeric, String, Text, text
+from sqlalchemy import Date, DateTime, Enum, ForeignKey, Integer, Numeric, String, Text, text
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -67,11 +67,16 @@ class UnitType(TimestampMixin, Base):
     available_from: Mapped[date | None] = mapped_column(Date, nullable=True)
     min_stay_months: Mapped[int] = mapped_column(Integer, default=3, nullable=False)
 
+    embedding: Mapped[str | None] = mapped_column(Text, nullable=True)
+
     # ── 状态 ──
     status: Mapped[UnitTypeStatus] = mapped_column(
         Enum(UnitTypeStatus, name="room_type_status"),
         default=UnitTypeStatus.available,
         nullable=False,
+    )
+    deleted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, default=None
     )
 
     # ── 关系 ──

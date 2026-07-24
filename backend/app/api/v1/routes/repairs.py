@@ -101,6 +101,17 @@ async def list_repairs(
     return [await _repair_to_read(r) for r in repairs]
 
 
+@router.get("/repairs/pending-escalated")
+async def list_pending_escalated(
+    session: AsyncSession = Depends(get_db_session),
+    current_user: User = Depends(require_admin),
+):
+    """Admin查看待派单工单"""
+    svc = RepairService(session)
+    repairs = await svc.list_repairs(status=RepairStatus.pending_escalated)
+    return [await _repair_to_read(r) for r in repairs]
+
+
 @router.get("/repairs/{repair_id}", response_model=RepairRead)
 async def get_repair(
     repair_id: int,
@@ -164,7 +175,7 @@ async def assign_worker(
     repair = await svc.get_repair(repair_id)
     if not repair:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repair not found")
-    if repair.landlord_id != current_user.id:
+    if repair.landlord_id != current_user.id and current_user.role != UserRole.admin:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
 
     try:
@@ -227,3 +238,25 @@ async def cancel_repair(
 
     repair = await svc.cancel_repair(repair_id)
     return await _repair_to_read(repair)
+
+
+@router.patch("/repairs/{repair_id}/confirm", response_model=RepairRead)
+async def confirm_repair(
+    repair_id: int,
+    session: AsyncSession = Depends(get_db_session),
+    current_user: User = Depends(require_tenant),
+):
+    """租客确认维修完成"""
+    svc = RepairService(session)
+    repair = await svc.get_repair(repair_id)
+    if not repair:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repair not found")
+    if repair.tenant_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+    try:
+        repair = await svc.confirm_repair(repair_id, current_user.id)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    return await _repair_to_read(repair)
+
+

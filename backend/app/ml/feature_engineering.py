@@ -37,7 +37,7 @@ DEFAULT_DISTRICT_ENCODING = {
 }
 
 DEFAULT_PROPERTY_TYPE_ENCODING = {
-    "apartment": 0, "house": 1, "studio": 2, "shared": 3,
+    "studio": 0, "1-bed": 1, "2-bed": 2, "shared": 3, "house": 4,
 }
 
 # 苏州市中心坐标（苏州中心 ≈ 东方之门）
@@ -119,7 +119,7 @@ class FeatureExtractor:
 
         # property_type One-Hot
         for i, prop in enumerate(properties):
-            ptype = str(prop.get("property_type", "apartment")).strip().lower()
+            ptype = str(prop.get("property_type", "1-bed")).strip().lower()
             if ptype in self.property_type_encoding:
                 idx = self.property_type_encoding[ptype]
                 X[i, col + idx] = 1.0

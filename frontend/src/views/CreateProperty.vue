@@ -256,6 +256,7 @@ const currencySymbol = computed(() => {
   const c = currencies.find(c => c.code === f.currency)
   return c ? c.symbol : '¥'
 })
+const roomConfigAmenities = ['精装修','壁橱','空调','中央空调','WiFi','带厨房','带客厅','落地窗','独立卫浴','电梯']
 const orientationAmenities = ['朝南','朝北','朝东','朝西','高楼层','顶层','底层/带院子']
 const billsAmenities = ['包水电','包网络','包取暖']
 const ruleAmenities = ['可养宠物','禁烟','禁派对','允许访客留宿','安静时段']

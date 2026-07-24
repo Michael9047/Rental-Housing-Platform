@@ -42,6 +42,11 @@ export const repairService = {
   cancel(id: number): Promise<RepairRead> {
     return api.patch(`/repairs/${id}/cancel`).then((r) => r.data)
   },
+
+  /** 租客确认维修完成 */
+  confirm(id: number): Promise<RepairRead> {
+    return api.patch(`/repairs/${id}/confirm`).then((r) => r.data)
+  },
 }
 
 export const workerService = {

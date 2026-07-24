@@ -3,7 +3,8 @@ import enum
 from datetime import date, datetime
 from decimal import Decimal
 
-from sqlalchemy import Date, DateTime, Enum, Float, ForeignKey, Integer, Numeric, String, Text
+from sqlalchemy import Boolean, Date, DateTime, Enum, Float, ForeignKey, Integer, Numeric, String, Text
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.mixins import TimestampMixin
@@ -29,18 +30,25 @@ VALID_ROOM_STATUS_TRANSITIONS: dict[RoomStatus, set[RoomStatus]] = {
 
 class Room(TimestampMixin, Base):
     """房间 — 最底层出租单元，绑定户型"""
-    __tablename__ = "rooms"
+    __tablename__ = "properties"
 
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
     landlord_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
 
     # ── 户型绑定 ──
-    unit_type_id: Mapped[int] = mapped_column(ForeignKey("unit_types.id", ondelete="CASCADE"), index=True)
+    unit_type_id: Mapped[int | None] = mapped_column(
+        ForeignKey("unit_types.id", ondelete="SET NULL"), index=True, nullable=True
+    )
 
     # ── 房间独有信息 ──
     room_number: Mapped[str | None] = mapped_column(String(20), nullable=True)
     institute_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
-    # 兼容旧代码的字段
+    # institute 冗余（搜索扁平化）
+    institute_name: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    institute_amenities: Mapped[str | None] = mapped_column(Text, nullable=True)
+    female_only: Mapped[bool] = mapped_column(Boolean, default=False)
+    safety_score: Mapped[float | None] = mapped_column(Numeric(3, 2), nullable=True)
+    # 兼容旧代码
     title: Mapped[str | None] = mapped_column(String(200), nullable=True)
     address: Mapped[str | None] = mapped_column(String(500), nullable=True)
     district: Mapped[str | None] = mapped_column(String(100), nullable=True)
@@ -50,32 +58,44 @@ class Room(TimestampMixin, Base):
     bathrooms: Mapped[int | None] = mapped_column(Integer, nullable=True)
     property_type: Mapped[str | None] = mapped_column(String(50), nullable=True)
     deposit_amount: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    deposit_type: Mapped[str | None] = mapped_column(String(50), nullable=True)
     service_fee_rate: Mapped[float | None] = mapped_column(Float, nullable=True)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     country: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    currency: Mapped[str | None] = mapped_column(String(3), nullable=True, default="CNY")
     latitude: Mapped[Decimal | None] = mapped_column(Numeric(9, 6), nullable=True)
     longitude: Mapped[Decimal | None] = mapped_column(Numeric(9, 6), nullable=True)
-    city: Mapped[str | None] = mapped_column(String(100), nullable=True)
-    # 三层架构真正字段
-    building_block: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    rent_type: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    rental_rules: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    embedding: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # 三层架构字段
     floor: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    building_block: Mapped[str | None] = mapped_column(String(20), nullable=True)
     special_discount: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    city: Mapped[str | None] = mapped_column(String(100), nullable=True)
     available_from: Mapped[date | None] = mapped_column(Date, nullable=True)
 
     # ── 状态与版本 ──
-    status: Mapped[RoomStatus] = mapped_column(
-        Enum(RoomStatus, name="property_status"),
-        default=RoomStatus.available,
-        nullable=False,
-        index=True,
+    status: Mapped[str] = mapped_column(
+        String(30), default="available", nullable=False, index=True
     )
-    min_stay_months: Mapped[int] = mapped_column(Integer, default=3, nullable=False)
+    min_stay_months: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    min_lease_months: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    max_lease_months: Mapped[int | None] = mapped_column(Integer, nullable=True)
     version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
 
     # ── 关系 ──
     landlord: Mapped["User"] = relationship(back_populates="rooms")
-    unit_type: Mapped["UnitType"] = relationship(back_populates="rooms")
+    institute: Mapped["Institute"] = relationship(
+        "Institute", lazy="selectin",
+        foreign_keys=[institute_id], primaryjoin="Room.institute_id == Institute.id",
+        viewonly=True,
+    )
+    unit_type: Mapped["UnitType"] = relationship(
+        "UnitType", back_populates="rooms",
+        foreign_keys="[Room.unit_type_id]",
+    )
     images: Mapped[list["RoomImage"]] = relationship(
         "RoomImage", back_populates="room", cascade="all, delete-orphan", lazy="selectin"
     )
@@ -87,10 +107,11 @@ VALID_STATUS_TRANSITIONS = VALID_ROOM_STATUS_TRANSITIONS
 # 旧枚举别名
 import enum as _enum2
 class PropertyType(str, _enum2.Enum):
-    apartment = "apartment"
-    house = "house"
-    studio = "studio"
-    shared = "shared"
+    studio = "studio"      # 单间/开间
+    one_bed = "1-bed"      # 一室一厅公寓
+    two_bed = "2-bed"      # 两室及以上公寓
+    shared = "shared"      # 合租单间
+    house = "house"        # 独栋/联排别墅
 # DepositType 从 unit_type 导入
 from app.models.unit_type import DepositType as _DT
 DepositType = _DT

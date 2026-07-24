@@ -33,7 +33,7 @@ class AgentCartItem(TimestampMixin, Base):
         ForeignKey("agent_carts.id", ondelete="CASCADE"), index=True
     )
     property_id: Mapped[int] = mapped_column(
-        ForeignKey("rooms.id", ondelete="CASCADE"), index=True
+        ForeignKey("properties.id", ondelete="CASCADE"), index=True
     )
     reason: Mapped[str | None] = mapped_column(SAText, nullable=True)
 

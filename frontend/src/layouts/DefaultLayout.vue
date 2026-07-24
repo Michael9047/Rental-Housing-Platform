@@ -162,6 +162,12 @@
                 <el-dropdown-item v-if="authStore.isAdmin" @click="router.push('/admin')">
                   <el-icon><DataAnalysis /></el-icon> 系统管理
                 </el-dropdown-item>
+                <el-dropdown-item v-if="authStore.isAdmin" @click="router.push('/admin/escalated-repairs')">
+                  <el-icon><Tickets /></el-icon> 待派单工单
+                </el-dropdown-item>
+                <el-dropdown-item v-if="authStore.isAdmin" @click="router.push('/admin/landlord-workers')">
+                  <el-icon><List /></el-icon> 房东维修工看板
+                </el-dropdown-item>
                 <el-dropdown-item divided @click="authStore.logout()">
                   <el-icon><SwitchButton /></el-icon> 退出登录
                 </el-dropdown-item>
@@ -185,12 +191,10 @@
           <el-button text :icon="ArrowLeft" @click="router.back()">返回上一页</el-button>
         </div>
         <router-view />
-        <GlobalFooter />
+        <GlobalFooter v-if="!route.meta.hideFooter" />
       </el-main>
     </el-container>
 
-    <!-- 浮动 AI 管家（登录可见） -->
-    <AssistantBubble />
   </el-container>
 </template>
 
@@ -199,7 +203,7 @@ import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import {
   Search, User, UserFilled, ArrowDown, ArrowLeft, Setting, SwitchButton,
-  Plus, List, Bell, DataAnalysis, Tickets, Loading,} from '@element-plus/icons-vue'
+  Plus, List, Bell, ChatDotRound, DataAnalysis, Tickets, Loading,} from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 import { useAgentChatStore } from '@/stores/agentChat'
 import { useCartStore } from '@/stores/cart'
@@ -207,7 +211,6 @@ import { notificationService } from '@/services/notification'
 import api from '@/services/api'
 import GlobalFooter from '@/components/GlobalFooter.vue'
 import GlobalSidebar from '@/components/GlobalSidebar.vue'
-import AssistantBubble from '@/components/AssistantBubble.vue'
 
 interface SuggestionSchool {
   type: string

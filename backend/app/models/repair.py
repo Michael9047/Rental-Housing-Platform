@@ -28,9 +28,11 @@ class RepairIssueType(str, enum.Enum):
 
 class RepairStatus(str, enum.Enum):
     pending = "pending"              # 待处理
+    pending_escalated = "pending_escalated"  # 待后台派单（房东无维修工时跳过）
     assigned = "assigned"            # 已派单
     in_progress = "in_progress"      # 维修中
-    completed = "completed"          # 已完成
+    completed = "completed"          # 已完成（待租客确认）
+    confirmed = "confirmed"          # 已确认（租客确认修好）
     rejected = "rejected"            # 已拒绝
     cancelled = "cancelled"          # 已取消
 
@@ -41,13 +43,19 @@ class WorkerStatus(str, enum.Enum):
     on_leave = "on_leave"            # 休假
 
 
+class WorkerScope(str, enum.Enum):
+    """维修工归属范围"""
+    platform = "platform"            # 网站管理（Admin创建，全局可见）
+    apartment = "apartment"          # 公寓管理（房东创建，仅该房东可见）
+
+
 class RepairRequest(TimestampMixin, Base):
     """报修工单"""
     __tablename__ = "repair_requests"
 
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
     property_id: Mapped[int] = mapped_column(
-        ForeignKey("rooms.id", ondelete="CASCADE"), index=True
+        ForeignKey("properties.id", ondelete="CASCADE"), index=True
     )
     tenant_id: Mapped[int] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE"), index=True
@@ -98,6 +106,11 @@ class RepairWorker(TimestampMixin, Base):
     status: Mapped[WorkerStatus] = mapped_column(
         Enum(WorkerStatus, name="worker_status"),
         default=WorkerStatus.available,
+        nullable=False,
+    )
+    scope: Mapped[WorkerScope] = mapped_column(
+        Enum(WorkerScope, name="worker_scope"),
+        default=WorkerScope.apartment,
         nullable=False,
     )
     skills: Mapped[dict | None] = mapped_column(JSON, nullable=True)

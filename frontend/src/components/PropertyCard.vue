@@ -136,7 +136,7 @@ const p = computed(() => ({
   title: props.property.title || props.property.unit_type_name || props.property.room_number || '未命名',
   price_monthly: props.property.price_monthly ?? props.property.base_rent ?? 0,
   district: props.property.district || props.property.institute_name || '',
-  property_type: props.property.property_type || 'apartment',
+  property_type: props.property.property_type || '1-bed',
   address: props.property.address || props.property.institute_address || '',
 }))
 const inCart = computed(() => cartStore.has(props.property.id))
@@ -152,18 +152,20 @@ async function handleToggleCart() {
       await cartStore.add(props.property.id)
       ElMessage.success(`已将「${p.value.title}」加入候选清单`)
     }
-  } catch {
-    // 错误提示由 api 拦截器统一处理
+  } catch (e: any) {
+    const msg = e?.response?.data?.error?.message || e?.message || ''
+    ElMessage.error(msg || '操作失败，请稍后重试')
   } finally {
     busy.value = false
   }
 }
 
 const typeLabels: Record<PropertyType, string> = {
-  apartment: '公寓',
-  house: '别墅',
   studio: '单间',
+  '1-bed': '一室',
+  '2-bed': '两室+',
   shared: '合租',
+  house: '别墅',
 }
 
 const primaryImageUrl = computed(() => {
@@ -194,7 +196,7 @@ const amenityTags = computed(() => {
   }
 
   // Property type-based
-  if (p.property_type === 'apartment') {
+  if (p.property_type === '1-bed' || p.property_type === '2-bed') {
     tags.push('电梯', 'WiFi')
   } else if (p.property_type === 'studio') {
     tags.push('独立卫浴', 'WiFi')

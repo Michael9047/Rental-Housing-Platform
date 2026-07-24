@@ -21,7 +21,15 @@ from app.models.marketplace import (
     MarketplaceReportStatus,
 )
 from app.models.news import NewsArticle, NewsArticleStatus
-from app.models.notification import Notification, NotificationType
+from app.models.notification import (
+    DeliveryStatus,
+    Notification,
+    NotificationChannel,
+    NotificationDelivery,
+    NotificationEntityType,
+    NotificationEventType,
+    NotificationType,
+)
 from app.models.order import Order
 from app.models.payment import Payment, PaymentStatus
 from app.models.pms_connection import PMSConnection, PMSSyncStatus, PMSType
@@ -77,7 +85,12 @@ __all__ = [
     "MarketplaceReportStatus",
     "NewsArticle",
     "NewsArticleStatus",
+    "DeliveryStatus",
     "Notification",
+    "NotificationChannel",
+    "NotificationDelivery",
+    "NotificationEntityType",
+    "NotificationEventType",
     "NotificationType",
     "Order",
     "Payment",

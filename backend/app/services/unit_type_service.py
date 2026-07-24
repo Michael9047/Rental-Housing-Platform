@@ -57,7 +57,7 @@ class UnitTypeService:
         return await self.session.get(UnitType, unit_type_id, options=[selectinload(UnitType.institute)])
 
     async def list(self, *, skip: int = 0, limit: int = 20, institute_id: int | None = None) -> dict:
-        filters = []
+        filters = [UnitType.deleted_at.is_(None)]  # 排除已删除
         if institute_id is not None:
             filters.append(UnitType.institute_id == institute_id)
         base = select(func.count(UnitType.id))
@@ -91,10 +91,60 @@ class UnitTypeService:
         return ut
 
     async def delete(self, unit_type_id: int) -> bool:
+        """级联软删除：户型 → 下属所有房间"""
+        from datetime import datetime
+        from app.models.property import Room
         ut = await self.get(unit_type_id)
         if not ut: return False
         name = ut.name
-        await self.session.delete(ut)
+        now = datetime.utcnow()
+        # 级联软删除所有下属房间
+        room_result = await self.session.execute(
+            select(Room).where(Room.unit_type_id == unit_type_id, Room.deleted_at.is_(None))
+        )
+        rooms = room_result.scalars().all()
+        for r in rooms:
+            r.deleted_at = now
+            r.status = "offline"
+        # 软删除户型本身
+        ut.deleted_at = now
         await self.session.commit()
-        await self._audit("删除户型", unit_type_id, {"户型名": name})
+        await self._audit("删除户型", unit_type_id, {"户型名": name, "级联删除房间": len(rooms)})
         return True
+
+    async def restore(self, unit_type_id: int) -> UnitType | None:
+        """级联恢复：户型 + 下属所有房间"""
+        from app.models.property import Room
+        ut = await self.get(unit_type_id)
+        if not ut or ut.deleted_at is None:
+            return None
+        ut.deleted_at = None
+        # 恢复下属房间
+        room_result = await self.session.execute(
+            select(Room).where(Room.unit_type_id == unit_type_id, Room.deleted_at.isnot(None))
+        )
+        rooms = room_result.scalars().all()
+        for r in rooms:
+            r.deleted_at = None
+            r.status = "available"
+        await self.session.commit()
+        await self.session.refresh(ut)
+        await self._audit("恢复户型", unit_type_id, {"户型名": ut.name, "恢复房间": len(rooms)})
+        return ut
+
+    async def list_deleted(self, *, skip: int = 0, limit: int = 20, institute_id: int | None = None) -> dict:
+        """回收站列表 — 已删除的户型"""
+        filters = [UnitType.deleted_at.isnot(None)]
+        if institute_id is not None:
+            filters.append(UnitType.institute_id == institute_id)
+        base = select(func.count(UnitType.id))
+        for f in filters: base = base.where(f)
+        total = (await self.session.scalar(base)) or 0
+        stmt = (select(UnitType)
+                .options(selectinload(UnitType.institute))
+                .order_by(UnitType.deleted_at.desc())
+                .offset(skip).limit(limit))
+        for f in filters: stmt = stmt.where(f)
+        result = await self.session.scalars(stmt)
+        items = list(result.unique())
+        return {"items": items, "total": total, "page": skip // limit + 1, "page_size": limit, "total_pages": max(1, (total + limit - 1) // limit)}

@@ -24,6 +24,10 @@ class Institute(TimestampMixin, Base):
     name_cn: Mapped[str | None] = mapped_column(String(200), nullable=True)
     abbreviation: Mapped[str | None] = mapped_column(String(50), nullable=True)
     address: Mapped[str | None] = mapped_column(String(300))
+    district: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    city: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    country: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    npc: Mapped[str | None] = mapped_column(String(100), nullable=True)  # 新加坡 NPC 辖区简称（如 CL-NPC）
     latitude: Mapped[Decimal | None] = mapped_column(Numeric(9, 6), nullable=True)
     longitude: Mapped[Decimal | None] = mapped_column(Numeric(9, 6), nullable=True)
     contact_phone: Mapped[str | None] = mapped_column(String(32))

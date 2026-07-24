@@ -25,7 +25,7 @@ class ParsedProperty:
     bedrooms: int | None = None
     bathrooms: int | None = None
     area_sqm: float | None = None
-    property_type: str | None = None  # apartment/house/studio/shared
+    property_type: str | None = None  # studio/1-bed/2-bed/shared/house
     description: str | None = None
     amenities: list[str] = field(default_factory=list)
     latitude: float | None = None
@@ -62,7 +62,7 @@ class LLMPropertyParser:
     """
 
     # 有效值约束
-    VALID_PROPERTY_TYPES = ["apartment", "house", "studio", "shared"]
+    VALID_PROPERTY_TYPES = ["studio", "1-bed", "2-bed", "shared", "house"]
     VALID_AMENITIES = [
         "电梯", "空调", "洗衣机", "冰箱", "WiFi", "暖气", "阳台",
         "独立卫浴", "健身房", "自习室", "游泳池", "停车场",

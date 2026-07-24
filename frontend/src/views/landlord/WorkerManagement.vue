@@ -8,6 +8,11 @@
     <el-table :data="workers" stripe>
       <el-table-column label="姓名" width="100"><template #default="{ row }">{{ row.username }}</template></el-table-column>
       <el-table-column label="电话" width="130"><template #default="{ row }">{{ row.phone }}</template></el-table-column>
+      <el-table-column label="归属" width="100">
+        <template #default="{ row }">
+          <el-tag :type="row.scope === 'platform' ? '' : 'info'" size="small" :style="row.scope === 'platform' ? 'background-color:#8b5cf6;border-color:#8b5cf6;color:#fff' : ''">{{ scopeLabel(row.scope) }}</el-tag>
+        </template>
+      </el-table-column>
       <el-table-column label="技能" min-width="150"><template #default="{ row }">{{ (row.skills || []).join('、') || '-' }}</template></el-table-column>
       <el-table-column label="状态" width="100">
         <template #default="{ row }">
@@ -25,11 +30,17 @@
     </el-table>
 
     <!-- 新建弹窗 -->
-    <el-dialog v-model="showCreate" title="新建维修师傅账号" width="400px">
+    <el-dialog v-model="showCreate" title="新建维修师傅账号" width="420px">
       <el-form :model="createForm" label-width="70px">
         <el-form-item label="用户名"><el-input v-model="createForm.username" placeholder="登录用户名" /></el-form-item>
         <el-form-item label="密码"><el-input v-model="createForm.password" type="password" placeholder="至少6位" /></el-form-item>
         <el-form-item label="手机号"><el-input v-model="createForm.phone" placeholder="维修师傅手机号" /></el-form-item>
+        <el-form-item v-if="authStore.isAdmin" label="归属范围">
+          <el-select v-model="createForm.scope" style="width:100%" placeholder="选择归属范围">
+            <el-option label="网站管理（全局可见）" value="platform" />
+            <el-option label="公寓管理（仅你可见）" value="apartment" />
+          </el-select>
+        </el-form-item>
         <el-form-item label="技能"><el-input v-model="skillsStr" placeholder="用逗号分隔：水电,家电,门窗" /></el-form-item>
       </el-form>
       <template #footer>
@@ -44,13 +55,16 @@
 import { ref, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { workerService } from '@/services/repair'
-import type { RepairWorker } from '@/types/repair'
+import { useAuthStore } from '@/stores/auth'
+import { WORKER_SCOPE_LABELS } from '@/types/repair'
+import type { RepairWorker, WorkerScope } from '@/types/repair'
 
+const authStore = useAuthStore()
 const workers = ref<RepairWorker[]>([])
 const loading = ref(false)
 const showCreate = ref(false)
 const createLoading = ref(false)
-const createForm = ref({ username: '', password: '', phone: '' })
+const createForm = ref({ username: '', password: '', phone: '', scope: 'apartment' as WorkerScope })
 const skillsStr = ref('')
 
 const STATUS_LABEL: Record<string, string> = { available: '可调度', working: '工作中', on_leave: '休假中' }
@@ -58,6 +72,7 @@ const STATUS_TAG: Record<string, string> = { available: 'success', working: '', 
 
 function workerStatusLabel(s: string) { return STATUS_LABEL[s] || s }
 function workerStatusTag(s: string) { return STATUS_TAG[s] || 'info' }
+function scopeLabel(s: string) { return (WORKER_SCOPE_LABELS as Record<string, string>)[s] || s }
 
 async function fetchData() {
   loading.value = true
@@ -83,7 +98,7 @@ async function doCreate() {
     await workerService.create({ ...createForm.value, skills })
     ElMessage.success('维修师傅账号已创建')
     showCreate.value = false
-    createForm.value = { username: '', password: '', phone: '' }
+    createForm.value = { username: '', password: '', phone: '', scope: 'apartment' }
     skillsStr.value = ''
     await fetchData()
   } catch (e: any) {

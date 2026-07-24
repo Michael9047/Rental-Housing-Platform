@@ -17,7 +17,7 @@ class UserFavorite(TimestampMixin, Base):
         ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False
     )
     property_id: Mapped[int] = mapped_column(
-        ForeignKey("rooms.id", ondelete="CASCADE"), index=True, nullable=False
+        ForeignKey("properties.id", ondelete="CASCADE"), index=True, nullable=False
     )
 
     user: Mapped["User"] = relationship()

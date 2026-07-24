@@ -1,4 +1,5 @@
 {
+  "skipWebFetchPreflight": true,
   "permissions": {
     "allow": [
       "Bash(curl:*)",
