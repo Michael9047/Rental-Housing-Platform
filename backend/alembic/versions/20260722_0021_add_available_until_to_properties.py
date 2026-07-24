@@ -17,8 +17,8 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    op.add_column("properties", sa.Column("available_until", sa.Date(), nullable=True))
+    op.add_column("rooms", sa.Column("available_until", sa.Date(), nullable=True))
 
 
 def downgrade() -> None:
-    op.drop_column("properties", "available_until")
+    op.drop_column("rooms", "available_until")

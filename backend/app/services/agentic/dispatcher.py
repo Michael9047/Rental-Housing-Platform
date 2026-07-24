@@ -171,21 +171,38 @@ async def dispatch_stream(
 
     if intent == "search":
         agent = SearchAgent(session=session)
-        result = await agent.search(message=message, filters=filters)
-        recommendations = result.get("recommendations", [])
+        # Phase 1: 数据获取（DB 检索 + Embedding，不做 LLM 生成）
+        search_data = await agent.search_data(message=message, filters=filters)
+        recommendations = search_data["all_recs"]
         meta["recommendations"] = [
             {"property_id": r["property_id"], "match_reason": r.get("match_reason", "")}
             for r in recommendations
         ]
-        # 搜索的 AI 回复已在 search() 中生成，这里逐字 yield
-        full_reply = result.get("reply", "")
-        # 模拟流式：每 3 个字 yield 一次
-        import asyncio
-        for i in range(0, len(full_reply), 3):
-            chunk = full_reply[i:i+3]
-            yield chunk, None
-            await asyncio.sleep(0.01)
+        meta["top_picks"] = search_data["top_picks"]
+        # 先 yield meta，让前端立即展示推荐卡片
         yield None, meta
+
+        # Phase 2: 流式生成 LLM 回复（或降级文本）
+        source_info = search_data["source_info"]
+        if search_data["llm_messages"]:
+            try:
+                async for token in llm.complete_text_stream(
+                    search_data["llm_messages"], max_tokens=2000,
+                ):
+                    full_reply += token
+                    yield token, None
+                full_reply = full_reply.strip()
+                if len(full_reply) < 20:
+                    raise ValueError("LLM 流式返回过短")
+                full_reply = full_reply + source_info
+                yield source_info, None  # 溯源信息作为一个 chunk
+            except Exception:
+                logger.exception("LLM 推荐流式生成失败，降级为规则摘要")
+                full_reply = search_data["fallback_reply"]
+                yield full_reply, None
+        else:
+            full_reply = search_data["fallback_reply"]
+            yield full_reply, None
 
     elif intent == "general":
         msgs = [{"role": "system", "content": "你是留学生租房顾问，口语化中文回答，1-2句话。"}]

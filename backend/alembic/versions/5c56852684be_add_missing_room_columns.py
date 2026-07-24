@@ -16,16 +16,16 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    op.add_column('properties', sa.Column('safety_score', sa.Numeric(3, 2), nullable=True))
-    op.add_column('properties', sa.Column('institute_name', sa.String(200), nullable=True))
-    op.add_column('properties', sa.Column('institute_amenities', sa.Text, nullable=True))
-    op.add_column('properties', sa.Column('female_only', sa.Boolean, nullable=True, server_default=sa.text('false')))
-    op.add_column('properties', sa.Column('currency', sa.String(3), nullable=True, server_default=sa.text("'CNY'")))
+    op.add_column('rooms', sa.Column('safety_score', sa.Numeric(3, 2), nullable=True))
+    op.add_column('rooms', sa.Column('institute_name', sa.String(200), nullable=True))
+    op.add_column('rooms', sa.Column('institute_amenities', sa.Text, nullable=True))
+    op.add_column('rooms', sa.Column('female_only', sa.Boolean, nullable=True, server_default=sa.text('false')))
+    op.add_column('rooms', sa.Column('currency', sa.String(3), nullable=True, server_default=sa.text("'CNY'")))
 
 
 def downgrade() -> None:
-    op.drop_column('properties', 'currency')
-    op.drop_column('properties', 'female_only')
-    op.drop_column('properties', 'institute_amenities')
-    op.drop_column('properties', 'institute_name')
-    op.drop_column('properties', 'safety_score')
+    op.drop_column('rooms', 'currency')
+    op.drop_column('rooms', 'female_only')
+    op.drop_column('rooms', 'institute_amenities')
+    op.drop_column('rooms', 'institute_name')
+    op.drop_column('rooms', 'safety_score')

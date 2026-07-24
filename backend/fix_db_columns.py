@@ -24,13 +24,13 @@ NEEDED = [
 async def main():
     async with async_session_maker() as session:
         result = await session.execute(
-            text("SELECT column_name FROM information_schema.columns WHERE table_name = 'properties'")
+            text("SELECT column_name FROM information_schema.columns WHERE table_name = 'rooms'")
         )
         existing = {row[0] for row in result}
         print(f"DB has {len(existing)} columns")
         for col_name, col_type in NEEDED:
             if col_name not in existing:
-                sql = f"ALTER TABLE properties ADD COLUMN {col_name} {col_type}"
+                sql = f"ALTER TABLE rooms ADD COLUMN {col_name} {col_type}"
                 print(f"  + {col_name} ({col_type})")
                 await session.execute(text(sql))
             else:

@@ -37,10 +37,18 @@ router = APIRouter()
 
 
 def _to_search_result(prop) -> PropertySearchResult:
-    """兼容 UnitType 和 Property/Room 两种模型。"""
-    # UnitType 对象 → 转为 PropertySearchResult 兼容 dict
+    """兼容 UnitType ORM、Property ORM 和 dict 三种输入。"""
+    from datetime import datetime
+
+    # dict 输入：直接 model_validate，缺省字段补默认值
+    if isinstance(prop, dict):
+        now = datetime.utcnow()
+        prop.setdefault("created_at", now)
+        prop.setdefault("updated_at", now)
+        return PropertySearchResult.model_validate(prop)
+
+    # UnitType 对象 → 映射到 PropertySearchResult 的字段
     if hasattr(prop, 'institute_id') and not hasattr(prop, 'landlord_id'):
-        # 这是 UnitType — 映射到 PropertySearchResult 的字段
         inst = getattr(prop, 'institute', None)
         return PropertySearchResult(
             id=prop.id,
@@ -177,7 +185,15 @@ async def send_agent_message_stream(
             yield f"data: {json.dumps({'error': str(e)})}\n\n"
         yield f"data: [DONE]\n\n"
 
-    return StreamingResponse(event_stream(), media_type="text/event-stream")
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @router.get("/faqs", response_model=list[FaqChip])
