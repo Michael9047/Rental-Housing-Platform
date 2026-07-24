@@ -151,6 +151,81 @@ async def dispatch(
     }
 
 
+async def dispatch_stream(
+    session: AsyncSession,
+    chat_session: ChatSession,
+    user_id: int,
+    message: str,
+    filters: dict[str, Any] | None = None,
+    compare_property_ids: list[int] | None = None,
+):
+    """流式分发 —— yield (token, meta)，用于 SSE 端点。"""
+    history = await _load_history(session, chat_session.id)
+    classification = await classify_message(message, history)
+    intent = classification.get("intent", "general")
+
+    llm = get_llm_service()
+    full_reply = ""
+    recommendations = []
+    meta = {"intent": intent}
+
+    if intent == "search":
+        agent = SearchAgent(session=session)
+        result = await agent.search(message=message, filters=filters)
+        recommendations = result.get("recommendations", [])
+        meta["recommendations"] = [
+            {"property_id": r["property_id"], "match_reason": r.get("match_reason", "")}
+            for r in recommendations
+        ]
+        # 搜索的 AI 回复已在 search() 中生成，这里逐字 yield
+        full_reply = result.get("reply", "")
+        # 模拟流式：每 3 个字 yield 一次
+        import asyncio
+        for i in range(0, len(full_reply), 3):
+            chunk = full_reply[i:i+3]
+            yield chunk, None
+            await asyncio.sleep(0.01)
+        yield None, meta
+
+    elif intent == "general":
+        msgs = [{"role": "system", "content": "你是留学生租房顾问，口语化中文回答，1-2句话。"}]
+        msgs.extend(history)
+        msgs.append({"role": "user", "content": message})
+        async for token in llm.complete_text_stream(msgs, max_tokens=500):
+            full_reply += token
+            yield token, None
+        yield None, meta
+
+    elif intent == "faq":
+        strength, hits = match_faq(message)
+        if strength == "strong" and hits:
+            full_reply = hits[0].answer
+        elif strength == "weak" and hits:
+            full_reply = f"你想了解的是 {' / '.join(e.chip for e in hits[:5])} 中的哪个？"
+        else:
+            entry = get_faq(message)
+            full_reply = entry.answer if entry else "建议查看帮助中心。"
+        yield full_reply, None
+        yield None, meta
+
+    else:  # manage_cart / compare — 暂不流式
+        result = await dispatch(session, chat_session, user_id, message, filters, compare_property_ids)
+        full_reply = result.get("reply", "")
+        yield full_reply, meta
+
+    # 持久化
+    user_msg = ChatMessage(session_id=chat_session.id, role=ChatMessageRole.user,
+                           content=message, metadata_={"filters": filters or {}})
+    assistant_msg = ChatMessage(session_id=chat_session.id, role=ChatMessageRole.assistant,
+                                content=full_reply, metadata_={"intent": intent, "recommendations": [
+                                    {"property_id": r.get("property_id", r.get("id", 0)),
+                                     "match_reason": r.get("match_reason", "")}
+                                    for r in recommendations
+                                ]})
+    session.add_all([user_msg, assistant_msg])
+    await session.commit()
+
+
 # ── helpers ──────────────────────────────────────────────────────
 
 async def _load_history(session: AsyncSession, session_id: int, limit: int = 10) -> list[dict]:

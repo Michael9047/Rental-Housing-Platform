@@ -2,6 +2,7 @@
 
 轻量架构：Router 分类 → Dispatcher 分发 → Agent/Service/Tool 直接执行。
 """
+import json
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -139,6 +140,44 @@ async def send_agent_message(
             ThinkingStep(**step) for step in result.get("thinking_steps", [])
         ],
     )
+
+
+@router.post("/sessions/{session_id}/messages/stream")
+async def send_agent_message_stream(
+    session_id: int,
+    body: AgentMessageRequest,
+    session: AsyncSession = Depends(get_db_session),
+    current_user: User = Depends(get_current_user),
+):
+    """流式 Agent 消息 —— SSE 逐 token 返回 AI 回复。"""
+    from fastapi.responses import StreamingResponse
+    from app.services.agentic.dispatcher import dispatch_stream
+
+    chat_service = ChatService(session)
+    chat_session = await chat_service.get_session(session_id, current_user.id)
+    if chat_session is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Agent 会话不存在")
+
+    filters = body.filters.model_dump(exclude_none=True) if body.filters else None
+
+    async def event_stream():
+        full_reply = ""
+        try:
+            async for token, meta in dispatch_stream(
+                session=session, chat_session=chat_session, user_id=current_user.id,
+                message=body.message, filters=filters,
+                compare_property_ids=body.compare_property_ids,
+            ):
+                if token:
+                    full_reply += token
+                    yield f"data: {json.dumps({'token': token})}\n\n"
+                if meta:
+                    yield f"data: {json.dumps({'meta': meta})}\n\n"
+        except Exception as e:
+            yield f"data: {json.dumps({'error': str(e)})}\n\n"
+        yield f"data: [DONE]\n\n"
+
+    return StreamingResponse(event_stream(), media_type="text/event-stream")
 
 
 @router.get("/faqs", response_model=list[FaqChip])

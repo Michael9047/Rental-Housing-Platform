@@ -56,10 +56,13 @@
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
+import { useRoute } from 'vue-router'
 import { Promotion } from '@element-plus/icons-vue'
 import { agentService } from '@/services/agent'
 import PropertyCard from '@/components/PropertyCard.vue'
 import type { AgentMessageResponse } from '@/types/agent'
+
+const route = useRoute()
 
 interface ChatMessage {
   user: string
@@ -83,6 +86,11 @@ onMounted(async () => {
     const s = await agentService.createSession()
     sessionId.value = s.session_id
   } catch { /* 会话创建失败仍可使用 */ }
+  // 从首页搜索框跳转过来 → 自动发送
+  const urlQuery = route.query.q as string
+  if (urlQuery?.trim()) {
+    send(urlQuery.trim())
+  }
 })
 
 async function send(text?: string) {
@@ -94,16 +102,57 @@ async function send(text?: string) {
 
   input.value = ''
   loading.value = true
-  messages.value.push({ user: msg })
+  messages.value.push({ user: msg, reply: '' })
+  const last = messages.value[messages.value.length - 1]
 
   try {
-    const res = await agentService.sendMessage(sessionId.value, { message: msg })
-    const last = messages.value[messages.value.length - 1]
-    last.reply = res.reply
-    last.recommendations = res.recommendations
-  } catch {
-    const last = messages.value[messages.value.length - 1]
-    last.reply = '请求失败，请重试'
+    // 用 fetch 直接调流式端点
+    const token = localStorage.getItem('access_token') || ''
+    const resp = await fetch(
+      `/api/v1/agent/sessions/${sessionId.value}/messages/stream`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify({ message: msg }),
+      }
+    )
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({}))
+      throw new Error(err.detail || `HTTP ${resp.status}`)
+    }
+
+    const reader = resp.body?.getReader()
+    if (!reader) throw new Error('No response stream')
+    const decoder = new TextDecoder()
+    let buffer = ''
+
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      buffer += decoder.decode(value, { stream: true })
+      const lines = buffer.split('\n')
+      buffer = lines.pop() || ''
+      for (const line of lines) {
+        if (line.startsWith('data: ')) {
+          const data = line.slice(6)
+          if (data === '[DONE]') continue
+          try {
+            const parsed = JSON.parse(data)
+            if (parsed.token) {
+              last.reply = (last.reply || '') + parsed.token
+            }
+            if (parsed.meta?.recommendations) {
+              last.recommendations = parsed.meta.recommendations
+            }
+          } catch {}
+        }
+      }
+    }
+  } catch (e: any) {
+    last.reply = e.message || '请求失败'
   } finally {
     loading.value = false
   }

@@ -8,8 +8,8 @@
         <el-input v-model="searchQuery" placeholder="试试：NUS附近两居室 预算3000..." size="large" clearable @keyup.enter="handleAiSearch" class="search-input">
           <template #prefix><span style="font-size:18px">🔍</span></template>
         </el-input>
-        <el-button type="primary" size="large" @click="handleAiSearch" :loading="aiLoading" class="search-btn">
-          <span v-if="!aiLoading">✨ AI 找房</span>
+        <el-button type="primary" size="large" @click="handleAiSearch" class="search-btn">
+          ✨ AI 找房
         </el-button>
       </div>
       <div class="hero-tags">
@@ -43,13 +43,11 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import api from '@/services/api'
 import PropertyCard from '@/components/PropertyCard.vue'
 
 const router = useRouter()
 
 const searchQuery = ref('')
-const aiLoading = ref(false)
 const loading = ref(true)
 const rooms = ref<any[]>([])
 const quickTags = ['金文泰', 'NUS附近', '伦敦学生公寓']
@@ -57,13 +55,7 @@ const quickTags = ['金文泰', 'NUS附近', '伦敦学生公寓']
 async function handleAiSearch() {
   const q = searchQuery.value.trim()
   if (!q) return
-  aiLoading.value = true
-  try {
-    await api.post('/ai-search/parse', { query: q })
-    router.push({ path: '/ai-search', query: { q } })
-  } catch {
-    router.push({ path: '/search', query: { keyword: q } })
-  } finally { aiLoading.value = false }
+  router.push({ path: '/ai-search', query: { q } })
 }
 
 async function loadRooms() {

@@ -164,6 +164,25 @@ class LLMService:
         )
         return response.choices[0].message.content or ""
 
+    async def complete_text_stream(
+        self,
+        messages: list[dict[str, str]],
+        *,
+        temperature: float = 0.5,
+        max_tokens: int = 800,
+    ):
+        """流式文本补全 —— 返回 async generator，逐 token yield。"""
+        stream = await self._client.chat.completions.create(
+            model=self._model,
+            messages=messages,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            stream=True,
+        )
+        async for chunk in stream:
+            if chunk.choices and chunk.choices[0].delta.content:
+                yield chunk.choices[0].delta.content
+
     async def complete_with_tools(
         self,
         messages: list[dict[str, Any]],
