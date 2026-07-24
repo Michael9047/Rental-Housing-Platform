@@ -3,6 +3,7 @@ from app.models.advertisement import AdImpression, Advertisement, AdvertisementS
 from app.models.agent_cart import AgentCart, AgentCartItem
 from app.models.audit_log import AuditLog
 from app.models.booking import Booking, BookingStatus
+from app.models.booking_flow_draft import BookingFlowDraft
 from app.models.building_image import BuildingImage
 from app.models.building_staff import BuildingStaff
 from app.models.chat import ChatMessage, ChatMessageRole, ChatSession, ChatSessionStatus
@@ -33,6 +34,7 @@ from app.models.notification import (
 from app.models.order import Order
 from app.models.payment import Payment, PaymentStatus
 from app.models.pms_connection import PMSConnection, PMSSyncStatus, PMSType
+from app.models.policy_consent import PolicyConsent
 from app.models.poi import PropertyPOI
 from app.models.property import Room, RoomStatus, Property, PropertyStatus
 from app.models.property_image import RoomImage, PropertyImage
@@ -60,6 +62,7 @@ __all__ = [
     "AuditLog",
     "Base",
     "Booking",
+    "BookingFlowDraft",
     "BookingStatus",
     "BuildingStaff",
     "ChatMessage",
@@ -98,6 +101,7 @@ __all__ = [
     "PMSConnection",
     "PMSSyncStatus",
     "PMSType",
+    "PolicyConsent",
     "PropertyPOI",
     "RepairIssueType",
     "RepairRequest",
