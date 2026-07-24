@@ -75,7 +75,8 @@ class Room(TimestampMixin, Base):
 
     # ── 状态与版本 ──
     status: Mapped[str] = mapped_column(
-        String(30), default="available", nullable=False, index=True
+        Enum(RoomStatus, name="property_status", create_type=False),
+        default="available", nullable=False, index=True
     )
     min_stay_months: Mapped[int | None] = mapped_column(Integer, nullable=True)
     min_lease_months: Mapped[int | None] = mapped_column(Integer, nullable=True)
