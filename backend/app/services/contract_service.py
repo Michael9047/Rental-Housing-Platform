@@ -22,7 +22,8 @@ PLATFORM_NAME = "Rental Housing Platform / 租房平台"
 PLATFORM_ROLE = "预订信息与交易流程中介平台 / booking intermediary and process facilitator"
 
 PROPERTY_TYPE_LABELS = {
-    PropertyType.apartment: "公寓 / Apartment",
+    PropertyType.one_bed: "一室公寓 / 1-Bed Apartment",
+    PropertyType.two_bed: "两室公寓 / 2-Bed Apartment",
     PropertyType.house: "住宅 / House",
     PropertyType.studio: "单间公寓 / Studio",
     PropertyType.shared: "合租房间 / Shared accommodation",
