@@ -119,6 +119,24 @@ def create_app() -> FastAPI:
     upload_dir.mkdir(parents=True, exist_ok=True)
     app.mount("/api/v1/uploads", StaticFiles(directory=str(upload_dir)), name="uploads")
 
+    # 开发工具：AGENT_TEST.html
+    from fastapi.responses import FileResponse, HTMLResponse
+    _TEST_HTML_PATH = Path(__file__).resolve().parent.parent / "test" / "AGENT_TEST.html"
+
+    @app.get("/debug/routes", include_in_schema=False)
+    async def debug_routes():
+        """列出所有注册路由，诊断用。"""
+        routes = []
+        for r in app.routes:
+            routes.append({"path": getattr(r, "path", str(r)), "methods": getattr(r, "methods", None)})
+        return {"test_file_exists": _TEST_HTML_PATH.is_file(), "test_file_path": str(_TEST_HTML_PATH), "routes": [r for r in routes if "/test" in r["path"] or "/debug" in r["path"]]}
+
+    @app.get("/test/agent", include_in_schema=False)
+    async def agent_test_page():
+        if not _TEST_HTML_PATH.is_file():
+            return HTMLResponse("<h1>File not found: " + str(_TEST_HTML_PATH) + "</h1>", status_code=404)
+        return FileResponse(str(_TEST_HTML_PATH))
+
     # 根路由 — 返回 API 基本信息（避免浏览器访问时 404 白屏）
     @app.get("/")
     async def root():

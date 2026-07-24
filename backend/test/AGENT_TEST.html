@@ -48,7 +48,7 @@ button.sm{padding:4px 10px;font-size:11px}
 <div class="left">
   <div class="panel">
     <h3>🔌 连接</h3>
-    <input id="baseUrl" value="http://localhost:8012/api/v1" placeholder="Base URL">
+    <input id="baseUrl" value="http://localhost:8000/api/v1" placeholder="Base URL">
     <div style="display:flex;gap:8px;margin-top:8px">
       <input id="email" placeholder="邮箱/用户名" style="flex:1">
       <input id="password" type="password" placeholder="密码" style="flex:1">
@@ -99,8 +99,11 @@ button.sm{padding:4px 10px;font-size:11px}
   </div>
   <div id="loader">⏳ 处理中...</div>
   <div class="panel">
-    <div style="display:flex;gap:8px">
-      <input id="msgInput" placeholder="输入找房需求..." onkeydown="if(event.key==='Enter')send()">
+    <div style="display:flex;gap:8px;align-items:center">
+      <input id="msgInput" placeholder="输入找房需求..." onkeydown="if(event.key==='Enter')send()" style="flex:1">
+      <label style="font-size:11px;color:var(--muted);white-space:nowrap;display:flex;align-items:center;gap:4px;cursor:pointer">
+        <input type="checkbox" id="useStream" checked onchange="val('useStream',this.checked)"> 流式
+      </label>
       <button id="btnSend" onclick="send()" style="width:80px" disabled>发送</button>
     </div>
   </div>
@@ -109,7 +112,7 @@ button.sm{padding:4px 10px;font-size:11px}
 <script>
 let token = '', sessionId = null, msgCount = 0, recCount = 0;
 const $ = id => document.getElementById(id);
-function val(id, text) { const el=$(id); if (!el) return ''; if (text!==undefined) { if(el.tagName==='INPUT'||el.tagName==='TEXTAREA') el.value=text; else el.textContent=text; } return el.value||el.textContent||''; }
+function val(id, text) { const el=$(id); if (!el) return ''; if (text!==undefined) { if(el.type==='checkbox') el.checked=text; else if(el.tagName==='INPUT'||el.tagName==='TEXTAREA') el.value=text; else el.textContent=text; } if(el.type==='checkbox') return el.checked; return el.value||el.textContent||''; }
 
 async function autoLogin() {
   const base = val('baseUrl');
@@ -203,11 +206,21 @@ async function send() {
   const msg = $('msgInput').value.trim();
   if (!msg || !sessionId) return;
   $('msgInput').value = '';
-  addMsg('user', msg);
   $('loader').style.display = 'block';
   $('btnSend').disabled = true;
 
+  if (val('useStream')) {
+    await sendStream(msg);
+  } else {
+    await sendNonStream(msg);
+  }
+  $('loader').style.display = 'none';
+  $('btnSend').disabled = false;
+}
+
+async function sendNonStream(msg) {
   const t0 = performance.now();
+  addMsg('user', msg);
   try {
     const r = await fetch(val('baseUrl')+'/agent/sessions/'+sessionId+'/messages', {
       method:'POST', headers:{'Authorization':'Bearer '+token,'Content-Type':'application/json'},
@@ -222,8 +235,88 @@ async function send() {
     if (d.cart_changed) viewCart();
     showPipeline(d);
   } catch(e) { addMsg('assistant','错误: '+e.message); }
-  $('loader').style.display = 'none';
-  $('btnSend').disabled = false;
+}
+
+async function sendStream(msg) {
+  const t0 = performance.now();
+  addMsg('user', msg);
+  // 创建一个空的 AI 消息容器，后续流式填充
+  const el = document.createElement('div');
+  el.className = 'msg assistant';
+  el.innerHTML = '<div class="role">🤖 AI 分析 <span class="badge b-s">流式中</span></div><div class="text" id="streamText"></div><div class="props" id="streamProps"></div><div class="meta" id="streamMeta"></div>';
+  $('messages').appendChild(el);
+  const streamText = el.querySelector('#streamText');
+  const streamProps = el.querySelector('#streamProps');
+  const streamMeta = el.querySelector('#streamMeta');
+
+  let fullReply = '';
+  let recommendations = [];
+  let intent = '';
+
+  try {
+    const resp = await fetch(val('baseUrl')+'/agent/sessions/'+sessionId+'/messages/stream', {
+      method:'POST',
+      headers:{'Authorization':'Bearer '+token,'Content-Type':'application/json'},
+      body:JSON.stringify({message:msg})
+    });
+    if (!resp.ok) {
+      const err = await resp.json().catch(()=>({}));
+      throw new Error(err.detail || 'HTTP '+resp.status);
+    }
+
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue;
+        const data = line.slice(6);
+        if (data === '[DONE]') continue;
+        try {
+          const parsed = JSON.parse(data);
+          if (parsed.token) {
+            fullReply += parsed.token;
+            streamText.textContent = fullReply;
+            el.scrollIntoView({behavior:'smooth'});
+          }
+          if (parsed.meta) {
+            intent = parsed.meta.intent || intent;
+            if (parsed.meta.recommendations) {
+              recommendations = parsed.meta.recommendations;
+              streamProps.innerHTML = recommendations.slice(0,5).map(r => {
+                const p = r.property || r;
+                return '<div class="prop-card"><div class="title">'+(p.title||'#'+r.property_id)+'</div><div class="price">¥'+(p.price_monthly||'?')+'/月</div><div class="info">'+(p.district||'')+' · '+(p.bedrooms||'')+'室</div></div>';
+              }).join('');
+            }
+          }
+          if (parsed.error) {
+            streamText.textContent = '错误: ' + parsed.error;
+          }
+        } catch {}
+      }
+    }
+
+    // 流式完成
+    const ms = Math.round(performance.now() - t0);
+    const badge = el.querySelector('.badge');
+    if (badge) { badge.className = 'badge b-s'; badge.textContent = ms+'ms'; }
+    streamMeta.textContent = '意图: '+(intent||'?')+' | 推荐: '+recommendations.length+'套 | ⚡ '+ms+'ms';
+    $('statTime').textContent = ms+'ms';
+    $('statMsgs').textContent = ++msgCount;
+    if (recommendations.length) { recCount += recommendations.length; $('statRecs').textContent = recCount; }
+    $('pipeline').textContent = '📨 消息 → 🧠 classify → ⚡ 流式 search\n  ├─ search_data() → '+recommendations.length+'套推荐\n  ├─ complete_text_stream() → '+fullReply.length+'字\n  └─ ✅ '+ms+'ms';
+  } catch(e) {
+    streamText.textContent = '错误: ' + e.message;
+    const badge = el.querySelector('.badge');
+    if (badge) { badge.className = 'badge b-f'; badge.textContent = '失败'; }
+  }
 }
 
 function addMsg(role, text, data) {
