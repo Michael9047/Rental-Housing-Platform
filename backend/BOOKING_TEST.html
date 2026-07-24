@@ -41,9 +41,7 @@ button.sm{padding:4px 10px;font-size:11px;width:auto;background:var(--card);colo
 
   <div>
     <h3>或单步测试</h3>
-    <button class="sm" onclick="stepCreateBuilding()">创建公寓</button>
-    <button class="sm" onclick="stepCreateUnitType()">创建户型</button>
-    <button class="sm" onclick="stepCreateRoom()">创建房间</button>
+    <button class="sm" onclick="fetchExisting()">获取已有数据</button>
     <button class="sm" onclick="stepDraft()">预约草稿</button>
     <button class="sm" onclick="stepValidate()">验证信息</button>
     <button class="sm" onclick="stepConfirm()">确认预约</button>
@@ -134,44 +132,52 @@ async function autoLogin() {
   }
 }
 
-async function stepCreateBuilding() {
-  const r = await post('/buildings', {name:'IntTest Bldg',name_cn:'集成测试公寓',abbreviation:'ITB',address:'1 Test Rd, Singapore',district:'新加坡-测试区',country:'SG',city:'Singapore',latitude:1.3,longitude:103.8,amenities:['CCTV','门禁']}, landlordToken);
-  if (r.ok) { instituteId = (await r.json()).id; log('创建公寓', true, '#'+instituteId); }
-  else { log('创建公寓', false, r.status+' (可能已存在)'); }
-}
+async function fetchExisting() {
+  // 公开端点：不需要 token
+  let r = await fetch($('baseUrl').value + '/buildings/public');
+  if (r.ok) {
+    const items = await r.json();
+    if (items.length) { instituteId = items[0].id; log('获取公寓', true, '#'+instituteId+' '+(items[0].name||'')); }
+    else { log('获取公寓', false, 'DB无公寓数据'); }
+  } else { log('获取公寓', false, r.status+' '+await r.text()); }
 
-async function stepCreateUnitType() {
-  if (!instituteId) { log('创建户型', null, '需要先有公寓ID'); return; }
-  const r = await post('/unit-types', {institute_id:instituteId,name:'Studio Test',bedrooms:1,bathrooms:1,hall_count:0,area_sqm:18,base_rent:1200,currency:'SGD',amenities:['独立卫浴','WiFi','空调']}, landlordToken);
-  if (r.ok) { unitTypeId = (await r.json()).id; log('创建户型', true, '#'+unitTypeId); }
-  else { log('创建户型', false, r.status+' '+(JSON.stringify(await r.json()).slice(0,100))); }
-}
+  r = await fetch($('baseUrl').value + '/unit-types');
+  if (r.ok) {
+    const d = await r.json(); const items = d.items || [];
+    if (items.length) { unitTypeId = items[0].id; log('获取户型', true, '#'+unitTypeId+' '+(items[0].name||'')); }
+    else { log('获取户型', false, 'DB无户型数据'); }
+  } else { log('获取户型', false, r.status); }
 
-async function stepCreateRoom() {
-  if (!instituteId) { log('创建房间', null, '需要先有公寓ID'); return; }
-  const r = await post('/rooms', {institute_id:instituteId,title:'Test Room 101',price_monthly:1200,bedrooms:1,bathrooms:1,district:'新加坡-测试区',country:'SG',latitude:1.3005,longitude:103.8005,room_number:'101',property_type:'studio'}, landlordToken);
-  if (r.ok) { roomId = (await r.json()).id; log('创建房间', true, '#'+roomId); }
-  else { log('创建房间', false, r.status); }
+  r = await fetch($('baseUrl').value + '/rooms?limit=3');
+  if (r.ok) {
+    const d = await r.json(); const items = d.items || d.data || [];
+    if (items.length) { roomId = items[0].id; log('获取房间', true, '#'+roomId+' '+(items[0].title||'')); }
+    else { log('获取房间', false, 'DB无房间数据'); }
+  } else { log('获取房间', false, r.status); }
 }
 
 async function stepDraft() {
   if (!roomId) { log('预约草稿', null, '需要先有房间ID'); return; }
   const r = await put('/bookings/drafts/'+roomId, {preferred_date:'2026-08-01',preferred_time:'14:00',message:'集成测试'}, tenantToken);
-  log('预约草稿', r.ok, r.status.toString());
+  if (r.ok) { log('预约草稿', true, r.status.toString()); }
+  else { const e = await r.text(); log('预约草稿', false, r.status+' '+e.slice(0,200)); }
 }
 
 async function stepValidate() {
   let r = await post('/bookings/personal-info/validate', {full_name:'Test User',id_number:'S1234567A',phone:'+65 9876 5432'}, tenantToken);
-  log('验证个人信息', r.ok || r.status===422, r.status.toString());
+  if (r.ok || r.status===422) { log('验证个人信息', true, r.status.toString()); }
+  else { const e = await r.text(); log('验证个人信息', false, r.status+' '+e.slice(0,200)); }
+
   r = await post('/bookings/emergency-contact/validate', {name:'Contact',phone:'+65 1111 2222',relationship:'朋友'}, tenantToken);
-  log('验证紧急联系人', r.ok || r.status===422, r.status.toString());
+  if (r.ok || r.status===422) { log('验证紧急联系人', true, r.status.toString()); }
+  else { const e = await r.text(); log('验证紧急联系人', false, r.status+' '+e.slice(0,200)); }
 }
 
 async function stepConfirm() {
   if (!roomId) { log('确认预约', null, '需要先有房间ID'); return; }
   const r = await post('/bookings/confirm', {property_id:roomId,preferred_date:'2026-08-01',preferred_time:'14:00',message:'集成测试',full_name:'Test User',id_number:'S1234567A',phone:'+65 9876 5432',emergency_contact_name:'Contact',emergency_contact_phone:'+65 1111 2222',emergency_contact_relationship:'朋友'}, tenantToken);
   if (r.ok) { bookingId = (await r.json()).id; log('确认预约', true, '#'+bookingId); }
-  else { log('确认预约', false, r.status+' '+(JSON.stringify(await r.json()).slice(0,150))); }
+  else { const e = await r.text(); log('确认预约', false, r.status+' '+e.slice(0,200)); }
 }
 
 async function stepList() {
@@ -189,10 +195,8 @@ async function stepCancel() {
 async function runAll() {
   OUT().innerHTML = '';
   pass = fail = 0;
-  logSection('── 1. 创建房源 ──');
-  await stepCreateBuilding();
-  await stepCreateUnitType();
-  await stepCreateRoom();
+  logSection('── 1. 获取已有数据 ──');
+  await fetchExisting();
   logSection('── 2. 预约流程 ──');
   await stepDraft();
   await stepValidate();
