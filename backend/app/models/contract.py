@@ -46,7 +46,7 @@ class Contract(TimestampMixin, Base):
 
     booking: Mapped["Booking"] = relationship()
     tenant: Mapped["User"] = relationship(foreign_keys=[tenant_id])
-    property: Mapped["Property"] = relationship()
+    property: Mapped["Room"] = relationship()
 
 
 class ContractSignature(TimestampMixin, Base):

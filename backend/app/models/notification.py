@@ -68,6 +68,8 @@ class NotificationOutboxStatus(str, enum.Enum):
     failed = "failed"
 
 
+
+
 class NotificationOutbox(TimestampMixin, Base):
     """与业务状态同事务写入的可靠通知发件箱。"""
     __tablename__ = "notification_outbox"
@@ -88,3 +90,11 @@ class NotificationOutbox(TimestampMixin, Base):
     next_attempt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
     sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     provider_message_id: Mapped[str | None] = mapped_column(String(255))
+
+
+# 向后兼容别名 & 占位（__init__.py 导入需要，具体实现待 PR #30 合入）
+DeliveryStatus = NotificationOutboxStatus
+NotificationChannel = NotificationOutbox
+NotificationDelivery = NotificationOutbox
+NotificationEntityType = NotificationType
+NotificationEventType = NotificationType

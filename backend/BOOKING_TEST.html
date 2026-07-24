@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>预约流程测试 — 子系统集成验证</title>
+<style>
+:root{--bg:#0f1117;--card:#161822;--border:#252836;--text:#cdd6f4;--muted:#6c7086;--accent:#89b4fa;--green:#a6e3a1;--red:#f38ba8;--yellow:#f9e2af}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:var(--bg);color:var(--text);font:14px/1.6 system-ui;display:flex;height:100vh}
+.left{width:320px;border-right:1px solid var(--border);padding:16px;overflow-y:auto;display:flex;flex-direction:column;gap:12px}
+.right{flex:1;overflow-y:auto;padding:16px}
+h2{font-size:16px;margin-bottom:8px;color:var(--accent)}
+h3{font-size:13px;color:var(--muted);margin-bottom:4px}
+input,button,select,textarea{background:var(--card);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:8px 12px;font:13px system-ui;outline:none;width:100%}
+input:focus{border-color:var(--accent)}
+button{cursor:pointer;background:var(--accent);color:var(--bg);font-weight:600;border:none;margin-top:4px}
+button:disabled{opacity:.4}
+button.sm{padding:4px 10px;font-size:11px;width:auto;background:var(--card);color:var(--text);border:1px solid var(--border)}
+.btn-run{background:var(--green);color:var(--bg);width:100%}
+.step{padding:8px 12px;border-radius:6px;margin-bottom:6px;font-size:12px;border:1px solid var(--border)}
+.step.pass{border-color:#1a3824;background:#0a1a10}
+.step.fail{border-color:#3a1a1a;background:#1a0a10}
+.step.skip{border-color:#1a2a38;background:#0a101a}
+.step .title{font-weight:600}
+.step .detail{color:var(--muted);font-size:11px;margin-top:2px}
+.summary{font-size:13px;padding:12px;border-radius:8px;margin-top:12px}
+.summary.ok{background:#1a3824;border:1px solid #2a5840;color:var(--green)}
+.summary.err{background:#3a1a1a;border:1px solid #5a2a2a;color:var(--red)}
+</style>
+</head>
+<body>
+
+<div class="left">
+  <h2>🔌 预约流程测试</h2>
+  <input id="baseUrl" value="http://localhost:8000/api/v1" placeholder="API Base URL">
+  <button onclick="autoLogin()" style="background:#1a3824;color:var(--green)">🚀 一键登录 (租客+房东)</button>
+  <div id="loginStatus" style="font-size:11px;color:var(--muted)"></div>
+
+  <button class="btn-run" onclick="runAll()" id="btnRun" disabled>▶ 运行全部测试</button>
+
+  <div>
+    <h3>或单步测试</h3>
+    <button class="sm" onclick="stepCreateBuilding()">创建公寓</button>
+    <button class="sm" onclick="stepCreateUnitType()">创建户型</button>
+    <button class="sm" onclick="stepCreateRoom()">创建房间</button>
+    <button class="sm" onclick="stepDraft()">预约草稿</button>
+    <button class="sm" onclick="stepValidate()">验证信息</button>
+    <button class="sm" onclick="stepConfirm()">确认预约</button>
+    <button class="sm" onclick="stepList()">查询预约</button>
+    <button class="sm" onclick="stepCancel()">取消预约</button>
+  </div>
+
+  <div id="summary"></div>
+</div>
+
+<div class="right" id="output">
+  <div style="text-align:center;color:var(--muted);padding:60px 0">
+    <div style="font-size:48px">📋</div>
+    <div style="margin-top:12px">预约子系统集成测试</div>
+    <div style="font-size:12px;margin-top:4px">验证 auth / buildings / unit-types / rooms / bookings</div>
+    <div style="font-size:11px;color:var(--yellow);margin-top:12px">先点「一键登录」，再「运行全部测试」</div>
+  </div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+let tenantToken = '', landlordToken = '';
+let instituteId = null, unitTypeId = null, roomId = null, bookingId = null;
+let pass = 0, fail = 0;
+
+function OUT() { return $('output'); }
+function log(title, ok, detail) {
+  const cls = ok === true ? 'pass' : ok === false ? 'fail' : 'skip';
+  const el = document.createElement('div');
+  el.className = 'step ' + cls;
+  el.innerHTML = '<div class="title">' + (ok===true?'✅ ':'❌ ') + title + '</div>' + (detail ? '<div class="detail">' + detail + '</div>' : '');
+  OUT().appendChild(el); el.scrollIntoView({behavior:'smooth'});
+  if (ok === true) pass++; else if (ok === false) fail++;
+}
+function logSection(text) {
+  const el = document.createElement('div');
+  el.style.cssText = 'color:var(--accent);font-weight:600;margin:12px 0 4px;font-size:13px';
+  el.textContent = text;
+  OUT().appendChild(el);
+}
+
+async function post(path, body, token) {
+  const h = token ? {'Authorization':'Bearer '+token,'Content-Type':'application/json'} : {'Content-Type':'application/json'};
+  return fetch($('baseUrl').value + path, {method:'POST', headers:h, body:JSON.stringify(body)});
+}
+async function put(path, body, token) {
+  return fetch($('baseUrl').value + path, {method:'PUT', headers:{'Authorization':'Bearer '+token,'Content-Type':'application/json'}, body:JSON.stringify(body)});
+}
+async function get(path, token) {
+  return fetch($('baseUrl').value + path, {headers:{'Authorization':'Bearer '+token}});
+}
+async function patch(path, token) {
+  return fetch($('baseUrl').value + path, {method:'PATCH', headers:{'Authorization':'Bearer '+token}});
+}
+
+async function autoLogin() {
+  OUT().innerHTML = '';
+  $('loginStatus').textContent = '⏳ 登录中...';
+  const base = $('baseUrl').value;
+
+  // 租客
+  let u = 'test_booking_int', p = 'test123456';
+  let r = await fetch(base+'/auth/login', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({username_or_email:u,password:p})});
+  if (!r.ok) {
+    await fetch(base+'/auth/register', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({username:u,email:u+'@test.com',password:p})});
+    r = await fetch(base+'/auth/login', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({username_or_email:u,password:p})});
+  }
+  const d1 = await r.json();
+  tenantToken = d1.access_token;
+  log('租客登录', !!tenantToken, 'uid='+(d1.user_id||d1.id||'?'));
+
+  // 房东
+  u = 'test_booking_l2'; p = 'test123456';
+  r = await fetch(base+'/auth/login', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({username_or_email:u,password:p})});
+  if (!r.ok) {
+    await fetch(base+'/auth/register', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({username:u,email:u+'@test.com',password:p,role:'landlord'})});
+    r = await fetch(base+'/auth/login', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({username_or_email:u,password:p})});
+  }
+  const d2 = await r.json();
+  landlordToken = d2.access_token;
+  log('房东登录', !!landlordToken, 'uid='+(d2.user_id||d2.id||'?'));
+
+  if (tenantToken && landlordToken) {
+    $('loginStatus').textContent = '✅ 已就绪';
+    $('btnRun').disabled = false;
+  } else {
+    $('loginStatus').textContent = '❌ 登录失败';
+  }
+}
+
+async function stepCreateBuilding() {
+  const r = await post('/buildings', {name:'IntTest Bldg',name_cn:'集成测试公寓',abbreviation:'ITB',address:'1 Test Rd, Singapore',district:'新加坡-测试区',country:'SG',city:'Singapore',latitude:1.3,longitude:103.8,amenities:['CCTV','门禁']}, landlordToken);
+  if (r.ok) { instituteId = (await r.json()).id; log('创建公寓', true, '#'+instituteId); }
+  else { log('创建公寓', false, r.status+' (可能已存在)'); }
+}
+
+async function stepCreateUnitType() {
+  if (!instituteId) { log('创建户型', null, '需要先有公寓ID'); return; }
+  const r = await post('/unit-types', {institute_id:instituteId,name:'Studio Test',bedrooms:1,bathrooms:1,hall_count:0,area_sqm:18,base_rent:1200,currency:'SGD',amenities:['独立卫浴','WiFi','空调']}, landlordToken);
+  if (r.ok) { unitTypeId = (await r.json()).id; log('创建户型', true, '#'+unitTypeId); }
+  else { log('创建户型', false, r.status+' '+(JSON.stringify(await r.json()).slice(0,100))); }
+}
+
+async function stepCreateRoom() {
+  if (!instituteId) { log('创建房间', null, '需要先有公寓ID'); return; }
+  const r = await post('/rooms', {institute_id:instituteId,title:'Test Room 101',price_monthly:1200,bedrooms:1,bathrooms:1,district:'新加坡-测试区',country:'SG',latitude:1.3005,longitude:103.8005,room_number:'101',property_type:'studio'}, landlordToken);
+  if (r.ok) { roomId = (await r.json()).id; log('创建房间', true, '#'+roomId); }
+  else { log('创建房间', false, r.status); }
+}
+
+async function stepDraft() {
+  if (!roomId) { log('预约草稿', null, '需要先有房间ID'); return; }
+  const r = await put('/bookings/drafts/'+roomId, {preferred_date:'2026-08-01',preferred_time:'14:00',message:'集成测试'}, tenantToken);
+  log('预约草稿', r.ok, r.status.toString());
+}
+
+async function stepValidate() {
+  let r = await post('/bookings/personal-info/validate', {full_name:'Test User',id_number:'S1234567A',phone:'+65 9876 5432'}, tenantToken);
+  log('验证个人信息', r.ok || r.status===422, r.status.toString());
+  r = await post('/bookings/emergency-contact/validate', {name:'Contact',phone:'+65 1111 2222',relationship:'朋友'}, tenantToken);
+  log('验证紧急联系人', r.ok || r.status===422, r.status.toString());
+}
+
+async function stepConfirm() {
+  if (!roomId) { log('确认预约', null, '需要先有房间ID'); return; }
+  const r = await post('/bookings/confirm', {property_id:roomId,preferred_date:'2026-08-01',preferred_time:'14:00',message:'集成测试',full_name:'Test User',id_number:'S1234567A',phone:'+65 9876 5432',emergency_contact_name:'Contact',emergency_contact_phone:'+65 1111 2222',emergency_contact_relationship:'朋友'}, tenantToken);
+  if (r.ok) { bookingId = (await r.json()).id; log('确认预约', true, '#'+bookingId); }
+  else { log('确认预约', false, r.status+' '+(JSON.stringify(await r.json()).slice(0,150))); }
+}
+
+async function stepList() {
+  const r = await get('/bookings', tenantToken);
+  if (r.ok) { const d = await r.json(); const items = Array.isArray(d)?d:(d.items||[]); log('查询预约', true, items.length+' 条'); }
+  else { log('查询预约', false, r.status); }
+}
+
+async function stepCancel() {
+  if (!bookingId) { log('取消预约', null, '无预约ID'); return; }
+  const r = await patch('/bookings/'+bookingId+'/cancel', tenantToken);
+  log('取消预约', r.ok, r.status.toString());
+}
+
+async function runAll() {
+  OUT().innerHTML = '';
+  pass = fail = 0;
+  logSection('── 1. 创建房源 ──');
+  await stepCreateBuilding();
+  await stepCreateUnitType();
+  await stepCreateRoom();
+  logSection('── 2. 预约流程 ──');
+  await stepDraft();
+  await stepValidate();
+  await stepConfirm();
+  logSection('── 3. 查询与取消 ──');
+  await stepList();
+  await stepCancel();
+
+  const s = $('summary');
+  if (fail === 0) {
+    s.innerHTML = '<div class="summary ok">✅ 全链路通过 — 预约子系统正常 (' + pass + ' 步)</div>';
+  } else {
+    s.innerHTML = '<div class="summary err">⚠️ ' + fail + '/' + (pass+fail) + ' 步失败</div>';
+  }
+}
+</script>
+</body>
+</html>

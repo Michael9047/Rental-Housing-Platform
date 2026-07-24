@@ -43,9 +43,7 @@ class Room(TimestampMixin, Base):
     # ── 房间独有信息 ──
     room_number: Mapped[str | None] = mapped_column(String(20), nullable=True)
     institute_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
-    # institute 冗余（搜索扁平化）
-    institute_name: Mapped[str | None] = mapped_column(String(200), nullable=True)
-    institute_amenities: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # institute_name/institute_amenities 由 property_service 动态注入，不存数据库
     female_only: Mapped[bool] = mapped_column(Boolean, default=False)
     safety_score: Mapped[float | None] = mapped_column(Numeric(3, 2), nullable=True)
     # 兼容旧代码

@@ -60,5 +60,5 @@ class Booking(TimestampMixin, Base):
     application_data: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
 
     tenant: Mapped["User"] = relationship(foreign_keys=[tenant_id])
-    property: Mapped["Property"] = relationship()
+    property: Mapped["Room"] = relationship()
     landlord: Mapped["User"] = relationship(foreign_keys=[landlord_id])
