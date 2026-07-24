@@ -391,10 +391,11 @@ const agentChat = useAgentChatStore()
 const { sessionId, messages, aiAvailable } = storeToRefs(agentChat)
 
 const typeLabels: Record<PropertyType, string> = {
-  apartment: '公寓',
-  house: '别墅',
   studio: '单间',
+  '1-bed': '一室',
+  '2-bed': '两室+',
   shared: '合租',
+  house: '别墅',
 }
 
 // ── 状态 ────────────────────────────────────────────────────────
@@ -479,7 +480,7 @@ function imageUrl(property: PropertySearchResult): string | null {
 function getCardAmenities(property: PropertySearchResult): string[] {
   const tags: string[] = []
   const p = property
-  if (p.property_type === 'apartment') { tags.push('电梯'); tags.push('WiFi') }
+  if (p.property_type === '1-bed' || p.property_type === '2-bed') { tags.push('电梯'); tags.push('WiFi') }
   else if (p.property_type === 'studio') { tags.push('独立卫浴'); tags.push('WiFi') }
   else if (p.property_type === 'house') { tags.push('车位'); tags.push('全屋家电') }
   else if (p.property_type === 'shared') { tags.push('包水电'); tags.push('WiFi') }

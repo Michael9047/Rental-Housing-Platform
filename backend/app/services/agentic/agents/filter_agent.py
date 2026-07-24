@@ -84,7 +84,7 @@ class FilterAgent(BaseAgent):
   "price_min": 最低月租整数，null=未提及,
   "price_max": 最高月租整数，null=未提及,
   "bedrooms": 卧室数整数，null=未提及,
-  "property_type": "apartment/house/studio/shared 或 null",
+  "property_type": "studio/1-bed/2-bed/shared/house 或 null",
   "amenities": ["标准设施名"],
   "room_type": "studio/ensuite/1bed/2bed/3bed+/shared 或 null",
   "bathrooms": 卫生间数整数，null=未提及,

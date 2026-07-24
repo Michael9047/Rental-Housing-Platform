@@ -85,7 +85,7 @@ const authStore = useAuthStore()
 const busy = ref(false)
 
 const typeLabels: Record<string, string> = {
-  apartment: '公寓', house: '别墅', studio: '单间', shared: '合租',
+  studio: '单间', '1-bed': '一室', '2-bed': '两室+', shared: '合租', house: '别墅',
 }
 
 const typeLabel = computed(() => typeLabels[props.property.property_type] || props.property.property_type)

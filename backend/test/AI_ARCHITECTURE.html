@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>租房平台 AI Agent 架构全景图</title>
+<style>
+:root{--bg:#0f1117;--card:#161822;--border:#252836;--text:#cdd6f4;--muted:#6c7086;--accent:#89b4fa;--green:#a6e3a1;--red:#f38ba8;--yellow:#f9e2af;--orange:#fab387;--purple:#cba6f7;--teal:#94e2d5;--blue:#74c7ec}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:var(--bg);color:var(--text);font:14px/1.6 system-ui,sans-serif;padding:20px}
+h1{font-size:28px;margin-bottom:4px}
+h2{font-size:20px;margin:32px 0 12px;padding-bottom:8px;border-bottom:2px solid var(--border)}
+h3{font-size:16px;margin:16px 0 8px;color:var(--accent)}
+.subtitle{color:var(--muted);margin-bottom:24px}
+.badge{display:inline-block;padding:2px 10px;border-radius:10px;font-size:11px;font-weight:600}
+.b-live{background:#1a3824;color:var(--green)}
+.b-dead{background:#3a1a1a;color:var(--red)}
+.b-tool{background:#1a2838;color:var(--teal)}
+.grid{display:grid;gap:16px}
+.grid-2{grid-template-columns:1fr 1fr}
+.card{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:16px}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{text-align:left;padding:8px 10px;border-bottom:2px solid var(--border);color:var(--accent);font-size:11px;text-transform:uppercase}
+td{padding:6px 10px;border-bottom:1px solid var(--border)}
+tr:hover td{background:rgba(255,255,255,0.02)}
+.section-nav{position:sticky;top:8px;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:12px 16px;margin-bottom:24px;display:flex;gap:16px;flex-wrap:wrap;z-index:10}
+.section-nav a{color:var(--accent);text-decoration:none;font-size:13px}
+.count-big{font-size:48px;font-weight:800;line-height:1}
+.count-label{color:var(--muted);font-size:12px}
+pre{background:#0a0b10;padding:12px;border-radius:8px;font-size:12px;overflow-x:auto;line-height:1.8}
+.verdict{padding:12px 16px;border-radius:8px;margin:8px 0;font-weight:600}
+.v-live{background:#1a3824;color:var(--green);border:1px solid #2a5840}
+.v-dead{background:#3a1a1a;color:var(--red);border:1px solid #5a2a2a}
+.v-warn{background:#3a3a1a;color:var(--yellow);border:1px solid #5a5a2a}
+code{background:#1a1a2a;padding:1px 5px;border-radius:3px;font-size:12px}
+@media(max-width:900px){.grid-2{grid-template-columns:1fr}}
+</style></head><body>
+
+<div class="section-nav">
+  <strong>导航</strong>
+  <a href="#overview">总览</a> <a href="#flow">执行链路</a> <a href="#agents">Agent&工具</a>
+  <a href="#dead">死代码审计</a> <a href="#frontend">前端集成</a> <a href="#summary">总结</a>
+</div>
+
+<h1>🧠 租房平台 AI Agent 架构全景图</h1>
+<p class="subtitle">v4 死代码审计版 | 2026-07-23 | 活跃 2 Agent · 4 工具 · Dispatcher 扁平模式 | 死代码 4320行</p>
+
+<!-- ═══════════ OVERVIEW ═══════════ -->
+<h2 id="overview">1. 架构真相</h2>
+
+<div class="grid grid-2" style="margin-bottom:16px">
+  <div class="card" style="border-color:var(--green)">
+    <div class="verdict v-live">✅ 活跃代码：~2160 行（33%）<br>
+    Dispatcher 扁平分派 → SearchAgent / CompareAgent / CartService / FAQ / LLM</div>
+  </div>
+  <div class="card" style="border-color:var(--red)">
+    <div class="verdict v-dead">❌ 死代码：~4320 行（67%）<br>
+    Supervisor (1234行) · ExecutionDAG (185行) · AgentRegistry (299行) · agent_loop (256行) · handoff (293行) · routing_strategy (114行) · FilterAgent (196行) · FAQAgent (44行) · SynthesizerAgent (82行)</div>
+  </div>
+</div>
+
+<div class="grid grid-2">
+  <div class="card"><div class="count-big" style="color:var(--green)">2</div><div class="count-label">真正的 Agent（SearchAgent · CompareAgent）</div></div>
+  <div class="card"><div class="count-big" style="color:var(--teal)">4</div><div class="count-label">工具/服务（CartService · FAQ · Router · LLM）</div></div>
+  <div class="card"><div class="count-big" style="color:var(--red)">0</div><div class="count-label">DAG 管线（ExecutionDAG 从未实例化）</div></div>
+  <div class="card"><div class="count-big" style="color:var(--red)">0</div><div class="count-label">ReAct Tool Loop（agent_loop 从未调用）</div></div>
+</div>
+
+<!-- ═══════════ FLOW ═══════════ -->
+<h2 id="flow">2. 真实执行链路</h2>
+
+<div class="card">
+  <h3>Dispatcher 扁平分派（唯一活跃路径）</h3>
+  <pre style="color:var(--muted)">
+<span style="color:var(--accent)">agent.py</span>  POST /api/v1/agent/sessions/:id/messages
+  │
+  ▼
+<span style="color:var(--accent)">dispatcher.py</span>  dispatch(session_id, message, db)
+  │
+  ├─ <span style="color:var(--accent)">router.classify_message()</span>  ← LLM 单次调用 → intent + stage + complexity
+  │
+  ├─ intent == "search"
+  │    └─ <span style="color:var(--green)">SearchAgent.search()</span>  → extract → 检索 → 通勤 → 评分 → LLM 推荐
+  │
+  ├─ intent == "compare"
+  │    └─ <span style="color:var(--green)">CompareAgent.compare()</span>  → 7维评分 → LLM 解释
+  │
+  ├─ intent == "manage_cart"
+  │    └─ <span style="color:var(--teal)">CartService</span> (纯 CRUD, 非 Agent)
+  │
+  ├─ intent == "faq"
+  │    └─ <span style="color:var(--teal)">agent_faq.match_faq()</span> (关键词匹配, 非 Agent)
+  │
+  └─ intent == "general"
+       └─ <span style="color:var(--teal)">llm_service.complete_text()</span> (通用 LLM 兜底)
+</pre>
+</div>
+
+<div class="verdict v-warn" style="margin-top:16px">
+  ⚠️ 不存在 DAG 拓扑排序、不存在 Handoff 交接链、不存在 ReAct Tool Loop。<br>
+  Dispatcher 的文档开头就写了：<b>"替代 Supervisor + DAG + AgentRegistry 的复杂编排链路"</b>——旧架构被替换但代码未删除。
+</div>
+
+<!-- ═══════════ AGENTS ═══════════ -->
+<h2 id="agents">3. Agent 与工具清单</h2>
+
+<h3>3.1 活跃 Agent（2 个）</h3>
+<table>
+<thead><tr><th>名称</th><th>文件</th><th>行数</th><th>LLM 调用</th><th>核心能力</th></tr></thead>
+<tbody>
+<tr style="background:rgba(160,225,160,0.04)">
+  <td><strong>SearchAgent</strong> <span class="badge b-live">活跃</span></td>
+  <td><code>agents/search_agent.py</code></td>
+  <td>857</td>
+  <td>1 次（推荐生成）</td>
+  <td>提取筛选条件 → 地理搜索(含通勤表) → embedding 排序 → 评分 → LLM 推荐文案</td>
+</tr>
+<tr style="background:rgba(255,180,200,0.04)">
+  <td><strong>CompareAgent</strong> <span class="badge b-live">活跃</span></td>
+  <td><code>agents/compare_agent.py</code></td>
+  <td>375</td>
+  <td>1 次（优劣解释）</td>
+  <td>POI+评价聚合 → 7维加权评分 → LLM 对比解释 → 规则降级兜底</td>
+</tr>
+</tbody>
+</table>
+
+<h3>3.2 工具/服务（4 个——非 Agent）</h3>
+<table>
+<thead><tr><th>名称</th><th>文件</th><th>类型</th><th>核心能力</th></tr></thead>
+<tbody>
+<tr style="background:rgba(160,225,225,0.04)">
+  <td><strong>CartService</strong> <span class="badge b-tool">工具</span></td>
+  <td><code>agents/cart_agent.py</code></td>
+  <td>纯 DB CRUD</td>
+  <td>购物车增删查——不是 Agent，无 LLM。类名叫 CartService 但文件名叫 cart_agent.py</td>
+</tr>
+<tr style="background:rgba(160,225,225,0.04)">
+  <td><strong>agent_faq</strong> <span class="badge b-tool">工具</span></td>
+  <td><code>services/agent_faq.py</code></td>
+  <td>关键词匹配</td>
+  <td>strong/weak/none 三级匹配 → 答案/chips/兜底。注意：不是 agents/faq_agent.py</td>
+</tr>
+<tr style="background:rgba(160,225,225,0.04)">
+  <td><strong>classify_message</strong> <span class="badge b-tool">工具</span></td>
+  <td><code>router.py</code></td>
+  <td>LLM + 规则</td>
+  <td>意图分类(5种) + 漏斗阶段 + 路由方向</td>
+</tr>
+<tr style="background:rgba(160,225,225,0.04)">
+  <td><strong>LLM 兜底</strong> <span class="badge b-tool">工具</span></td>
+  <td><code>llm_service.py</code></td>
+  <td>LLM complete_text</td>
+  <td>general 意图 → 通用闲聊回复</td>
+</tr>
+</tbody>
+</table>
+
+<h3>3.3 死 Agent（4 个——仅被已废弃的 Supervisor 引用）</h3>
+<table>
+<thead><tr><th>名称</th><th>文件</th><th>行数</th><th>死亡原因</th></tr></thead>
+<tbody>
+<tr><td><strong>FilterAgent</strong> <span class="badge b-dead">死</span></td><td><code>agents/filter_agent.py</code></td><td>196</td><td>仅 Supervisor 引用。NL→结构化条件的能力已由 SearchAgent 内部实现</td></tr>
+<tr><td><strong>SynthesizerAgent</strong> <span class="badge b-dead">死</span></td><td><code>agents/synthesizer_agent.py</code></td><td>82</td><td>仅 Supervisor 引用。5级漏斗语调适配未使用</td></tr>
+<tr><td><strong>FAQAgent</strong> <span class="badge b-dead">死</span></td><td><code>agents/faq_agent.py</code></td><td>44</td><td>仅 Supervisor 引用。Dispatcher 使用 agent_faq.py（不同文件）</td></tr>
+<tr><td><strong>register_all_agents</strong> <span class="badge b-dead">死</span></td><td><code>agents/registry.py</code></td><td>94</td><td>函数定义完整但<b>从未被调用</b></td></tr>
+</tbody>
+</table>
+
+<!-- ═══════════ DEAD CODE ═══════════ -->
+<h2 id="dead">4. 死代码审计（4320 行，67%）</h2>
+
+<table>
+<thead><tr><th>文件</th><th>行数</th><th>原本功能</th><th>为什么死了</th></tr></thead>
+<tbody>
+<tr><td><code>orchestration/supervisor.py</code></td><td><strong>1234</strong></td><td>中央编排器——DAG执行+Handoff链+熔断器</td><td>Dispatcher 取代。0 import</td></tr>
+<tr><td><code>orchestration/tool_registry.py</code></td><td>987</td><td>16工具注册+handler绑定</td><td>仅 BaseAgent 用其类型，handler 全未调用</td></tr>
+<tr><td><code>orchestration/types.py</code></td><td>350</td><td>共享类型定义</td><td>被活跃 Agent 导入使用（不完全是死代码）</td></tr>
+<tr><td><code>orchestration/agent_registry.py</code></td><td>299</td><td>Agent 能力注册+查找</td><td>仅 register_all_agents 用，从未调用</td></tr>
+<tr><td><code>orchestration/handoff.py</code></td><td>293</td><td>Agent 动态交接协议</td><td>仅 Supervisor 用</td></tr>
+<tr><td><code>orchestration/agent_loop.py</code></td><td>256</td><td>ReAct Tool Loop 引擎</td><td>仅 Supervisor 用</td></tr>
+<tr><td><code>agents/filter_agent.py</code></td><td>196</td><td>NL→筛选条件</td><td>仅 Supervisor 用。SearchAgent 已内化</td></tr>
+<tr><td><code>orchestration/execution_dag.py</code></td><td>185</td><td>6 DAG 模板+拓扑排序</td><td>仅 Supervisor 用。从未实例化</td></tr>
+<tr><td><code>orchestration/routing_strategy.py</code></td><td>114</td><td>5信号加权路由</td><td>仅 Supervisor 用</td></tr>
+<tr><td><code>agents/registry.py</code></td><td>94</td><td>Agent 注册</td><td>register_all_agents() 从未调用</td></tr>
+<tr><td><code>agents/synthesizer_agent.py</code></td><td>82</td><td>漏斗语调适配</td><td>仅 Supervisor 用</td></tr>
+<tr><td><code>agents/faq_agent.py</code></td><td>44</td><td>FAQ Agent 包装</td><td>仅 Supervisor 用。Dispatcher 用 agent_faq.py</td></tr>
+<tr><td><code>agents/__init__.py</code></td><td>27</td><td>声称20+Agent清单</td><td>纯文档愿望列表，从未实现</td></tr>
+<tr><td colspan="2"><strong>死代码合计</strong></td><td><strong>4320 行</strong></td><td></td></tr>
+</tbody>
+</table>
+
+<div class="verdict v-dead" style="margin-top:8px">
+  ⚠️ agents/__init__.py 声称存在 MarketAgent、CommuteAgent、POIAgent、PriceExpert、CommuteExpert 等 20+ Agent——<b>全部未实现</b>，仅为文档愿望列表。
+</div>
+
+<!-- ═══════════ FRONTEND ═══════════ -->
+<h2 id="frontend">5. 前端 AI 集成</h2>
+
+<div class="grid grid-2">
+  <div class="card">
+    <h3>首页 AI 搜索</h3>
+    <table>
+    <tr><td>页面</td><td><code>Home.vue</code> — Hero 搜索栏</td></tr>
+    <tr><td>快速标签</td><td>金文泰 · NUS附近 · 伦敦学生公寓</td></tr>
+    <tr><td>API</td><td>POST /ai-search/parse → NLP 解析 → 补全/搜索</td></tr>
+    <tr><td>状态</td><td><span class="badge b-live">活跃</span></td></tr>
+    </table>
+  </div>
+  <div class="card">
+    <h3>Agent 对话页</h3>
+    <table>
+    <tr><td>页面</td><td><code>AgentView.vue</code></td></tr>
+    <tr><td>API</td><td>POST /agent/sessions → POST /sessions/:id/messages</td></tr>
+    <tr><td>购物车</td><td>POST/DELETE /agent/cart/items → CartService</td></tr>
+    <tr><td>状态</td><td><span class="badge b-live">活跃</span></td></tr>
+    </table>
+  </div>
+</div>
+
+<!-- ═══════════ SUMMARY ═══════════ -->
+<h2 id="summary">6. 总结对比</h2>
+
+<table>
+<thead><tr><th>维度</th><th>旧文档(v3)声称</th><th>实际现状(v4)</th></tr></thead>
+<tbody>
+<tr><td>Agent 数量</td><td>6-7 个</td><td><strong>2 个</strong>（SearchAgent + CompareAgent）</td></tr>
+<tr><td>Cart / FAQ</td><td>作为 Agent</td><td><strong>工具/服务</strong>，非 Agent</td></tr>
+<tr><td>DAG 管线</td><td>6 个模板，含并行</td><td><strong>0 个</strong>——ExecutionDAG 从未实例化</td></tr>
+<tr><td>ReAct Tool Loop</td><td>已启用</td><td><strong>未启用</strong>——agent_loop 从未调用</td></tr>
+<tr><td>Handoff 交接链</td><td>已启用</td><td><strong>未启用</strong>——handoff.py 从未调用</td></tr>
+<tr><td>Supervisor 编排</td><td>中央编排器</td><td><strong>已替换</strong>——Dispatcher 扁平模式取代</td></tr>
+<tr><td>执行模式</td><td>DAG串行 / Handoff动态</td><td><strong>Dispatcher if-else 分派</strong></td></tr>
+<tr><td>总代码量</td><td>6480 行</td><td>活跃 2160 行 + 死 4320 行</td></tr>
+</tbody>
+</table>
+
+<div class="verdict v-warn" style="margin-top:24px">
+  🎯 <strong>结论</strong>：当前 AI 系统是一个 <strong>Dispatcher 扁平分派器</strong>，核心是 SearchAgent（搜索）+ CompareAgent（对比）+ 4 个工具。<br>
+  4320 行死代码（Supervisor/DAG/Handoff/ReAct/AgentRegistry）是从 v3 多 Agent 架构迁移到 Dispatcher 后遗留的。<br>
+  建议：要么删除死代码简化项目，要么重新激活 Supervisor 实现真正的多 Agent 编排。
+</div>
+
+<p style="color:var(--muted);font-size:12px;margin-top:16px;text-align:center">
+  Audit date: 2026-07-23 · backend/app/services/agentic/
+</p>
+</body></html>

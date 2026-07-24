@@ -41,6 +41,39 @@ def _validate_phone(phone: str | None) -> str | None:
     )
 
 
+@router.get("/public")
+async def list_public_buildings(
+    session: AsyncSession = Depends(get_db_session),
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=50, ge=1, le=200),
+) -> list[dict]:
+    """公开端点——首页展示公寓列表，无需登录"""
+    stmt = (select(Institute)
+            .options(selectinload(Institute.images))
+            .options(selectinload(Institute.unit_types))
+            .where(Institute.status == InstituteStatus.active)
+            .order_by(Institute.id.desc())
+            .offset(skip).limit(limit))
+    result = await session.scalars(stmt)
+    buildings = []
+    for b in result:
+        buildings.append({
+            "id": b.id, "name": b.name, "name_cn": b.name_cn, "address": b.address,
+            "logo_url": b.logo_url, "description": b.description,
+            "latitude": float(b.latitude) if b.latitude else None,
+            "longitude": float(b.longitude) if b.longitude else None,
+            "amenities": b.amenities,
+            "female_only": bool(b.female_only) if b.female_only is not None else False,
+            "couples_allowed": bool(b.couples_allowed) if b.couples_allowed is not None else False,
+            "unit_type_count": len(b.unit_types) if b.unit_types else 0,
+            "primary_image": next(({
+                "id": img.id, "filename": img.filename,
+                "is_primary": img.is_primary,
+            } for img in sorted(b.images or [], key=lambda x: x.sort_order)), None),
+        })
+    return buildings
+
+
 @router.get("")
 async def list_buildings(
     session: AsyncSession = Depends(get_db_session),
@@ -48,7 +81,11 @@ async def list_buildings(
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=50, ge=1, le=200),
 ) -> list[dict]:
-    stmt = select(Institute).options(selectinload(Institute.images)).order_by(Institute.id.desc()).offset(skip).limit(limit)
+    stmt = (select(Institute)
+            .options(selectinload(Institute.images))
+            .where(Institute.status != InstituteStatus.suspended)  # 排除已删除
+            .order_by(Institute.id.desc())
+            .offset(skip).limit(limit))
     if current_user.role.value != "admin":
         stmt = stmt.where(Institute.created_by == current_user.id)
     result = await session.scalars(stmt)
@@ -102,6 +139,9 @@ async def create_building(
         )
 
     # ── 3. 创建入库 ──
+    from decimal import Decimal
+    lat = body.get("latitude")
+    lng = body.get("longitude")
     building = Institute(
         name=name,
         address=address,
@@ -111,6 +151,8 @@ async def create_building(
         amenities=amenities,
         female_only=bool(body.get("female_only", False)),
         couples_allowed=bool(body.get("couples_allowed", False)),
+        latitude=Decimal(str(lat)) if lat is not None and str(lat).strip() else None,
+        longitude=Decimal(str(lng)) if lng is not None and str(lng).strip() else None,
         status=InstituteStatus.active,
         created_by=current_user.id,
     )
@@ -127,6 +169,18 @@ async def create_building(
         await session.rollback()
         logger.exception("Failed to create building")
         raise HTTPException(status_code=500, detail="创建公寓失败，服务器内部错误，请稍后重试")
+
+    # ── 图片写入 ──
+    image_urls = body.get("image_urls") or []
+    logger.info(f"[CREATE] image_urls={image_urls}, lat={building.latitude}, lng={building.longitude}")
+    if image_urls:
+        from app.models.building_image import BuildingImage
+        for i, url in enumerate(image_urls):
+            fn = url.rsplit("/", 1)[-1] if "/" in url else url
+            img = BuildingImage(institute_id=building.id, filename=fn, original_name=fn, mime_type="image/jpeg", file_size=0, sort_order=i, is_primary=(i == 0))
+            session.add(img)
+        await session.commit()
+        logger.info(f"[CREATE] saved {len(image_urls)} images for building {building.id}")
 
     # 审计日志
     try:
@@ -164,6 +218,35 @@ async def create_building(
         "female_only": bool(building.female_only),
         "couples_allowed": bool(building.couples_allowed),
     }
+
+
+@router.get("/recycle-bin")
+async def list_deleted_buildings(
+    session: AsyncSession = Depends(get_db_session),
+    current_user: User = Depends(require_landlord),
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=50, ge=1, le=2000),
+) -> list[dict]:
+    """已删除公寓回收站 — 列出 status=suspended 的公寓"""
+    stmt = (select(Institute)
+            .options(selectinload(Institute.images))
+            .where(Institute.status == InstituteStatus.suspended)
+            .order_by(Institute.updated_at.desc())
+            .offset(skip).limit(limit))
+    if current_user.role.value != "admin":
+        stmt = stmt.where(Institute.created_by == current_user.id)
+    result = await session.scalars(stmt)
+    return [{
+        "id": b.id, "name": b.name, "address": b.address,
+        "contact_phone": b.contact_phone, "description": b.description,
+        "status": b.status.value, "created_by": b.created_by,
+        "created_at": b.created_at.isoformat() if b.created_at else None,
+        "updated_at": b.updated_at.isoformat() if b.updated_at else None,
+        "latitude": float(b.latitude) if b.latitude else None,
+        "longitude": float(b.longitude) if b.longitude else None,
+        "amenities": b.amenities,
+        "images": [{"id": img.id, "filename": img.filename, "original_name": img.original_name, "sort_order": img.sort_order, "is_primary": img.is_primary} for img in sorted(b.images or [], key=lambda x: x.sort_order)],
+    } for b in result]
 
 
 @router.get("/{building_id}")
@@ -312,27 +395,138 @@ async def delete_building(
     session: AsyncSession = Depends(get_db_session),
     current_user: User = Depends(require_landlord),
 ) -> dict:
+    """级联软删除：公寓 → 户型 → 房间 全部进回收站"""
+    from datetime import datetime
+    from app.models.unit_type import UnitType
+    from app.models.property import Room
+
     b = await session.get(Institute, building_id)
     if not b:
         raise HTTPException(status_code=404, detail="楼栋不存在")
     if b.created_by != current_user.id and current_user.role.value != "admin":
         raise HTTPException(status_code=403, detail="无权删除此楼栋")
-    # 检查是否有关联户型
-    from sqlalchemy import func
-    from app.models.unit_type import UnitType
-    count = await session.scalar(
-        select(func.count(UnitType.id)).where(UnitType.institute_id == building_id)
+
+    now = datetime.utcnow()
+    # 1. 软删除所有下属房间
+    room_result = await session.execute(
+        select(Room).join(UnitType, Room.unit_type_id == UnitType.id)
+        .where(UnitType.institute_id == building_id, Room.deleted_at.is_(None))
     )
-    if count and count > 0:
-        raise HTTPException(status_code=400, detail="该公寓下仍有户型，请先删除或转移户型")
+    rooms = room_result.scalars().all()
+    for r in rooms:
+        r.deleted_at = now
+        r.status = "offline"
+
+    # 2. 软删除所有下属户型
+    ut_result = await session.execute(
+        select(UnitType).where(UnitType.institute_id == building_id, UnitType.deleted_at.is_(None))
+    )
+    unit_types = ut_result.scalars().all()
+    for ut in unit_types:
+        ut.deleted_at = now
+
+    # 3. 停用公寓本身
     b.status = InstituteStatus.suspended
+    await session.commit()
+
+    try:
+        from app.models.audit_log import AuditLog
+        log = AuditLog(action="删除公寓", resource_type="building", resource_id=building_id,
+                       details={"公寓名": b.name, "级联删除户型": len(unit_types), "级联删除房间": len(rooms)})
+        session.add(log); await session.commit()
+    except Exception: pass
+    return {"ok": True, "cascaded_unit_types": len(unit_types), "cascaded_rooms": len(rooms)}
+
+
+@router.post("/{building_id}/restore")
+async def restore_building(
+    building_id: int,
+    session: AsyncSession = Depends(get_db_session),
+    current_user: User = Depends(require_landlord),
+) -> dict:
+    """级联恢复：公寓 → 户型 → 房间 全部恢复"""
+    from app.models.unit_type import UnitType
+    from app.models.property import Room
+
+    b = await session.get(Institute, building_id)
+    if not b:
+        raise HTTPException(status_code=404, detail="楼栋不存在")
+    if b.status != InstituteStatus.suspended:
+        raise HTTPException(status_code=400, detail="该公寓不在回收站中")
+    if b.created_by != current_user.id and current_user.role.value != "admin":
+        raise HTTPException(status_code=403, detail="无权操作")
+
+    b.status = InstituteStatus.active
+
+    # 恢复下属户型
+    ut_result = await session.execute(
+        select(UnitType).where(UnitType.institute_id == building_id, UnitType.deleted_at.isnot(None))
+    )
+    unit_types = ut_result.scalars().all()
+    for ut in unit_types:
+        ut.deleted_at = None
+
+    # 恢复下属房间
+    room_result = await session.execute(
+        select(Room).join(UnitType, Room.unit_type_id == UnitType.id)
+        .where(UnitType.institute_id == building_id, Room.deleted_at.isnot(None))
+    )
+    rooms = room_result.scalars().all()
+    for r in rooms:
+        r.deleted_at = None
+        r.status = "available"
+
     await session.commit()
     try:
         from app.models.audit_log import AuditLog
-        log = AuditLog(action="删除公寓", resource_type="building", resource_id=building_id, details={"公寓名": b.name})
+        log = AuditLog(action="恢复公寓", resource_type="building", resource_id=building_id,
+                       details={"公寓名": b.name, "恢复户型": len(unit_types), "恢复房间": len(rooms)})
         session.add(log); await session.commit()
     except Exception: pass
-    return {"ok": True}
+    return {"ok": True, "id": b.id, "name": b.name, "restored_unit_types": len(unit_types), "restored_rooms": len(rooms)}
+
+
+@router.delete("/{building_id}/hard", status_code=204)
+async def hard_delete_building(
+    building_id: int,
+    session: AsyncSession = Depends(get_db_session),
+    current_user: User = Depends(require_landlord),
+):
+    """硬删除公寓及所有下属户型、房间（不可恢复）"""
+    from app.models.unit_type import UnitType
+    from app.models.property import Room
+
+    b = await session.get(Institute, building_id)
+    if not b:
+        raise HTTPException(status_code=404, detail="楼栋不存在")
+    if b.status != InstituteStatus.suspended:
+        raise HTTPException(status_code=400, detail="请先将公寓移入回收站再硬删除")
+
+    # 硬删除下属房间
+    room_result = await session.execute(
+        select(Room).join(UnitType, Room.unit_type_id == UnitType.id)
+        .where(UnitType.institute_id == building_id)
+    )
+    for r in room_result.scalars().all():
+        await session.delete(r)
+
+    # 硬删除下属户型
+    ut_result = await session.execute(
+        select(UnitType).where(UnitType.institute_id == building_id)
+    )
+    for ut in ut_result.scalars().all():
+        await session.delete(ut)
+
+    # 硬删除公寓
+    name = b.name
+    await session.delete(b)
+    await session.commit()
+    try:
+        from app.models.audit_log import AuditLog
+        log = AuditLog(action="硬删除公寓", resource_type="building", resource_id=building_id,
+                       details={"公寓名": name, "级联删除": f"户型+房间"})
+        session.add(log); await session.commit()
+    except Exception: pass
 
 
 # ═══════ 公开公寓列表（租客端） ═══════

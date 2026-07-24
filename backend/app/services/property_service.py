@@ -8,11 +8,10 @@ from datetime import date, datetime, timezone
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import func, select, text
+from sqlalchemy import cast, func, select, String, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.property import VALID_STATUS_TRANSITIONS, DepositType, Property, PropertyStatus, PropertyType
-from app.services.poi_service import POIService
 from app.schemas.property import PropertyCreate, PropertyUpdate
 
 logger = logging.getLogger(__name__)
@@ -111,10 +110,12 @@ class PropertyService:
             if loaded and loaded.institute:
                 object.__setattr__(property_obj, 'institute_name', loaded.institute.name)
 
+        # 异步派发 Google Maps 全量 POI 检索（不阻塞创建流程）
         try:
-            await POIService(self.session).generate_poi_for_property(property_obj)
+            from app.tasks.poi_tasks import generate_full_poi_for_property
+            generate_full_poi_for_property.delay(property_obj.id)
         except Exception:
-            logger.exception("Failed to generate POI for property %s", property_obj.id)
+            logger.exception("Failed to dispatch POI task for property %s", property_obj.id)
 
         await self._ensure_embedding(property_obj)
         await _bump_search_cache_version()
@@ -161,6 +162,9 @@ class PropertyService:
         price_min: float | None = None,
         price_max: float | None = None,
         institute_id: int | None = None,
+        near_lat: float | None = None,
+        near_lng: float | None = None,
+        near_distance_km: float | None = None,
         include_deleted: bool = False,
     ) -> list:
         """构建公共 WHERE 条件列表，供 list() 的 count 和 data 查询复用。"""
@@ -171,7 +175,16 @@ class PropertyService:
             clauses.append(Property.deleted_at.is_(None))
 
         if district:
-            clauses.append(Property.district == district)
+            clauses.append(Property.district.ilike(f"%{district}%"))
+        if near_lat is not None and near_lng is not None and near_distance_km is not None:
+            # Bounding box 近似预筛选（~111km/度纬度, ~111*cos(lat)km/度经度）
+            import math
+            lat_delta = near_distance_km / 111.0
+            lng_delta = near_distance_km / (111.0 * math.cos(math.radians(near_lat)))
+            clauses.append(Property.latitude >= near_lat - lat_delta)
+            clauses.append(Property.latitude <= near_lat + lat_delta)
+            clauses.append(Property.longitude >= near_lng - lng_delta)
+            clauses.append(Property.longitude <= near_lng + lng_delta)
         if status:
             clauses.append(Property.status == status)
         elif landlord_id is None and not include_deleted:
@@ -209,6 +222,9 @@ class PropertyService:
         price_min: float | None = None,
         price_max: float | None = None,
         institute_id: int | None = None,
+        near_lat: float | None = None,
+        near_lng: float | None = None,
+        near_distance_km: float | None = None,
         include_deleted: bool = False,
     ) -> dict:
         """返回分页结果: {items, total, page, page_size, total_pages}"""
@@ -218,7 +234,9 @@ class PropertyService:
             district=district, status=status, landlord_id=landlord_id,
             keyword=keyword, property_type=property_type,
             price_min=price_min, price_max=price_max,
-            institute_id=institute_id, include_deleted=include_deleted,
+            institute_id=institute_id,
+            near_lat=near_lat, near_lng=near_lng, near_distance_km=near_distance_km,
+            include_deleted=include_deleted,
         )
 
         # Count query
@@ -261,6 +279,82 @@ class PropertyService:
         "3bed+": "three_bed_plus", "shared": "shared",
     }
 
+    async def search_unit_types(
+        self,
+        *,
+        district: str | None = None,
+        price_min: Decimal | None = None,
+        price_max: Decimal | None = None,
+        bedrooms: int | None = None,
+        property_type: str | None = None,
+        near_lat: float | None = None,
+        near_lng: float | None = None,
+        near_distance_km: float | None = None,
+        female_only: bool | None = None,
+        limit: int = 50,
+    ) -> list[dict]:
+        """搜户型 —— 搜索主表为 unit_types，JOIN institutes，聚合 rooms 库存。
+
+        embedding 在 unit_types 上，P0 条件分布在 institutes + unit_types。
+        返回 [{unit_type, institute, available_rooms, min_price, embedding}, ...]
+        """
+        from sqlalchemy.orm import selectinload
+        from app.models.unit_type import UnitType, UnitTypeStatus
+        from app.models.institute import Institute, InstituteStatus
+        from app.models.property import Room, RoomStatus
+
+        stmt = (
+            select(
+                UnitType,
+                Institute,
+                func.count(Room.id).filter(Room.status == RoomStatus.available.value).label("available_rooms"),
+                func.min(Room.price_monthly).label("min_price"),
+            )
+            .join(Institute, UnitType.institute_id == Institute.id)
+            .outerjoin(Room, Room.unit_type_id == UnitType.id)
+            .where(
+                cast(UnitType.status, String) == UnitTypeStatus.available.value,
+                cast(Institute.status, String) == InstituteStatus.active.value,
+                UnitType.deleted_at.is_(None),
+            )
+        )
+
+        if district:
+            stmt = stmt.where(Institute.district.ilike(f"%{district}%"))
+        if price_min is not None:
+            stmt = stmt.where(UnitType.base_rent >= price_min)
+        if price_max is not None:
+            stmt = stmt.where(UnitType.base_rent <= price_max)
+        if bedrooms is not None:
+            stmt = stmt.where(UnitType.bedrooms == bedrooms)
+        if female_only is not None:
+            stmt = stmt.where(Institute.female_only == female_only)
+        # 大学距离 bounding box
+        if near_lat is not None and near_lng is not None and near_distance_km is not None:
+            import math as _math
+            lat_d = near_distance_km / 111.0
+            lng_d = near_distance_km / (111.0 * _math.cos(_math.radians(near_lat)))
+            stmt = stmt.where(
+                Institute.latitude >= near_lat - lat_d,
+                Institute.latitude <= near_lat + lat_d,
+                Institute.longitude >= near_lng - lng_d,
+                Institute.longitude <= near_lng + lng_d,
+            )
+
+        stmt = stmt.group_by(UnitType.id, Institute.id).order_by(UnitType.base_rent.asc()).limit(limit)
+        result = await self.session.execute(stmt)
+        rows = result.all()
+        return [
+            {
+                "unit_type": row[0],
+                "institute": row[1],
+                "available_rooms": row[2],
+                "min_price": row[3] or row[0].base_rent,
+                "embedding": row[0].embedding,
+            }
+            for row in rows
+        ]
+
     async def search(
         self,
         *,
@@ -282,6 +376,10 @@ class PropertyService:
         area_min: float | None = None,
         area_max: float | None = None,
         sort_by: str | None = None,
+        near_lat: float | None = None,
+        near_lng: float | None = None,
+        near_distance_km: float | None = None,
+        female_only: bool | None = None,
     ) -> list[tuple[Property, float | None]]:
         from sqlalchemy.orm import selectinload
 
@@ -367,7 +465,7 @@ class PropertyService:
             stmt = stmt.order_by(Property.created_at.desc())
 
         if district:
-            stmt = stmt.where(Property.district == district)
+            stmt = stmt.where(Property.district.ilike(f"%{district}%"))
         if price_min is not None:
             stmt = stmt.where(Property.price_monthly >= price_min)
         if price_max is not None:
@@ -382,8 +480,19 @@ class PropertyService:
         # ── 新增筛选条件 ──
         if institute_id is not None:
             stmt = stmt.where(Property.institute_id == institute_id)
+        if female_only is not None:
+            stmt = stmt.where(Property.female_only == female_only)
         if amenities:
             stmt = stmt.where(Property.amenities.op("&&")(amenities))
+        # P0 大学距离约束 — bounding box 预筛选
+        if near_lat is not None and near_lng is not None and near_distance_km is not None:
+            import math as _math
+            lat_d = near_distance_km / 111.0
+            lng_d = near_distance_km / (111.0 * _math.cos(_math.radians(near_lat)))
+            stmt = stmt.where(Property.latitude >= near_lat - lat_d,
+                              Property.latitude <= near_lat + lat_d,
+                              Property.longitude >= near_lng - lng_d,
+                              Property.longitude <= near_lng + lng_d)
         if available_from:
             # 入住月份：YYYYMM → 当月及之前可入住的房源
             year = int(available_from[:4])
@@ -398,10 +507,12 @@ class PropertyService:
             )
         if room_type:
             mapped_type = PropertyService._ROOM_TYPE_MAP.get(room_type, room_type)
-            from app.models.room_type import RoomType
+            from app.models.room_type import RoomType, RoomTypeEnum
+            from sqlalchemy import cast, String
             # 使用子查询避免 JOIN 产生重复行
+            # PostgreSQL enum 不能直接和 varchar 比较，需要 cast
             room_sub = select(RoomType.property_id).where(
-                RoomType.room_type == mapped_type
+                cast(RoomType.room_type, String) == mapped_type
             ).subquery()
             stmt = stmt.where(Property.id.in_(select(room_sub)))
         if min_lease_months is not None:
@@ -445,7 +556,7 @@ class PropertyService:
                 Property.description.ilike(kw),
             ))
             if district:
-                fallback_stmt = fallback_stmt.where(Property.district == district)
+                fallback_stmt = fallback_stmt.where(Property.district.ilike(f"%{district}%"))
             if price_min is not None:
                 fallback_stmt = fallback_stmt.where(Property.price_monthly >= price_min)
             if price_max is not None:
@@ -577,10 +688,12 @@ class PropertyService:
         await self.session.commit()
         await self.session.refresh(property_obj)
 
+        # 异步派发 Google Maps 全量 POI 检索（不阻塞更新流程）
         try:
-            await POIService(self.session).generate_poi_for_property(property_obj, force=True)
+            from app.tasks.poi_tasks import generate_full_poi_for_property
+            generate_full_poi_for_property.delay(property_obj.id)
         except Exception:
-            logger.exception("Failed to refresh POI for property %s", property_obj.id)
+            logger.exception("Failed to dispatch POI task for property %s", property_obj.id)
 
         await self._ensure_embedding(property_obj)
         await _bump_search_cache_version()

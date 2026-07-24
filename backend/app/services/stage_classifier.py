@@ -48,9 +48,8 @@ class StageClassifier:
         如果 AgentService 不可用，降级为本地规则判断。
         """
         try:
-            from app.services.agent_service import AgentService
-            agent_svc = AgentService()
-            result = await agent_svc.classify_message(message, history)
+            from app.services.agentic.router import classify_message as _classify
+            result = await _classify(message, history or [])
             return {
                 "stage": result["stage"],
                 "confidence": result["confidence"],

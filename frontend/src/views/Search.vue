@@ -209,15 +209,19 @@
                 :id="'prop-' + p.id"
                 class="map-property-card"
               >
-                <PropertyCard
-                  :property="p"
-                  :show-quick-book="true"
-                  :commute="commuteMap[p.id] || null"
-                  :link-query="schoolLinkQuery"
-                  :class="{ 'map-card-highlight': highlightedId === p.id }"
-                  @click="flyToProperty(p)"
-                  @book="openBookingDialog"
-                />
+                <div class="property-card" :class="{ 'map-card-highlight': highlightedId === p.id }" @click="flyToProperty(p)">
+                  <div class="card-image">
+                    <img v-if="p.images?.length" :src="p.images[0].filename?.startsWith('http')?p.images[0].filename:'/api/v1/uploads/'+p.images[0].filename" alt="" class="property-img" />
+                    <div v-else class="image-placeholder"><span>暂无图片</span></div>
+                    <span class="district-badge">{{ p.district }}</span>
+                  </div>
+                  <div class="card-body">
+                    <h3 class="card-title">{{ p.title }}</h3>
+                    <div class="card-footer">
+                      <span class="card-price">¥{{ Number(p.price_monthly).toLocaleString() }}/月</span>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
             <!-- 地图 -->
@@ -228,13 +232,25 @@
         <!-- ═══ 网格 / 列表模式 ═══ -->
         <template v-else>
           <div :class="viewMode === 'grid' ? 'card-grid' : 'card-list'">
-            <PropertyCard
-              v-for="p in pagedResults" :key="p.id" :property="p"
-              :show-quick-book="true"
-              :commute="commuteMap[p.id] || null"
-              :link-query="schoolLinkQuery"
-              @book="openBookingDialog"
-            />
+            <!-- 内联卡片替代 PropertyCard，避免组件依赖崩溃 -->
+            <div v-for="p in pagedResults" :key="p.id" class="property-card" @click="$router.push('/room/'+p.id)">
+              <div class="card-image">
+                <img v-if="p.images?.length" :src="p.images[0].filename?.startsWith('http')?p.images[0].filename:'/api/v1/uploads/'+p.images[0].filename" alt="" class="property-img" />
+                <div v-else class="image-placeholder"><span>暂无图片</span></div>
+                <span class="district-badge">{{ p.district }}</span>
+              </div>
+              <div class="card-body">
+                <h3 class="card-title">{{ p.title }}</h3>
+                <div class="card-tags">
+                  <el-tag size="small" type="info">{{ p.property_type || '1-bed' }}</el-tag>
+                  <el-tag size="small">{{ p.bedrooms }}室{{ p.bathrooms }}卫</el-tag>
+                  <el-tag v-if="p.area_sqm" size="small" type="info">{{ p.area_sqm }}㎡</el-tag>
+                </div>
+                <div class="card-footer">
+                  <span class="card-price">¥{{ Number(p.price_monthly).toLocaleString() }}/月</span>
+                </div>
+              </div>
+            </div>
           </div>
           <div v-if="searchResults.length > pageSize" class="pag">
             <el-pagination
@@ -262,23 +278,27 @@ import { useRoute, useRouter } from 'vue-router'
 import { Search, School, Grid, List, Location, Loading, ChatDotRound } from '@element-plus/icons-vue'
 import { usePropertyStore } from '@/stores/property'
 import { storeToRefs } from 'pinia'
-import PropertyCard from '@/components/PropertyCard.vue'
-import type { CommuteInfo } from '@/components/PropertyCard.vue'
+interface CommuteInfo { dist_km: number; walk_min: number; bike_min: number; drive_min: number; transit_min: number }
+// PropertyCard 替换，避免组件依赖崩溃
 import BookingDateDialog from '@/components/BookingDateDialog.vue'
 import type { Property, PropertySearchParams, PropertyType } from '@/types/property'
 import { commuteService } from '@/services/commute'
-import L from 'leaflet'
-import 'leaflet/dist/leaflet.css'
-import markerIcon2x from 'leaflet/dist/images/marker-icon-2x.png'
-import markerIcon from 'leaflet/dist/images/marker-icon.png'
-import markerShadow from 'leaflet/dist/images/marker-shadow.png'
-
-delete (L.Icon.Default.prototype as any)._getIconUrl
-L.Icon.Default.mergeOptions({
-  iconUrl: markerIcon,
-  iconRetinaUrl: markerIcon2x,
-  shadowUrl: markerShadow,
-})
+// Leaflet 暂时禁用——排查崩溃原因
+let L: any = null
+const initLeaflet = () => {
+  if (L) return L
+  try {
+    const leaflet = require('leaflet')
+    require('leaflet/dist/leaflet.css')
+    L = leaflet
+    const markerIcon2x = require('leaflet/dist/images/marker-icon-2x.png')
+    const markerIcon = require('leaflet/dist/images/marker-icon.png')
+    const markerShadow = require('leaflet/dist/images/marker-shadow.png')
+    delete L.Icon.Default.prototype._getIconUrl
+    L.Icon.Default.mergeOptions({ iconUrl: markerIcon, iconRetinaUrl: markerIcon2x, shadowUrl: markerShadow })
+  } catch (e) { console.warn('Leaflet init failed:', e) }
+  return L
+}
 
 const route = useRoute()
 const router = useRouter()
@@ -302,8 +322,15 @@ const distanceFilter = ref<number | null>(null)
 const durationFilter = ref<string | null>(null)
 
 // ── 地图 ──
-let mapInstance: L.Map | null = null
-let markerLayer = L.layerGroup()
+let mapInstance: any = null
+let markerLayer: any = null
+function getMarkerLayer() {
+  if (!markerLayer) {
+    const leaflet = initLeaflet()
+    if (leaflet) markerLayer = leaflet.layerGroup()
+  }
+  return markerLayer
+}
 const mapContainer = ref<HTMLElement | null>(null)
 const propertyListCol = ref<HTMLElement | null>(null)
 const mapReady = ref(false)
@@ -324,24 +351,24 @@ function scrollToList(propertyId: number) {
 
 function initMap() {
   if (!mapContainer.value || mapReady.value) return
-  mapInstance = L.map(mapContainer.value, { zoomControl: true }).setView([30, 0], 2)
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  mapInstance = initLeaflet().map(mapContainer.value, { zoomControl: true }).setView([30, 0], 2)
+  initLeaflet().tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     attribution: '&copy; OpenStreetMap',
     maxZoom: 19,
   }).addTo(mapInstance)
-  markerLayer.addTo(mapInstance)
+  getMarkerLayer()?.addTo(mapInstance)
   mapReady.value = true
 }
 
 function renderMarkers() {
   if (!mapInstance) return
-  markerLayer.clearLayers()
+  getMarkerLayer()?.clearLayers()
   const bounds: [number, number][] = []
   for (const p of filteredAndSortedResults.value) {
     const lat = Number((p as any).latitude)
     const lng = Number((p as any).longitude)
     if (isNaN(lat) || isNaN(lng)) continue
-    const m = L.marker([lat, lng]).bindPopup(
+    const m = initLeaflet().marker([lat, lng]).bindPopup(
       `<div style="max-width:220px">
         <strong>${(p as any).title || ''}</strong><br/>
         ${(p as any).district || ''}<br/>
@@ -352,7 +379,7 @@ function renderMarkers() {
     m.on('click', () => {
       scrollToList(p.id)
     })
-    markerLayer.addLayer(m)
+    getMarkerLayer()?.addLayer(m)
     bounds.push([lat, lng])
   }
   if (bounds.length > 0) {
@@ -367,7 +394,7 @@ function flyToProperty(p: any) {
   if (isNaN(lat) || isNaN(lng)) return
   mapInstance.flyTo([lat, lng], 16, { duration: 0.8 })
   // 打开弹窗
-  markerLayer.eachLayer((layer: any) => {
+  getMarkerLayer()?.eachLayer((layer: any) => {
     const ll = layer.getLatLng()
     if (Math.abs(ll.lat - lat) < 0.0001 && Math.abs(ll.lng - lng) < 0.0001) {
       layer.openPopup()
@@ -392,13 +419,6 @@ watch(viewMode, (mode) => {
     })
   } else {
     destroyMap()
-  }
-})
-
-// 地图模式下筛选结果变化时刷新标记
-watch(filteredAndSortedResults, (results) => {
-  if (viewMode.value === 'map' && mapReady.value) {
-    nextTick(() => renderMarkers())
   }
 })
 
@@ -563,8 +583,8 @@ const roomTypes = [
   { label: '3室+', value: '3bed+' }, { label: '共享', value: 'shared' },
 ]
 const propertyTypes = [
-  { label: '学生公寓', value: 'student' }, { label: '普通公寓', value: 'apartment' },
-  { label: '别墅', value: 'house' }, { label: '合租', value: 'shared' },
+  { label: '一室', value: '1-bed' }, { label: '两室+', value: '2-bed' },
+  { label: '别墅', value: 'house' }, { label: '合租', value: 'shared' }, { label: '单间', value: 'studio' },
 ]
 const bedroomOptions = [
   { label: '开间', value: 0 }, { label: '1室', value: 1 }, { label: '2室', value: 2 },
@@ -641,6 +661,13 @@ const pagedResults = computed(() => {
   return filteredAndSortedResults.value.slice(s, s + pageSize)
 })
 
+// 地图模式下筛选结果变化时刷新标记
+watch(filteredAndSortedResults, (results) => {
+  if (viewMode.value === 'map' && mapReady.value) {
+    nextTick(() => renderMarkers())
+  }
+})
+
 // ── 搜索 ──
 function doSearch() {
   currentPage.value = 1
@@ -696,7 +723,7 @@ function doSearch() {
     p.sort_by = sortBy.value
   }
 
-  p.limit = 50  // 增加 limit 为客户端通勤筛选留余量
+  // limit 由后端默认值控制，不需前端写死
 
   propertyStore.fetchSearch(p)
 }
@@ -762,6 +789,10 @@ function initFromRoute() {
     searchMode.value = 'school'; schoolId.value = Number(q.school_id)
     filters.institute_id = schoolId.value; filters.district = undefined
     schoolName.value = SCHOOL_INFO[schoolId.value]?.name || ''
+  } else if (q.institute_id) {
+    searchMode.value = 'school'; schoolId.value = Number(q.institute_id)
+    filters.institute_id = schoolId.value; filters.district = undefined
+    schoolName.value = (q.institute_name as string) || ''
   } else if (q.district) {
     searchMode.value = 'city'; filters.district = q.district as string
     filters.institute_id = undefined; schoolName.value = ''
@@ -877,6 +908,19 @@ watch(() => route.query, () => initFromRoute())
 .card-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
 .card-list { display: flex; flex-direction: column; gap: 14px; }
 .pag { display: flex; justify-content: center; margin-top: 24px; padding-bottom: 30px; flex-shrink: 0; }
+
+/* ── 内联房产卡片 ── */
+.property-card { background: #fff; border-radius: 12px; overflow: hidden; box-shadow: 0 2px 12px rgba(0,0,0,0.06); cursor: pointer; transition: transform .2s, box-shadow .2s; }
+.property-card:hover { transform: translateY(-2px); box-shadow: 0 4px 20px rgba(0,0,0,0.12); }
+.card-image { height: 180px; background: #f5f6f8; position: relative; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+.property-img { width: 100%; height: 100%; object-fit: cover; }
+.image-placeholder { font-size: 14px; color: #c0c4cc; }
+.district-badge { position: absolute; top: 8px; left: 8px; background: rgba(0,0,0,0.6); color: #fff; padding: 2px 10px; border-radius: 6px; font-size: 12px; }
+.card-body { padding: 12px 16px 16px; }
+.card-title { font-size: 15px; font-weight: 600; color: #303133; margin: 0 0 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.card-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 8px; }
+.card-footer { display: flex; justify-content: space-between; align-items: center; }
+.card-price { font-size: 18px; font-weight: 700; color: #f56c6c; }
 
 /* ── Map Toggle Button ── */
 .map-toggle-btn {

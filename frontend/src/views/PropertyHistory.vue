@@ -10,13 +10,22 @@
       <el-form :inline="true" :model="filter" @submit.prevent>
         <el-form-item label="操作类型">
           <el-select v-model="filter.action" placeholder="全部" clearable style="width:160px">
-            <el-option label="创建房源" value="property_create" />
-            <el-option label="修改房源" value="property_update" />
-            <el-option label="删除房源" value="property_delete" />
-            <el-option label="恢复房源" value="property_restore" />
-            <el-option label="硬删除" value="property_hard_delete" />
+            <el-option label="创建房间" value="创建房间" />
+            <el-option label="编辑房间" value="编辑房间" />
+            <el-option label="删除房间" value="删除房间" />
+            <el-option label="恢复房间" value="恢复房间" />
+            <el-option label="创建户型" value="创建户型" />
+            <el-option label="编辑户型" value="编辑户型" />
+            <el-option label="删除户型" value="删除户型" />
+            <el-option label="恢复户型" value="恢复户型" />
+            <el-option label="创建公寓" value="创建公寓" />
+            <el-option label="编辑公寓" value="编辑公寓" />
+            <el-option label="删除公寓" value="删除公寓" />
+            <el-option label="恢复公寓" value="恢复公寓" />
+            <el-option label="硬删除房间" value="硬删除房间" />
+            <el-option label="硬删除户型" value="硬删除户型" />
+            <el-option label="硬删除公寓" value="硬删除公寓" />
             <el-option label="批量操作" value="batch" />
-            <el-option label="管理员审核" value="property_moderate" />
           </el-select>
         </el-form-item>
         <el-form-item label="房源 ID">
@@ -399,7 +408,7 @@ const fieldLabelMap: Record<string, string> = {
 }
 
 const propertyTypeLabels: Record<string, string> = {
-  apartment: '公寓', house: '独栋', studio: '开间', shared: '合租',
+  studio: '单间', '1-bed': '一室', '2-bed': '两室+', shared: '合租', house: '别墅',
 }
 const depositTypeLabels: Record<string, string> = {
   one_month: '押一付一', one_three: '押一付三', two_month: '押二付一',
@@ -632,31 +641,28 @@ function formatTime(iso: string): string {
 }
 
 const actionLabelMap: Record<string, string> = {
-  property_create: '创建房源',
-  property_update: '修改房源',
-  property_delete: '删除房源',
-  property_restore: '恢复房源',
-  property_hard_delete: '硬删除',
-  property_batch_status: '批量状态',
-  property_batch_delete: '批量删除',
-  property_batch_restore: '批量恢复',
-  property_batch_hard_delete: '批量硬删除',
-  property_moderate: '管理员审核',
-  property_revert: '撤销操作',
+  创建房间: '创建房间', 编辑房间: '编辑房间', 删除房间: '删除房间', 恢复房间: '恢复房间',
+  创建户型: '创建户型', 编辑户型: '编辑户型', 删除户型: '删除户型', 恢复户型: '恢复户型',
+  创建公寓: '创建公寓', 编辑公寓: '编辑公寓', 删除公寓: '删除公寓', 恢复公寓: '恢复公寓',
 }
 function actionLabel(action: string): string {
+  if (actionLabelMap[action]) return actionLabelMap[action]
+  if (action.includes('创建')) return action
+  if (action.includes('编辑')) return action
+  if (action.includes('删除')) return action
+  if (action.includes('恢复')) return action
+  if (action.includes('撤销')) return action
   if (action.startsWith('property_batch')) return '批量操作'
-  return actionLabelMap[action] || action
+  return action
 }
 function actionTagType(action: string): 'primary' | 'success' | 'warning' | 'danger' | 'info' {
-  if (action.includes('hard_delete')) return 'danger'
-  if (action.includes('delete')) return 'warning'
-  if (action.includes('revert')) return 'warning'
-  if (action.includes('restore')) return 'success'
-  if (action.includes('update')) return 'primary'
-  if (action.includes('create')) return 'success'
-  if (action.includes('moderate')) return 'info'
-  if (action.includes('batch')) return 'info'
+  if (action.includes('硬删除')) return 'danger'
+  if (action.includes('删除')) return 'danger'
+  if (action.includes('编辑')) return 'primary'
+  if (action.includes('创建')) return 'success'
+  if (action.includes('恢复')) return 'success'
+  if (action.includes('撤销')) return 'warning'
+  if (action.includes('批量')) return 'info'
   return 'info'
 }
 function detailsSummary(details: Record<string, any> | null): string {

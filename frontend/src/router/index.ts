@@ -9,7 +9,7 @@ const routes: RouteRecordRaw[] = [
     children: [
       { path: '', name: 'home', component: () => import('@/views/Home.vue') },
       { path: 'search', name: 'search', component: () => import('@/views/Search.vue') },
-      { path: 'ai-search', name: 'ai-search', component: () => import('@/views/AiSearch.vue') },
+      { path: 'ai-search', name: 'ai-search', component: () => import('@/views/AiSearch.vue'), meta: { hideFooter: true } },
       { path: 'map', name: 'map-search', component: () => import('@/views/MapSearch.vue') },
 
       // ── 三层架构核心 ──
@@ -43,7 +43,7 @@ const routes: RouteRecordRaw[] = [
       { path: 'property/:id/edit', redirect: '/unit-type/:id/edit' },
       { path: 'property/manage', redirect: '/unit-type/manage' },
       { path: 'property/import', redirect: '/room/import' },
-      { path: 'property/:id', redirect: '/room/:id' },
+      { path: 'property/:id', redirect: (to: any) => `/room/${to.params.id}` },
 
       // 原有
       { path: 'agent', name: 'agent', component: () => import('@/views/AgentView.vue'), meta: { requiresAuth: true } },
@@ -51,7 +51,12 @@ const routes: RouteRecordRaw[] = [
       { path: 'profile', name: 'profile', component: () => import('@/views/Profile.vue'), meta: { requiresAuth: true } },
       { path: 'profile/edit', name: 'profile-edit', component: () => import('@/views/ProfileEdit.vue'), meta: { requiresAuth: true } },
       { path: 'contract/:id', name: 'contract-view', component: () => import('@/views/ContractView.vue'), meta: { requiresAuth: true } },
+      // 预定-支付-合同流程
+      { path: 'booking/confirm', name: 'booking-confirm', component: () => import('@/views/BookingConfirm.vue'), meta: { requiresAuth: true } },
+      { path: 'booking/payment/:id/deposit', name: 'deposit-payment', component: () => import('@/views/DepositPayment.vue'), meta: { requiresAuth: true } },
 
+      // 租客预定列表
+      { path: 'bookings/tenant', name: 'tenant-bookings', component: () => import('@/views/TenantBookings.vue'), meta: { requiresAuth: true } },
       // 房东管理页面
       { path: 'bookings/landlord', name: 'landlord-bookings', component: () => import('@/views/LandlordBookings.vue'), meta: { requiresAuth: true, requiresLandlord: true } },
       { path: 'workspace', name: 'landlord-workspace', component: () => import('@/views/landlord/LandlordDashboard.vue'), meta: { requiresAuth: true, requiresLandlord: true } },

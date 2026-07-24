@@ -4,7 +4,7 @@ from pydantic import BaseModel, ConfigDict
 
 
 class PropertyImageCreate(BaseModel):
-    pass  # Data comes from multipart upload, not JSON body
+    pass
 
 
 class PropertyImageRead(BaseModel):

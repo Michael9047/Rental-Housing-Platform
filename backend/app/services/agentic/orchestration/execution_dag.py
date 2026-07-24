@@ -19,12 +19,11 @@ from .types import ExecutionMode, ExecutionPlan, ExecutionStep, TaskStatus
 class Intent(str, Enum):
     SEARCH = "search"
     COMPARE = "compare"
-    MANAGE_CART = "manage_cart"
-    FAQ = "faq"
     GENERAL = "general"
 
 
-# 每种 Intent 对应的 Agent DAG 模板（精简为 5 种）
+# Intent → Agent 链路模板
+# cart/faq 已降级为工具，不走 DAG，由 Supervisor 直接分发到工具层
 INTENT_DAG_TEMPLATES: dict[Intent, list[dict]] = {
     Intent.SEARCH: [
         {"agent_id": "filter_agent", "dependencies": [], "can_parallelize": False},
@@ -34,12 +33,6 @@ INTENT_DAG_TEMPLATES: dict[Intent, list[dict]] = {
     Intent.COMPARE: [
         {"agent_id": "compare_agent", "dependencies": [], "can_parallelize": False},
         {"agent_id": "synthesizer_agent", "dependencies": ["compare_agent"], "can_parallelize": False},
-    ],
-    Intent.MANAGE_CART: [
-        {"agent_id": "cart_agent", "dependencies": [], "can_parallelize": False},
-    ],
-    Intent.FAQ: [
-        {"agent_id": "faq_agent", "dependencies": [], "can_parallelize": False},
     ],
     Intent.GENERAL: [
         {"agent_id": "synthesizer_agent", "dependencies": [], "can_parallelize": False},

@@ -3,14 +3,14 @@
     <!-- Header -->
     <div class="page-header">
       <el-button text :icon="ArrowLeft" @click="$router.back()">返回</el-button>
-      <h2>预约看房</h2>
+      <h2>预定房源</h2>
     </div>
 
     <el-row :gutter="24">
       <!-- Left: Booking Form -->
       <el-col :span="16">
         <el-card shadow="never" class="step-card">
-          <template #header><span class="card-title">📅 预约看房信息</span></template>
+          <template #header><span class="card-title">📅 预定房源信息</span></template>
 
           <div class="prefill-info" v-if="prefillDate">
             <el-tag type="success" effect="plain" size="large" round>
@@ -68,7 +68,7 @@
             <div class="form-footer">
               <el-button @click="$router.back()">取消</el-button>
               <el-button type="primary" size="large" :loading="submitting" @click="submitBooking">
-                提交预约
+                提交预定
               </el-button>
             </div>
           </el-form>
@@ -182,29 +182,29 @@ async function submitBooking() {
       timeSlotLabel ? `【看房时段：${timeSlotLabel}】` : '',
       bookingForm.message || '',
     ].filter(Boolean).join('\n')
-    await bookingService.create({
+    const booking = await bookingService.create({
       property_id: propertyId,
       message: fullMessage || undefined,
       scheduled_date: bookingForm.scheduled_date || undefined,
     })
-    ElMessage.success('预约已提交成功，可在个人中心「我的预订」查看')
-    // 跳转到个人中心预订列表
-    setTimeout(() => router.push('/profile?tab=bookings'), 1500)
+    ElMessage.success('预定已提交，即将跳转支付')
+    // 跳转到押金支付页
+    setTimeout(() => router.push(`/booking/payment/${booking.id}/deposit`), 1000)
   } catch (err: any) {
     const status = err?.response?.status
     const detail = err?.response?.data?.detail
     if (status === 409) {
-      ElMessage.warning('您已对该房源发起过预约')
+      ElMessage.warning('您已对该房源发起过预定')
     } else if (status === 403) {
-      ElMessage.error('仅租客身份可预约看房，请切换为租客账号')
+      ElMessage.error('仅租客身份可预定房源，请切换为租客账号')
     } else if (status === 401) {
-      ElMessage.error('请先登录后再预约')
+      ElMessage.error('请先登录后再预定')
     } else if (status === 404) {
       ElMessage.error('房源不存在或已下架')
     } else if (detail && typeof detail === 'string') {
       ElMessage.error(detail)
     } else {
-      ElMessage.error('预约提交失败，请重试')
+      ElMessage.error('预定提交失败，请重试')
     }
   } finally {
     submitting.value = false

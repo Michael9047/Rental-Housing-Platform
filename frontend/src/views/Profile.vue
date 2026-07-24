@@ -501,7 +501,7 @@ function bindWechat() { ElMessage.info('请用微信扫码绑定') }
 function maskPhone(p: string | null): string { return p && p.length >= 11 ? p.slice(0, 3) + '****' + p.slice(-4) : (p || '未设置') }
 function formatDate(d: string): string { return d ? new Date(d).toLocaleDateString('zh-CN') : '' }
 
-onMounted(() => { authStore.fetchCurrentUser(); fetchAll(); fetchRepairs() })
+onMounted(() => { authStore.fetchCurrentUser(); fetchAll() })
 </script>
 
 <style scoped>

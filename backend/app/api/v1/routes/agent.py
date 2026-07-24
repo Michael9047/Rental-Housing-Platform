@@ -1,7 +1,8 @@
 """租房推荐 Agent —— 会话、推荐、购物车、对比接口
 
-统一使用多 Agent DAG 编排（Supervisor + MoE 专家组）。
+轻量架构：Router 分类 → Dispatcher 分发 → Agent/Service/Tool 直接执行。
 """
+import json
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -26,7 +27,8 @@ from app.schemas.agent import (
 )
 from app.schemas.property import PropertySearchResult
 from app.services.agent_faq import list_faq_chips
-from app.services.agent_service import AgentService
+from app.services.agentic.agents.cart_agent import CartService
+from app.services.agentic.agents.compare_agent import CompareAgent
 from app.services.chat_service import ChatService
 
 logger = logging.getLogger(__name__)
@@ -35,6 +37,33 @@ router = APIRouter()
 
 
 def _to_search_result(prop) -> PropertySearchResult:
+    """兼容 UnitType 和 Property/Room 两种模型。"""
+    # UnitType 对象 → 转为 PropertySearchResult 兼容 dict
+    if hasattr(prop, 'institute_id') and not hasattr(prop, 'landlord_id'):
+        # 这是 UnitType — 映射到 PropertySearchResult 的字段
+        inst = getattr(prop, 'institute', None)
+        return PropertySearchResult(
+            id=prop.id,
+            landlord_id=0,  # UnitType 没有 landlord，填 0
+            title=prop.name,
+            description=getattr(prop, 'description', None),
+            address=getattr(inst, 'address', None) if inst else None,
+            district=getattr(inst, 'district', None) if inst else None,
+            price_monthly=prop.base_rent,
+            area_sqm=prop.area_sqm,
+            bedrooms=prop.bedrooms,
+            bathrooms=prop.bathrooms,
+            property_type=None,
+            status=getattr(prop, 'status', 'available'),
+            currency=getattr(prop, 'currency', None),
+            latitude=getattr(inst, 'latitude', None) if inst else None,
+            longitude=getattr(inst, 'longitude', None) if inst else None,
+            created_at=getattr(prop, 'created_at', None),
+            updated_at=getattr(prop, 'updated_at', None),
+            images=[],
+            institute_id=prop.institute_id,
+            institute_name=getattr(inst, 'name', None) if inst else None,
+        )
     return PropertySearchResult.model_validate(prop)
 
 
@@ -48,8 +77,8 @@ async def create_agent_session(
     chat_service = ChatService(session)
     chat_session = await chat_service.create_session(current_user.id, title="租房推荐 Agent")
 
-    agent_service = AgentService(session)
-    cart = await agent_service.get_or_create_cart(current_user.id)
+    cart_agent = CartService(session=session)
+    cart = await cart_agent.get_or_create_cart(current_user.id)
     # 购物车关联到最新会话
     cart.session_id = chat_session.id
     await session.commit()
@@ -74,7 +103,11 @@ async def send_agent_message(
     if chat_session is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Agent 会话不存在")
 
-    result = await _handle_with_supervisor(session, chat_session, current_user.id, body)
+    from app.services.agentic.dispatcher import dispatch
+    filters = body.filters.model_dump(exclude_none=True) if body.filters else None
+    result = await dispatch(session=session, chat_session=chat_session, user_id=current_user.id,
+                            message=body.message, filters=filters,
+                            compare_property_ids=body.compare_property_ids)
 
     return AgentMessageResponse(
         reply=result["reply"],
@@ -109,82 +142,42 @@ async def send_agent_message(
     )
 
 
-async def _handle_with_supervisor(
-    session: AsyncSession,
-    chat_session,
-    user_id: int,
+@router.post("/sessions/{session_id}/messages/stream")
+async def send_agent_message_stream(
+    session_id: int,
     body: AgentMessageRequest,
-) -> dict:
-    """使用 Supervisor 多 Agent DAG 编排处理消息。"""
-    from app.models.chat import ChatMessage, ChatMessageRole
-    from app.services.agentic.orchestration.supervisor import Supervisor
-    from app.services.agentic.agents.registry import register_all_agents
-    from app.services.agentic.orchestration.agent_registry import AgentRegistry
-    from app.services.agentic.orchestration.tool_registry import ToolRegistry, bind_tool_handlers
+    session: AsyncSession = Depends(get_db_session),
+    current_user: User = Depends(get_current_user),
+):
+    """流式 Agent 消息 —— SSE 逐 token 返回 AI 回复。"""
+    from fastapi.responses import StreamingResponse
+    from app.services.agentic.dispatcher import dispatch_stream
 
-    # 注册 Agent + 绑定工具
-    registry = AgentRegistry()
-    register_all_agents(registry)
-    tool_registry = ToolRegistry.get_instance()
-    bind_tool_handlers(tool_registry, session, user_id)
+    chat_service = ChatService(session)
+    chat_session = await chat_service.get_session(session_id, current_user.id)
+    if chat_session is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Agent 会话不存在")
 
-    # 构建对话历史
-    history = await _build_chat_history(session, chat_session.id, user_id)
-
-    # 提取筛选条件
     filters = body.filters.model_dump(exclude_none=True) if body.filters else None
 
-    supervisor = Supervisor(
-        session=session, registry=registry, tool_registry=tool_registry,
-        chat_session=chat_session,
-    )
-    result = await supervisor.handle_message(
-        message=body.message,
-        history=history,
-        filters=filters,
-        user_id=user_id,
-        compare_property_ids=body.compare_property_ids,
-    )
+    async def event_stream():
+        full_reply = ""
+        try:
+            async for token, meta in dispatch_stream(
+                session=session, chat_session=chat_session, user_id=current_user.id,
+                message=body.message, filters=filters,
+                compare_property_ids=body.compare_property_ids,
+            ):
+                if token:
+                    full_reply += token
+                    yield f"data: {json.dumps({'token': token})}\n\n"
+                if meta:
+                    yield f"data: {json.dumps({'meta': meta})}\n\n"
+        except Exception as e:
+            yield f"data: {json.dumps({'error': str(e)})}\n\n"
+        yield f"data: [DONE]\n\n"
 
-    # 持久化消息到数据库（与 legacy 行为一致）
-    user_msg = ChatMessage(
-        session_id=chat_session.id,
-        role=ChatMessageRole.user,
-        content=body.message,
-        metadata_={"filters": filters or {}, "pipeline": "agentic"},
-    )
-    assistant_msg = ChatMessage(
-        session_id=chat_session.id,
-        role=ChatMessageRole.assistant,
-        content=result["reply"],
-        metadata_={
-            "intent": result.get("intent"),
-            "pipeline": "agentic",
-            "orchestration": result.get("_orchestration"),
-            "recommendations": [
-                {"property_id": r["property_id"], "match_reason": r.get("match_reason", "")}
-                for r in result.get("recommendations", [])
-            ],
-        },
-    )
-    session.add_all([user_msg, assistant_msg])
-    await session.commit()
-
-    return result
-
-
-async def _build_chat_history(
-    session: AsyncSession, chat_session_id: int, user_id: int
-) -> list[dict]:
-    """从数据库获取对话历史，转为 Supervisor 需要的格式。"""
-    from app.services.chat_service import ChatService as Cs
-    chat_svc = Cs(session)
-    messages = await chat_svc.get_messages(chat_session_id, user_id)
-    history = []
-    for msg in messages:
-        role = "user" if msg.role.value == "user" else "assistant"
-        history.append({"role": role, "content": msg.content})
-    return history
+    return StreamingResponse(event_stream(), media_type="text/event-stream")
 
 
 @router.get("/faqs", response_model=list[FaqChip])
@@ -202,8 +195,8 @@ async def get_cart(
     session: AsyncSession = Depends(get_db_session),
     current_user: User = Depends(get_current_user),
 ) -> CartRead:
-    agent_service = AgentService(session)
-    cart, items = await agent_service.get_cart_items(current_user.id)
+    cart_agent = CartService(session=session)
+    cart, items = await cart_agent.get_cart_items(current_user.id)
     return CartRead(
         id=cart.id,
         session_id=cart.session_id,
@@ -227,9 +220,9 @@ async def add_cart_item(
     session: AsyncSession = Depends(get_db_session),
     current_user: User = Depends(get_current_user),
 ) -> CartItemRead:
-    agent_service = AgentService(session)
+    cart_agent = CartService(session=session)
     try:
-        item = await agent_service.add_to_cart(current_user.id, body.property_id, body.reason)
+        item = await cart_agent.add_to_cart(current_user.id, body.property_id, body.reason)
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
     return CartItemRead(
@@ -247,8 +240,8 @@ async def remove_cart_item(
     session: AsyncSession = Depends(get_db_session),
     current_user: User = Depends(get_current_user),
 ) -> None:
-    agent_service = AgentService(session)
-    removed = await agent_service.remove_from_cart(current_user.id, property_id)
+    cart_agent = CartService(session=session)
+    removed = await cart_agent.remove_from_cart(current_user.id, property_id)
     if not removed:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="购物车中没有该房源")
 
@@ -259,11 +252,12 @@ async def compare_cart(
     session: AsyncSession = Depends(get_db_session),
     current_user: User = Depends(get_current_user),
 ) -> CompareResponse:
-    agent_service = AgentService(session)
+    compare_agent = CompareAgent(session=session)
+    cart_agent = CartService(session=session)
     property_ids = body.property_ids if body else None
     priority = body.priority if body else None
     try:
-        result = await agent_service.compare_cart(current_user.id, property_ids, priority)
+        result = await compare_agent.compare(current_user.id, property_ids, priority, cart_agent=cart_agent)
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 

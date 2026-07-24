@@ -54,7 +54,7 @@ async def fetch_training_data(db_session_factory) -> list[dict]:
                 "deposit_amount": p.deposit_amount,
                 "service_fee_rate": p.service_fee_rate,
                 "district": p.district,
-                "property_type": p.property_type.value if p.property_type else "apartment",
+                "property_type": p.property_type.value if p.property_type else "1-bed",
                 "latitude": float(p.latitude) if p.latitude else None,
                 "longitude": float(p.longitude) if p.longitude else None,
                 "price_monthly": float(p.price_monthly),

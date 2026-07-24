@@ -131,6 +131,8 @@ const roomSummary = computed(() => {
   const hasPrivateKitchen =
     p.property_type === 'house' ||
     p.property_type === 'apartment' ||
+    p.property_type === '1-bed' ||
+    p.property_type === '2-bed' ||
     (p.amenities || []).includes('独立厨房')
   parts.push(hasPrivateKitchen ? '独立厨房' : '共享厨房')
 

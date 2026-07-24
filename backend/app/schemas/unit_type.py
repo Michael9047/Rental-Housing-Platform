@@ -78,6 +78,7 @@ class UnitTypeRead(BaseModel):
     min_stay_months: int
     status: str
     room_count: int = 0
+    deleted_at: datetime | None = None
     created_at: datetime
     updated_at: datetime
 
