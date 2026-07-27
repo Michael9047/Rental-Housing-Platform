@@ -148,7 +148,7 @@ async def search_rooms(
     session: AsyncSession = Depends(get_db_session),
 ):
     """简单关键词搜索（不依赖 AI/embedding）"""
-    filters = [Room.deleted_at.is_(None), Room.status == "available"]
+    filters = [Room.deleted_at.is_(None), Room.status == RoomStatus.available]
     if q:
         filters.append(
             or_(Room.room_number.ilike(f"%{q}%"), UnitType.name.ilike(f"%{q}%"), Institute.name.ilike(f"%{q}%"))
@@ -178,18 +178,21 @@ async def get_recent_audit(
 ):
     """修改记录 — 查询当前用户的审计日志"""
     from app.models.audit_log import AuditLog
+    from app.models.user import User as UserModel
+
     stmt = (
-        select(AuditLog)
+        select(AuditLog, UserModel.username)
+        .outerjoin(UserModel, AuditLog.user_id == UserModel.id)
         .where(or_(AuditLog.user_id == current_user.id, AuditLog.user_id.is_(None))).where(~AuditLog.action.ilike("%login%"))
         .order_by(AuditLog.created_at.desc())
         .limit(limit)
     )
-    result = await session.scalars(stmt)
-    logs = list(result)
+    result = await session.execute(stmt)
+    rows = result.all()
     type_labels = {"room": "房间", "unit_type": "户型", "building": "公寓"}
     return [{
         "id": log.id, "user_id": log.user_id,
-        "username": current_user.username,
+        "username": username or f"用户#{log.user_id}",
         "action": log.action, "resource_id": log.resource_id,
         "resource_type": type_labels.get(log.resource_type, log.resource_type),
         "details": log.details,
@@ -198,7 +201,7 @@ async def get_recent_audit(
         "property_address": None,
         "institute_name": None,
         "created_at": log.created_at.isoformat() if log.created_at else None,
-    } for log in logs]
+    } for log, username in rows]
 
 
 # ── 撤销操作 ──

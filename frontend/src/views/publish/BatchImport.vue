@@ -79,10 +79,10 @@
       <div v-if="selectedBuilding" style="margin-top:16px">
         <ImageUploader
           ref="batchImageUploaderRef"
-          title="楼栋公共配套图片（选填）"
-          hint="本照片仅作为楼栋公共配套图（大堂、电梯、外观等），房间独立实拍图需在房源编辑页面单独补充上传"
-          :min-files="0"
-          :max-files="8"
+          title="楼栋公共配套图片"
+          hint="至少3张，最多20张，楼栋公共配套图（大堂、电梯、外观等）"
+          :min-files="3"
+          :max-files="20"
           upload-url="/upload/temp/batch"
           v-model="batchImageUrls"
         />

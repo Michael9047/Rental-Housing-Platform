@@ -79,9 +79,22 @@ body {
 .el-button--primary {
   background: var(--primary);
   border-color: var(--primary);
+  color: #fff;
 }
 .el-button--primary:hover {
   background: var(--primary-dark);
+  border-color: var(--primary-dark);
+  color: #fff;
+}
+/* plain 主色按钮：透明底 + 橙色字，不受上方填充背景影响 */
+.el-button--primary.is-plain {
+  background: transparent;
+  color: var(--primary);
+  border-color: var(--primary);
+}
+.el-button--primary.is-plain:hover {
+  background: var(--primary-light);
+  color: var(--primary);
   border-color: var(--primary-dark);
 }
 
