@@ -386,7 +386,7 @@ const dialogInstituteId = ref<number | undefined>(); const dialogUnitTypes = ref
 const dialogInstitute = ref<any>(null); const dialogUnitType = ref<any>(null)
 
 async function onDialogInstituteChange() {
-  roomForm.unit_type_id = 0; dialogUnitType.value = null
+  roomForm.unit_type_id = null as any; dialogUnitType.value = null
   if (dialogInstituteId.value) {
     const r = await api.get('/unit-types', { params: { institute_id: dialogInstituteId.value, page_size: 500 } })
     dialogUnitTypes.value = r.data.items || []
@@ -397,12 +397,12 @@ function onDialogUnitTypeChange() {
   dialogUnitType.value = dialogUnitTypes.value.find(u => u.id === roomForm.unit_type_id) || null
   dialogInstitute.value = buildings.value.find(b => b.id === dialogInstituteId.value) || null
 }
-const roomForm = reactive({ unit_type_id: 0, room_number: '', building_block: '' as string | undefined, floor: undefined as number | undefined, special_discount: '' as string | undefined, available_from: '' as string | undefined, status: 'available' })
+const roomForm = reactive({ unit_type_id: null as number | null, room_number: '', building_block: '' as string | undefined, floor: undefined as number | undefined, special_discount: '' as string | undefined, available_from: '' as string | undefined, status: 'available' })
 
 function openAddDialog() {
   editingRoom.value = null; dialogTab.value = 'single'
   dialogInstitute.value = null; dialogUnitType.value = null
-  Object.assign(roomForm, { unit_type_id: 0, room_number: '', building_block: undefined, floor: undefined, special_discount: undefined, available_from: undefined, status: 'available' })
+  Object.assign(roomForm, { unit_type_id: null, room_number: '', building_block: undefined, floor: undefined, special_discount: undefined, available_from: undefined, status: 'available' })
   dialogVisible.value = true
 }
 

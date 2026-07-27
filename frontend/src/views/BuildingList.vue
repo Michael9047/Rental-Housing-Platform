@@ -63,18 +63,52 @@
       <el-form ref="fRef" :model="f" label-width="100px">
         <el-form-item label="公寓名称" required><el-input v-model="f.name" placeholder="中/英文均可" maxlength="200" /></el-form-item>
 
-        <!-- 地址 + 定位按钮 -->
-        <el-form-item label="详细地址" required>
-          <div style="display:flex;gap:8px;width:100%">
-            <el-input v-model="f.address" placeholder="输入中/英文地址，点击定位按钮检索" maxlength="300" style="flex:1" @keyup.enter="geocode" />
-            <el-button type="primary" @click="geocode" :loading="geoLoading">📍 定位</el-button>
-          </div>
+        <!-- ═══ 结构化地址 + 地图定位 ═══ -->
+        <el-divider>📍 地址与定位</el-divider>
+
+        <!-- 国家：带建议的输入框，可自由输入/修改/删除 -->
+        <el-form-item label="国家" required>
+          <el-autocomplete v-model="f.country" :fetch-suggestions="filterCountries" placeholder="输入或选择国家，如：英国、美国、日本" clearable style="width:100%" />
         </el-form-item>
 
-        <!-- 地图 -->
+        <!-- 城市 -->
+        <el-form-item label="城市">
+          <el-input v-model="f.city" placeholder="如：伦敦、上海、新加坡" maxlength="100" />
+        </el-form-item>
+
+        <!-- 区域 -->
+        <el-form-item label="区域">
+          <el-input v-model="f.district" placeholder="如：肯辛顿、浦东、市中心" maxlength="100" />
+        </el-form-item>
+
+        <!-- 街道+门牌号 -->
+        <el-form-item label="街道/门牌号">
+          <el-input v-model="f.street" placeholder="如：105 Cheyne Walk 或 南京路100号" maxlength="200" />
+        </el-form-item>
+
+        <!-- 邮编 -->
+        <el-form-item label="邮编">
+          <el-input v-model="f.postalCode" placeholder="选填" maxlength="20" style="width:200px" />
+        </el-form-item>
+
+        <!-- 定位按钮 + 状态 + 清空 -->
         <el-form-item label="地图定位">
+          <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
+            <el-button type="primary" @click="geocodeStructured" :loading="geoLoading" :disabled="!canGeocode">
+              📍 检索定位
+            </el-button>
+            <el-tag v-if="f.lat!=null && f.lng!=null" type="success" effect="dark" size="small">
+              ✅ 已定位 ({{ f.lat.toFixed(4) }}, {{ f.lng.toFixed(4) }})
+            </el-tag>
+            <el-tag v-else type="danger" effect="dark" size="small">
+              ❌ 未定位
+            </el-tag>
+            <el-button size="small" type="danger" plain style="margin-left:auto" @click="clearAddressFields">🗑️ 一键清空</el-button>
+          </div>
           <div ref="mapEl" style="width:100%;height:280px;border-radius:8px;border:1px solid #dcdfe6;"></div>
-          <div style="color:#909399;font-size:12px;margin-top:4px">可点击地图直接选点，或拖拽标记微调位置</div>
+          <div style="color:#909399;font-size:12px;margin-top:4px">
+            💡 <b>正向</b>：填地址 → 检索定位；<b>反向</b>：点地图 → 自动回填
+          </div>
         </el-form-item>
 
         <el-divider>联系方式</el-divider>
@@ -134,23 +168,25 @@
           <ImageUploader
             ref="imageUploaderRef"
             title="公寓楼栋外观、大堂、公共设施实拍"
-            hint="支持多图上传、拖拽排序，首张为封面。仅用于公寓公共展示，户型图/房间图在对应页面单独上传。"
-            :min-files="0"
-            :max-files="15"
+            hint="至少3张，最多20张，支持拖拽排序，首张为封面"
+            :min-files="3"
+            :max-files="20"
             v-model="uploadedImages"
           />
         </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="closeDialog" :disabled="saving">取消</el-button>
-        <el-button type="primary" :loading="saving" @click="save">确定保存</el-button>
+        <el-tooltip :content="saveDisabledReason" :disabled="!saveDisabledReason" placement="top">
+          <el-button type="primary" :loading="saving" :disabled="saving || !!saveDisabledReason" @click="save">确定保存</el-button>
+        </el-tooltip>
       </template>
     </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted, nextTick, watch } from 'vue'
+import { ref, reactive, computed, onMounted, nextTick, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { buildingService } from '@/services/building'
 import api from '@/services/api'
@@ -166,7 +202,34 @@ const selectedAmenities = ref<string[]>([])
 const uploadedImages = ref<string[]>([])
 const imageUploaderRef = ref<InstanceType<typeof ImageUploader>>()
 const mapEl = ref<HTMLElement|null>(null)
-const f = reactive({ name:'', address:'', contact_phone:'', description:'', mgrName:'', mgrPhone:'', mgrEmail:'', lat:null as number|null, lng:null as number|null, femaleOnly:false, couplesAllowed:false })
+const f = reactive({
+  name:'', address:'', contact_phone:'', description:'',
+  country:'', city:'', district:'', street:'', postalCode:'',
+  mgrName:'', mgrPhone:'', mgrEmail:'',
+  lat:null as number|null, lng:null as number|null,
+  femaleOnly:false, couplesAllowed:false
+})
+
+// 预定义国家列表（也可手动输入）
+const countryOptions = ['中国','英国','美国','澳大利亚','加拿大','新加坡','日本','韩国','法国','德国','马来西亚','泰国']
+
+// el-autocomplete 的筛选回调
+function filterCountries(query: string, cb: Function) {
+  if (!query) { cb(countryOptions.map(v => ({value:v}))); return }
+  const q = query.toLowerCase()
+  cb(countryOptions.filter(c => c.toLowerCase().includes(q) || c.includes(query)).map(v => ({value:v})))
+}
+
+// 是否可以执行地理编码（至少填了国家或城市）
+const canGeocode = computed(() => !!(f.country || f.city))
+
+// 保存按钮禁用逻辑：新建时必须有坐标
+const saveDisabledReason = computed(() => {
+  if (!editId.value && (f.lat == null || f.lng == null)) {
+    return '请先点击「📍 检索定位」确认公寓坐标后再保存'
+  }
+  return ''
+})
 
 // 公寓级配套
 const securityAmenities = ['24小时安保','监控系统(CCTV)','智能门禁','电子门锁','前台/礼宾','消防系统','夜间巡逻']
@@ -223,25 +286,56 @@ function destroyMap(){
   mapInst=null; markerInst=null
 }
 
-async function geocode(){
-  const a=f.address.trim();if(!a||a.length<2){ElMessage.warning('请先输入地址');return}
+async function geocodeStructured(){
+  if(!canGeocode.value){ElMessage.warning('请至少填写国家或城市');return}
   geoLoading.value=true
   try{
-    const r=await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(a)}&limit=1`,{headers:{'User-Agent':'RH/1.0'}})
+    // 使用 Nominatim 结构化查询
+    const params=new URLSearchParams({format:'json',limit:'1'})
+    if(f.street) params.set('street',f.street)
+    if(f.city) params.set('city',f.city)
+    if(f.country) params.set('country',f.country)
+    if(f.postalCode) params.set('postalcode',f.postalCode)
+    const r=await fetch(`https://nominatim.openstreetmap.org/search?${params}`,{headers:{'User-Agent':'RH/1.0'}})
     const d=await r.json()
     if(d.length>0){
       const lat=parseFloat(d[0].lat),lng=parseFloat(d[0].lon)
       placeMarker(lat,lng,false);mapInst?.setView([lat,lng],17)
-      f.address=d[0].display_name;ElMessage.success('已定位')
-    }else{ElMessage.warning('未找到该地址，请尝试更详细的地址或在地图上直接点击')}
-  }catch(e){ElMessage.error('定位失败')}
+      // 不回写地址字段，保持用户输入的结构化地址
+      ElMessage.success(`已定位 (${lat.toFixed(4)}, ${lng.toFixed(4)})`)
+    }else{ElMessage.warning('未找到该地址，请检查地址信息或在地图上手动点击选点')}
+  }catch(e){ElMessage.error('定位失败，请检查网络连接')}
   finally{geoLoading.value=false}
 }
 
 async function reverseGeocode(lat:number,lng:number){
+  // 逆地理编码：点击地图 → 解析 Nominatim 结构化地址 → 回填字段
   try{
-    const r=await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`,{headers:{'User-Agent':'RH/1.0'}})
-    const d=await r.json(); if(d?.display_name) f.address=d.display_name
+    const r=await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&accept-language=zh`,{headers:{'User-Agent':'RH/1.0'}})
+    const d=await r.json()
+    if(!d?.address) return
+    const a = d.address
+
+    // 国家 — 优先用中文名（Nominatim 的 country 在某些地区返回本地语言）
+    if (a.country && !f.country) f.country = a.country
+
+    // 城市 — 按优先级尝试
+    if (!f.city) f.city = a.city || a.town || a.municipality || a.village || a.hamlet || ''
+
+    // 区域 — 区/县/街道办
+    if (!f.district) f.district = a.suburb || a.borough || a.city_district || a.county || a.state_district || ''
+
+    // 街道+门牌号
+    if (!f.street) {
+      const road = a.road || a.pedestrian || a.path || a.footway || ''
+      const hn = a.house_number || ''
+      f.street = hn ? `${hn} ${road}`.trim() : road
+    }
+
+    // 邮编
+    if (!f.postalCode) f.postalCode = a.postcode || ''
+
+    ElMessage.success('已从地图反向定位，地址字段已自动填充')
   }catch(e){}
 }
 
@@ -252,12 +346,20 @@ async function onDialogOpened(){
   await initMap(f.lat, f.lng)
 }
 
+// 一键清空所有地址字段（方便反向定位测试）
+function clearAddressFields(){
+  f.country=''; f.city=''; f.district=''; f.street=''; f.postalCode=''
+  f.lat=null; f.lng=null
+  if(markerInst){ markerInst.remove(); markerInst=null }
+  ElMessage.success('地址字段已清空，可在地图上点击进行反向定位')
+}
+
 // 关闭时清理地图
 function closeDialog(){
   destroyMap()
   show.value = false
   // 重置表单
-  Object.assign(f,{name:'',address:'',contact_phone:'',description:'',mgrName:'',mgrPhone:'',mgrEmail:'',lat:null,lng:null,femaleOnly:false,couplesAllowed:false})
+  Object.assign(f,{name:'',address:'',contact_phone:'',description:'',country:'',city:'',district:'',street:'',postalCode:'',mgrName:'',mgrPhone:'',mgrEmail:'',lat:null,lng:null,femaleOnly:false,couplesAllowed:false})
   selectedAmenities.value=[]
   uploadedImages.value=[]
   editId.value=null
@@ -277,7 +379,7 @@ async function hardDeleteBuilding(id:number){try{await api.delete('/buildings/'+
 
 async function openCreate(){
   editId.value=null
-  Object.assign(f,{name:'',address:'',contact_phone:'',description:'',mgrName:'',mgrPhone:'',mgrEmail:'',lat:null,lng:null,femaleOnly:false,couplesAllowed:false})
+  Object.assign(f,{name:'',address:'',contact_phone:'',description:'',country:'',city:'',district:'',street:'',postalCode:'',mgrName:'',mgrPhone:'',mgrEmail:'',lat:null,lng:null,femaleOnly:false,couplesAllowed:false})
   selectedAmenities.value=[]; uploadedImages.value=[]
   show.value=true
 }
@@ -285,6 +387,8 @@ async function openCreate(){
 async function openEdit(b:any){
   editId.value=b.id
   f.name=b.name||''; f.address=b.address||''; f.contact_phone=b.contact_phone||''; f.description=b.description||''
+  // 加载结构化地址
+  f.country=b.country||''; f.city=b.city||''; f.district=b.district||''; f.street=b.street||''; f.postalCode=b.postal_code||''
   const blat=parseFloat(b.latitude), blng=parseFloat(b.longitude)
   f.lat=isNaN(blat)?null:blat; f.lng=isNaN(blng)?null:blng
   f.femaleOnly=b.female_only===true; f.couplesAllowed=b.couples_allowed===true
@@ -301,9 +405,18 @@ async function openEdit(b:any){
 
 async function save(){
   if(!f.name.trim()){ElMessage.warning('请输入公寓名称');return}
+  // 新建时必须定位
+  if(!editId.value && (f.lat==null || f.lng==null)){
+    ElMessage.warning('请先点击「📍 检索定位」确认公寓坐标')
+    return
+  }
   saving.value=true
   const p:any={
-    name:f.name.trim(),address:f.address.trim(),contact_phone:f.contact_phone.trim(),
+    name:f.name.trim(),
+    country:f.country.trim()||null, city:f.city.trim()||null,
+    district:f.district.trim()||null, street:f.street.trim()||null,
+    postal_code:f.postalCode.trim()||null,
+    contact_phone:f.contact_phone.trim(),
     description:f.description.trim(),manager_name:f.mgrName.trim(),manager_phone:f.mgrPhone.trim(),
     manager_email:f.mgrEmail.trim(),amenities:selectedAmenities.value.length?selectedAmenities.value:null,
     female_only:f.femaleOnly,couples_allowed:f.couplesAllowed,

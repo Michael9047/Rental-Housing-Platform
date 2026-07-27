@@ -86,8 +86,8 @@ const props = withDefaults(defineProps<{
 }>(), {
   title: '房源图片',
   hint: '',
-  minFiles: 0,
-  maxFiles: 15,
+  minFiles: 3,
+  maxFiles: 20,
   uploadUrl: '/upload/temp',
   modelValue: () => [],
 })
@@ -141,10 +141,6 @@ async function uploadFiles(files: File[]) {
   for (const f of files) {
     if (!['image/jpeg', 'image/png', 'image/webp'].includes(f.type)) {
       ElMessage.error(`不支持 ${f.type} 格式`)
-      continue
-    }
-    if (f.size > 5 * 1024 * 1024) {
-      ElMessage.error(`${f.name} 超过 5MB`)
       continue
     }
     valid.push(f)
