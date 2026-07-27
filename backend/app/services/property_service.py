@@ -291,25 +291,38 @@ class PropertyService:
         near_lng: float | None = None,
         near_distance_km: float | None = None,
         female_only: bool | None = None,
+        query_vec: list[float] | None = None,
         limit: int = 50,
     ) -> list[dict]:
         """搜户型 —— 搜索主表为 unit_types，JOIN institutes，聚合 rooms 库存。
 
         embedding 在 unit_types 上，P0 条件分布在 institutes + unit_types。
-        返回 [{unit_type, institute, available_rooms, min_price, embedding}, ...]
+        当传入 query_vec 时，语义相似度排序由数据库 pgvector 完成
+        （ORDER BY embedding <=> query_vec），不再把向量拉回应用层用 numpy 全量计算。
+        返回 [{unit_type, institute, available_rooms, min_price, embedding_score}, ...]
+        embedding_score ∈ [0,1]（无向量/该行未生成 embedding 时为 None）。
         """
-        from sqlalchemy.orm import selectinload
+        from sqlalchemy.orm import selectinload, defer
         from app.models.unit_type import UnitType, UnitTypeStatus
         from app.models.institute import Institute, InstituteStatus
         from app.models.property import Room, RoomStatus
 
+        select_cols = [
+            UnitType,
+            Institute,
+            func.count(Room.id).filter(Room.status == RoomStatus.available.value).label("available_rooms"),
+            func.min(Room.price_monthly).label("min_price"),
+        ]
+        # 语义排序下推 DB：cosine 距离与 HNSW(vector_cosine_ops) 索引一致
+        distance_expr = None
+        if query_vec is not None:
+            distance_expr = UnitType.embedding.cosine_distance(query_vec)
+            select_cols.append(distance_expr.label("distance"))
+
         stmt = (
-            select(
-                UnitType,
-                Institute,
-                func.count(Room.id).filter(Room.status == RoomStatus.available.value).label("available_rooms"),
-                func.min(Room.price_monthly).label("min_price"),
-            )
+            select(*select_cols)
+            # 不把 1536 维向量本身传回应用层（最多 limit 行，避免十几 MB 传输）
+            .options(defer(UnitType.embedding))
             .join(Institute, UnitType.institute_id == Institute.id)
             .outerjoin(Room, Room.unit_type_id == UnitType.id)
             .where(
@@ -341,7 +354,11 @@ class PropertyService:
                 Institute.longitude <= near_lng + lng_d,
             )
 
-        stmt = stmt.group_by(UnitType.id, Institute.id).order_by(UnitType.base_rent.asc()).limit(limit)
+        # 排序：有查询向量时按语义距离升序（最相似在前）；否则按租金升序
+        if distance_expr is not None:
+            stmt = stmt.group_by(UnitType.id, Institute.id).order_by(distance_expr.asc()).limit(limit)
+        else:
+            stmt = stmt.group_by(UnitType.id, Institute.id).order_by(UnitType.base_rent.asc()).limit(limit)
         result = await self.session.execute(stmt)
         rows = result.all()
         return [
@@ -350,7 +367,9 @@ class PropertyService:
                 "institute": row[1],
                 "available_rooms": row[2],
                 "min_price": row[3] or row[0].base_rent,
-                "embedding": row[0].embedding,
+                # cosine 距离 ∈ [0,2] → 相似度 ∈ [0,1]（1-距离，clamp 到非负）
+                "embedding_score": (max(0.0, 1.0 - float(row[4])) if row[4] is not None else None)
+                if distance_expr is not None else None,
             }
             for row in rows
         ]
@@ -427,21 +446,17 @@ class PropertyService:
 
         query_vec = None
         if query:
-            from sqlalchemy import Float
+            from app.services.embedding_service import get_embedding_service
 
-            from app.services.embedding_service import EmbeddingService
-
-            embedding_service = EmbeddingService()
+            embedding_service = get_embedding_service()
             try:
                 query_vec = await embedding_service.generate_embedding(query)
             except Exception:
                 logger.warning("Embedding failed for query '%s', falling back to keyword", query)
 
             if query_vec is not None:
-                # pgvector 的 L2 距离操作符
-                similarity_expr = (
-                    Property.embedding.op("<->", return_type=Float)(query_vec).label("similarity")
-                )
+                # cosine 距离，与 HNSW(vector_cosine_ops) 索引一致
+                similarity_expr = Property.embedding.cosine_distance(query_vec).label("similarity")
                 stmt = (
                     select(Property, similarity_expr)
                     .options(selectinload(Property.institute))
@@ -870,9 +885,9 @@ class PropertyService:
         configured — fall back to the async Celery task so the upload itself
         is never blocked or coupled to the embedding API's availability.
         """
-        from app.services.embedding_service import EmbeddingService
+        from app.services.embedding_service import get_embedding_service
 
-        embedding_service = EmbeddingService()
+        embedding_service = get_embedding_service()
         if embedding_service.is_available:
             try:
                 property_type = (

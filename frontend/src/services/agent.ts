@@ -59,11 +59,17 @@ export const agentService = {
    * - 传 propertyIds：只对比这些房源（来自推荐横条或购物车勾选，不要求已加购）
    * - 不传：对比整个购物车
    * - priority：加权评分优先级（balanced/budget/commute/space）
+   * - poiPrefKeys：用户一路选过的周边偏好（transit/supermarket/...），纳入对比展示
    */
-  compareCart(propertyIds?: number[], priority?: ComparePriority): Promise<CompareResponse> {
+  compareCart(
+    propertyIds?: number[],
+    priority?: ComparePriority,
+    poiPrefKeys?: string[],
+  ): Promise<CompareResponse> {
     const body: Record<string, unknown> = {}
     if (propertyIds && propertyIds.length) body.property_ids = propertyIds
     if (priority) body.priority = priority
+    if (poiPrefKeys && poiPrefKeys.length) body.poi_pref_keys = poiPrefKeys
     return api.post('/agent/cart/compare', body, { timeout: 60000 }).then((r) => r.data)
   },
 }

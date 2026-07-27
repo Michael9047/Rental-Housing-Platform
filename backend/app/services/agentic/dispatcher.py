@@ -46,6 +46,7 @@ async def dispatch(
     top_picks: list[dict] = []
     cart_changed = False
     quick_replies: list[str] = []
+    guided_options: list[dict] = []
     links: list[dict] = []
     extracted_filters = None
     source_info = ""
@@ -64,15 +65,20 @@ async def dispatch(
         score_gap = result.get("score_gap")
         relaxation_level = result.get("relaxation_level", 0)
         candidate_snapshot = result.get("candidate_snapshot", [])
+        guided_options = result.get("guided_options", [])
 
     elif intent == "compare":
         agent = CompareAgent(session=session)
         cart_svc = CartService(session=session)
         try:
+            # 用户一路选过的周边偏好（从累积 filters 提取），纳入对比展示
+            from app.services.compare_scoring import normalize_poi_requirements
+            poi_pref_keys = normalize_poi_requirements((filters or {}).get("poi_requirements"))
             result = await agent.compare(
                 user_id=user_id,
                 property_ids=compare_property_ids,
                 cart_agent=cart_svc,
+                poi_pref_keys=poi_pref_keys,
             )
             reply = result.get("dimension_analysis", "") or result.get("summary", "")
             recommendations = result.get("items", [])
@@ -145,6 +151,7 @@ async def dispatch(
         "reply": reply, "intent": intent, "recommendations": recommendations,
         "cart_changed": cart_changed, "ai_available": get_llm_service().is_available,
         "quick_replies": quick_replies, "links": links,
+        "guided_options": guided_options,
         "extracted_filters": extracted_filters, "top_picks": top_picks,
         "score_gap": score_gap, "relaxation_level": relaxation_level,
         "candidate_snapshot": candidate_snapshot, "source_info": source_info,
@@ -174,9 +181,11 @@ async def dispatch_stream(
         result = await agent.search(message=message, filters=filters)
         recommendations = result.get("recommendations", [])
         meta["recommendations"] = [
-            {"property_id": r["property_id"], "match_reason": r.get("match_reason", "")}
+            {"property_id": r["property_id"], "match_reason": r.get("match_reason", ""),
+             "poi_distances": r.get("poi_distances") or {}}
             for r in recommendations
         ]
+        meta["guided_options"] = result.get("guided_options", [])
         # 搜索的 AI 回复已在 search() 中生成，这里逐字 yield
         full_reply = result.get("reply", "")
         # 模拟流式：每 3 个字 yield 一次

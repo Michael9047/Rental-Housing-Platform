@@ -970,10 +970,10 @@ def bind_tool_handlers(
     # ── generate_embedding ──
     async def _generate_embedding(text: str, **kwargs: Any) -> dict[str, Any]:
         """生成文本向量嵌入。"""
-        from app.services.embedding_service import EmbeddingService
+        from app.services.embedding_service import get_embedding_service
 
         try:
-            emb_svc = EmbeddingService()
+            emb_svc = get_embedding_service()
             vector = await emb_svc.generate_embedding(text)
             return {
                 "dimensions": len(vector),

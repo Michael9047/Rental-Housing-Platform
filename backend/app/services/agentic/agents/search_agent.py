@@ -68,8 +68,7 @@ async def generate_unit_type_embedding(session, unit_type_id: int) -> str | None
     from sqlalchemy import select
     from app.models.unit_type import UnitType
     from app.models.institute import Institute
-    from app.services.embedding_service import EmbeddingService
-    import json
+    from app.services.embedding_service import get_embedding_service
 
     ut = await session.get(UnitType, unit_type_id)
     if ut is None:
@@ -83,14 +82,15 @@ async def generate_unit_type_embedding(session, unit_type_id: int) -> str | None
         return None
 
     try:
-        emb_svc = EmbeddingService()
+        emb_svc = get_embedding_service()
         vec = await emb_svc.generate_embedding(text)
         if vec is None:
             return None
-        ut.embedding = json.dumps(vec)
+        # embedding 列现为 pgvector Vector(1536)，直接存 list[float]，不再 json.dumps
+        ut.embedding = vec
         await session.commit()
         logger.info("UnitType #%s embedding generated (%d chars)", unit_type_id, len(text))
-        return ut.embedding
+        return text
     except Exception:
         logger.exception("UnitType #%s embedding 生成失败", unit_type_id)
         return None
@@ -394,18 +394,36 @@ class SearchAgent(BaseAgent):
         self, message: str, filters: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """检索 + LLM 推荐。逻辑与 AgentService.recommend_properties() 完全一致。"""
+        import asyncio
+
         filters = filters or {}
         llm = get_llm_service()
 
-        # 1. LLM 提取结构化筛选条件
-        extracted: dict[str, Any] = {}
-        if llm.is_available:
+        # 1. 并行：LLM 提取筛选条件 与 查询向量编码。
+        # 两者都只依赖原始 message、互不依赖，串行等于白白多花一个网络往返（首字延迟的主要来源之一）。
+        from app.services.embedding_service import get_embedding_service
+
+        async def _extract() -> dict[str, Any]:
+            if not llm.is_available:
+                return {}
             try:
-                extracted = await llm.complete_json(EXTRACT_FILTERS_PROMPT, message, temperature=0.0, max_tokens=400)
-                if not isinstance(extracted, dict):
-                    extracted = {}
+                res = await llm.complete_json(EXTRACT_FILTERS_PROMPT, message, temperature=0.0, max_tokens=400)
+                return res if isinstance(res, dict) else {}
             except Exception:
                 logger.debug("LLM 提取搜索条件失败")
+                return {}
+
+        async def _embed() -> list[float] | None:
+            emb_svc = get_embedding_service()
+            if not emb_svc.is_available:
+                return None
+            try:
+                return await emb_svc.generate_embedding(message)
+            except Exception:
+                logger.warning("查询向量编码失败，降级为纯筛选排序")
+                return None
+
+        extracted, query_vec = await asyncio.gather(_extract(), _embed())
 
         district = filters.get("district") or extracted.get("district") or None
         if district and district.lower().strip() in _EN_TO_CN_CITY:
@@ -432,6 +450,11 @@ class SearchAgent(BaseAgent):
         min_lease_months: int | None = filters.get("min_lease_months") or extracted.get("min_lease_months") or None
         max_lease_months: int | None = filters.get("max_lease_months") or extracted.get("max_lease_months") or None
         available_from: str | None = filters.get("available_from") or extracted.get("available_from") or None
+
+        # 周边偏好合并（渐进选房 chip 注入 + LLM 提取）：规范化为 pref key 列表
+        from app.services.compare_scoring import normalize_poi_requirements
+        raw_poi_reqs = filters.get("poi_requirements") or extracted.get("poi_requirements") or []
+        poi_pref_keys = normalize_poi_requirements(raw_poi_reqs)
 
         # 2. 学校查找（查 universities 表获取坐标）
         institution_name = filters.get("institution") or extracted.get("institution") or None
@@ -494,6 +517,8 @@ class SearchAgent(BaseAgent):
         }
 
         # 3. 搜索 unit_types（主搜索表）+ JOIN institutes + 聚合 rooms 库存
+        #    语义排序下推数据库：传入 query_vec 后由 pgvector 按 cosine 距离排序，
+        #    只取回相关度最高的前 N 条（不再捞 500 条 + 应用层 numpy 全量算相似度）。
         unit_results = await self.property_service.search_unit_types(
             district=district,
             price_min=Decimal(str(price_min)) if price_min else None,
@@ -503,33 +528,43 @@ class SearchAgent(BaseAgent):
             near_lng=merged_filters["near_lng"],
             near_distance_km=merged_filters["near_distance_km"],
             female_only=merged_filters.get("female_only"),
-            limit=500,
+            query_vec=query_vec,
+            limit=60,
         )
 
-        # 4. Embedding 语义排序（用 unit_types.embedding）
-        embedding_scores: dict[int, float] = {}
+        # 4. Embedding 语义得分：由数据库返回（search_unit_types 内 pgvector 计算），
+        #    无向量/该行未生成 embedding 时回落 0.5，供后续综合评分使用。
+        embedding_scores: dict[int, float] = {
+            ut["unit_type"].id: (ut.get("embedding_score") if ut.get("embedding_score") is not None else 0.5)
+            for ut in unit_results
+        }
+
+        # 4.5 周边 POI 软排序 + 引导选项生成（渐进选房）
+        # 加载候选的 POI 数据 → 按用户选过的偏好软重排 → 生成下一步引导 chip
+        from app.services.agentic.guided_search import (
+            build_guided_options,
+            load_unit_type_poi,
+            rank_by_poi,
+        )
+        poi_by_ut: dict[int, dict] = {}
+        guided_options: list[dict] = []
         if unit_results:
             try:
-                from app.services.embedding_service import EmbeddingService
-                import json as _json; _np = __import__("numpy")
-                emb_svc = EmbeddingService()
-                query_vec = await emb_svc.generate_embedding(message)
-                if query_vec is not None:
-                    for ut in unit_results:
-                        emb_str = ut.get("embedding")
-                        if emb_str:
-                            try:
-                                ut_vec = _json.loads(emb_str)
-                                cos = float(_np.dot(query_vec, ut_vec) / (_np.linalg.norm(query_vec) * _np.linalg.norm(ut_vec)))
-                                embedding_scores[ut["unit_type"].id] = max(0, cos)
-                            except Exception:
-                                embedding_scores[ut["unit_type"].id] = 0.5
-                    logger.info("Embedding: %d/%d unit_types scored", len(embedding_scores), len(unit_results))
-                else:
-                    for ut in unit_results: embedding_scores[ut["unit_type"].id] = 0.5
+                ut_ids = [ut["unit_type"].id for ut in unit_results]
+                poi_by_ut = await load_unit_type_poi(self.session, ut_ids)
+                if poi_pref_keys:
+                    unit_results = rank_by_poi(unit_results, poi_by_ut, poi_pref_keys)
+                guided_options = build_guided_options(
+                    active_filters={
+                        "poi_requirements": raw_poi_reqs,
+                        "price_max": price_max,
+                        "bathrooms": bathrooms,
+                    },
+                    poi_by_ut=poi_by_ut,
+                    result_count=len(unit_results),
+                )
             except Exception:
-                logger.warning("Embedding 不可用")
-                for ut in unit_results: embedding_scores[ut["unit_type"].id] = 0.5
+                logger.exception("POI 软排序/引导选项生成失败，跳过（不影响基础检索）")
 
         # 5. LLM 推荐回复（结构化数据 → 模板回复）
         source_info = f"\n\n---\n[检索] 共 {len(unit_results)} 种户型"
@@ -649,14 +684,15 @@ class SearchAgent(BaseAgent):
         else:
             reply = f"为您找到 {len(unit_results)} 种户型。尝试放宽条件或换个区域试试？{source_info}"
 
-        top_picks = [{"property_id": ut["unit_type"].id, "match_reason": f"{ut['institute'].name} | {ut['unit_type'].bedrooms}室 | ¥{float(ut['unit_type'].base_rent):.0f}/月 | {ut['available_rooms']}间可租", "pros": [], "cons": [], "property": ut["unit_type"]} for ut in unit_results[:3]]
-        all_recs = [{"property_id": ut["unit_type"].id, "match_reason": "", "pros": [], "cons": [], "property": ut["unit_type"]} for ut in unit_results]
+        top_picks = [{"property_id": ut["unit_type"].id, "match_reason": f"{ut['institute'].name} | {ut['unit_type'].bedrooms}室 | ¥{float(ut['unit_type'].base_rent):.0f}/月 | {ut['available_rooms']}间可租", "pros": [], "cons": [], "property": ut["unit_type"], "poi_distances": ut.get("_poi_distances") or {}} for ut in unit_results[:3]]
+        all_recs = [{"property_id": ut["unit_type"].id, "match_reason": "", "pros": [], "cons": [], "property": ut["unit_type"], "poi_distances": ut.get("_poi_distances") or {}} for ut in unit_results]
 
         return {
             "reply": reply, "recommendations": all_recs, "ai_available": llm.is_available,
             "extracted_filters": extracted, "top_picks": top_picks,
             "score_gap": None, "relaxation_level": 0,
             "candidate_snapshot": [ut["unit_type"].id for ut in unit_results], "source_info": source_info,
+            "guided_options": guided_options,
         }
 
     # ── 辅助方法 ──────────────────────────────────────────────────

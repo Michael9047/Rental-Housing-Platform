@@ -23,6 +23,13 @@ class Settings(BaseSettings):
 
     redis_url: str = Field(default="redis://localhost:6379/0", validation_alias="REDIS_URL")
 
+    # 数据库连接池 —— 面向高并发显式配置，避免默认 pool_size=5 在大量客户时被占满导致请求排队。
+    # 经验值：单进程 pool_size + max_overflow ≈ 该进程峰值并发查询数；多 worker 时注意乘以 worker 数
+    # 不要超过 Postgres 的 max_connections。
+    db_pool_size: int = Field(default=20, validation_alias="DB_POOL_SIZE")
+    db_max_overflow: int = Field(default=10, validation_alias="DB_MAX_OVERFLOW")
+    db_pool_timeout: int = Field(default=30, validation_alias="DB_POOL_TIMEOUT")
+
     auth_secret_key: str = Field(
         default="dev-only-change-me",
         validation_alias="AUTH_SECRET_KEY",

@@ -87,17 +87,13 @@ class ChatService:
 
     async def _build_rag_context(self, query: str) -> tuple[str, list[dict]]:
         """Generate embedding for query, search pgvector, return context text + matched properties."""
-        from sqlalchemy import Float
+        from app.services.embedding_service import get_embedding_service
 
-        from app.services.embedding_service import EmbeddingService
-
-        embedding_service = EmbeddingService()
+        embedding_service = get_embedding_service()
         query_vec = await embedding_service.generate_embedding(query)
 
-        # pgvector 的 L2 距离操作符（新版 pgvector 不再导出 l2_distance 函数）
-        similarity_expr = (
-            Property.embedding.op("<->", return_type=Float)(query_vec).label("similarity")
-        )
+        # cosine 距离，与 HNSW(vector_cosine_ops) 索引一致；embedding 未归一化，用 cosine 而非 L2
+        similarity_expr = Property.embedding.cosine_distance(query_vec).label("similarity")
         stmt = (
             select(Property, similarity_expr)
             .where(Property.embedding.isnot(None))

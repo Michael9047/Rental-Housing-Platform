@@ -52,6 +52,9 @@ def generate_property_embedding(property_id: int) -> None:
                     logger.warning("Property %s not found for embedding generation", property_id)
                     return
 
+                # Celery 任务每次用 asyncio.run() 起独立事件循环，
+                # 故此处必须每次新建 EmbeddingService（不能用进程级单例，
+                # 否则内部 AsyncOpenAI/redis client 会绑定到已关闭的 loop）。
                 embedding_service = EmbeddingService()
                 text_data = {
                     "title": property_obj.title,
@@ -60,6 +63,7 @@ def generate_property_embedding(property_id: int) -> None:
                     "district": property_obj.district,
                     "property_type": property_obj.property_type.value,
                 }
+                # 返回 list[float]，直接写入 pgvector Vector 列
                 property_obj.embedding = await embedding_service.generate_property_embedding(text_data)
 
                 job.status = EmbeddingJobStatus.completed

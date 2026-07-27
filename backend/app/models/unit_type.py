@@ -6,6 +6,7 @@ from decimal import Decimal
 from sqlalchemy import Date, DateTime, Enum, ForeignKey, Integer, Numeric, String, Text, text
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+from pgvector.sqlalchemy import Vector
 
 from app.models.mixins import TimestampMixin
 from app.db.session import Base
@@ -67,7 +68,8 @@ class UnitType(TimestampMixin, Base):
     available_from: Mapped[date | None] = mapped_column(Date, nullable=True)
     min_stay_months: Mapped[int] = mapped_column(Integer, default=3, nullable=False)
 
-    embedding: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # 语义检索向量（pgvector）；由 EmbeddingService 生成，HNSW cosine 索引见迁移 20260725_0100
+    embedding: Mapped[list[float] | None] = mapped_column(Vector(1536), nullable=True)
 
     # ── 状态 ──
     status: Mapped[UnitTypeStatus] = mapped_column(

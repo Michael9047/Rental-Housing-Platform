@@ -6,6 +6,7 @@ from decimal import Decimal
 from sqlalchemy import Boolean, Date, DateTime, Enum, Float, ForeignKey, Integer, Numeric, String, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+from pgvector.sqlalchemy import Vector
 
 from app.models.mixins import TimestampMixin
 from app.db.session import Base
@@ -67,7 +68,8 @@ class Room(TimestampMixin, Base):
     longitude: Mapped[Decimal | None] = mapped_column(Numeric(9, 6), nullable=True)
     rent_type: Mapped[str | None] = mapped_column(String(50), nullable=True)
     rental_rules: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
-    embedding: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # 语义检索向量（pgvector）；由 EmbeddingService 生成，HNSW cosine 索引见迁移 20260725_0100
+    embedding: Mapped[list[float] | None] = mapped_column(Vector(1536), nullable=True)
     # 三层架构字段
     floor: Mapped[int | None] = mapped_column(Integer, nullable=True)
     building_block: Mapped[str | None] = mapped_column(String(20), nullable=True)
