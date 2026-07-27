@@ -2,11 +2,18 @@ import api from './api'
 
 export interface Building {
   id: number; name: string; address?: string
+  // 结构化地址
+  country?: string | null; city?: string | null
+  district?: string | null; street?: string | null
+  postal_code?: string | null
   contact_phone?: string; contact_email?: string
   description?: string; status: string; created_by: number
   created_at?: string
   latitude?: number | null; longitude?: number | null
   business_id?: string
+  amenities?: string[] | null
+  female_only?: boolean; couples_allowed?: boolean
+  images?: Array<{id:number;filename:string;original_name:string;sort_order:number;is_primary:boolean}>
 }
 
 export const buildingService = {
