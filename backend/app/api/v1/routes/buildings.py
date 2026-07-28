@@ -109,9 +109,14 @@ async def create_building(
 
     # ── 3. 创建入库 ──
     from decimal import Decimal
+    from app.core.business_id import generate_business_id
+    import uuid as _uuid
     lat = body.latitude
     lng = body.longitude
+    biz_id = await generate_business_id(session, "institute")
     building = Institute(
+        uuid=str(_uuid.uuid4()),
+        business_id=biz_id,
         name=name,
         address=address,
         country=body.country.strip() if body.country else None,
@@ -199,6 +204,8 @@ async def create_building(
         await session.commit()
     return {
         "id": building.id,
+        "business_id": building.business_id,
+        "uuid": building.uuid,
         "name": building.name,
         "address": building.address,
         "country": building.country, "city": building.city,

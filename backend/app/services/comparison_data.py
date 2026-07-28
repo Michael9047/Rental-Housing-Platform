@@ -83,8 +83,9 @@ async def gather_comprehensive_metrics(
     ).scalars().all()
     poi_map: dict[int, PropertyPOI] = {poi.property_id: poi for poi in poi_rows}
 
-    # ── Review 数据（raw SQL—DB schema 仍是 institute_id/rating）──
-    inst_ids = sorted({p.institute_id for p in props if p.institute_id is not None})
+    # ── Review 数据（通过 unit_type 链获取 institute_id）──
+    inst_ids = sorted({p.unit_type.institute_id for p in props
+                       if p.unit_type and p.unit_type.institute_id is not None})
     inst_review: dict[int, dict[str, Any]] = {}
     if inst_ids:
         raw = text(
@@ -98,7 +99,8 @@ async def gather_comprehensive_metrics(
     # 映射 property -> institute
     review_map: dict[int, dict[str, Any]] = {}
     for p in props:
-        ri = inst_review.get(p.institute_id)
+        inst_id = p.unit_type.institute_id if p.unit_type else None
+        ri = inst_review.get(inst_id) if inst_id else None
         if ri:
             review_map[p.id] = ri
 

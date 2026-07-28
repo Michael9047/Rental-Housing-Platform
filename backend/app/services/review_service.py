@@ -43,12 +43,19 @@ class ReviewService:
         if existing.scalars().first():
             raise ValueError("该租赁已评价过，每个 booking 只能评价一次")
 
-        # 获取房源信息，判断房东类型
-        property_obj = await self.session.get(Property, booking.property_id)
+        # 获取房源信息，判断房东类型（通过 unit_type 链查 institute_id）
+        from sqlalchemy.orm import selectinload
+        from app.models.unit_type import UnitType
+        stmt = select(Property).where(Property.id == booking.property_id).options(
+            selectinload(Property.unit_type)
+        )
+        result = await self.session.execute(stmt)
+        property_obj = result.scalars().first()
         if not property_obj:
             raise ValueError("Property not found")
 
-        is_institute = property_obj.institute_id is not None
+        is_institute = (property_obj.unit_type and
+                        property_obj.unit_type.institute_id is not None)
 
         # 个人房东必须填写 landlord 评分
         if not is_institute:

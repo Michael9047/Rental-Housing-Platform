@@ -23,8 +23,8 @@ api_router.include_router(buildings.router, tags=["buildings"])
 
 api_router.include_router(unit_types.router, prefix="/unit-types", tags=["unit-types"])
 api_router.include_router(rooms.router, prefix="/rooms", tags=["rooms"])
-api_router.include_router(properties.router, prefix="/properties", tags=["properties"])
-# api_router.include_router(properties_compat.router, tags=["properties-compat"])  # 旧接口兼容——暂时禁用，使用真正的 properties 路由
+# api_router.include_router(properties.router, prefix="/properties", tags=["properties"])  # 旧架构路由——三层改造后数据不兼容，禁用
+api_router.include_router(properties_compat.router, tags=["properties-compat"])  # 旧接口兼容——返回空列表避免前端404
 
 # 配套模块
 api_router.include_router(building_staff.router, tags=["building-staff"])

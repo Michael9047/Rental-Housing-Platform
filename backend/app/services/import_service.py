@@ -1041,7 +1041,6 @@ class ImportService:
 
         property_obj = Property(
             landlord_id=landlord_id,
-            institute_id=data.get("institute_id"),
             title=data["title"],
             address=data["address"],
             district=data["district"],

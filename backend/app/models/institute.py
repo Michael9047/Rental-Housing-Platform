@@ -19,7 +19,8 @@ class Institute(TimestampMixin, Base):
     __tablename__ = "institutes"
 
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
-    business_id: Mapped[str | None] = mapped_column(String(20), unique=True, index=True)
+    business_id: Mapped[str | None] = mapped_column(String(24), unique=True, index=True)
+    uuid: Mapped[str | None] = mapped_column(String(36), unique=True, nullable=True)
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     name_cn: Mapped[str | None] = mapped_column(String(200), nullable=True)
     abbreviation: Mapped[str | None] = mapped_column(String(50), nullable=True)

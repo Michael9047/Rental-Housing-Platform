@@ -66,7 +66,7 @@ async def search_properties(
     )
     return [
         PropertySearchResult(
-            id=prop.id, landlord_id=prop.landlord_id,
+            id=prop.id, business_id=prop.business_id, landlord_id=prop.landlord_id,
             title=prop.title, description=prop.description,
             address=prop.address, district=prop.district,
             price_monthly=prop.price_monthly,
@@ -79,7 +79,6 @@ async def search_properties(
                      mime_type=img.mime_type, file_size=img.file_size,
                      sort_order=img.sort_order, is_primary=img.is_primary,
                      created_at=img.created_at) for img in (prop.images or [])],
-            institute_id=prop.institute_id,
             institute_name=getattr(prop, 'institute_name', None),
             similarity=sim,
         )
@@ -156,6 +155,7 @@ async def list_recent_property_audit(
     from app.models.institute import Institute
     from app.models.user import User as UserModel
 
+    from app.models.unit_type import UnitType
     base_select = (
         select(
             AuditLog,
@@ -165,7 +165,8 @@ async def list_recent_property_audit(
             UserModel.username.label("username"),
         )
         .outerjoin(Property, AuditLog.resource_id == Property.id)
-        .outerjoin(Institute, Property.institute_id == Institute.id)
+        .outerjoin(UnitType, Property.unit_type_id == UnitType.id)
+        .outerjoin(Institute, UnitType.institute_id == Institute.id)
         .outerjoin(UserModel, AuditLog.user_id == UserModel.id)
     )
 
