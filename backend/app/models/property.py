@@ -112,6 +112,7 @@ class PropertyType(str, _enum2.Enum):
     two_bed = "2-bed"      # 两室及以上公寓
     shared = "shared"      # 合租单间
     house = "house"        # 独栋/联排别墅
+    apartment = "apartment"  # 公寓（通用）
 # DepositType 从 unit_type 导入
 from app.models.unit_type import DepositType as _DT
 DepositType = _DT

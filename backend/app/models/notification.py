@@ -88,3 +88,10 @@ class NotificationOutbox(TimestampMixin, Base):
     next_attempt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
     sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     provider_message_id: Mapped[str | None] = mapped_column(String(255))
+
+# 向后兼容别名 — __init__.py 导入需要
+DeliveryStatus = NotificationOutboxStatus
+NotificationChannel = NotificationOutbox
+NotificationDelivery = NotificationOutbox
+NotificationEntityType = NotificationType
+NotificationEventType = NotificationType
