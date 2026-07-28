@@ -11,13 +11,13 @@
           </el-carousel>
           <div class="hero-overlay">
             <h1 class="hero-title">{{ building.name }}</h1>
-            <p class="hero-addr" v-if="building.address">📍 {{ building.address }}</p>
+            <p class="hero-addr" v-if="displayAddress">📍 {{ displayAddress }}</p>
           </div>
         </div>
         <div v-else class="hero-placeholder">
           <span class="hero-icon">🏢</span>
           <h1 class="hero-title">{{ building.name }}</h1>
-          <p class="hero-addr" v-if="building.address">📍 {{ building.address }}</p>
+          <p class="hero-addr" v-if="displayAddress">📍 {{ displayAddress }}</p>
         </div>
       </div>
 
@@ -202,6 +202,13 @@ const cartStore = useCartStore()
 const authStore = useAuthStore()
 const building = ref<any>(null)
 const selectedUnitType = ref<any>(null)
+
+// 优先使用结构化地址，回退到 flat address
+const displayAddress = computed(() => {
+  const b = building.value; if (!b) return ''
+  const parts = [b.street, b.district, b.city, b.country].filter(Boolean)
+  return parts.length ? parts.join('，') : (b.address || '')
+})
 const loading = ref(false)
 const cartLoading = ref(false)
 const inCart = computed(() => building.value ? cartStore.has(building.value.id) : false)
