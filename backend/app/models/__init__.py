@@ -35,7 +35,8 @@ from app.models.order import Order
 from app.models.payment import Payment, PaymentStatus
 from app.models.pms_connection import PMSConnection, PMSSyncStatus, PMSType
 from app.models.policy_consent import PolicyConsent
-from app.models.poi import PropertyPOI
+from app.models.institute_commute import InstituteCommute
+from app.models.poi import InstitutePOI, PropertyPOI
 from app.models.property import Room, RoomStatus, Property, PropertyStatus
 from app.models.property_image import RoomImage, PropertyImage
 from app.models.repair import (

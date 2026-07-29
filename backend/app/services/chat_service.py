@@ -23,7 +23,7 @@ class ChatService:
 
     # ── Session management ────────────────────────────────────────
 
-    async def create_session(self, user_id: int, title: str | None = None) -> ChatSession:
+    async def create_session(self, user_id: int | None, title: str | None = None) -> ChatSession:
         chat_session = ChatSession(
             user_id=user_id,
             session_id=uuid.uuid4().hex,
@@ -35,15 +35,16 @@ class ChatService:
         await self.session.refresh(chat_session)
         return chat_session
 
-    async def get_session(self, session_id: int, user_id: int) -> ChatSession | None:
-        stmt = select(ChatSession).where(
-            ChatSession.id == session_id,
-            ChatSession.user_id == user_id,
-        )
+    async def get_session(self, session_id: int, user_id: int | None) -> ChatSession | None:
+        stmt = select(ChatSession).where(ChatSession.id == session_id)
+        if user_id is not None:
+            stmt = stmt.where(ChatSession.user_id == user_id)
         result = await self.session.scalars(stmt)
         return result.first()
 
-    async def list_sessions(self, user_id: int) -> list[ChatSession]:
+    async def list_sessions(self, user_id: int | None) -> list[ChatSession]:
+        if user_id is None:
+            return []
         stmt = (
             select(ChatSession)
             .where(ChatSession.user_id == user_id)
@@ -52,7 +53,7 @@ class ChatService:
         result = await self.session.scalars(stmt)
         return list(result)
 
-    async def close_session(self, session_id: int, user_id: int) -> bool:
+    async def close_session(self, session_id: int, user_id: int | None) -> bool:
         chat_session = await self.get_session(session_id, user_id)
         if not chat_session:
             return False
@@ -61,7 +62,7 @@ class ChatService:
         await self.session.commit()
         return True
 
-    async def delete_session(self, session_id: int, user_id: int) -> bool:
+    async def delete_session(self, session_id: int, user_id: int | None) -> bool:
         chat_session = await self.get_session(session_id, user_id)
         if not chat_session:
             return False
@@ -71,7 +72,7 @@ class ChatService:
 
     # ── Messages ──────────────────────────────────────────────────
 
-    async def get_messages(self, session_id: int, user_id: int) -> list[ChatMessage]:
+    async def get_messages(self, session_id: int, user_id: int | None) -> list[ChatMessage]:
         chat_session = await self.get_session(session_id, user_id)
         if not chat_session:
             return []
@@ -139,7 +140,7 @@ class ChatService:
                 "bedrooms": prop.bedrooms,
                 "bathrooms": prop.bathrooms,
                 "area_sqm": float(prop.area_sqm) if prop.area_sqm else None,
-                "property_type": prop.property_type.value,
+                "property_type": prop.property_type if isinstance(prop.property_type, str) else (prop.property_type.value if hasattr(prop.property_type, "value") else str(prop.property_type)),
                 "similarity": round(float(sim), 4) if sim else None,
             })
 
@@ -176,7 +177,7 @@ class ChatService:
     async def chat(
         self,
         session_id: int,
-        user_id: int,
+        user_id: int | None,
         query: str,
         history: list[dict] | None = None,
     ) -> dict:
@@ -232,7 +233,7 @@ class ChatService:
     async def chat_stream(
         self,
         session_id: int,
-        user_id: int,
+        user_id: int | None,
         query: str,
         history: list[dict] | None = None,
     ) -> AsyncGenerator[str, None]:

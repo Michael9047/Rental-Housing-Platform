@@ -194,7 +194,7 @@ class TenantOrderService:
             if not contract or not property_obj:
                 continue
             image = await self.session.scalar(
-                select(PropertyImage).where(PropertyImage.property_id == property_obj.id)
+                select(PropertyImage).where(PropertyImage.room_id == property_obj.id)
                 .order_by(PropertyImage.is_primary.desc(), PropertyImage.sort_order, PropertyImage.id)
             )
             result.append(await self._item(booking, payment, contract, property_obj, image))
@@ -216,7 +216,7 @@ class TenantOrderService:
         if not contract or not property_obj or not tenant:
             raise LookupError("订单关联数据不完整")
         image = await self.session.scalar(
-            select(PropertyImage).where(PropertyImage.property_id == property_obj.id)
+            select(PropertyImage).where(PropertyImage.room_id == property_obj.id)
             .order_by(PropertyImage.is_primary.desc(), PropertyImage.sort_order, PropertyImage.id)
         )
         item = await self._item(booking, payment, contract, property_obj, image)
@@ -230,8 +230,8 @@ class TenantOrderService:
             applicant_name=(payment.snapshot or {}).get("tenant_name") or tenant.username,
             applicant_phone_masked=self._mask_phone(tenant.phone),
             applicant_email_masked=self._mask_email(tenant.email),
-            property_type=property_obj.property_type.value,
-            property_country=property_obj.country.value,
+            property_type=property_obj.property_type if isinstance(property_obj.property_type, str) else str(property_obj.property_type) if property_obj.property_type else "",
+            property_country=property_obj.country if isinstance(property_obj.country, str) else str(property_obj.country) if property_obj.country else "",
             property_description=property_obj.description,
             monthly_rent_minor=int(property_obj.price_monthly * 100),
             deposit_amount_minor=int((deposit.get("local") or deposit).get("minor_units", 0)),

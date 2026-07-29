@@ -272,7 +272,7 @@ function buildPopupContent(p: MapProperty): string {
       <h4>${escapeHtml(p.title)}</h4>
       <p class="popup-addr">📍 ${escapeHtml(p.district)} · ${escapeHtml(p.address)}</p>
       <p class="popup-price">¥${numberFormat(p.price_monthly)}/月 · ${p.bedrooms}室${p.bathrooms}卫</p>
-      <a href="/property/${p.id}" class="popup-link">查看详情 →</a>
+      <a href="/room/${p.id}" class="popup-link">查看详情 →</a>
     </div>
   `
 }

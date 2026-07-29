@@ -23,20 +23,20 @@ const routes: RouteRecordRaw[] = [
         component: () => import('@/views/AiSearch.vue'),
       },
       {
-        path: 'map',
-        name: 'map-search',
-        component: () => import('@/views/MapSearch.vue'),
-      },
-      {
         path: 'cart',
         name: 'cart',
         component: () => import('@/views/CartView.vue'),
         meta: { requiresAuth: true },
       },
       {
-        path: 'property/:id',
+        path: 'room/:id',
         name: 'property-detail',
         component: () => import('@/views/PropertyDetail.vue'),
+      },
+      // 兼容旧版 /property/:id 链接
+      {
+        path: 'property/:id',
+        redirect: (to: any) => ({ name: 'property-detail', params: { id: to.params.id } }),
       },
       {
         path: 'profile',
@@ -105,6 +105,53 @@ const routes: RouteRecordRaw[] = [
         meta: { requiresAuth: true, requiresLandlord: true },
       },
       {
+        path: 'booking/:id/move-in-date',
+        redirect: (to: any) => ({ name: 'property-detail', params: { id: to.params.id } }),
+      },
+      // ── 新版预订流程（6步）──
+      {
+        path: 'booking/:propertyId/move-in-date',
+        name: 'booking-move-in-date',
+        component: () => import('@/views/booking/MoveInDate.vue'),
+        meta: { requiresAuth: true },
+      },
+      {
+        path: 'booking/:propertyId/lease-term',
+        name: 'booking-lease-term',
+        component: () => import('@/views/booking/LeaseTerm.vue'),
+        meta: { requiresAuth: true },
+      },
+      {
+        path: 'booking/:propertyId/personal-info',
+        name: 'booking-personal-info',
+        component: () => import('@/views/booking/PersonalInfo.vue'),
+        meta: { requiresAuth: true },
+      },
+      {
+        path: 'booking/:propertyId/emergency-contact',
+        name: 'booking-emergency-contact',
+        component: () => import('@/views/booking/EmergencyContact.vue'),
+        meta: { requiresAuth: true },
+      },
+      {
+        path: 'booking/:propertyId/review',
+        name: 'booking-review',
+        component: () => import('@/views/booking/BookingReview.vue'),
+        meta: { requiresAuth: true },
+      },
+      {
+        path: 'booking/:propertyId/contract',
+        name: 'booking-contract-placeholder',
+        component: () => import('@/views/booking/ContractPlaceholder.vue'),
+        meta: { requiresAuth: true },
+      },
+      {
+        path: 'booking/order/:bookingId/:status',
+        name: 'booking-result',
+        component: () => import('@/views/BookingResult.vue'),
+        meta: { requiresAuth: true },
+      },
+      {
         path: 'booking/confirm',
         name: 'booking-confirm',
         component: () => import('@/views/BookingConfirm.vue'),
@@ -162,46 +209,10 @@ const routes: RouteRecordRaw[] = [
         meta: { requiresAuth: true },
       },
       {
-        path: 'admin',
-        name: 'admin-dashboard',
-        component: () => import('@/views/admin/AdminDashboard.vue'),
-        meta: { requiresAuth: true, requiresAdmin: true },
-      },
-      {
         path: 'workspace',
         name: 'landlord-workspace',
         component: () => import('@/views/landlord/LandlordDashboard.vue'),
         meta: { requiresAuth: true, requiresLandlord: true },
-      },
-      {
-        path: 'admin/users',
-        name: 'admin-users',
-        component: () => import('@/views/admin/AdminUsers.vue'),
-        meta: { requiresAuth: true, requiresAdmin: true },
-      },
-      {
-        path: 'admin/properties',
-        name: 'admin-properties',
-        component: () => import('@/views/admin/AdminProperties.vue'),
-        meta: { requiresAuth: true, requiresAdmin: true },
-      },
-      {
-        path: 'admin/logs',
-        name: 'admin-logs',
-        component: () => import('@/views/admin/AdminLogs.vue'),
-        meta: { requiresAuth: true, requiresAdmin: true },
-      },
-      {
-        path: 'admin/embeddings',
-        name: 'admin-embeddings',
-        component: () => import('@/views/admin/AdminEmbeddings.vue'),
-        meta: { requiresAuth: true, requiresAdmin: true },
-      },
-      {
-        path: 'admin/import',
-        name: 'admin-import',
-        component: () => import('@/views/admin/AdminImport.vue'),
-        meta: { requiresAuth: true, requiresAdmin: true },
       },
       // ---- 报修详情（通用）----
       {
@@ -242,6 +253,54 @@ const routes: RouteRecordRaw[] = [
         name: 'bd-dashboard',
         component: () => import('@/views/bd-manager/BdDashboard.vue'),
         meta: { requiresAuth: true, requiresBdManager: true },
+      },
+    ],
+  },
+  // ── 管理后台（独立布局）──
+  {
+    path: '/admin',
+    component: () => import('@/layouts/AdminLayout.vue'),
+    meta: { requiresAuth: true, requiresAdmin: true },
+    children: [
+      {
+        path: '',
+        name: 'admin-dashboard',
+        component: () => import('@/views/admin/AdminWorkspace.vue'),
+      },
+      {
+        path: 'users',
+        name: 'admin-users',
+        component: () => import('@/views/admin/AdminUsers.vue'),
+      },
+      {
+        path: 'properties',
+        name: 'admin-properties',
+        component: () => import('@/views/admin/AdminProperties.vue'),
+      },
+      {
+        path: 'logs',
+        name: 'admin-logs',
+        component: () => import('@/views/admin/AdminLogs.vue'),
+      },
+      {
+        path: 'embeddings',
+        name: 'admin-embeddings',
+        component: () => import('@/views/admin/AdminEmbeddings.vue'),
+      },
+      {
+        path: 'import',
+        name: 'admin-import',
+        component: () => import('@/views/admin/AdminImport.vue'),
+      },
+      {
+        path: 'escalated-repairs',
+        name: 'admin-escalated-repairs',
+        component: () => import('@/views/admin/EscalatedRepairs.vue'),
+      },
+      {
+        path: 'landlord-workers',
+        name: 'admin-landlord-workers',
+        component: () => import('@/views/admin/LandlordWorkersStatus.vue'),
       },
     ],
   },
@@ -291,6 +350,7 @@ router.beforeEach((to, _from, next) => {
   }
 
   if (to.meta.guest && token) {
+    if (user?.role === 'admin') return next({ name: 'admin-dashboard' })
     return next({ name: 'home' })
   }
 

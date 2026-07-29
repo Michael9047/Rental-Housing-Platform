@@ -23,7 +23,7 @@
           <div><dt>合同状态</dt><dd>{{ contract.category_label }}</dd></div>
           <div><dt>支付状态</dt><dd>{{ paymentLabel }}</dd></div>
           <div><dt>预订状态</dt><dd>{{ contract.reservation_status === 'confirmed' ? '预订成功' : '预订未成功' }}</dd></div>
-          <div><dt>房源</dt><dd><router-link :to="`/property/${contract.property_id}`">{{ contract.property_name }}</router-link></dd></div>
+          <div><dt>房源</dt><dd><router-link :to="`/room/${contract.property_id}`">{{ contract.property_name }}</router-link></dd></div>
         </dl>
       </el-card>
 

@@ -131,7 +131,7 @@ class PropertyService:
 
     async def get(self, property_id: int) -> Property | None:
         from sqlalchemy.orm import selectinload
-        from app.models.poi import PropertyPOI
+        from app.models.poi import InstitutePOI
         stmt = (select(Property)
                 .where(Property.id == property_id, Property.deleted_at.is_(None))
                 .options(
@@ -143,12 +143,13 @@ class PropertyService:
         if property_obj is not None:
             if property_obj.institute:
                 object.__setattr__(property_obj, 'institute_name', property_obj.institute.name)
-            poi_result = await self.session.execute(
-                select(PropertyPOI).where(PropertyPOI.property_id == property_id)
-            )
-            poi = poi_result.scalars().first()
-            if poi:
-                property_obj.poi = poi
+            if property_obj.institute_id:
+                poi_result = await self.session.execute(
+                    select(InstitutePOI).where(InstitutePOI.institute_id == property_obj.institute_id)
+                )
+                poi = poi_result.scalars().first()
+                if poi:
+                    property_obj.poi = poi
         return property_obj
 
     def _build_filters(
@@ -313,8 +314,8 @@ class PropertyService:
             .join(Institute, UnitType.institute_id == Institute.id)
             .outerjoin(Room, Room.unit_type_id == UnitType.id)
             .where(
-                cast(UnitType.status, String) == UnitTypeStatus.available.value,
-                cast(Institute.status, String) == InstituteStatus.active.value,
+                UnitType.status == UnitTypeStatus.available.value,
+                Institute.status == InstituteStatus.active.value,
                 UnitType.deleted_at.is_(None),
             )
         )

@@ -36,7 +36,7 @@ class Booking(TimestampMixin, Base):
         ForeignKey("users.id", ondelete="CASCADE"), index=True
     )
     property_id: Mapped[int] = mapped_column(
-        ForeignKey("properties.id", ondelete="CASCADE"), index=True
+        ForeignKey("rooms.id", ondelete="CASCADE"), index=True
     )
     landlord_id: Mapped[int] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE"), index=True

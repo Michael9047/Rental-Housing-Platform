@@ -196,6 +196,7 @@ body {
   <div class="config-row">
     <input id="baseUrl" value="http://localhost:8012/api/v1" placeholder="API Base URL">
     <button id="btnLoad" onclick="loadProperties()">🔍 加载房源</button>
+    <button onclick="loadInstitutes()" style="background:var(--purple);color:var(--bg);border:none;border-radius:6px;padding:6px 14px;font:12px system-ui;font-weight:600;cursor:pointer;white-space:nowrap">🏢 公寓</button>
     <label style="display:flex;align-items:center;gap:4px;font-size:11px;color:var(--muted);cursor:pointer;white-space:nowrap">
       <input type="checkbox" id="chkUni" checked onchange="toggleUniversities()"> 🎓 大学
     </label>
@@ -685,6 +686,33 @@ if (location.protocol === 'file:') {
   debug('页面加载: ' + location.protocol + '//' + location.host, 'ok');
   // 自动加载房源
   setTimeout(loadProperties, 500);
+}
+// ---- 公寓模式 ----
+let instituteLayer;
+async function loadInstitutes() {
+  const baseUrl = document.getElementById('baseUrl').value.trim();
+  debug('加载公寓数据...', 'info');
+  try {
+    const resp = await fetch(baseUrl + '/properties/institutes-geo');
+    const data = await resp.json();
+    debug('收到 ' + data.length + ' 个公寓', 'ok');
+    if (instituteLayer) map.removeLayer(instituteLayer);
+    const markers = [];
+    data.forEach(function(inst) {
+      var color = inst.country === 'SG' ? '#f38ba8' : '#89b4fa';
+      var size = Math.max(8, Math.min(20, 6 + inst.rooms * 2));
+      markers.push(L.circleMarker([inst.lat, inst.lng], {
+        radius: size, color: color, fillColor: color, fillOpacity: 0.7, weight: 2
+      }).bindPopup('<b>' + inst.name + '</b><br>' + inst.country + ' | ' + inst.rooms + ' rooms'));
+    });
+    instituteLayer = L.layerGroup(markers).addTo(map);
+    if (markers.length > 0) map.fitBounds(instituteLayer.getBounds(), {padding: [30,30]});
+    document.getElementById('statsBar').style.display = 'flex';
+    document.getElementById('statTotal').textContent = data.length;
+    var sg = data.filter(function(d){return d.country==='SG'}).length;
+    document.getElementById('statCities').textContent = 'SG:' + sg + ' GB:' + (data.length - sg);
+    document.getElementById('statAvgPrice').textContent = data.reduce(function(s,d){return s+d.rooms}, 0);
+  } catch(e) { debug('FAIL: ' + e.message, 'err'); }
 }
 </script>
 </body>

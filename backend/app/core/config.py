@@ -65,7 +65,7 @@ class Settings(BaseSettings):
         validation_alias="DEEPSEEK_API_KEY",
     )
     deepseek_chat_model: str = Field(
-        default="deepseek-chat",
+        default="deepseek-v4-pro",
         validation_alias="DEEPSEEK_CHAT_MODEL",
     )
     deepseek_base_url: str = Field(

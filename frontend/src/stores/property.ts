@@ -56,10 +56,11 @@ export const usePropertyStore = defineStore('property', () => {
     }
   }
 
-  async function fetchById(id: number) {
+  async function fetchById(id: number): Promise<Property | null> {
     loading.value = true
     try {
       currentProperty.value = await propertyService.getById(id)
+      return currentProperty.value
     } catch {
       currentProperty.value = null
       throw new Error('Failed to load property')

@@ -12,7 +12,7 @@ from typing import Any
 from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.poi import PropertyPOI
+from app.models.poi import InstitutePOI
 from app.models.property import Property
 from app.services.compare_scoring import (
     PropertyMetrics,
@@ -75,16 +75,16 @@ async def gather_comprehensive_metrics(
 
     ids = [p.id for p in props]
 
-    # ── POI 数据 ──
+    # ── POI 数据（公寓粒度）──
+    inst_ids = sorted({p.institute_id for p in props if p.institute_id is not None})
     poi_rows = (
         await session.execute(
-            select(PropertyPOI).where(PropertyPOI.property_id.in_(ids))
+            select(InstitutePOI).where(InstitutePOI.institute_id.in_(inst_ids))
         )
-    ).scalars().all()
-    poi_map: dict[int, PropertyPOI] = {poi.property_id: poi for poi in poi_rows}
+    ).scalars().all() if inst_ids else []
+    poi_map: dict[int, InstitutePOI] = {poi.institute_id: poi for poi in poi_rows}
 
     # ── Review 数据（raw SQL—DB schema 仍是 institute_id/rating）──
-    inst_ids = sorted({p.institute_id for p in props if p.institute_id is not None})
     inst_review: dict[int, dict[str, Any]] = {}
     if inst_ids:
         raw = text(
@@ -103,12 +103,12 @@ async def gather_comprehensive_metrics(
             review_map[p.id] = ri
 
     # ── 安全评分 ──
-    # 优先从 PropertyPOI.safety_data 缓存读取
+    # 优先从 InstitutePOI.safety_data 缓存读取
     safety_map: dict[int, float] = {}
     uncached_ids: list[int] = []
     uncached_coords: dict[int, tuple[float, float]] = {}
     for p in props:
-        poi = poi_map.get(p.id)
+        poi = poi_map.get(p.institute_id) if p.institute_id else None
         if poi and poi.safety_data and poi.safety_data.get("safety_score"):
             safety_map[p.id] = poi.safety_data["safety_score"]
         elif p.latitude is not None and p.longitude is not None:
@@ -132,7 +132,7 @@ async def gather_comprehensive_metrics(
     # ── 组装 ──
     result: dict[int, EnrichedPropertyData] = {}
     for p in props:
-        poi = poi_map.get(p.id)
+        poi = poi_map.get(p.institute_id) if p.institute_id else None
         poi_data = poi.poi_data if poi else None
         transit_m = nearest_transit_meters(poi_data)
         rev = review_map.get(p.id)

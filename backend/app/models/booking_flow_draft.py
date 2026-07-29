@@ -12,7 +12,7 @@ class BookingFlowDraft(TimestampMixin, Base):
 
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
-    property_id: Mapped[int] = mapped_column(ForeignKey("properties.id", ondelete="CASCADE"), index=True)
+    property_id: Mapped[int] = mapped_column(ForeignKey("rooms.id", ondelete="CASCADE"), index=True)
     current_step: Mapped[str] = mapped_column(String(32), default="move_in_date")
     move_in_date: Mapped[str | None] = mapped_column(String(32))
     lease_months: Mapped[int | None] = mapped_column(Integer)

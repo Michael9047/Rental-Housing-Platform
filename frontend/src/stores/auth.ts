@@ -11,7 +11,7 @@ export const useAuthStore = defineStore('auth', () => {
   const loading = ref(false)
 
   const isLoggedIn = computed(() => !!token.value)
-  const isLandlord = computed(() => user.value?.role === 'landlord' || user.value?.role === 'admin')
+  const isLandlord = computed(() => user.value?.role === 'landlord')
   const isAdmin = computed(() => user.value?.role === 'admin')
   const isMaintenance = computed(() => user.value?.role === 'maintenance_worker')
   const isBdManager = computed(() => user.value?.role === 'bd_manager')

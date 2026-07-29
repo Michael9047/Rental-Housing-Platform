@@ -4,6 +4,24 @@ export type PropertyStatus = 'available' | 'pending_review' | 'rented' | 'mainte
 export type RentType = 'monthly' | 'quarterly' | 'yearly'
 export type DepositType = 'one_month' | 'one_three' | 'two_month' | 'three_month' | 'half_month' | 'free' | 'custom'
 
+/** 租房规则（前端展示用） */
+export interface RentalRules {
+  cancellation_policy?: string
+  check_out_rules?: string
+  pet_policy?: string
+  payment_rules?: string
+  check_in_rules?: string
+  room_change_rules?: string
+  sublet_rules?: string
+  early_termination_rules?: string
+  renewal_rules?: string
+  guest_policy?: string
+  quiet_hours?: string
+  smoking_policy?: string
+  common_area_rules?: string
+  maintenance_rules?: string
+}
+
 export interface Property {
   id: number
   landlord_id: number
@@ -33,6 +51,7 @@ export interface Property {
   available_from?: string | null
   min_stay_months?: number
   deposit_type?: DepositType | null
+  rental_rules?: RentalRules | null
   version: number
   deleted_at?: string | null
   created_at: string

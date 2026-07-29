@@ -73,6 +73,16 @@ class Room(TimestampMixin, Base):
     city: Mapped[str | None] = mapped_column(String(100), nullable=True)
     available_from: Mapped[date | None] = mapped_column(Date, nullable=True)
 
+    # ── 房间细节（StarRez 对照）──
+    gender_allocation: Mapped[str | None] = mapped_column(String(20), nullable=True)  # male / female / coed / dynamic
+    bed_type: Mapped[str | None] = mapped_column(String(20), nullable=True)  # single / twin / double / bunk
+    max_occupancy: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    bathroom_type: Mapped[str | None] = mapped_column(String(20), nullable=True)  # ensuite / shared / private
+    furnished: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    utilities_included: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    internet_type: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    floor_plan_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+
     # ── 状态与版本 ──
     status: Mapped[str] = mapped_column(
         Enum(RoomStatus, name="property_status", create_type=False),

@@ -620,11 +620,11 @@ class SearchAgent(BaseAgent):
                     commute_data = {"walk_min": tbl[0], "transit_min": tbl[1], "source": "lookup_table"}
                 elif uni_info:
                     try:
-                        from app.models.room_commute import RoomCommute
-                        from app.models.property import Room
+                        from app.models.institute_commute import InstituteCommute
                         sub_stmt = (
-                            select(RoomCommute).join(Room, RoomCommute.room_id == Room.id)
-                            .where(Room.unit_type_id == t.id, RoomCommute.university_id == uni_info["id"])
+                            select(InstituteCommute)
+                            .where(InstituteCommute.institute_id == t.institute_id,
+                                   InstituteCommute.university_id == uni_info["id"])
                             .limit(1)
                         )
                         rc = (await self.session.execute(sub_stmt)).scalar_one_or_none()

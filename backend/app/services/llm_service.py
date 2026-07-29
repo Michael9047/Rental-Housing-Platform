@@ -129,17 +129,22 @@ class LLMService:
         *,
         temperature: float = 0.2,
         max_tokens: int = 1500,
+        reasoning_effort: str | None = None,
     ) -> dict[str, Any]:
         """通用 JSON 补全：返回解析后的 dict，解析失败返回空 dict"""
-        response = await self._client.chat.completions.create(
-            model=self._model,
-            messages=[
+        kwargs: dict[str, Any] = {
+            "model": self._model,
+            "messages": [
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
             ],
-            temperature=temperature,
-            max_tokens=max_tokens,
-        )
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+        }
+        # v4-pro 推理模型：结构化提取不需要长思考，low 即可
+        if reasoning_effort:
+            kwargs["reasoning_effort"] = reasoning_effort
+        response = await self._client.chat.completions.create(**kwargs)
         raw = self._strip_code_fence(response.choices[0].message.content or "{}")
         try:
             result = json.loads(raw)

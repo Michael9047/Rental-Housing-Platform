@@ -24,82 +24,11 @@
       </div>
     </el-card>
 
-    <!-- ===== 统计卡片 ===== -->
-    <div class="stats-grid">
-      <div class="stat-card" @click="activeTab = 'bookings'">
-        <span class="stat-icon">📅</span>
-        <div class="stat-info">
-          <div class="stat-num">{{ summaryLoading ? '…' : summary?.viewing_appointments ?? '—' }}</div>
-          <div class="stat-label">看房预约</div>
-        </div>
-      </div>
-      <div class="stat-card" @click="activeTab = 'bills'">
-        <span class="stat-icon">💳</span>
-        <div class="stat-info">
-          <div class="stat-num">{{ summaryLoading ? '…' : summary?.payable_orders ?? '—' }}</div>
-          <div class="stat-label">待支付</div>
-        </div>
-      </div>
-      <div class="stat-card" @click="activeTab = 'contracts'">
-        <span class="stat-icon">📄</span>
-        <div class="stat-info">
-          <div class="stat-num">{{ summaryLoading ? '…' : summary?.signed_contracts ?? '—' }}</div>
-          <div class="stat-label">我的合同</div>
-        </div>
-      </div>
-      <div class="stat-card" @click="activeTab = 'favorites'">
-        <span class="stat-icon">❤️</span>
-        <div class="stat-info">
-          <div class="stat-num">{{ summaryLoading ? '…' : summary?.favorites ?? '—' }}</div>
-          <div class="stat-label">收藏</div>
-        </div>
-      </div>
-    </div>
-    <el-alert v-if="summaryError" type="warning" :closable="false" title="顶部统计暂时无法加载，请稍后重试" class="summary-error" />
-
     <!-- ===== Tab 主体 ===== -->
     <el-card shadow="never" class="tabs-card">
       <el-tabs v-model="activeTab" class="profile-tabs" type="border-card">
 
-        <!-- Tab1: 看房预约 -->
-        <el-tab-pane label="📅 看房预约" name="bookings">
-          <div class="tab-toolbar">
-            <el-radio-group v-model="bookingFilter" size="small">
-              <el-radio-button value="all">全部 ({{ viewingBookings.length }})</el-radio-button>
-              <el-radio-button value="pending">待房东确认</el-radio-button>
-              <el-radio-button value="approved">已同意</el-radio-button>
-              <el-radio-button value="cancelled">已取消</el-radio-button>
-              <el-radio-button value="completed">已完成</el-radio-button>
-            </el-radio-group>
-          </div>
-          <el-empty v-if="filteredBookings.length === 0" description="还没有预约，去看看心仪的房源吧">
-            <el-button type="primary" @click="$router.push('/search')">去找房</el-button>
-          </el-empty>
-          <el-table v-else :data="filteredBookings" stripe>
-            <el-table-column label="房源" min-width="170">
-              <template #default="{ row }">
-                <span class="link-text" @click="$router.push(`/property/${row.property_id}`)">房源 #{{ row.property_id }}</span>
-              </template>
-            </el-table-column>
-            <el-table-column label="看房时间" width="120">
-              <template #default="{ row }">{{ row.scheduled_date || '待定' }}</template>
-            </el-table-column>
-            <el-table-column label="状态" width="110">
-              <template #default="{ row }">
-                <el-tag :type="bookingTag(row.status)" size="small">{{ bookingLabel(row.status) }}</el-tag>
-              </template>
-            </el-table-column>
-            <el-table-column label="操作" width="180">
-              <template #default="{ row }">
-                <el-button v-if="row.status === 'pending'" size="small" type="danger" text @click="cancelBooking(row)">取消预约</el-button>
-                <el-button v-if="row.status === 'pending' || row.status === 'approved'" size="small" type="primary" @click="goPay(row)">确认租房</el-button>
-                <el-button v-if="row.status === 'completed'" size="small" text type="primary" @click="$router.push(`/property/${row.property_id}`)">再看一次</el-button>
-              </template>
-            </el-table-column>
-          </el-table>
-        </el-tab-pane>
-
-        <!-- Tab2: 我的合同 -->
+        <!-- Tab1: 我的合同 -->
         <el-tab-pane label="📄 我的合同" name="contracts">
           <p class="contract-hint">签署完成的合同将在此显示；支付成功后合同及预订正式生效。</p>
           <div class="tab-toolbar">
@@ -133,24 +62,15 @@
                 <el-button type="primary" text @click="router.push(`/my-contracts/${row.agreement_id}`)">查看合同</el-button>
                 <el-button text :disabled="!row.signed_pdf_available" @click="downloadContract(row)">下载合同</el-button>
                 <el-button text @click="router.push(`/booking/order/${row.booking_id}/payment-status`)">查看订单</el-button>
-                <el-button text @click="router.push(`/property/${row.property_id}`)">查看房源</el-button>
-                <el-button v-if="row.can_pay" type="primary" @click="router.push(`/booking/payment/${row.booking_id}/deposit`)">继续支付</el-button>
+                <el-button text @click="router.push(`/room/${row.property_id}`)">查看房源</el-button>
+                <el-button v-if="row.booking_id && !['paid','cancelled','refunded','payment_expired'].includes(row.payment_status) && row.booking_status !== 'confirmed'" type="primary" @click="router.push(`/booking/payment/${row.booking_id}/deposit`)">继续支付</el-button>
+                <el-button v-if="row.booking_id && ['payment_expired','cancelled'].includes(row.payment_status)" type="warning" @click="router.push(`/booking/${row.property_id}/move-in-date`)">重新预订</el-button>
               </div>
             </el-card>
           </div>
         </el-tab-pane>
 
-        <!-- Tab3: 收藏 -->
-        <el-tab-pane label="❤️ 收藏" name="favorites">
-          <el-empty v-if="favorites.length === 0" description="还没有收藏，遇到喜欢的房源点个❤️收藏起来吧">
-            <el-button type="primary" @click="$router.push('/search')">去逛逛</el-button>
-          </el-empty>
-          <div v-else class="fav-grid">
-            <PropertyCard v-for="p in favorites" :key="p.id" :property="p" :show-quick-book="true" @book="openBookingDialog" />
-          </div>
-        </el-tab-pane>
-
-        <!-- Tab4: 我的账单 / 我的订单 -->
+        <!-- Tab2: 我的账单 / 我的订单 -->
         <el-tab-pane label="💳 我的账单 / 订单" name="bills">
           <div class="tab-toolbar">
             <el-radio-group v-model="billTab" size="small">
@@ -179,12 +99,13 @@
                 </div>
               </div>
               <div class="contract-actions">
-                <el-button text type="primary" @click="router.push(`/my-orders/${order.booking_id}`)">{{ order.booking_status === 'confirmed' ? '查看预订' : '查看详情' }}</el-button>
-                <el-button text @click="router.push(`/property/${order.property_id}`)">查看房源</el-button>
+                <el-button text type="primary" @click="router.push(`/my-orders/${order.booking_id}`)">查看详情</el-button>
+                <el-button text @click="router.push(`/room/${order.property_id}`)">查看房源</el-button>
+                <el-button v-if="order.agreement_id && order.booking_status !== 'confirmed'" text @click="router.push(`/my-contracts/${order.agreement_id}`)">查看合同</el-button>
                 <el-button v-if="order.payment_status === 'payment_processing'" text @click="refreshOrders">刷新状态</el-button>
-                <el-button v-if="['payment_expired','cancelled'].includes(order.payment_status)" @click="router.push(`/booking/${order.property_id}/move-in-date`)">重新预订该房源</el-button>
-                <el-button v-if="order.booking_status === 'confirmed'" text @click="router.push(`/my-contracts/${order.agreement_id}`)">查看合同</el-button>
-                <el-button v-if="order.can_pay" type="primary" :loading="payingOrderId === order.booking_id" @click="enterPayment(order)">{{ order.payment_action_label }}</el-button>
+                <!-- 非终态的订单：直接跳支付页，由支付页自行判决 -->
+                <el-button v-if="order.booking_id && !['paid','cancelled','refunded','payment_expired'].includes(order.payment_status) && order.booking_status !== 'confirmed'" type="primary" @click="router.push(`/booking/payment/${order.booking_id}/deposit`)">继续支付</el-button>
+                <el-button v-if="order.booking_id && ['payment_expired','cancelled'].includes(order.payment_status)" type="warning" @click="router.push(`/booking/${order.property_id}/move-in-date`)">重新预订</el-button>
               </div>
             </el-card>
           </div>
@@ -280,6 +201,127 @@
               </el-card>
             </el-col>
           </el-row>
+
+          <!-- 个人信息（预订流程预填数据源） -->
+          <el-row :gutter="24" style="margin-top:16px">
+            <el-col :span="24">
+              <el-card shadow="never" class="setting-card">
+                <template #header>
+                  <div style="display:flex;justify-content:space-between;align-items:center">
+                    <span>📋 个人信息（预订时自动填充）</span>
+                    <el-button type="primary" size="small" :loading="savingProfile" @click="saveProfileInfo">保存</el-button>
+                  </div>
+                </template>
+                <el-form label-width="100px" label-position="top" size="small">
+                  <el-row :gutter="16">
+                    <el-col :span="8">
+                      <el-form-item label="中文姓名"><el-input v-model="profileForm.chinese_name" placeholder="与证件一致" /></el-form-item>
+                    </el-col>
+                    <el-col :span="8">
+                      <el-form-item label="名（拼音大写）"><el-input v-model="profileForm.given_name_pinyin" placeholder="如 MING" /></el-form-item>
+                    </el-col>
+                    <el-col :span="8">
+                      <el-form-item label="姓（拼音大写）"><el-input v-model="profileForm.surname_pinyin" placeholder="如 WANG" /></el-form-item>
+                    </el-col>
+                  </el-row>
+                  <el-row :gutter="16">
+                    <el-col :span="6">
+                      <el-form-item label="出生日期"><el-date-picker v-model="profileForm.birth_date" type="date" value-format="YYYY-MM-DD" style="width:100%" /></el-form-item>
+                    </el-col>
+                    <el-col :span="6">
+                      <el-form-item label="性别">
+                        <el-radio-group v-model="profileForm.gender"><el-radio value="male" size="small">男</el-radio><el-radio value="female" size="small">女</el-radio></el-radio-group>
+                      </el-form-item>
+                    </el-col>
+                    <el-col :span="6">
+                      <el-form-item label="手机号"><el-input v-model="profileForm.phone" :placeholder="user?.phone || '请输入手机号'" /></el-form-item>
+                    </el-col>
+                    <el-col :span="6">
+                      <el-form-item label="邮箱"><el-input v-model="profileForm.email" :placeholder="user?.email || '请输入邮箱'" /></el-form-item>
+                    </el-col>
+                  </el-row>
+                  <el-row :gutter="16">
+                    <el-col :span="8">
+                      <el-form-item label="国籍/地区">
+                        <el-select v-model="profileForm.nationality" style="width:100%" filterable>
+                          <el-option v-for="c in nationalityOptions" :key="c" :label="c" :value="c" />
+                        </el-select>
+                      </el-form-item>
+                    </el-col>
+                    <el-col :span="8">
+                      <el-form-item label="学校"><el-input v-model="profileForm.school_name" placeholder="学校全称" /></el-form-item>
+                    </el-col>
+                    <el-col :span="4">
+                      <el-form-item label="学历层次">
+                        <el-select v-model="profileForm.enrollment_level" style="width:100%">
+                          <el-option v-for="l in enrollmentLevelOptions" :key="l" :label="l" :value="l" />
+                        </el-select>
+                      </el-form-item>
+                    </el-col>
+                    <el-col :span="4">
+                      <el-form-item label="入学年级">
+                        <el-select v-model="profileForm.enrollment_grade" style="width:100%">
+                          <el-option v-for="g in gradeOptions" :key="g" :label="g" :value="g" />
+                        </el-select>
+                      </el-form-item>
+                    </el-col>
+                  </el-row>
+                  <el-row :gutter="16">
+                    <el-col :span="8">
+                      <el-form-item label="专业（英文）"><el-input v-model="profileForm.major_english" placeholder="如 Computer Science" /></el-form-item>
+                    </el-col>
+                    <el-col :span="4">
+                      <el-form-item label="入学学期">
+                        <el-select v-model="profileForm.enrollment_term" style="width:100%">
+                          <el-option label="秋季 Fall" value="Fall" />
+                          <el-option label="春季 Spring" value="Spring" />
+                          <el-option label="夏季 Summer" value="Summer" />
+                        </el-select>
+                      </el-form-item>
+                    </el-col>
+                    <el-col :span="6">
+                      <el-form-item label="学生分类">
+                        <el-select v-model="profileForm.student_classification" style="width:100%">
+                          <el-option v-for="c in studentClassificationOptions" :key="c" :label="c" :value="c" />
+                        </el-select>
+                      </el-form-item>
+                    </el-col>
+                    <el-col :span="6">
+                      <el-form-item label="偏好名"><el-input v-model="profileForm.preferred_name" placeholder="英文偏好名" /></el-form-item>
+                    </el-col>
+                  </el-row>
+                  <el-row :gutter="16">
+                    <el-col :span="6">
+                      <el-form-item label="国际学生">
+                        <el-switch v-model="profileForm.is_international" active-text="是" inactive-text="否" />
+                      </el-form-item>
+                    </el-col>
+                    <el-col :span="6">
+                      <el-form-item label="签证类型"><el-input v-model="profileForm.visa_type" placeholder="如 Student Pass" :disabled="!profileForm.is_international" /></el-form-item>
+                    </el-col>
+                    <el-col :span="6">
+                      <el-form-item label="签证到期日"><el-date-picker v-model="profileForm.visa_expiry" type="date" value-format="YYYY-MM-DD" style="width:100%" :disabled="!profileForm.is_international" /></el-form-item>
+                    </el-col>
+                    <el-col :span="6">
+                      <el-form-item label="公民身份国家"><el-input v-model="profileForm.citizenship_country" placeholder="如 China" /></el-form-item>
+                    </el-col>
+                  </el-row>
+                  <el-row :gutter="16">
+                    <el-col :span="6">
+                      <el-form-item label="性别认同"><el-input v-model="profileForm.gender_identity" placeholder="用于室友匹配" /></el-form-item>
+                    </el-col>
+                    <el-col :span="9">
+                      <el-form-item label="无障碍需求"><el-input v-model="profileForm.disability_needs" placeholder="如有请填写" /></el-form-item>
+                    </el-col>
+                    <el-col :span="9">
+                      <el-form-item label="饮食需求"><el-input v-model="profileForm.dietary_needs" placeholder="如素食/清真" /></el-form-item>
+                    </el-col>
+                  </el-row>
+                </el-form>
+              </el-card>
+            </el-col>
+          </el-row>
+
           <el-row :gutter="24" style="margin-top:16px">
             <el-col :span="12">
               <el-card shadow="never" class="setting-card">
@@ -355,13 +397,9 @@ import { contractService } from '@/services/contract'
 import type { TenantContractItem } from '@/services/contract'
 import { paymentService, type TenantOrderItem } from '@/services/payment'
 import { remainingPaymentSeconds } from '@/utils/orderPresentation'
-import { filterViewingAppointments } from '@/utils/profileSummary'
 import { profileService, type DashboardSummary } from '@/services/profile'
-import { clearStaleProfileSelections } from '@/utils/profileSelection'
-import { propertyService } from '@/services/property'
 import { repairService } from '@/services/repair'
 import { storeToRefs } from 'pinia'
-import PropertyCard from '@/components/PropertyCard.vue'
 import { favoriteService } from '@/services/favorite'
 import type { Booking } from '@/types/booking'
 import type { Property } from '@/types/property'
@@ -373,15 +411,14 @@ const router = useRouter()
 const authStore = useAuthStore()
 const { user } = storeToRefs(authStore)
 
-const activeTab = ref((route.query.tab as string) || 'bookings')
+const activeTab = ref((route.query.tab as string) || 'bills')
 const pageLoading = ref(false)
 const showVerify = ref(false)
 const showNewRepair = ref(false)
-const bookingFilter = ref('all')
 const contractFilter = ref('pending_effective')
 const billTab = ref('pending')
 
-const bookings = ref<Booking[]>([])
+const bookings = ref<Booking[]>([]) // 用于报修弹窗房源选择
 const contracts = ref<TenantContractItem[]>([])
 const orders = ref<TenantOrderItem[]>([])
 const payingOrderId = ref<number | null>(null)
@@ -395,6 +432,91 @@ let orderTimer = 0
 const favorites = ref<Property[]>([])
 const repairs = ref<RepairRead[]>([])
 const repairForm = ref({ property_id: 0, issue_type: 'other' as RepairIssueType, description: '', scheduled_time: '' })
+
+// ── 个人信息表单（预订流程预填数据源）──
+const nationalityOptions = ['中国大陆','中国香港','中国澳门','中国台湾','英国','美国','加拿大','澳大利亚','新加坡','日本','韩国','德国','法国','其他']
+const gradeOptions = ['本科一年级','本科二年级','本科三年级','本科四年级','硕士','博士','语言课程','其他']
+const enrollmentLevelOptions = ['undergraduate','graduate','phd','language','other']
+const studentClassificationOptions = ['freshman','returning','transfer','exchange']
+const savingProfile = ref(false)
+const profileForm = ref({
+  chinese_name: '', given_name_pinyin: '', surname_pinyin: '', birth_date: '',
+  gender: '', phone: '', email: '', nationality: '中国大陆',
+  school_name: '', enrollment_grade: '', major_english: '',
+  enrollment_level: '', enrollment_term: '', student_classification: '',
+  is_international: true, visa_type: '', visa_expiry: '',
+  citizenship_country: '', disability_needs: '', dietary_needs: '',
+  gender_identity: '', preferred_name: '',
+})
+
+async function loadProfileInfo() {
+  try {
+    const resp = await fetch('/api/v1/me/profile', { headers: { Authorization: `Bearer ${localStorage.getItem('access_token')}` } })
+    if (resp.ok) {
+      const data = await resp.json()
+      if (data.chinese_name) profileForm.value.chinese_name = data.chinese_name || data.preferred_name || ''
+      if (data.preferred_name) profileForm.value.preferred_name = data.preferred_name
+      if (data.enrollment_level) profileForm.value.enrollment_level = data.enrollment_level
+      if (data.enrollment_class) profileForm.value.enrollment_grade = data.enrollment_class
+      if (data.enrollment_term) profileForm.value.enrollment_term = data.enrollment_term
+      if (data.school_name) profileForm.value.school_name = data.school_name
+      if (data.major) profileForm.value.major_english = data.major
+      if (data.student_classification) profileForm.value.student_classification = data.student_classification
+      if (data.is_international !== undefined) profileForm.value.is_international = data.is_international
+      if (data.visa_type) profileForm.value.visa_type = data.visa_type
+      if (data.visa_expiry) profileForm.value.visa_expiry = data.visa_expiry
+      if (data.nationality) profileForm.value.nationality = data.nationality
+      if (data.citizenship_country) profileForm.value.citizenship_country = data.citizenship_country
+      if (data.disability_needs) profileForm.value.disability_needs = data.disability_needs
+      if (data.dietary_needs) profileForm.value.dietary_needs = data.dietary_needs
+      if (data.gender_identity) profileForm.value.gender_identity = data.gender_identity
+    }
+  } catch { /* 后端不可用时回退 localStorage */ }
+  // 从 localStorage 补充
+  try {
+    const saved = localStorage.getItem('user_profile_info')
+    if (saved) Object.assign(profileForm.value, JSON.parse(saved))
+  } catch { }
+  if (!profileForm.value.phone && user?.value?.phone) profileForm.value.phone = user.value.phone
+  if (!profileForm.value.email && user?.value?.email) profileForm.value.email = user.value.email
+  if (!profileForm.value.chinese_name && user?.value?.username) profileForm.value.chinese_name = user.value.username
+}
+
+async function saveProfileInfo() {
+  savingProfile.value = true
+  try {
+    const body: Record<string, any> = {
+      preferred_name: profileForm.value.preferred_name || profileForm.value.chinese_name || undefined,
+      phone: profileForm.value.phone || undefined,
+      email: profileForm.value.email || undefined,
+      enrollment_level: profileForm.value.enrollment_level || undefined,
+      enrollment_class: profileForm.value.enrollment_grade || undefined,
+      enrollment_term: profileForm.value.enrollment_term || undefined,
+      school_name: profileForm.value.school_name || undefined,
+      major: profileForm.value.major_english || undefined,
+      student_classification: profileForm.value.student_classification || undefined,
+      is_international: profileForm.value.is_international,
+      visa_type: profileForm.value.visa_type || undefined,
+      visa_expiry: profileForm.value.visa_expiry || undefined,
+      nationality: profileForm.value.nationality || undefined,
+      citizenship_country: profileForm.value.citizenship_country || undefined,
+      disability_needs: profileForm.value.disability_needs || undefined,
+      dietary_needs: profileForm.value.dietary_needs || undefined,
+      gender_identity: profileForm.value.gender_identity || undefined,
+    }
+    await fetch('/api/v1/me/profile', {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('access_token')}` },
+      body: JSON.stringify(body),
+    })
+    localStorage.setItem('user_profile_info', JSON.stringify(profileForm.value))
+    ElMessage.success('个人信息已保存，预订时将从这里自动填充')
+  } catch {
+    localStorage.setItem('user_profile_info', JSON.stringify(profileForm.value))
+    ElMessage.success('已本地保存（服务器暂不可用）')
+  } finally {
+    savingProfile.value = false
+  }
+}
 const showSubmitRepair = ref(false)
 const chats = ref([
   { id: 1, from: '张房东', time: '30分钟前', text: '明天下午2点可以看房，到了联系我', read: false },
@@ -409,26 +531,15 @@ const notifSite = ref(true)
 const notifSms = ref(true)
 
 // ── Computed ──
-const bookingLabel = (s: string) => ({ pending: '待房东确认', approved: '已同意', rejected: '已拒绝', cancelled: '已取消', completed: '已完成' }[s] || s)
-const bookingTag = (s: string) => ({ pending: 'warning', approved: 'success', rejected: 'danger', cancelled: 'info', completed: '' }[s] || 'info') as 'warning'|'success'|'danger'|'info'|''
 const repairTag = (s: string) => ((REPAIR_STATUS_TAGS as Record<string, string>)[s] || 'info') as 'danger'|'warning'|'success'|'info'|''
 const issueTypeLabel = (t: string) => (ISSUE_TYPE_LABELS as Record<string, string>)[t] || t
 const repairStatusLabel = (s: string) => ((REPAIR_STATUS_LABELS as Record<string, string>)[s] || s)
-
-const viewingBookings = computed(() => {
-  return filterViewingAppointments(bookings.value, orders.value)
-})
-
-const filteredBookings = computed(() => {
-  if (bookingFilter.value === 'all') return viewingBookings.value
-  return viewingBookings.value.filter(b => b.status === bookingFilter.value)
-})
 
 const filteredContracts = computed(() => {
   return contracts.value.filter(c => c.category === contractFilter.value)
 })
 
-const successfulOrderStatuses = new Set(['paid'])
+const successfulOrderStatuses = new Set(['paid', 'success', 'confirmed'])
 const filteredOrders = computed(() => orders.value.filter(order => billTab.value === 'successful'
   ? order.booking_status === 'confirmed' && successfulOrderStatuses.has(order.payment_status)
   : order.booking_status !== 'confirmed'))
@@ -487,7 +598,7 @@ async function enterPayment(order:TenantOrderItem){
   } catch(e:any) { ElMessage.error(e?.response?.data?.detail || '支付资格校验失败，请稍后重试') }
   finally { payingOrderId.value=null }
 }
-function openBookingDialog(p: Property) { router.push({ path: '/booking/confirm', query: { property_id: String(p.id) } }) }
+function openBookingDialog(p: Property) { router.push({ name: 'booking-move-in-date', params: { propertyId: String(p.id) } }) }
 function viewRepair(row: RepairRead) { router.push(`/repairs/${row.id}`) }
 
 async function cancelRepairFromList(row: RepairRead) {
@@ -528,9 +639,8 @@ function maskPhone(p: string | null): string { return p && p.length >= 11 ? p.sl
 function formatDate(d: string): string { return d ? new Date(d).toLocaleDateString('zh-CN') : '' }
 
 onMounted(() => {
-  clearStaleProfileSelections()
   if(route.query.selectedContractId||route.query.selectedOrderId){const query={...route.query};delete query.selectedContractId;delete query.selectedOrderId;router.replace({query})}
-  authStore.fetchCurrentUser();fetchAll();orderTimer=window.setInterval(()=>{orderNow.value=Date.now()},1000)
+  authStore.fetchCurrentUser();fetchAll();loadProfileInfo();orderTimer=window.setInterval(()=>{orderNow.value=Date.now()},1000)
 })
 onBeforeUnmount(()=>window.clearInterval(orderTimer))
 </script>

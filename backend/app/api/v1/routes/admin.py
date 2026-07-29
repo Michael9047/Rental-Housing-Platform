@@ -193,7 +193,7 @@ async def list_pending_review_properties(
             "area_sqm": str(p.area_sqm) if p.area_sqm else None,
             "bedrooms": p.bedrooms,
             "bathrooms": p.bathrooms,
-            "property_type": p.property_type.value if p.property_type else None,
+            "property_type": p.property_type if isinstance(p.property_type, str) else (p.property_type.value if p.property_type and hasattr(p.property_type, "value") else None),
             "status": p.status.value,
             "description": p.description,
             "created_at": p.created_at.isoformat(),

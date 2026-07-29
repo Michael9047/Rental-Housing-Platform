@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.celery_app import celery_app
 from app.core.config import get_settings
-from app.models.poi import PropertyPOI
+from app.models.poi import InstitutePOI
 from app.models.property import Property
 from app.services.google_poi_service import GooglePOIService
 
@@ -39,6 +39,11 @@ def generate_full_poi_for_property(property_id: int) -> None:
             prop = await session.get(Property, property_id)
             if not prop:
                 logger.warning("Full POI task: property %s not found", property_id)
+                return
+            # POI 以公寓为单位存储；若房间未关联公寓则跳过
+            institute_id = prop.institute_id
+            if not institute_id:
+                logger.warning("Full POI task: property %s has no institute, skipping", property_id)
                 return
 
             lat = float(prop.latitude) if prop.latitude else None
@@ -146,10 +151,10 @@ def generate_full_poi_for_property(property_id: int) -> None:
                 except Exception:
                     logger.exception("Safety scoring failed for property %s", property_id)
 
-                # Upsert PropertyPOI
+                # Upsert InstitutePOI（公寓粒度）
                 from sqlalchemy import select as sa_select
                 result = await session.execute(
-                    sa_select(PropertyPOI).where(PropertyPOI.property_id == property_id)
+                    sa_select(InstitutePOI).where(InstitutePOI.institute_id == institute_id)
                 )
                 poi_record = result.scalar_one_or_none()
                 if poi_record:
@@ -159,8 +164,8 @@ def generate_full_poi_for_property(property_id: int) -> None:
                     poi_record.safety_data = safety_data
                     poi_record.generated_at = datetime.now(timezone.utc)
                 else:
-                    poi_record = PropertyPOI(
-                        property_id=property_id,
+                    poi_record = InstitutePOI(
+                        institute_id=institute_id,
                         content=content,
                         poi_data=poi_data,
                         map_poi_data=map_poi_data,
@@ -172,8 +177,8 @@ def generate_full_poi_for_property(property_id: int) -> None:
 
                 await session.commit()
                 total = sum(len(v) for v in item_map.values())
-                logger.info("Full POI generated for property %s: %d POIs across %d keywords",
-                            property_id, total, len(item_map))
+                logger.info("Full POI generated for institute %s (via property %s): %d POIs across %d keywords",
+                            institute_id, property_id, total, len(item_map))
 
             except Exception:
                 logger.exception("Full POI task failed for property %s", property_id)

@@ -4,7 +4,7 @@ import type { PropertySearchResult, PropertyType } from '@/types/property'
 export interface AgentSession {
   session_id: number
   session_uuid: string
-  cart_id: number
+  cart_id: number | null
   title: string | null
 }
 
@@ -21,6 +21,7 @@ export interface AgentMessageRequest {
   message: string
   filters?: AgentFilters | null
   compare_property_ids?: number[]  // 候选清单勾选后传，触发对比意图
+  mode?: string | null  // Agent 交互模式: 'auto' | 'expert' 等
 }
 
 export type AgentIntent =

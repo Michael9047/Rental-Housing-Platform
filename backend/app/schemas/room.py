@@ -46,13 +46,13 @@ class RoomRead(BaseModel):
     """房间响应 — 含继承的户型/公寓信息"""
     id: int
     landlord_id: int
-    unit_type_id: int
+    unit_type_id: int | None = None
     room_number: str | None = None
     building_block: str | None = None
     floor: int | None = None
     special_discount: str | None = None
     available_from: date | None = None
-    min_stay_months: int
+    min_stay_months: int | None = None
     status: str
     version: int
     deleted_at: datetime | None = None

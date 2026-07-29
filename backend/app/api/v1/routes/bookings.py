@@ -94,22 +94,25 @@ async def confirm_booking_with_policies(
         BookingFlowDraft.user_id == current_user.id,
         BookingFlowDraft.property_id == confirmation.property_id,
     ))
-    if (
-        not flow_draft
-        or flow_draft.current_step != "review"
-        or not flow_draft.personal_info
-        or not flow_draft.emergency_contact
-        or flow_draft.move_in_date != confirmation.move_in_date
-        or flow_draft.lease_months != confirmation.lease_months
-    ):
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Booking flow steps are incomplete")
+    if not flow_draft:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Booking flow steps are incomplete: draft not found")
+    if flow_draft.current_step != "review":
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"Booking flow steps are incomplete: current_step={flow_draft.current_step}, expected review")
+    if not flow_draft.personal_info:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Booking flow steps are incomplete: personal_info missing")
+    if not flow_draft.emergency_contact:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Booking flow steps are incomplete: emergency_contact missing")
+    if flow_draft.move_in_date != confirmation.move_in_date.isoformat():
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"Booking flow steps are incomplete: move_in_date mismatch draft={flow_draft.move_in_date} confirm={confirmation.move_in_date.isoformat()}")
+    if flow_draft.lease_months != confirmation.lease_months:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"Booking flow steps are incomplete: lease_months mismatch draft={flow_draft.lease_months} confirm={confirmation.lease_months}")
 
     acceptance_map = {item.key: item for item in confirmation.policy_acceptances}
     if set(acceptance_map) != set(POLICIES):
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="All current policies must be accepted")
     for key, policy in POLICIES.items():
         acceptance = acceptance_map[key]
-        if acceptance.version != policy.version or acceptance.content_hash != policy.content_hash:
+        if acceptance.version != int(policy.version.split(".")[0]) or acceptance.content_hash != policy.content_hash:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail=f"Policy {key} has changed; please review the latest version",
@@ -220,6 +223,21 @@ async def list_bookings(
     if current_user.role in {UserRole.landlord, UserRole.admin}:
         return await booking_service.list_by_landlord(current_user.id)
     return await booking_service.list_by_tenant(current_user.id)
+
+
+@router.get("/policies/{key}")
+async def get_policy(key: str) -> dict:
+    """获取单个政策文档正文（供前端 PolicyDialog 展示）。"""
+    if key not in POLICIES:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Policy '{key}' not found")
+    policy = POLICIES[key]
+    return {
+        "key": policy.key,
+        "title": policy.title_zh,
+        "version": int(policy.version.split(".")[0]),
+        "content": policy.summary_zh,
+        "content_hash": policy.content_hash,
+    }
 
 
 @router.get("/{booking_id}", response_model=BookingRead)

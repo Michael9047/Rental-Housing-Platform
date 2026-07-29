@@ -37,7 +37,7 @@
           <p class="card-safety">银行卡由收单机构托管页面处理，平台不会接收或保存卡号、CVV、磁道数据或验证码。</p>
         </el-card>
       </section>
-      <footer><div><router-link :to="`/property/${payment.snapshot.property_id}`">返回房源</router-link><router-link :to="`/contract/${payment.snapshot.agreement_id}`">查看已签合同</router-link></div><el-button type="primary" size="large" :disabled="expired || payment.status === 'success'" @click="checkout">{{ payment.status === 'success' ? '支付成功' : '进入测试收银台' }}</el-button></footer>
+      <footer><div><router-link :to="`/room/${payment.snapshot.property_id}`">返回房源</router-link><router-link :to="`/contract/${payment.snapshot.agreement_id}`">查看已签合同</router-link></div><el-button type="primary" size="large" :disabled="expired || payment.status === 'success'" @click="checkout">{{ payment.status === 'success' ? '支付成功' : '进入测试收银台' }}</el-button></footer>
     </template>
   </main>
 </template>
@@ -57,8 +57,8 @@ const dateTime = (v:string) => new Intl.DateTimeFormat('zh-CN',{dateStyle:'mediu
 function checkout(){ if (payment.value?.checkout_url) window.location.assign(payment.value.checkout_url) }
 const methodLabel = (method:PaymentMethod) => ({ WECHAT_PAY:'微信支付', ALIPAY:'支付宝', CARD_CHECKOUT:'银行卡托管收银台' } as Record<PaymentMethod,string>)[method]
 function idempotencyKey(bookingId:number, purpose:string){const storageKey=`payment-idempotency:${bookingId}:${purpose}`;let key=sessionStorage.getItem(storageKey);if(!key){key=crypto.randomUUID();sessionStorage.setItem(storageKey,key)}return key}
-async function load(){ const id=Number(route.params.id); try { methods.value=await paymentService.getAvailableMethods(); selectedMethod.value=methods.value.find(item=>item.available)?.method || 'CARD_CHECKOUT'; const existing=await paymentService.getByBooking(id); if(existing.order_status==='payment_failed'&&Date.now()<Date.parse(existing.expires_at)){payment.value=await paymentService.createPayment(id,idempotencyKey(id,`retry:${existing.id}`),selectedMethod.value)}else{payment.value=existing} } catch(e:any) { if(e?.response?.status===404){ payment.value=await paymentService.createPayment(id,idempotencyKey(id,'initial'),selectedMethod.value) } else error.value=e?.response?.data?.detail || '服务器暂时不可用' } finally { loading.value=false } }
-onMounted(()=>{ load(); timer=window.setInterval(async()=>{ now.value=Date.now(); if(route.query.returned && payment.value && payment.value.status!=='success') payment.value=await paymentService.getPayment(payment.value.id) },1000) }); onBeforeUnmount(()=>clearInterval(timer))
+async function load(){ const id=Number(route.params.id); if(!id||Number.isNaN(id)){ error.value='无效的预订编号，请从个人中心重新进入'; loading.value=false; return } try { methods.value=await paymentService.getAvailableMethods(); selectedMethod.value=methods.value.find(item=>item.available)?.method || 'CARD_CHECKOUT'; const existing=await paymentService.getByBooking(id); if(existing.order_status==='payment_failed'&&Date.now()<Date.parse(existing.expires_at)){payment.value=await paymentService.createPayment(id,idempotencyKey(id,`retry:${existing.id}`),selectedMethod.value)}else{payment.value=existing} } catch(e:any) { if(e?.response?.status===404){ payment.value=await paymentService.createPayment(id,idempotencyKey(id,'initial'),selectedMethod.value) } else error.value=e?.response?.data?.detail || '服务器暂时不可用' } finally { loading.value=false } }
+onMounted(()=>{ load(); timer=window.setInterval(()=>{ now.value=Date.now(); if(route.query.returned && payment.value && payment.value.status!=='success') { paymentService.getPayment(payment.value.id).then(p=>{if(p)payment.value=p}).catch(()=>{/* 页面跳转中，忽略 */}) } },1000) }); onBeforeUnmount(()=>clearInterval(timer))
 </script>
 
 <style scoped>

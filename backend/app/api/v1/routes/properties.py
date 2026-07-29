@@ -9,6 +9,8 @@ from app.schemas.property import PropertyCreate, PropertyListResponse, PropertyR
 from app.schemas.property_image import PropertyImageRead
 from app.services.property_service import PropertyService
 from app.services.user_service import UserService
+from app.services.booking_availability_service import BookingAvailabilityService
+from app.services.lease_pricing_service import LeasePricingService
 from app.models.property import Property
 from app.tasks.poi_tasks import generate_full_poi_for_property
 
@@ -356,6 +358,28 @@ async def clear_audit_logs(
 
 
 
+@router.get("/institutes-geo")
+async def get_institutes_geo(session: AsyncSession = Depends(get_db_session)) -> list[dict]:
+    """返回所有公寓的地理位置（用于地图可视化）。"""
+    from sqlalchemy import select, func
+    from app.models.institute import Institute
+    from app.models.property import Room as RoomModel
+    rows = await session.execute(
+        select(
+            Institute.name, Institute.country, Institute.latitude, Institute.longitude,
+            func.count(RoomModel.id)
+        )
+        .outerjoin(RoomModel, RoomModel.institute_id == Institute.id)
+        .where(Institute.status == 'active', Institute.latitude.isnot(None), Institute.longitude.isnot(None))
+        .group_by(Institute.id)
+        .order_by(Institute.country, func.count(RoomModel.id).desc())
+    )
+    return [
+        {"name": name, "country": country or "--", "lat": float(lat), "lng": float(lng), "rooms": cnt}
+        for name, country, lat, lng, cnt in rows.fetchall()
+    ]
+
+
 # ── CRUD ──
 @router.get("/{property_id}", response_model=PropertyRead)
 async def get_property(property_id: int, session: AsyncSession = Depends(get_db_session)) -> PropertyRead:
@@ -444,3 +468,50 @@ async def get_property_history(
         }
         for log in logs
     ]
+
+
+# ── 预订流程辅助端点 ──
+
+@router.get("/{property_id}/booking-availability")
+async def get_booking_availability(
+    property_id: int,
+    year: int = Query(..., ge=2020, le=2100),
+    month: int = Query(..., ge=1, le=12),
+    session: AsyncSession = Depends(get_db_session),
+) -> dict:
+    """获取房源指定月份的预订日期可用性（供日历组件使用）。"""
+    availability_service = BookingAvailabilityService(session)
+    property_obj = await availability_service.get_property(property_id)
+    if not property_obj:
+        raise HTTPException(status_code=404, detail="Property not found")
+    result = await availability_service.get_month_availability(property_obj, year, month)
+    return result
+
+
+@router.get("/{property_id}/validate-booking-date")
+async def validate_booking_date(
+    property_id: int,
+    date: str = Query(..., pattern=r"^\d{4}-\d{2}-\d{2}$"),
+    session: AsyncSession = Depends(get_db_session),
+) -> dict:
+    """校验单个日期是否可入住。"""
+    availability_service = BookingAvailabilityService(session)
+    property_obj = await availability_service.get_property(property_id)
+    if not property_obj:
+        raise HTTPException(status_code=404, detail="Property not found")
+    valid, reason, _ = await availability_service.validate(property_obj, date)
+    return {"available": valid, "reason": reason}
+
+
+@router.get("/{property_id}/lease-pricing")
+async def get_lease_pricing(
+    property_id: int,
+    move_in_date: str = Query(..., pattern=r"^\d{4}-\d{2}-\d{2}$"),
+    session: AsyncSession = Depends(get_db_session),
+) -> dict:
+    """获取房源指定入住日期的租期价格选项。"""
+    property_obj = await PropertyService(session).get(property_id)
+    if not property_obj:
+        raise HTTPException(status_code=404, detail="Property not found")
+    pricing = LeasePricingService.calculate(property_obj, move_in_date)
+    return pricing.model_dump(mode="json")

@@ -501,7 +501,7 @@ function inCart(propertyId: number): boolean {
 }
 
 function goDetail(propertyId: number) {
-  router.push(`/property/${propertyId}`)
+  router.push(`/room/${propertyId}`)
 }
 
 function scoreColor(score: number): string {
@@ -537,28 +537,42 @@ async function handleSend(preset?: string) {
   sending.value = true
   await scrollChatToBottom()
 
+  // 先插入空的 AI 消息占位，流式逐 token 填充
+  const assistantMsg: AgentChatMessage = {
+    role: 'assistant',
+    content: '',
+  }
+  messages.value.push(assistantMsg)
+
   const mode = 'expert'
 
   try {
-    const resp = await agentService.sendMessage(sessionId.value!, {
-      message: text,
-      mode,
-    })
-    messages.value.push({
-      role: 'assistant',
-      content: resp.reply,
-      recommendations: resp.intent === 'recommend' ? resp.recommendations : undefined,
-      aiAvailable: resp.ai_available,
-      quickReplies: resp.quick_replies,
-      links: resp.links,
-      thinkingSteps: (resp as any).thinking_steps || [],
-    } as AgentChatMessage)
-    aiAvailable.value = resp.ai_available
-    if (resp.cart_changed) {
-      await cartStore.fetch()
+    await agentService.sendMessageStream(
+      sessionId.value!,
+      { message: text, mode },
+      {
+        onToken(token: string) {
+          assistantMsg.content += token
+          scrollChatToBottom()
+        },
+        onMeta(meta) {
+          if (meta.intent && (meta.intent === 'search' || meta.intent === 'recommend')) {
+            if (meta.recommendations?.length) {
+              assistantMsg.recommendations = meta.recommendations as any
+            }
+          }
+          if (meta.ai_available !== undefined) assistantMsg.aiAvailable = meta.ai_available
+          if (meta.quick_replies?.length) assistantMsg.quickReplies = meta.quick_replies
+          if (meta.cart_changed) cartStore.fetch()
+        },
+      },
+    )
+    // 流式完成：同步 aiAvailable
+    if (assistantMsg.aiAvailable !== undefined) {
+      aiAvailable.value = assistantMsg.aiAvailable
     }
   } catch {
-    messages.value.push({ role: 'assistant', content: '抱歉，请求失败了，请稍后再试。' })
+    assistantMsg.content = assistantMsg.content || '抱歉，请求失败了，请稍后再试。'
   } finally {
     sending.value = false
     await scrollChatToBottom()

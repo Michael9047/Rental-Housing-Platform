@@ -8,7 +8,7 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user, get_db_session
+from app.api.deps import get_current_user, get_current_user_optional, get_db_session
 from app.models.user import User
 from app.schemas.agent import (
     AgentLink,
@@ -80,21 +80,26 @@ def _to_search_result(prop) -> PropertySearchResult:
 @router.post("/sessions", response_model=AgentSessionResponse, status_code=status.HTTP_201_CREATED)
 async def create_agent_session(
     session: AsyncSession = Depends(get_db_session),
-    current_user: User = Depends(get_current_user),
+    current_user: User | None = Depends(get_current_user_optional),
 ) -> AgentSessionResponse:
     chat_service = ChatService(session)
-    chat_session = await chat_service.create_session(current_user.id, title="租房推荐 Agent")
+    user_id = current_user.id if current_user else None
+    title = "租房推荐 Agent" if current_user else "租房推荐 Agent（游客）"
+    chat_session = await chat_service.create_session(user_id, title)
 
-    cart_agent = CartService(session=session)
-    cart = await cart_agent.get_or_create_cart(current_user.id)
-    # 购物车关联到最新会话
-    cart.session_id = chat_session.id
-    await session.commit()
+    cart_id: int | None = None
+    if current_user:
+        cart_agent = CartService(session=session)
+        cart = await cart_agent.get_or_create_cart(current_user.id)
+        # 购物车关联到最新会话
+        cart.session_id = chat_session.id
+        await session.commit()
+        cart_id = cart.id
 
     return AgentSessionResponse(
         session_id=chat_session.id,
         session_uuid=chat_session.session_id,
-        cart_id=cart.id,
+        cart_id=cart_id,
         title=chat_session.title,
     )
 
@@ -104,16 +109,17 @@ async def send_agent_message(
     session_id: int,
     body: AgentMessageRequest,
     session: AsyncSession = Depends(get_db_session),
-    current_user: User = Depends(get_current_user),
+    current_user: User | None = Depends(get_current_user_optional),
 ) -> AgentMessageResponse:
+    user_id = current_user.id if current_user else None
     chat_service = ChatService(session)
-    chat_session = await chat_service.get_session(session_id, current_user.id)
+    chat_session = await chat_service.get_session(session_id, user_id)
     if chat_session is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Agent 会话不存在")
 
     from app.services.agentic.dispatcher import dispatch
     filters = body.filters.model_dump(exclude_none=True) if body.filters else None
-    result = await dispatch(session=session, chat_session=chat_session, user_id=current_user.id,
+    result = await dispatch(session=session, chat_session=chat_session, user_id=user_id,
                             message=body.message, filters=filters,
                             compare_property_ids=body.compare_property_ids)
 
@@ -155,14 +161,15 @@ async def send_agent_message_stream(
     session_id: int,
     body: AgentMessageRequest,
     session: AsyncSession = Depends(get_db_session),
-    current_user: User = Depends(get_current_user),
+    current_user: User | None = Depends(get_current_user_optional),
 ):
     """流式 Agent 消息 —— SSE 逐 token 返回 AI 回复。"""
     from fastapi.responses import StreamingResponse
     from app.services.agentic.dispatcher import dispatch_stream
 
+    user_id = current_user.id if current_user else None
     chat_service = ChatService(session)
-    chat_session = await chat_service.get_session(session_id, current_user.id)
+    chat_session = await chat_service.get_session(session_id, user_id)
     if chat_session is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Agent 会话不存在")
 
@@ -172,7 +179,7 @@ async def send_agent_message_stream(
         full_reply = ""
         try:
             async for token, meta in dispatch_stream(
-                session=session, chat_session=chat_session, user_id=current_user.id,
+                session=session, chat_session=chat_session, user_id=user_id,
                 message=body.message, filters=filters,
                 compare_property_ids=body.compare_property_ids,
             ):
@@ -197,10 +204,8 @@ async def send_agent_message_stream(
 
 
 @router.get("/faqs", response_model=list[FaqChip])
-async def get_faq_chips(
-    current_user: User = Depends(get_current_user),
-) -> list[FaqChip]:
-    """FAQ 快捷入口 chips（前端渲染在输入框上方/气泡里）"""
+async def get_faq_chips() -> list[FaqChip]:
+    """FAQ 快捷入口 chips（前端渲染在输入框上方/气泡里）—— 无需登录"""
     return [FaqChip(**c) for c in list_faq_chips()]
 
 

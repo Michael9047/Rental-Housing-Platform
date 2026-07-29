@@ -4,6 +4,7 @@
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any
 
@@ -23,7 +24,7 @@ logger = logging.getLogger(__name__)
 async def dispatch(
     session: AsyncSession,
     chat_session: ChatSession,
-    user_id: int,
+    user_id: int | None,
     message: str,
     filters: dict[str, Any] | None = None,
     compare_property_ids: list[int] | None = None,
@@ -66,46 +67,52 @@ async def dispatch(
         candidate_snapshot = result.get("candidate_snapshot", [])
 
     elif intent == "compare":
-        agent = CompareAgent(session=session)
-        cart_svc = CartService(session=session)
-        try:
-            result = await agent.compare(
-                user_id=user_id,
-                property_ids=compare_property_ids,
-                cart_agent=cart_svc,
-            )
-            reply = result.get("dimension_analysis", "") or result.get("summary", "")
-            recommendations = result.get("items", [])
-        except ValueError as e:
-            reply = str(e)
+        if user_id is None:
+            reply = "登录后可使用对比功能，帮你从多套房源中选出最佳选择。"
+        else:
+            agent = CompareAgent(session=session)
+            cart_svc = CartService(session=session)
+            try:
+                result = await agent.compare(
+                    user_id=user_id,
+                    property_ids=compare_property_ids,
+                    cart_agent=cart_svc,
+                )
+                reply = result.get("dimension_analysis", "") or result.get("summary", "")
+                recommendations = result.get("items", [])
+            except ValueError as e:
+                reply = str(e)
 
     elif intent == "manage_cart":
-        sub = classification.get("sub_intent", "view")
-        cart_svc = CartService(session=session)
-        if sub == "add":
-            ids = _extract_ids(message, classification.get("refs", []))
-            if ids:
-                for pid in ids:
-                    try:
-                        await cart_svc.add_to_cart(user_id, pid)
-                    except ValueError:
-                        pass
-                reply = "已加入候选清单。"
-                cart_changed = True
-            else:
-                reply = "请告诉我要加入哪套房源。"
-        elif sub == "remove":
-            ids = _extract_ids(message, classification.get("refs", []))
-            if ids:
-                for pid in ids:
-                    await cart_svc.remove_from_cart(user_id, pid)
-                reply = "已移除。"
-                cart_changed = True
-            else:
-                reply = "请指定要移除的房源。"
+        if user_id is None:
+            reply = "登录后可使用购物车功能，把心仪房源加入候选清单。"
         else:
-            _cart, items = await cart_svc.get_cart_items(user_id)
-            reply = f"候选清单共 {len(items)} 套。" if items else "候选清单为空。"
+            sub = classification.get("sub_intent", "view")
+            cart_svc = CartService(session=session)
+            if sub == "add":
+                ids = _extract_ids(message, classification.get("refs", []))
+                if ids:
+                    for pid in ids:
+                        try:
+                            await cart_svc.add_to_cart(user_id, pid)
+                        except ValueError:
+                            pass
+                    reply = "已加入候选清单。"
+                    cart_changed = True
+                else:
+                    reply = "请告诉我要加入哪套房源。"
+            elif sub == "remove":
+                ids = _extract_ids(message, classification.get("refs", []))
+                if ids:
+                    for pid in ids:
+                        await cart_svc.remove_from_cart(user_id, pid)
+                    reply = "已移除。"
+                    cart_changed = True
+                else:
+                    reply = "请指定要移除的房源。"
+            else:
+                _cart, items = await cart_svc.get_cart_items(user_id)
+                reply = f"候选清单共 {len(items)} 套。" if items else "候选清单为空。"
 
     elif intent == "faq":
         strength, hits = match_faq(message)
@@ -154,7 +161,7 @@ async def dispatch(
 async def dispatch_stream(
     session: AsyncSession,
     chat_session: ChatSession,
-    user_id: int,
+    user_id: int | None,
     message: str,
     filters: dict[str, Any] | None = None,
     compare_property_ids: list[int] | None = None,
@@ -174,11 +181,9 @@ async def dispatch_stream(
         # Phase 1: 数据获取（DB 检索 + Embedding，不做 LLM 生成）
         search_data = await agent.search_data(message=message, filters=filters)
         recommendations = search_data["all_recs"]
-        meta["recommendations"] = [
-            {"property_id": r["property_id"], "match_reason": r.get("match_reason", "")}
-            for r in recommendations
-        ]
+        meta["recommendations"] = recommendations  # 全部匹配房源（含完整 property 数据）
         meta["top_picks"] = search_data["top_picks"]
+        meta["ai_available"] = search_data["ai_available"]
         # 先 yield meta，让前端立即展示推荐卡片
         yield None, meta
 
@@ -217,8 +222,10 @@ async def dispatch_stream(
         strength, hits = match_faq(message)
         if strength == "strong" and hits:
             full_reply = hits[0].answer
+            meta["quick_replies"] = list(hits[0].next_chips) if hits[0].next_chips else []
         elif strength == "weak" and hits:
             full_reply = f"你想了解的是 {' / '.join(e.chip for e in hits[:5])} 中的哪个？"
+            meta["quick_replies"] = [e.chip for e in hits[:5]]
         else:
             entry = get_faq(message)
             full_reply = entry.answer if entry else "建议查看帮助中心。"

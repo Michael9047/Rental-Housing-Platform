@@ -64,7 +64,14 @@ class ContractService:
                 None,
             )
         if option is None:
-            raise ValueError("The booking has no valid pricing snapshot")
+            snapshot_months = [item.get("months") for item in pricing.get("options", [])] if pricing else []
+            raise ValueError(
+                f"The booking has no valid pricing snapshot: "
+                f"lease_months={booking.lease_months}, "
+                f"snapshot_options={snapshot_months}, "
+                f"has_snapshot={bool(application.get('pricing_snapshot'))}, "
+                f"scheduled_date={booking.scheduled_date}"
+            )
 
         prices = option["prices"]
         policy_rows = await self.session.scalars(

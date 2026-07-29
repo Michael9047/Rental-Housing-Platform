@@ -462,7 +462,7 @@ function inCart(propertyId: number): boolean {
 }
 
 function goDetail(propertyId: number) {
-  router.push(`/property/${propertyId}`)
+  router.push(`/room/${propertyId}`)
 }
 
 async function scrollChatToBottom() {
@@ -526,30 +526,54 @@ async function handleSend(preset?: string, comparePropertyIds?: number[]) {
   sending.value = true
   await scrollChatToBottom()
 
+  // 先插入一个空的 AI 消息占位，流式逐 token 填充
+  const assistantMsg: AgentChatMessage = {
+    role: 'assistant',
+    content: '',
+  }
+  messages.value.push(assistantMsg)
+
   try {
-    const resp = await agentService.sendMessage(sessionId.value, {
-      message: text,
-      filters: { ...filters },
-      compare_property_ids: comparePropertyIds,
-      mode: agentMode.value === 'auto' ? null : agentMode.value,
-    })
-    const isRecommend = resp.intent === 'recommend'
-    messages.value.push({
-      role: 'assistant',
-      content: resp.reply,
-      topPicks: isRecommend && resp.top_picks?.length ? resp.top_picks : undefined,
-      allRecommendations: isRecommend && resp.recommendations?.length ? resp.recommendations : undefined,
-      recommendations: isRecommend ? resp.recommendations : undefined,
-      aiAvailable: resp.ai_available,
-      quickReplies: resp.quick_replies,
-      links: resp.links,
-    })
-    aiAvailable.value = resp.ai_available
-    if (resp.cart_changed) {
-      await cartStore.fetch()
+    await agentService.sendMessageStream(
+      sessionId.value,
+      {
+        message: text,
+        filters: { ...filters },
+        compare_property_ids: comparePropertyIds,
+        mode: agentMode.value === 'auto' ? null : agentMode.value,
+      },
+      {
+        onToken(token: string) {
+          assistantMsg.content += token
+          scrollChatToBottom()
+        },
+        onMeta(meta) {
+          if (meta.intent && (meta.intent === 'search' || meta.intent === 'recommend')) {
+            if (meta.top_picks?.length) {
+              // 从已有 allRecommendations 中匹配 top_picks
+              const allRecs = assistantMsg.allRecommendations || []
+              const topPicks = meta.top_picks
+                .map((tp) => allRecs.find((r) => r.property_id === tp.property_id))
+                .filter(Boolean) as AgentRecommendation[]
+              if (topPicks.length) assistantMsg.topPicks = topPicks
+            }
+            if (meta.recommendations?.length) {
+              assistantMsg.allRecommendations = meta.recommendations as any
+              assistantMsg.recommendations = meta.recommendations as any
+            }
+          }
+          if (meta.ai_available !== undefined) assistantMsg.aiAvailable = meta.ai_available
+          if (meta.quick_replies?.length) assistantMsg.quickReplies = meta.quick_replies
+          if (meta.cart_changed) cartStore.fetch()
+        },
+      },
+    )
+    // 流式完成：确保 aiAvailable 同步
+    if (assistantMsg.aiAvailable !== undefined) {
+      aiAvailable.value = assistantMsg.aiAvailable
     }
   } catch {
-    messages.value.push({ role: 'assistant', content: '抱歉，请求失败了，请稍后再试。' })
+    assistantMsg.content = assistantMsg.content || '抱歉，请求失败了，请稍后再试。'
   } finally {
     sending.value = false
     await scrollChatToBottom()
