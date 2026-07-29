@@ -2,14 +2,19 @@
 from fastapi import APIRouter
 
 from app.api.v1.routes import (
-    admin, agent, ai_search, auth, bookings,
-    building_staff, buildings, chat, commute, contracts,
+    admin, agent, ai_search, auth,
+    building_staff, buildings, chat, commute, compare,
     dashboard, favorites, geocoding, health,
     imports, map_routes, ml, notifications, orders,
-    payments, pms, pois, properties, repair_workers, repairs,
+    pms, pois, properties, repair_workers, repairs,
     properties_compat, rooms, room_transfers, search_suggestions, tenants,
     unit_types, upload, users, wechat,
 )
+
+# TODO(merge 损坏待恢复): bookings/contracts/payments 三个路由引用的 11 个模块
+# (booking_flow_draft / policy_consent / booking_personal_info / lease_pricing_service 等)
+# 在此前的合并中丢失（git 历史与远程分支均无），暂时摘除以保证应用可启动。
+# 恢复来源：另一台机器上的 booking-flow 实现，或按 tests/test_booking_* 重建。
 
 api_router = APIRouter()
 
@@ -33,15 +38,15 @@ api_router.include_router(orders.router, tags=["orders"])
 api_router.include_router(room_transfers.router, tags=["room-transfers"])
 
 # 其他模块
-api_router.include_router(bookings.router, prefix="/bookings", tags=["bookings"])
+# api_router.include_router(bookings.router, prefix="/bookings", tags=["bookings"])  # 见上方 TODO：模块丢失待恢复
 api_router.include_router(notifications.router, prefix="/notifications", tags=["notifications"])
 api_router.include_router(chat.router, prefix="/chat", tags=["chat"])
 api_router.include_router(admin.router, prefix="/admin", tags=["admin"])
 api_router.include_router(imports.router, prefix="/import", tags=["import"])
 api_router.include_router(wechat.router, tags=["wechat"])
 api_router.include_router(search_suggestions.router, prefix="/search", tags=["search"])
-api_router.include_router(contracts.router, prefix="/contracts", tags=["contracts"])
-api_router.include_router(payments.router, prefix="/payments", tags=["payments"])
+# api_router.include_router(contracts.router, prefix="/contracts", tags=["contracts"])  # 见上方 TODO
+# api_router.include_router(payments.router, prefix="/payments", tags=["payments"])      # 见上方 TODO
 api_router.include_router(favorites.router, prefix="/favorites", tags=["favorites"])
 api_router.include_router(upload.router, tags=["upload"])
 api_router.include_router(dashboard.router, tags=["dashboard"])
@@ -52,6 +57,7 @@ api_router.include_router(dashboard.router, tags=["dashboard"])
 # api_router.include_router(pois.router, prefix="/pois", tags=["pois"])
 api_router.include_router(map_routes.router, prefix="/map", tags=["map"])
 api_router.include_router(agent.router, prefix="/agent", tags=["agent"])
+api_router.include_router(compare.router, prefix="/compare", tags=["compare"])
 # api_router.include_router(ml.router, tags=["ml"])
 api_router.include_router(repairs.router, tags=["repairs"])
 api_router.include_router(repair_workers.router, tags=["repair-workers"])

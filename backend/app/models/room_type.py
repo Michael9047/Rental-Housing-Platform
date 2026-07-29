@@ -81,4 +81,4 @@ class RoomType(TimestampMixin, Base):
     )
 
     # 关系
-    property: Mapped["Property"] = relationship(back_populates="room_types")
+    property: Mapped["Room"] = relationship(backref="room_types")

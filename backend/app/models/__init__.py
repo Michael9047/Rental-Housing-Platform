@@ -22,12 +22,9 @@ from app.models.marketplace import (
 )
 from app.models.news import NewsArticle, NewsArticleStatus
 from app.models.notification import (
-    DeliveryStatus,
     Notification,
-    NotificationChannel,
-    NotificationDelivery,
-    NotificationEntityType,
-    NotificationEventType,
+    NotificationOutbox,
+    NotificationOutboxStatus,
     NotificationType,
 )
 from app.models.order import Order
