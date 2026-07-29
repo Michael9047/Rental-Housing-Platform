@@ -49,6 +49,8 @@ def _to_read(room) -> RoomRead:
     try:
         return RoomRead(
         id=room.id,
+        business_id=room.business_id,
+        uuid=room.uuid,
         landlord_id=room.landlord_id,
         unit_type_id=room.unit_type_id,
         room_number=room.room_number,
@@ -70,7 +72,6 @@ def _to_read(room) -> RoomRead:
         hall_count=_get(room, '_ut_hall_count') or (_get(ut, 'hall_count') if ut else None),
         deposit_amount=_get(room, '_ut_deposit_amount') or (_get(ut, 'deposit_amount') if ut else None),
         amenities=_get(room, '_ut_amenities') or (_get(ut, 'amenities') if ut else None),
-        institute_id=_get(room, '_inst_id') or (_get(inst, 'id') if inst else None),
         institute_name=_get(room, '_inst_name') or (_get(inst, 'name') if inst else None),
         institute_address=_get(room, '_inst_address') or (_get(inst, 'address') if inst else None),
         images=[RoomImageRead(
@@ -83,7 +84,7 @@ def _to_read(room) -> RoomRead:
     )
     except Exception:
         return RoomRead(
-            id=room.id, landlord_id=room.landlord_id,
+            id=room.id, business_id=room.business_id, uuid=room.uuid, landlord_id=room.landlord_id,
             unit_type_id=room.unit_type_id, room_number=room.room_number,
             building_block=room.building_block,
             floor=room.floor, special_discount=room.special_discount,
@@ -94,7 +95,7 @@ def _to_read(room) -> RoomRead:
             unit_type_name=None, base_rent=None, area_sqm=None,
             bedrooms=None, bathrooms=None, hall_count=None,
             deposit_amount=None, amenities=None,
-            institute_id=None, institute_name=None, institute_address=None,
+            institute_name=None, institute_address=None,
             images=[], primary_image_url=None,
         )
 

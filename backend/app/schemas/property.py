@@ -48,7 +48,6 @@ class PropertyBase(BaseModel):
 
 class PropertyCreate(PropertyBase):
     landlord_id: int
-    institute_id: int
     image_urls: list[str] | None = None
 
 
@@ -70,7 +69,6 @@ class PropertyUpdate(BaseModel):
     service_fee_rate: float | None = None
     room_number: str | None = Field(default=None, max_length=20)
     floor: int | None = Field(default=None, ge=0)
-    institute_id: int | None = None
     # ── 新增字段 ──
     amenities: list[str] | None = None
     available_from: date | None = None
@@ -84,7 +82,7 @@ class PropertyRead(PropertyBase):
 
     id: int
     landlord_id: int
-    institute_id: int | None = None
+    business_id: str | None = None
     institute_name: str | None = None
     version: int = 1
     deleted_at: datetime | None = None
@@ -105,7 +103,7 @@ class PropertySearchResult(PropertyBase):
 
     id: int
     landlord_id: int
-    institute_id: int | None = None
+    business_id: str | None = None
     institute_name: str | None = None
     created_at: datetime
     updated_at: datetime

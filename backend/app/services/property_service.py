@@ -11,7 +11,9 @@ from typing import Any
 from sqlalchemy import cast, func, select, String, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.property import VALID_STATUS_TRANSITIONS, DepositType, Property, PropertyStatus, PropertyType
+from app.models.property import VALID_STATUS_TRANSITIONS, Property, PropertyStatus, PropertyType
+from app.models.unit_type import DepositType
+from app.services.poi_service import POIService
 from app.schemas.property import PropertyCreate, PropertyUpdate
 
 logger = logging.getLogger(__name__)
@@ -80,7 +82,7 @@ class PropertyService:
     async def create(self, property_in: PropertyCreate) -> Property:
         dumped = property_in.model_dump()
         image_urls = dumped.pop("image_urls", None) or []
-        logger.info("Creating property: institute_id=%s, keys=%s", dumped.get('institute_id'), list(dumped.keys()))
+        logger.info("Creating property: keys=%s", list(dumped.keys()))
 
         # AI风险评估
         from app.services.risk_evaluator import RiskEvaluator
@@ -100,11 +102,13 @@ class PropertyService:
             await self._attach_temp_images(property_obj.id, image_urls)
             await self.session.refresh(property_obj, attribute_names=['images'])
 
-        # Eager-load institute
-        if property_obj.institute_id:
+        # 加载关联的户型+公寓以获取 institute_name
+        if property_obj.unit_type_id:
             from sqlalchemy.orm import selectinload
-            from app.models.institute import Institute
-            stmt = select(Property).where(Property.id == property_obj.id).options(selectinload(Property.institute))
+            from app.models.unit_type import UnitType
+            stmt = select(Property).where(Property.id == property_obj.id).options(
+                selectinload(Property.unit_type).selectinload(UnitType.institute)
+            )
             result = await self.session.execute(stmt)
             loaded = result.scalars().first()
             if loaded and loaded.institute:
@@ -205,8 +209,7 @@ class PropertyService:
             clauses.append(Property.price_monthly >= price_min)
         if price_max is not None:
             clauses.append(Property.price_monthly <= price_max)
-        if institute_id is not None:
-            clauses.append(Property.institute_id == institute_id)
+        # institute_id 过滤通过调用方 JOIN UnitType 处理
 
         return clauses
 
@@ -482,7 +485,10 @@ class PropertyService:
         if institute_id is not None:
             stmt = stmt.where(Property.institute_id == institute_id)
         if female_only is not None:
-            stmt = stmt.where(Property.female_only == female_only)
+            from app.models.institute import Institute
+            stmt = stmt.join(Institute, Property.institute_id == Institute.id).where(
+                Institute.female_only == female_only
+            )
         if amenities:
             stmt = stmt.where(Property.amenities.op("&&")(amenities))
         # P0 大学距离约束 — bounding box 预筛选
@@ -571,7 +577,10 @@ class PropertyService:
 
             # ── 新增筛选条件（回退路径）──
             if institute_id is not None:
-                fallback_stmt = fallback_stmt.where(Property.institute_id == institute_id)
+                from app.models.unit_type import UnitType
+                fallback_stmt = fallback_stmt.join(
+                    UnitType, Property.unit_type_id == UnitType.id
+                ).where(UnitType.institute_id == institute_id)
             if amenities:
                 fallback_stmt = fallback_stmt.where(Property.amenities.op("&&")(amenities))
             if available_from:
@@ -1246,7 +1255,7 @@ class PropertyService:
                 return date_type.fromisoformat(value)
             return value
         # Int
-        if key in ("bedrooms", "bathrooms", "deposit_amount", "floor", "min_stay_months", "institute_id"):
+        if key in ("bedrooms", "bathrooms", "deposit_amount", "floor", "min_stay_months"):
             return int(value) if value is not None else None
         # Float
         if key == "service_fee_rate":

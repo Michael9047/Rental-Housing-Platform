@@ -19,15 +19,18 @@ class Institute(TimestampMixin, Base):
     __tablename__ = "institutes"
 
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
-    business_id: Mapped[str | None] = mapped_column(String(20), unique=True, index=True)
+    business_id: Mapped[str | None] = mapped_column(String(24), unique=True, index=True)
+    uuid: Mapped[str | None] = mapped_column(String(36), unique=True, nullable=True)
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     name_cn: Mapped[str | None] = mapped_column(String(200), nullable=True)
     abbreviation: Mapped[str | None] = mapped_column(String(50), nullable=True)
     address: Mapped[str | None] = mapped_column(String(300))
-    district: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    # 结构化地址字段
+    country: Mapped[str | None] = mapped_column(String(100), nullable=True)
     city: Mapped[str | None] = mapped_column(String(100), nullable=True)
-    country: Mapped[str | None] = mapped_column(String(10), nullable=True)
-    npc: Mapped[str | None] = mapped_column(String(100), nullable=True)  # 新加坡 NPC 辖区简称（如 CL-NPC）
+    district: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    street: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    postal_code: Mapped[str | None] = mapped_column(String(20), nullable=True)
     latitude: Mapped[Decimal | None] = mapped_column(Numeric(9, 6), nullable=True)
     longitude: Mapped[Decimal | None] = mapped_column(Numeric(9, 6), nullable=True)
     contact_phone: Mapped[str | None] = mapped_column(String(32))

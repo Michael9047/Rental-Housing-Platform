@@ -75,8 +75,11 @@ async def gather_comprehensive_metrics(
 
     ids = [p.id for p in props]
 
+    # ── 公寓 ID（通过 unit_type 链获取）──
+    inst_ids = sorted({p.unit_type.institute_id for p in props
+                       if p.unit_type and p.unit_type.institute_id is not None})
+
     # ── POI 数据（公寓粒度）──
-    inst_ids = sorted({p.institute_id for p in props if p.institute_id is not None})
     poi_rows = (
         await session.execute(
             select(InstitutePOI).where(InstitutePOI.institute_id.in_(inst_ids))
@@ -98,7 +101,8 @@ async def gather_comprehensive_metrics(
     # 映射 property -> institute
     review_map: dict[int, dict[str, Any]] = {}
     for p in props:
-        ri = inst_review.get(p.institute_id)
+        inst_id = p.unit_type.institute_id if p.unit_type else None
+        ri = inst_review.get(inst_id) if inst_id else None
         if ri:
             review_map[p.id] = ri
 

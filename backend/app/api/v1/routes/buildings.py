@@ -18,6 +18,7 @@ from sqlalchemy.orm import selectinload
 from app.api.deps import get_current_user, get_db_session, require_landlord
 from app.models.institute import Institute, InstituteStatus
 from app.models.user import User
+from app.schemas.institute import InstituteCreate, InstituteUpdate
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/buildings", tags=["buildings"])
@@ -91,6 +92,8 @@ async def list_buildings(
     result = await session.scalars(stmt)
     return [{
         "id": b.id, "name": b.name, "address": b.address,
+        "country": b.country, "city": b.city, "district": b.district,
+        "street": b.street, "postal_code": b.postal_code,
         "contact_phone": b.contact_phone, "contact_email": b.contact_email,
         "logo_url": b.logo_url, "description": b.description,
         "has_api": b.has_api, "status": b.status.value,
@@ -107,22 +110,21 @@ async def list_buildings(
 
 @router.post("")
 async def create_building(
-    body: dict,
+    body: InstituteCreate,
     session: AsyncSession = Depends(get_db_session),
     current_user: User = Depends(require_landlord),
 ) -> dict:
-    # ── 1. 字段提取与校验 ──
-    name = (body.get("name") or "").strip()
+    # ── 1. 字段提取与校验（Pydantic 已完成基础校验）──
+    name = body.name.strip()
     if not name:
         raise HTTPException(status_code=422, detail="公寓名称不能为空")
-    if len(name) > 200:
-        raise HTTPException(status_code=422, detail="公寓名称不能超过200个字符")
 
-    address = (body.get("address") or "").strip() or None
-    contact_phone = (body.get("contact_phone") or "").strip() or None
-    contact_email = (body.get("contact_email") or "").strip() or None
-    description = (body.get("description") or "").strip() or None
-    amenities = body.get("amenities") or None
+    # address 由 model_validator 自动从结构化字段拼接（如未显式提供）
+    address = body.address.strip() if body.address else None
+    contact_phone = body.contact_phone.strip() if body.contact_phone else None
+    contact_email = body.contact_email.strip() if body.contact_email else None
+    description = body.description.strip() if body.description else None
+    amenities = body.amenities or None
 
     # ── 2. 同名检查（同一房东下不允许重名） ──
     existing = await session.scalar(
@@ -140,17 +142,27 @@ async def create_building(
 
     # ── 3. 创建入库 ──
     from decimal import Decimal
-    lat = body.get("latitude")
-    lng = body.get("longitude")
+    from app.core.business_id import generate_business_id
+    import uuid as _uuid
+    lat = body.latitude
+    lng = body.longitude
+    biz_id = await generate_business_id(session, "institute")
     building = Institute(
+        uuid=str(_uuid.uuid4()),
+        business_id=biz_id,
         name=name,
         address=address,
+        country=body.country.strip() if body.country else None,
+        city=body.city.strip() if body.city else None,
+        district=body.district.strip() if body.district else None,
+        street=body.street.strip() if body.street else None,
+        postal_code=body.postal_code.strip() if body.postal_code else None,
         contact_phone=contact_phone,
         contact_email=contact_email,
         description=description,
         amenities=amenities,
-        female_only=bool(body.get("female_only", False)),
-        couples_allowed=bool(body.get("couples_allowed", False)),
+        female_only=body.female_only,
+        couples_allowed=body.couples_allowed,
         latitude=Decimal(str(lat)) if lat is not None and str(lat).strip() else None,
         longitude=Decimal(str(lng)) if lng is not None and str(lng).strip() else None,
         status=InstituteStatus.active,
@@ -170,15 +182,34 @@ async def create_building(
         logger.exception("Failed to create building")
         raise HTTPException(status_code=500, detail="创建公寓失败，服务器内部错误，请稍后重试")
 
-    # ── 图片写入 ──
-    image_urls = body.get("image_urls") or []
-    logger.info(f"[CREATE] image_urls={image_urls}, lat={building.latitude}, lng={building.longitude}")
+    # ── 图片写入 + 从 temp 移动到主目录 ──
+    image_urls = body.image_urls or []
     if image_urls:
+        import shutil
+        from pathlib import Path
+        from app.core.config import get_settings
         from app.models.building_image import BuildingImage
+        settings = get_settings()
+        upload_root = Path(settings.upload_dir).resolve()
         for i, url in enumerate(image_urls):
             fn = url.rsplit("/", 1)[-1] if "/" in url else url
+            # 将临时文件从 temp/ 移到 uploads/ 根目录
+            src = None
+            if "/temp/" in url:
+                rel = url.split("/api/v1/uploads/", 1)[-1] if "/api/v1/uploads/" in url else None
+                if rel:
+                    src = upload_root / rel
             img = BuildingImage(institute_id=building.id, filename=fn, original_name=fn, mime_type="image/jpeg", file_size=0, sort_order=i, is_primary=(i == 0))
             session.add(img)
+            # 移动文件
+            logger.warning(f"[IMAGE MOVE] checking: src={src} exists={src.exists() if src else False}")
+            if src and src.exists():
+                dst = upload_root / fn
+                try:
+                    shutil.move(str(src), str(dst))
+                    logger.warning(f"[IMAGE MOVE] OK: {src} -> {dst}")
+                except Exception as e:
+                    logger.warning(f"[IMAGE MOVE] FAIL: {src} -> {dst}: {e}")
         await session.commit()
         logger.info(f"[CREATE] saved {len(image_urls)} images for building {building.id}")
 
@@ -190,9 +221,9 @@ async def create_building(
     except Exception: pass
     await session.refresh(building)
     # ── 负责人写入 building_staff ──
-    manager_name = (body.get("manager_name") or "").strip()
-    manager_phone = (body.get("manager_phone") or "").strip()
-    manager_email = (body.get("manager_email") or "").strip()
+    manager_name = body.manager_name.strip() if body.manager_name else ""
+    manager_phone = body.manager_phone.strip() if body.manager_phone else ""
+    manager_email = body.manager_email.strip() if body.manager_email else ""
     if manager_name:
         from app.models.building_staff import BuildingStaff
         staff = BuildingStaff(
@@ -206,14 +237,21 @@ async def create_building(
         await session.commit()
     return {
         "id": building.id,
+        "business_id": building.business_id,
+        "uuid": building.uuid,
         "name": building.name,
         "address": building.address,
+        "country": building.country, "city": building.city,
+        "district": building.district, "street": building.street,
+        "postal_code": building.postal_code,
         "contact_phone": building.contact_phone,
         "contact_email": building.contact_email,
         "description": building.description,
         "status": building.status.value,
         "created_by": building.created_by,
         "created_at": building.created_at.isoformat() if building.created_at else None,
+        "latitude": float(building.latitude) if building.latitude else None,
+        "longitude": float(building.longitude) if building.longitude else None,
         "amenities": building.amenities,
         "female_only": bool(building.female_only),
         "couples_allowed": bool(building.couples_allowed),
@@ -238,6 +276,8 @@ async def list_deleted_buildings(
     result = await session.scalars(stmt)
     return [{
         "id": b.id, "name": b.name, "address": b.address,
+        "country": b.country, "city": b.city, "district": b.district,
+        "street": b.street, "postal_code": b.postal_code,
         "contact_phone": b.contact_phone, "description": b.description,
         "status": b.status.value, "created_by": b.created_by,
         "created_at": b.created_at.isoformat() if b.created_at else None,
@@ -260,6 +300,8 @@ async def get_building(
         raise HTTPException(status_code=404, detail="楼栋不存在")
     return {
         "id": b.id, "name": b.name, "address": b.address,
+        "country": b.country, "city": b.city, "district": b.district,
+        "street": b.street, "postal_code": b.postal_code,
         "contact_phone": b.contact_phone, "contact_email": b.contact_email,
         "logo_url": b.logo_url, "description": b.description,
         "has_api": b.has_api, "status": b.status.value,
@@ -276,7 +318,7 @@ async def get_building(
 
 @router.patch("/{building_id}")
 async def update_building(
-    building_id: int, body: dict,
+    building_id: int, body: InstituteUpdate,
     session: AsyncSession = Depends(get_db_session),
     current_user: User = Depends(require_landlord),
 ) -> dict:
@@ -286,7 +328,10 @@ async def update_building(
     if b.created_by != current_user.id and current_user.role.value != "admin":
         raise HTTPException(status_code=403, detail="无权修改此楼栋，您只能修改自己创建的公寓")
 
-    new_name = (body.get("name") or "").strip()
+    # 获取客户端实际发送的字段（排除未设置的）
+    data = body.model_dump(exclude_unset=True)
+
+    new_name = (body.name or "").strip() if body.name else ""
     if new_name and new_name != b.name:
         if len(new_name) > 200:
             raise HTTPException(status_code=422, detail="公寓名称不能超过200个字符")
@@ -301,52 +346,66 @@ async def update_building(
         if existing and existing > 0:
             raise HTTPException(status_code=409, detail=f"公寓名称「{new_name}」已存在，请更换名称")
 
-    # 基础字段更新
-    for field in ["name", "address", "contact_phone", "contact_email", "description"]:
-        val = body.get(field)
-        if val is not None and str(val).strip():
-            setattr(b, field, str(val).strip())
+    # 基础字段更新（包含结构化地址字段）
+    text_fields = ["name", "address", "country", "city", "district", "street",
+                   "postal_code", "contact_phone", "contact_email", "description"]
+    for field in text_fields:
+        if field in data and data[field] is not None:
+            val = str(data[field]).strip()
+            if val:
+                setattr(b, field, val)
 
     # amenities 数组
-    if "amenities" in body:
-        b.amenities = body["amenities"] if body["amenities"] else None
+    if "amenities" in data:
+        b.amenities = data["amenities"] if data["amenities"] else None
 
     # 特殊标记字段
-    if "female_only" in body:
-        b.female_only = bool(body["female_only"])
-    if "couples_allowed" in body:
-        b.couples_allowed = bool(body["couples_allowed"])
+    if "female_only" in data:
+        b.female_only = bool(data["female_only"])
+    if "couples_allowed" in data:
+        b.couples_allowed = bool(data["couples_allowed"])
 
     # 经纬度
-    lat = body.get("latitude")
-    lng = body.get("longitude")
-    if lat is not None and str(lat).strip():
+    if "latitude" in data and data["latitude"] is not None:
         from decimal import Decimal
-        b.latitude = Decimal(str(lat))
-    if lng is not None and str(lng).strip():
+        b.latitude = Decimal(str(data["latitude"]))
+    if "longitude" in data and data["longitude"] is not None:
         from decimal import Decimal
-        b.longitude = Decimal(str(lng))
+        b.longitude = Decimal(str(data["longitude"]))
 
     # 公寓图集更新
-    if "image_urls" in body:
+    if "image_urls" in data:
+        import shutil
+        from pathlib import Path
+        from app.core.config import get_settings
         from app.models.building_image import BuildingImage
+        settings = get_settings()
+        upload_root = Path(settings.upload_dir).resolve()
         old_imgs = await session.scalars(select(BuildingImage).where(BuildingImage.institute_id == building_id))
         for img in old_imgs: await session.delete(img)
         await session.flush()
-        urls = body["image_urls"] or []
+        urls = data["image_urls"] or []
         for i, url in enumerate(urls):
             fn = url.rsplit("/", 1)[-1] if "/" in url else url
+            src = None
+            if "/temp/" in url:
+                rel = url.split("/api/v1/uploads/", 1)[-1] if "/api/v1/uploads/" in url else None
+                if rel: src = upload_root / rel
             img = BuildingImage(institute_id=building_id, filename=fn, original_name=fn, mime_type="image/jpeg", file_size=0, sort_order=i, is_primary=(i == 0))
             session.add(img)
+            if src and src.exists():
+                dst = upload_root / fn
+                try: shutil.move(str(src), str(dst))
+                except Exception: pass
         await session.flush()
 
     await session.commit()
     await session.refresh(b)
 
     # ── 负责人同步至 building_staff ──
-    manager_name = (body.get("manager_name") or "").strip()
-    manager_phone = (body.get("manager_phone") or "").strip()
-    manager_email = (body.get("manager_email") or "").strip()
+    manager_name = body.manager_name.strip() if body.manager_name else ""
+    manager_phone = body.manager_phone.strip() if body.manager_phone else ""
+    manager_email = body.manager_email.strip() if body.manager_email else ""
     if manager_name:
         from app.models.building_staff import BuildingStaff
         existing_staff = await session.scalar(
@@ -379,6 +438,8 @@ async def update_building(
 
     return {
         "id": b.id, "name": b.name, "address": b.address,
+        "country": b.country, "city": b.city, "district": b.district,
+        "street": b.street, "postal_code": b.postal_code,
         "contact_phone": b.contact_phone, "contact_email": b.contact_email,
         "description": b.description, "status": b.status.value,
         "latitude": float(b.latitude) if b.latitude else None,
@@ -564,6 +625,8 @@ async def list_public_buildings(
                 if min_rent is None or rent < min_rent: min_rent = rent
         items.append({
             "id": b.id, "name": b.name, "address": b.address,
+            "country": b.country, "city": b.city, "district": b.district,
+            "street": b.street, "postal_code": b.postal_code,
             "latitude": float(b.latitude) if b.latitude else None,
             "longitude": float(b.longitude) if b.longitude else None,
             "description": b.description, "amenities": b.amenities,
@@ -597,4 +660,4 @@ async def get_public_building(
             if r.deleted_at is None and r.status != RoomStatus.offline:
                 rooms.append({"id": r.id, "room_number": r.room_number, "floor": r.floor, "special_discount": r.special_discount, "available_from": r.available_from, "status": r.status.value if hasattr(r.status, 'value') else r.status})
         unit_types.append({"id": ut.id, "name": ut.name, "bedrooms": ut.bedrooms, "bathrooms": ut.bathrooms, "hall_count": ut.hall_count, "area_sqm": ut.area_sqm, "base_rent": ut.base_rent, "deposit_amount": ut.deposit_amount, "deposit_type": ut.deposit_type.value if ut.deposit_type and hasattr(ut.deposit_type, 'value') else ut.deposit_type, "amenities": ut.amenities, "image_urls": ut.image_urls, "description": ut.description, "min_stay_months": ut.min_stay_months, "status": ut.status.value if hasattr(ut.status, 'value') else ut.status, "room_count": len(rooms), "rooms": rooms})
-    return {"id": b.id, "name": b.name, "address": b.address, "latitude": float(b.latitude) if b.latitude else None, "longitude": float(b.longitude) if b.longitude else None, "description": b.description, "amenities": b.amenities, "contact_phone": b.contact_phone, "images": images, "unit_types": unit_types, "female_only": bool(b.female_only) if b.female_only is not None else False, "couples_allowed": bool(b.couples_allowed) if b.couples_allowed is not None else False}
+    return {"id": b.id, "name": b.name, "address": b.address, "country": b.country, "city": b.city, "district": b.district, "street": b.street, "postal_code": b.postal_code, "latitude": float(b.latitude) if b.latitude else None, "longitude": float(b.longitude) if b.longitude else None, "description": b.description, "amenities": b.amenities, "contact_phone": b.contact_phone, "images": images, "unit_types": unit_types, "female_only": bool(b.female_only) if b.female_only is not None else False, "couples_allowed": bool(b.couples_allowed) if b.couples_allowed is not None else False}

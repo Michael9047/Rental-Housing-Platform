@@ -5,6 +5,7 @@ from sqlalchemy import select, func, or_
 from app.api.deps import get_db_session
 from app.models.property import Property
 from app.models.institute import Institute
+from app.models.unit_type import UnitType
 from typing import Optional
 
 router = APIRouter()
@@ -93,7 +94,8 @@ async def get_search_suggestions(
                 Institute.longitude,
                 func.count(Property.id).label("property_count"),
             )
-            .outerjoin(Property, Property.institute_id == Institute.id)
+            .outerjoin(UnitType, UnitType.institute_id == Institute.id)
+            .outerjoin(Property, Property.unit_type_id == UnitType.id)
             .where(
                 Institute.status == "active",
                 or_(Property.status == "available", Property.id.is_(None)),
@@ -166,7 +168,8 @@ async def get_search_suggestions(
                 Institute.longitude,
                 func.count(Property.id).label("property_count"),
             )
-            .outerjoin(Property, Property.institute_id == Institute.id)
+            .outerjoin(UnitType, UnitType.institute_id == Institute.id)
+            .outerjoin(Property, Property.unit_type_id == UnitType.id)
             .where(
                 Institute.status == "active",
                 or_(

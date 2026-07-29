@@ -153,7 +153,8 @@ class CompareAgent(BaseAgent):
             logger.exception("加载 POI 数据失败，通勤维度取中性分")
 
         rating_by_inst: dict[int, tuple[float, int]] = {}
-        inst_ids = {p.institute_id for p in props if p.institute_id}
+        inst_ids = {p.unit_type.institute_id for p in props
+                    if p.unit_type and p.unit_type.institute_id}
         if inst_ids:
             try:
                 rows = await self.session.execute(
@@ -177,9 +178,10 @@ class CompareAgent(BaseAgent):
         for p in props:
             poi = pois.get(p.institute_id) if p.institute_id else None
             transit = nearest_transit_meters(poi.poi_data if poi else None)
+            inst_id = p.unit_type.institute_id if p.unit_type else None
             rating, count = (None, 0)
-            if p.institute_id and p.institute_id in rating_by_inst:
-                rating, count = rating_by_inst[p.institute_id]
+            if inst_id and inst_id in rating_by_inst:
+                rating, count = rating_by_inst[inst_id]
             metrics.append(
                 PropertyMetrics(
                     property_id=p.id,
