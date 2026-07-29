@@ -15,6 +15,20 @@ export interface AgentFilters {
   price_max?: number | null
   bedrooms?: number | null
   property_type?: PropertyType | null
+  /** 设施硬要求（引导 chip「要独立卫浴」注入） */
+  amenities?: string[] | null
+  bathrooms?: number | null
+  /** 渐进选房累积的周边偏好：[{type: "transit"}, ...] */
+  poi_requirements?: { type: string; max_distance_m?: number }[] | null
+}
+
+/** 渐进选房引导 chip：点击后 filter_patch 并入累积 filters 再重发 */
+export interface GuidedOption {
+  label: string
+  message: string
+  filter_patch?: Record<string, unknown> | null
+  kind: string
+  icon: string
 }
 
 export interface AgentMessageRequest {
@@ -37,6 +51,8 @@ export interface AgentRecommendation {
   pros: string[]
   cons: string[]
   property: PropertySearchResult
+  /** 周边设施最近距离（米）：{"transit":350, "supermarket":200} */
+  poi_distances?: Record<string, number> | null
 }
 
 /** 回复中附带的站内页面深链 */
@@ -70,6 +86,8 @@ export interface AgentMessageResponse {
   quick_replies: string[]
   links: AgentLink[]
   thinking_steps: ThinkingStep[]
+  /** 渐进选房引导 chips（点击携带 filter_patch 收窄） */
+  guided_options: GuidedOption[]
 }
 
 export interface CartItem {

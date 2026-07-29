@@ -45,6 +45,7 @@ class PropertyBase(BaseModel):
     available_from: date | None = None
     min_stay_months: int | None = None
     deposit_type: str | None = None
+    special_offer: str | None = None  # 优惠信息（UnitType.special_offer 透传）
 
 class PropertyCreate(PropertyBase):
     landlord_id: int

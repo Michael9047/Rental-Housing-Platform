@@ -34,6 +34,12 @@ const routes: RouteRecordRaw[] = [
         meta: { requiresAuth: true },
       },
       {
+        path: 'compare',
+        name: 'compare',
+        component: () => import('@/views/CompareView.vue'),
+        meta: { requiresAuth: true },
+      },
+      {
         path: 'property/:id',
         name: 'property-detail',
         component: () => import('@/views/PropertyDetail.vue'),

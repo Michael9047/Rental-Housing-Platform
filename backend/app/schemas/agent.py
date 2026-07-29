@@ -71,6 +71,7 @@ class AgentRecommendation(BaseModel):
     pros: list[str] = []
     cons: list[str] = []
     property: PropertySearchResult
+    poi_distances: dict[str, int] | None = None   # 周边设施距离，如 {"地铁":350, "超市":200}
 
 
 class AgentLink(BaseModel):
@@ -88,6 +89,15 @@ class ThinkingStep(BaseModel):
     duration_ms: int = 0
 
 
+class GuidedOption(BaseModel):
+    """渐进选房引导 chip"""
+    label: str = ""
+    message: str = ""                               # 点击后作为消息发送
+    filter_patch: dict | None = None                # 点击后合并到 filters 的结构化 patch
+    kind: str = ""                                  # poi / budget / amenity
+    icon: str = ""
+
+
 class AgentMessageResponse(BaseModel):
     reply: str
     intent: str
@@ -98,6 +108,7 @@ class AgentMessageResponse(BaseModel):
     quick_replies: list[str] = []   # 后续建议 chips（点击即作为消息发送）
     links: list[AgentLink] = []     # 站内页面深链按钮
     thinking_steps: list[ThinkingStep] = []  # 专家模式 Agent 执行步骤
+    guided_options: list[GuidedOption] = []  # 渐进选房引导 chips
 
 
 class FaqChip(BaseModel):

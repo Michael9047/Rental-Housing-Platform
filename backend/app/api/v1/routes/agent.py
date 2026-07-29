@@ -23,6 +23,7 @@ from app.schemas.agent import (
     CompareRequest,
     CompareResponse,
     FaqChip,
+    GuidedOption,
     ThinkingStep,
 )
 from app.schemas.property import PropertySearchResult
@@ -60,11 +61,52 @@ def _to_search_result(prop) -> PropertySearchResult:
             longitude=getattr(inst, 'longitude', None) if inst else None,
             created_at=getattr(prop, 'created_at', None),
             updated_at=getattr(prop, 'updated_at', None),
-            images=[],
+            images=_unit_type_images(prop),
             institute_id=prop.institute_id,
             institute_name=getattr(inst, 'name', None) if inst else None,
+            amenities=getattr(prop, 'amenities', None),
+            min_stay_months=getattr(prop, 'min_stay_months', None),
+            special_offer=getattr(prop, 'special_offer', None),
         )
     return PropertySearchResult.model_validate(prop)
+
+
+def _unit_type_images(prop) -> list:
+    """UnitType.image_urls（URL 字符串数组）→ PropertyImageRead 列表。
+
+    前端 getImageUrl 对 http 开头的 filename 直接原样用，否则拼 /api/v1/uploads/，
+    两种存储形式都兼容。
+    """
+    from datetime import datetime, timezone
+
+    from app.schemas.property_image import PropertyImageRead
+
+    now = datetime.now(timezone.utc)
+    return [
+        PropertyImageRead(
+            id=idx, property_id=prop.id, filename=url,
+            original_name="", mime_type="", file_size=0,
+            sort_order=idx, is_primary=(idx == 0),
+            created_at=getattr(prop, "created_at", None) or now,
+        )
+        for idx, url in enumerate(getattr(prop, "image_urls", None) or [])
+        if url
+    ]
+
+
+def _serialize_meta(meta: dict) -> dict:
+    """流式 meta 里的 property 是 UnitType 对象，json.dumps 前统一序列化。"""
+    out = dict(meta)
+    for key in ("recommendations", "top_picks"):
+        recs = out.get(key)
+        if not recs:
+            continue
+        out[key] = [
+            {**r, "property": _to_search_result(r["property"]).model_dump(mode="json")}
+            if r.get("property") is not None else r
+            for r in recs
+        ]
+    return out
 
 
 # ── 会话 ──────────────────────────────────────────────────────────
@@ -119,6 +161,7 @@ async def send_agent_message(
                 pros=r.get("pros", []),
                 cons=r.get("cons", []),
                 property=_to_search_result(r["property"]),
+                poi_distances=r.get("poi_distances"),
             )
             for r in result.get("recommendations", [])
         ],
@@ -129,6 +172,7 @@ async def send_agent_message(
                 pros=tp.get("pros", []),
                 cons=tp.get("cons", []),
                 property=_to_search_result(tp["property"]),
+                poi_distances=tp.get("poi_distances"),
             )
             for tp in result.get("top_picks", [])
         ],
@@ -138,6 +182,9 @@ async def send_agent_message(
         links=[AgentLink(**link) for link in result.get("links", [])],
         thinking_steps=[
             ThinkingStep(**step) for step in result.get("thinking_steps", [])
+        ],
+        guided_options=[
+            GuidedOption(**opt) for opt in result.get("guided_options", [])
         ],
     )
 
@@ -170,9 +217,9 @@ async def send_agent_message_stream(
             ):
                 if token:
                     full_reply += token
-                    yield f"data: {json.dumps({'token': token})}\n\n"
+                    yield f"data: {json.dumps({'token': token}, ensure_ascii=False)}\n\n"
                 if meta:
-                    yield f"data: {json.dumps({'meta': meta})}\n\n"
+                    yield f"data: {json.dumps({'meta': _serialize_meta(meta)}, ensure_ascii=False)}\n\n"
         except Exception as e:
             yield f"data: {json.dumps({'error': str(e)})}\n\n"
         yield f"data: [DONE]\n\n"

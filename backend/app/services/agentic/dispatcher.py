@@ -178,23 +178,18 @@ async def dispatch_stream(
 
     if intent == "search":
         agent = SearchAgent(session=session)
-        result = await agent.search(message=message, filters=filters)
-        recommendations = result.get("recommendations", [])
-        meta["recommendations"] = [
-            {"property_id": r["property_id"], "match_reason": r.get("match_reason", ""),
-             "poi_distances": r.get("poi_distances") or {}}
-            for r in recommendations
-        ]
-        meta["guided_options"] = result.get("guided_options", [])
-        # 搜索的 AI 回复已在 search() 中生成，这里逐字 yield
-        full_reply = result.get("reply", "")
-        # 模拟流式：每 3 个字 yield 一次
-        import asyncio
-        for i in range(0, len(full_reply), 3):
-            chunk = full_reply[i:i+3]
-            yield chunk, None
-            await asyncio.sleep(0.01)
-        yield None, meta
+        # 真流式：LLM 逐 token 透传，meta（卡片+引导选项）最后到达
+        async for event in agent.search_stream(message=message, filters=filters):
+            if event["type"] == "token":
+                full_reply += event["text"]
+                yield event["text"], None
+            elif event["type"] == "meta":
+                full_reply = event.get("reply") or full_reply
+                recommendations = event.get("recommendations", [])
+                meta["recommendations"] = recommendations
+                meta["top_picks"] = event.get("top_picks", [])
+                meta["guided_options"] = event.get("guided_options", [])
+                yield None, meta
 
     elif intent == "general":
         msgs = [{"role": "system", "content": "你是留学生租房顾问，口语化中文回答，1-2句话。"}]

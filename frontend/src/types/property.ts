@@ -22,6 +22,7 @@ export interface Property {
   district: string
   country?: string
   price_monthly: number
+  currency?: string | null
   area_sqm: number | null
   bedrooms: number
   bathrooms: number
@@ -33,6 +34,7 @@ export interface Property {
   available_from?: string | null
   min_stay_months?: number
   deposit_type?: DepositType | null
+  special_offer?: string | null
   version: number
   deleted_at?: string | null
   created_at: string

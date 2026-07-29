@@ -67,6 +67,25 @@ async def load_unit_type_poi(
     return result
 
 
+def attach_poi_distances(
+    unit_results: list[dict],
+    poi_by_ut: dict[int, dict],
+) -> None:
+    """给每个候选注入 `_poi_distances`：所有注册类目里有数据的最近距离。
+
+    与是否选中偏好无关——首轮（用户还没选任何周边）卡片上也要能展示
+    「地铁 350m / 超市 200m」。原地修改，不返回值。
+    """
+    for ut in unit_results:
+        poi_data = poi_by_ut.get(ut["unit_type"].id)
+        distances: dict[str, int] = {}
+        for pref in POI_PREFERENCES.values():
+            meters = nearest_poi_meters(poi_data, pref.category)
+            if meters is not None:
+                distances[pref.key] = meters
+        ut["_poi_distances"] = distances
+
+
 def rank_by_poi(
     unit_results: list[dict],
     poi_by_ut: dict[int, dict],
@@ -76,7 +95,8 @@ def rank_by_poi(
 
     每套的 POI 分 = 各选中类目 poi_distance_score 的均值；无数据取中性分。
     原顺序（价格升序）作为同分时的稳定次序保留。
-    返回：重排后的 unit_results（每项注入 `_poi_score` 与 `_poi_distances`）。
+    返回：重排后的 unit_results（每项注入 `_poi_score`）。
+    注意：`_poi_distances` 由 attach_poi_distances 统一注入（全类目），此处不覆盖。
     """
     if not pref_keys or not unit_results:
         return unit_results
@@ -89,15 +109,11 @@ def rank_by_poi(
     for idx, ut in enumerate(unit_results):
         ut_id = ut["unit_type"].id
         poi_data = poi_by_ut.get(ut_id)
-        distances: dict[str, int] = {}
         scores: list[int] = []
         for pref in prefs:
             meters = nearest_poi_meters(poi_data, pref.category)
-            if meters is not None:
-                distances[pref.key] = meters
             scores.append(poi_distance_score(meters, pref.near_m))
         ut["_poi_score"] = sum(scores) / len(scores) if scores else 0.0
-        ut["_poi_distances"] = distances
         ut["_orig_index"] = idx
 
     # 高分在前；同分保持原价格升序（_orig_index 升序）
