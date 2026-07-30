@@ -114,6 +114,15 @@
         <el-divider>联系方式</el-divider>
         <el-form-item label="负责人姓名"><el-input v-model="f.mgrName" /></el-form-item>
         <el-form-item label="负责人电话"><el-input v-model="f.mgrPhone" /></el-form-item>
+        <el-form-item label="负责人微信"><el-input v-model="f.mgrWechat" placeholder="选填" /></el-form-item>
+        <el-form-item label="微信二维码">
+          <div style="display:flex;gap:8px;align-items:center">
+            <el-image v-if="f.mgrWechatQr" :src="mgrQrPreview" style="width:48px;height:48px;border-radius:4px" fit="cover" />
+            <input ref="mgrQrInput" type="file" accept="image/*" style="display:none" @change="onMgrQrUpload" />
+            <el-button size="small" @click="($refs.mgrQrInput as any)?.click()">{{ f.mgrWechatQr ? '更换' : '上传二维码' }}</el-button>
+            <el-button v-if="f.mgrWechatQr" size="small" type="danger" @click="f.mgrWechatQr=''">删除</el-button>
+          </div>
+        </el-form-item>
         <el-form-item label="负责人邮箱"><el-input v-model="f.mgrEmail" /></el-form-item>
         <el-form-item label="前台电话"><el-input v-model="f.contact_phone" /></el-form-item>
 
@@ -205,7 +214,7 @@ const mapEl = ref<HTMLElement|null>(null)
 const f = reactive({
   name:'', address:'', contact_phone:'', description:'',
   country:'', city:'', district:'', street:'', postalCode:'',
-  mgrName:'', mgrPhone:'', mgrEmail:'',
+  mgrName:'', mgrPhone:'', mgrWechat:'', mgrWechatQr:'', mgrEmail:'',
   lat:null as number|null, lng:null as number|null,
   femaleOnly:false, couplesAllowed:false
 })
@@ -228,6 +237,19 @@ function filterCountries(query: string, cb: Function) {
 
 // 是否可以执行地理编码（至少填了国家或城市）
 const canGeocode = computed(() => !!(f.country || f.city))
+
+const mgrQrTempUrl = ref('')  // 上传后的临时完整URL用于预览
+async function onMgrQrUpload(e: Event) {
+  const file = (e.target as HTMLInputElement).files?.[0]
+  if (!file) return
+  const fd = new FormData(); fd.append('files', file)
+  try {
+    const r = await api.post('/upload/temp', fd, { headers: { 'Content-Type': 'multipart/form-data' } })
+    mgrQrTempUrl.value = r.data.urls?.[0] || ''
+    f.mgrWechatQr = mgrQrTempUrl.value.split('/').pop() || ''
+  } catch { ElMessage.error('上传失败') }
+}
+const mgrQrPreview = computed(() => mgrQrTempUrl.value || (f.mgrWechatQr ? '/api/v1/uploads/' + f.mgrWechatQr : ''))
 
 // 保存按钮禁用逻辑：新建时必须有坐标
 const saveDisabledReason = computed(() => {
@@ -344,7 +366,7 @@ async function onDialogOpened(){
 function closeDialog(){
   destroyMap()
   show.value = false
-  Object.assign(f,{name:'',address:'',contact_phone:'',description:'',country:'',city:'',district:'',street:'',postalCode:'',mgrName:'',mgrPhone:'',mgrEmail:'',lat:null,lng:null,femaleOnly:false,couplesAllowed:false})
+  Object.assign(f,{name:'',address:'',contact_phone:'',description:'',country:'',city:'',district:'',street:'',postalCode:'',mgrName:'',mgrPhone:'',mgrWechat:'',mgrWechatQr:'',mgrEmail:'',lat:null,lng:null,femaleOnly:false,couplesAllowed:false})
   selectedAmenities.value=[]
   uploadedImages.value=[]
   editId.value=null
@@ -364,7 +386,7 @@ async function hardDeleteBuilding(id:number){try{await api.delete('/buildings/'+
 
 async function openCreate(){
   editId.value=null
-  Object.assign(f,{name:'',address:'',contact_phone:'',description:'',country:'',city:'',district:'',street:'',postalCode:'',mgrName:'',mgrPhone:'',mgrEmail:'',lat:null,lng:null,femaleOnly:false,couplesAllowed:false})
+  Object.assign(f,{name:'',address:'',contact_phone:'',description:'',country:'',city:'',district:'',street:'',postalCode:'',mgrName:'',mgrPhone:'',mgrWechat:'',mgrWechatQr:'',mgrEmail:'',lat:null,lng:null,femaleOnly:false,couplesAllowed:false})
   selectedAmenities.value=[]; uploadedImages.value=[]
   show.value=true
 }
@@ -382,7 +404,7 @@ async function openEdit(b:any){
   try{
     const r=await api.get('/buildings/'+b.id+'/staff',{params:{_t:Date.now()}})
     const mgr=(r.data||[]).find((s:any)=>s.role==='manager')
-    if(mgr){f.mgrName=mgr.name||'';f.mgrPhone=mgr.phone||'';f.mgrEmail=mgr.notes||''}
+    if(mgr){f.mgrName=mgr.name||'';f.mgrPhone=mgr.phone||'';f.mgrWechat=mgr.wechat||'';f.mgrWechatQr=mgr.wechat_qr||'';f.mgrEmail=mgr.notes||''}
   }catch(e){}
   show.value=true
 }
@@ -401,6 +423,7 @@ async function save(){
     postal_code:f.postalCode.trim()||null,
     contact_phone:f.contact_phone.trim(),
     description:f.description.trim(),manager_name:f.mgrName.trim(),manager_phone:f.mgrPhone.trim(),
+    manager_wechat:f.mgrWechat.trim(),manager_wechat_qr:f.mgrWechatQr||null,
     manager_email:f.mgrEmail.trim(),amenities:selectedAmenities.value.length?selectedAmenities.value:null,
     female_only:f.femaleOnly,couples_allowed:f.couplesAllowed,
   }

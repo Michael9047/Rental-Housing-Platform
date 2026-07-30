@@ -13,24 +13,39 @@ from app.schemas.unit_type import UnitTypeCreate, UnitTypeUpdate
 
 
 def _move_temp_images(urls: list[str]) -> list[str]:
-    """将临时上传的图片从 temp/ 移到 uploads/ 根目录"""
+    """将上传的图片关联到户型，生成唯一文件名。优先从 temp 移动，若已移动则从根目录复制。"""
     from app.core.config import get_settings
     settings = get_settings()
     upload_root = Path(settings.upload_dir).resolve()
     result = []
     for url in urls:
-        fn = url.rsplit("/", 1)[-1] if "/" in url else url
-        src = None
+        old_fn = url.rsplit("/", 1)[-1] if "/" in url else url
+        ext = Path(old_fn).suffix or ".png"
+        new_fn = f"{_uuid.uuid4().hex}{ext}"
+        found = False
+
+        # 1) 尝试从 temp 目录移动
         if "/temp/" in url and "/api/v1/uploads/" in url:
             rel = url.split("/api/v1/uploads/", 1)[-1]
             src = upload_root / rel
-        if src and src.exists():
-            dst = upload_root / fn
-            try:
-                shutil.move(str(src), str(dst))
-            except Exception:
-                pass
-        result.append(fn)
+            if src.exists():
+                try:
+                    shutil.move(str(src), str(upload_root / new_fn))
+                    found = True
+                except Exception:
+                    pass
+
+        # 2) temp 不存在，尝试从根目录找（之前失败的提交可能已经移动了文件）
+        if not found:
+            root_src = upload_root / old_fn
+            if root_src.exists():
+                try:
+                    shutil.copy2(str(root_src), str(upload_root / new_fn))
+                    found = True
+                except Exception:
+                    pass
+
+        result.append(new_fn)
     return result
 
 
@@ -58,6 +73,7 @@ class UnitTypeService:
             deposit_amount=data.deposit_amount, deposit_type=data.deposit_type,
             lease_start=data.lease_start, lease_start_date=data.lease_start_date,
             lease_end=data.lease_end, lease_end_date=data.lease_end_date,
+            rental_requirements=data.rental_requirements,
             currency=data.currency, special_offer=data.special_offer,
             floor_pricing=data.floor_pricing, amenities=data.amenities,
             description=data.description,
@@ -65,6 +81,20 @@ class UnitTypeService:
             status=data.status,
         )
         self.session.add(ut)
+        await self.session.flush()
+
+        # 处理图片：从 image_urls 创建 UnitTypeImage 记录
+        image_urls = getattr(data, 'image_urls', None) or []
+        if image_urls:
+            permanent = _move_temp_images(image_urls)
+            for idx, fn in enumerate(permanent):
+                img = UnitTypeImage(
+                    unit_type_id=ut.id, filename=fn, original_name=fn,
+                    mime_type='image/jpeg', file_size=0,
+                    sort_order=idx, is_primary=(idx == 0),
+                )
+                self.session.add(img)
+
         await self.session.commit()
         await self.session.refresh(ut)
 
@@ -75,7 +105,6 @@ class UnitTypeService:
         await self._audit("创建户型", ut.id, {"描述": desc, "户型名": ut.name, "公寓": inst_name, "月租": str(ut.base_rent)})
 
         if ut.institute_id:
-            inst = await self.session.get(Institute, ut.institute_id)
             ut._institute_name = inst.name if inst else None
             ut._institute_business_id = inst.business_id if inst else None
         return ut
@@ -109,8 +138,27 @@ class UnitTypeService:
         ut = await self.get(unit_type_id)
         if not ut: return None
         update_data = data.model_dump(exclude_unset=True)
+        # image_urls 不映射到模型列，单独处理
+        image_urls = update_data.pop('image_urls', None)
         old_vals = {k: str(getattr(ut, k, '') or '') for k in update_data}
         for k, v in update_data.items(): setattr(ut, k, v)
+        await self.session.flush()
+
+        if image_urls is not None:
+            # 删除旧图片记录
+            from sqlalchemy import delete as _delete
+            await self.session.execute(_delete(UnitTypeImage).where(UnitTypeImage.unit_type_id == unit_type_id))
+            # 创建新图片记录
+            if image_urls:
+                permanent = _move_temp_images(image_urls)
+                for idx, fn in enumerate(permanent):
+                    img = UnitTypeImage(
+                        unit_type_id=ut.id, filename=fn, original_name=fn,
+                        mime_type='image/jpeg', file_size=0,
+                        sort_order=idx, is_primary=(idx == 0),
+                    )
+                    self.session.add(img)
+
         await self.session.commit()
         await self.session.refresh(ut)
         from app.models.institute import Institute

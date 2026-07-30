@@ -18,10 +18,12 @@ class UnitTypeCreate(BaseModel):
     lease_start_date: date | None = None
     lease_end: str | None = None
     lease_end_date: date | None = None
+    rental_requirements: str | None = None  # 选填，替代起止租期
     currency: str | None = None
     special_offer: str | None = None
     floor_pricing: list[dict] | None = None
     amenities: list[str] | None = None
+    image_urls: list[str] | None = None  # 临时上传的图片 URL 列表
     description: str | None = Field(default=None, max_length=2000)
     available_from: date | None = None
     min_stay_months: int = Field(default=3, ge=1)
@@ -43,10 +45,12 @@ class UnitTypeUpdate(BaseModel):
     lease_start_date: date | None = None
     lease_end: str | None = None
     lease_end_date: date | None = None
+    rental_requirements: str | None = None
     currency: str | None = None
     special_offer: str | None = None
     floor_pricing: list[dict] | None = None
     amenities: list[str] | None = None
+    image_urls: list[str] | None = None
     description: str | None = Field(default=None, max_length=2000)
     available_from: date | None = None
     min_stay_months: int | None = Field(default=None, ge=1)
@@ -73,6 +77,7 @@ class UnitTypeRead(BaseModel):
     lease_start_date: date | None = None
     lease_end: str | None = None
     lease_end_date: date | None = None
+    rental_requirements: str | None = None
     currency: str | None = None
     special_offer: str | None = None
     floor_pricing: list[dict] | None = None

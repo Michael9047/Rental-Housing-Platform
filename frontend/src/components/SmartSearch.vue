@@ -275,7 +275,7 @@ function selectSchool(school: SuggestionSchool) {
 function selectProperty(prop: SuggestionProperty) {
   showSuggestions.value = false
   query.value = ''
-  router.push(`/property/${prop.id}`)
+  router.push(`/room/${prop.id}`)
 }
 
 // 回车搜索：有唯一匹配建议时自动选中，否则按原始文本搜索

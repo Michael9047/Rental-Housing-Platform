@@ -218,7 +218,10 @@ async function loadTrash() {
   trashLoading.value = true
   try {
     const r = await api.get('/unit-types/recycle-bin', { params: { page_size: 2000 } })
-    trashItems.value = r.data.items || []
+    trashItems.value = (r.data.items || []).map((ut: any) => ({
+      ...ut,
+      image_urls: (ut.images || []).map((img: any) => '/api/v1/uploads/' + img.filename),
+    }))
   } catch { /* */ }
   finally { trashLoading.value = false }
 }
@@ -257,7 +260,10 @@ async function fetchList() {
     const params: any = { page_size: 500 }
     if (filterInstituteId.value) params.institute_id = filterInstituteId.value
     const r = await api.get('/unit-types', { params })
-    allUnitTypes.value = r.data.items || []
+    allUnitTypes.value = (r.data.items || []).map((ut: any) => ({
+      ...ut,
+      image_urls: (ut.images || []).map((img: any) => '/api/v1/uploads/' + img.filename),
+    }))
     // 自动展开有数据的公寓
     expandedIds.value = new Set(
       buildings.value.filter(b => getBuildingUnitTypes(b.id).length > 0).map(b => b.id)

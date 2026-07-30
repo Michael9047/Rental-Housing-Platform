@@ -14,6 +14,7 @@ def property_to_dict(prop: Property) -> dict[str, Any]:
         "title": prop.title,
         "district": prop.district,
         "address": prop.address,
+        "currency": getattr(prop, 'currency', None),
         "price_monthly": float(prop.price_monthly),
         "area_sqm": float(prop.area_sqm) if prop.area_sqm else None,
         "bedrooms": prop.bedrooms,

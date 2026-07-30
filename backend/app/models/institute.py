@@ -2,7 +2,7 @@
 import enum
 from decimal import Decimal
 from sqlalchemy import Boolean, Enum, ForeignKey, Numeric, String, Text as SAText, text
-from sqlalchemy.dialects.postgresql import ARRAY, JSON
+from sqlalchemy.dialects.postgresql import JSON
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.models.mixins import TimestampMixin
 from app.db.session import Base
@@ -25,7 +25,7 @@ class Institute(TimestampMixin, Base):
     name_cn: Mapped[str | None] = mapped_column(String(200), nullable=True)
     abbreviation: Mapped[str | None] = mapped_column(String(50), nullable=True)
     address: Mapped[str | None] = mapped_column(String(300))
-    # 结构化地址字段（严谨化改造）
+    # 结构化地址字段
     country: Mapped[str | None] = mapped_column(String(100), nullable=True)
     city: Mapped[str | None] = mapped_column(String(100), nullable=True)
     district: Mapped[str | None] = mapped_column(String(100), nullable=True)
@@ -36,7 +36,7 @@ class Institute(TimestampMixin, Base):
     contact_phone: Mapped[str | None] = mapped_column(String(32))
     contact_email: Mapped[str | None] = mapped_column(String(255))
     logo_url: Mapped[str | None] = mapped_column(String(500))
-    amenities: Mapped[list[str] | None] = mapped_column(ARRAY(String(50)), nullable=True)
+    amenities: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
     female_only: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, server_default=text("false"))
     couples_allowed: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, server_default=text("false"))
     description: Mapped[str | None] = mapped_column(SAText)

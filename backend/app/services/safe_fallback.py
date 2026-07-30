@@ -38,7 +38,7 @@ FILTER_LABELS: dict[str, str] = {
 
 # 房源类型中文映射
 TYPE_LABELS: dict[str, str] = {
-    "apartment": "公寓",
+    "studio": "单间", "1-bed": "一室", "2-bed": "两室+", "shared": "合租", "house": "别墅",
     "house": "别墅",
     "studio": "单间",
     "shared": "合租",

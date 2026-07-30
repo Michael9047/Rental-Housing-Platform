@@ -76,19 +76,21 @@ class ColoredFormatter(logging.Formatter):
 
 def setup_logging() -> None:
     """Configure root logger with structured JSON (prod) or colored console (dev)."""
+    import io
     root = logging.getLogger()
     root.setLevel(logging.DEBUG if settings.debug else logging.INFO)
 
-    # Remove existing handlers to avoid duplication
     for handler in root.handlers[:]:
         root.removeHandler(handler)
 
+    utf8_stream = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+
     if settings.environment == "production":
-        handler = logging.StreamHandler(sys.stdout)
+        handler = logging.StreamHandler(utf8_stream)
         handler.setFormatter(JsonFormatter())
         handler.setLevel(logging.INFO)
     else:
-        handler = logging.StreamHandler(sys.stdout)
+        handler = logging.StreamHandler(utf8_stream)
         handler.setFormatter(ColoredFormatter())
         handler.setLevel(logging.DEBUG)
 

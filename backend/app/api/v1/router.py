@@ -5,10 +5,10 @@ from app.api.v1.routes import (
     admin, agent, ai_search, auth, bookings,
     building_staff, buildings, chat, commute, contracts,
     dashboard, favorites, geocoding, health,
-    imports, map_routes, ml, notifications, orders,
+    imports, map_routes, me, ml, notifications, orders,
     payments, pms, pois, properties, repair_workers, repairs,
     properties_compat, rooms, room_transfers, search_suggestions, tenants,
-    unit_types, upload, users, wechat,
+    unit_types, upload, users, visit_messages, wechat,
 )
 
 api_router = APIRouter()
@@ -16,6 +16,7 @@ api_router = APIRouter()
 # 核心
 api_router.include_router(health.router, tags=["health"])
 api_router.include_router(auth.router, prefix="/auth", tags=["auth"])
+api_router.include_router(me.router, prefix="/me", tags=["me"])
 api_router.include_router(users.router, prefix="/users", tags=["users"])
 
 # 三层架构核心
@@ -23,8 +24,8 @@ api_router.include_router(buildings.router, tags=["buildings"])
 
 api_router.include_router(unit_types.router, prefix="/unit-types", tags=["unit-types"])
 api_router.include_router(rooms.router, prefix="/rooms", tags=["rooms"])
-# api_router.include_router(properties.router, prefix="/properties", tags=["properties"])  # 旧架构路由——三层改造后数据不兼容，禁用
-api_router.include_router(properties_compat.router, tags=["properties-compat"])  # 旧接口兼容——返回空列表避免前端404
+api_router.include_router(properties.router, prefix="/properties", tags=["properties"])  # 已修复 PropertyService 适配三层架构
+# api_router.include_router(properties_compat.router, tags=["properties-compat"])  # 不再需要兼容 shim
 
 # 配套模块
 api_router.include_router(building_staff.router, tags=["building-staff"])
@@ -53,7 +54,8 @@ api_router.include_router(dashboard.router, tags=["dashboard"])
 api_router.include_router(map_routes.router, prefix="/map", tags=["map"])
 api_router.include_router(agent.router, prefix="/agent", tags=["agent"])
 # api_router.include_router(ml.router, tags=["ml"])
-# api_router.include_router(repairs.router, tags=["repairs"])
-# api_router.include_router(repair_workers.router, tags=["repair-workers"])
+api_router.include_router(repairs.router, tags=["repairs"])
+api_router.include_router(repair_workers.router, tags=["repair-workers"])
 # api_router.include_router(pms.router, prefix="/pms", tags=["pms"])
+api_router.include_router(visit_messages.router, tags=["visit-messages"])
 # api_router.include_router(commute.router, prefix="/commute", tags=["commute"])

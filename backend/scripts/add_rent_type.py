@@ -25,7 +25,7 @@ async def main():
         print(f"Type may already exist: {e}")
     
     try:
-        await conn.execute("ALTER TABLE properties ADD COLUMN rent_type rent_type DEFAULT 'monthly'")
+        await conn.execute("ALTER TABLE rooms ADD COLUMN rent_type rent_type DEFAULT 'monthly'")
         print("Column added")
     except Exception as e:
         print(f"Column may already exist: {e}")

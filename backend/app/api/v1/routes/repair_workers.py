@@ -17,6 +17,7 @@ def _worker_to_read(worker) -> WorkerRead:
         user_id=worker.user_id,
         manager_id=worker.manager_id,
         status=worker.status,
+        scope=worker.scope,
         skills=worker.skills,
         phone=worker.phone,
         total_jobs=worker.total_jobs,
@@ -30,12 +31,16 @@ def _worker_to_read(worker) -> WorkerRead:
 async def create_worker(
     worker_in: WorkerCreate,
     session: AsyncSession = Depends(get_db_session),
-    current_user: User = Depends(require_landlord),
+    current_user: User = Depends(get_current_user),
 ):
-    """房东创建维修师傅账号"""
+    """创建维修师傅账号（房东创建apartment类型，Admin创建platform类型）"""
+    if current_user.role not in {UserRole.landlord, UserRole.admin}:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Landlord or admin role required")
+    # Admin 创建 platform 工人时 manager 为 admin 自己
+    manager_id = current_user.id
     svc = WorkerService(session)
     try:
-        worker = await svc.create_worker(current_user.id, worker_in)
+        worker = await svc.create_worker(manager_id, worker_in)
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     return _worker_to_read(worker)

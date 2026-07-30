@@ -156,7 +156,7 @@ class PMSSyncService:
             "district": mapped.get("district", "Unknown"),
             "price_monthly": mapped.get("price_monthly", 0),
             "country": mapped.get("country", "GB"),
-            "property_type": mapped.get("property_type", "apartment"),
+            "property_type": mapped.get("property_type", "1-bed"),
             "status": mapped.get("status", "available"),
             "rent_type": mapped.get("rent_type", "monthly"),
             "description": mapped.get("description"),

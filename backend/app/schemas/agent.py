@@ -11,7 +11,7 @@ from app.schemas.property import PropertySearchResult
 class AgentSessionResponse(BaseModel):
     session_id: int
     session_uuid: str
-    cart_id: int
+    cart_id: int | None = None
     title: str | None = None
 
 

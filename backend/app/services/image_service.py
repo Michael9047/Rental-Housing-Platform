@@ -20,7 +20,7 @@ class ImageService:
         return Path(self.settings.upload_dir).resolve()
 
     async def count_by_property(self, property_id: int) -> int:
-        stmt = select(PropertyImage).where(PropertyImage.property_id == property_id)
+        stmt = select(PropertyImage).where(PropertyImage.room_id == property_id)
         result = await self.session.scalars(stmt)
         return len(list(result))
 
@@ -73,7 +73,7 @@ class ImageService:
         # Unset all other primary images for this property
         stmt = (
             update(PropertyImage)
-            .where(PropertyImage.property_id == image.property_id)
+            .where(PropertyImage.room_id == image.property_id)
             .values(is_primary=False)
         )
         await self.session.execute(stmt)
@@ -87,7 +87,7 @@ class ImageService:
     async def get_by_property(self, property_id: int) -> list[PropertyImage]:
         stmt = (
             select(PropertyImage)
-            .where(PropertyImage.property_id == property_id)
+            .where(PropertyImage.room_id == property_id)
             .order_by(PropertyImage.sort_order, PropertyImage.id)
         )
         result = await self.session.scalars(stmt)

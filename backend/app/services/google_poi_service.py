@@ -489,3 +489,120 @@ class GooglePOIService:
             if kw in result_map:
                 result_map[kw] = self.dedup_by_name(result_map[kw], 50)
         return result_map
+
+    # ── DB 持久化方法（替代 POIService） ──────────────────────────
+
+    async def generate_and_save(self, prop, session) -> "PropertyPOI | None":
+        """全量 POI 搜索 + 组装 + 写入 PropertyPOI。替代 POIService.generate_poi_for_property()。"""
+        from datetime import datetime, timezone
+        from app.models.poi import PropertyPOI
+        from sqlalchemy import select as sa_select
+
+        lat = float(prop.latitude) if prop.latitude else None
+        lng = float(prop.longitude) if prop.longitude else None
+        if lat is None or lng is None:
+            logger.warning("GooglePOIService.generate_and_save: property %s missing coordinates", prop.id)
+            return None
+
+        try:
+            result_map = await self.search_all(lat, lng, radius_m=2000)
+            item_map = {kw: [POIItem(**p) for p in pois] for kw, pois in result_map.items()}
+            item_map = self.apply_all_dedup(item_map)
+
+            # 组装 map_poi_data
+            map_categories: dict[str, list[dict]] = {}
+            for kw in KW_ORDER:
+                if kw in item_map and item_map[kw]:
+                    items = [{"id": p.place_id or p.name, "name": p.name, "lat": p.lat, "lng": p.lng,
+                              "distance": p.distance_m, "line": [ln.get("ref", "") for ln in p.transit_lines] if p.transit_lines else []}
+                             for p in item_map[kw]]
+                    if items:
+                        parent = next((cat for cat, kws in CATEGORIES.items() if kw in kws), "其他")
+                        map_categories.setdefault(parent, []).extend(items)
+
+            map_poi_data = {"search_radius_m": 2000, "categories": map_categories}
+
+            # 组装 poi_data
+            poi_data: dict[str, list[dict]] = {}
+            for cat, kws in CATEGORIES.items():
+                if cat == "地标":
+                    continue
+                cat_items = []
+                for kw in kws:
+                    if kw in item_map:
+                        for p in item_map[kw][:5]:
+                            cat_items.append({"name": p.name, "distance": f"{p.distance_m}m", "keyword": kw, "rating": p.rating})
+                if cat_items:
+                    poi_data[cat] = sorted(cat_items, key=lambda x: int(x["distance"].rstrip("m")))
+
+            # 组装 content
+            address_parts = [p for p in [prop.address, prop.district] if p]
+            base = address_parts[0] if address_parts else "该房源"
+            lines = [f"该房源位于{base}，周边配套设施如下："]
+            for cat, items in poi_data.items():
+                if items:
+                    names = "、".join(i["name"] for i in items[:3])
+                    lines.append(f"{cat}：{names}等{len(items)}项")
+            content = "\n".join(lines) if len(lines) > 1 else f"该房源位于{base}，周边配套设施较少。"
+
+            # Upsert
+            result = await session.execute(sa_select(PropertyPOI).where(PropertyPOI.property_id == prop.id))
+            poi_record = result.scalar_one_or_none()
+            if poi_record:
+                poi_record.content = content
+                poi_record.poi_data = poi_data
+                poi_record.map_poi_data = map_poi_data
+                poi_record.generated_at = datetime.now(timezone.utc)
+            else:
+                poi_record = PropertyPOI(property_id=prop.id, content=content, poi_data=poi_data,
+                                         map_poi_data=map_poi_data, generated_at=datetime.now(timezone.utc), reviewed=False)
+                session.add(poi_record)
+            await session.commit()
+            await session.refresh(poi_record)
+            return poi_record
+
+        except Exception:
+            logger.exception("GooglePOIService.generate_and_save failed for property %s", prop.id)
+            return None
+
+    async def get_or_generate_map_pois(self, property_id: int, session) -> dict | None:
+        """获取地图 POI——有缓存直接返回，否则 Google 搜索并持久化。替代 POIService.get_or_generate_map_pois()。"""
+        from app.models.poi import PropertyPOI
+        from app.models.property import Property
+        from sqlalchemy import select as sa_select
+
+        result = await session.execute(sa_select(PropertyPOI).where(PropertyPOI.property_id == property_id))
+        poi = result.scalar_one_or_none()
+        if poi and poi.map_poi_data:
+            return poi.map_poi_data
+
+        prop = await session.get(Property, property_id)
+        if not prop:
+            return None
+
+        saved = await self.generate_and_save(prop, session)
+        return saved.map_poi_data if saved else None
+
+    async def get_or_generate_poi(self, property_id: int, session) -> "PropertyPOI | None":
+        """获取 POI——有缓存返回，否则生成。替代 POIService.get_or_generate_poi()。"""
+        from app.models.poi import PropertyPOI
+        from app.models.property import Property
+        from sqlalchemy import select as sa_select
+
+        result = await session.execute(sa_select(PropertyPOI).where(PropertyPOI.property_id == property_id))
+        poi = result.scalar_one_or_none()
+        if poi:
+            return poi
+
+        prop = await session.get(Property, property_id)
+        if not prop:
+            return None
+        return await self.generate_and_save(prop, session)
+
+    @staticmethod
+    async def get_poi(property_id: int, session) -> "PropertyPOI | None":
+        """纯读取 POI 记录。"""
+        from app.models.poi import PropertyPOI
+        from sqlalchemy import select as sa_select
+        result = await session.execute(sa_select(PropertyPOI).where(PropertyPOI.property_id == property_id))
+        return result.scalar_one_or_none()

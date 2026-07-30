@@ -46,6 +46,8 @@ class InstituteCreate(BaseModel):
     # 负责人（保存时同步到 building_staff）
     manager_name: str | None = Field(default=None, max_length=100)
     manager_phone: str | None = Field(default=None, max_length=32)
+    manager_wechat: str | None = Field(default=None, max_length=100)
+    manager_wechat_qr: str | None = Field(default=None, max_length=255)
     manager_email: str | None = Field(default=None, max_length=255)
 
     # 图片
@@ -83,6 +85,8 @@ class InstituteUpdate(BaseModel):
 
     manager_name: str | None = Field(default=None, max_length=100)
     manager_phone: str | None = Field(default=None, max_length=32)
+    manager_wechat: str | None = Field(default=None, max_length=100)
+    manager_wechat_qr: str | None = Field(default=None, max_length=255)
     manager_email: str | None = Field(default=None, max_length=255)
 
     image_urls: list[str] | None = None

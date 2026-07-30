@@ -1,0 +1,846 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🏗</text></svg>">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Agent 工作流全景图 — Dispatcher 架构</title>
+<style>
+  :root {
+    --bg: #0f1117; --card: #161822; --border: #252836;
+    --text: #cdd6f4; --muted: #6c7086; --accent: #89b4fa;
+    --green: #a6e3a1; --red: #f38ba8; --yellow: #f9e2af;
+    --orange: #fab387; --purple: #cba6f7; --teal: #94e2d5;
+    --blue: #74c7ec; --pink: #f5c2e7;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { background:var(--bg); color:var(--text); font:14px/1.6 system-ui,'PingFang SC','Microsoft YaHei',sans-serif; padding:20px; }
+  h1 { font-size:28px; margin-bottom:4px; }
+  h2 { font-size:20px; margin:32px 0 12px; padding-bottom:8px; border-bottom:2px solid var(--border); }
+  h3 { font-size:16px; margin:16px 0 8px; }
+
+  .badge { display:inline-block; padding:2px 10px; border-radius:10px; font-size:11px; font-weight:600; }
+  .b-active { background:#1a3824; color:var(--green); }
+  .b-orphan { background:#3a3a1a; color:var(--yellow); }
+  .b-legacy { background:#3a1a1a; color:var(--red); }
+  .b-llm { background:#2a1a38; color:var(--purple); }
+  .b-rule { background:#1a2838; color:var(--teal); }
+  .b-crud { background:#1a2a38; color:var(--blue); }
+
+  .verdict { padding:12px 16px; border-radius:8px; margin:12px 0; font-weight:600; }
+  .v-yes { background:#1a3824; color:var(--green); border:1px solid #2a5840; }
+  .v-warn { background:#3a3a1a; color:var(--yellow); border:1px solid #5a5a2a; }
+  .v-no { background:#3a1a1a; color:var(--red); border:1px solid #5a2a2a; }
+
+  .grid-2 { display:grid; grid-template-columns:1fr 1fr; gap:20px; }
+  .grid-3 { display:grid; grid-template-columns:repeat(3,1fr); gap:20px; }
+
+  .card { background:var(--card); border:1px solid var(--border); border-radius:10px; padding:20px; }
+  .card.green { border-color:#1a3824; }
+  .card.blue { border-color:#1a2a38; }
+  .card.purple { border-color:#2a1a38; }
+  .card.red { border-color:#3a1a1a; }
+  .card.teal { border-color:#1a3838; }
+  .card.orange { border-color:#3a2a1a; }
+  .card.yellow { border-color:#3a3a1a; }
+
+  .card-header { display:flex; align-items:center; gap:8px; margin-bottom:12px; }
+  .agent-num { width:28px; height:28px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-weight:800; font-size:14px; }
+
+  .flow { display:flex; align-items:center; gap:8px; flex-wrap:wrap; padding:12px 0; font-family:'JetBrains Mono','Fira Code',monospace; font-size:12px; }
+  .flow-node { padding:6px 12px; border-radius:6px; font-weight:600; white-space:nowrap; font-size:12px; }
+  .flow-arrow { color:var(--muted); font-size:14px; }
+  .fn-input { background:#1a1a2a; color:var(--text); border:1px solid #2a2a4a; }
+  .fn-llm { background:#2a1a38; color:var(--purple); border:1px solid #4a2a5a; }
+  .fn-db { background:#1a2a38; color:var(--blue); border:1px solid #1e3a5a; }
+  .fn-api { background:#1a3828; color:var(--green); border:1px solid #1e4a3a; }
+  .fn-code { background:#2a2a1a; color:var(--yellow); border:1px solid #4a4a1e; }
+  .fn-out { background:#1a2830; color:var(--teal); border:1px solid #1e3a4a; }
+
+  .steps { list-style:none; }
+  .steps li { padding:8px 0; border-bottom:1px solid var(--border); display:flex; align-items:flex-start; gap:10px; }
+  .steps li:last-child { border-bottom:none; }
+  .step-num { min-width:26px; height:26px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:700; flex-shrink:0; }
+  .step-num.llm { background:#2a1a38; color:var(--purple); }
+  .step-num.db { background:#1a2a38; color:var(--blue); }
+  .step-num.api { background:#1a3828; color:var(--green); }
+  .step-num.code { background:#2a2a1a; color:var(--yellow); }
+  .step-num.rule { background:#1a2838; color:var(--teal); }
+  .step-content { flex:1; }
+  .step-title { font-weight:600; }
+  .step-detail { color:var(--muted); font-size:12px; }
+
+  table { width:100%; border-collapse:collapse; font-size:13px; margin:12px 0; }
+  th { text-align:left; padding:8px 10px; border-bottom:2px solid var(--border); color:var(--accent); font-size:11px; text-transform:uppercase; }
+  td { padding:8px 10px; border-bottom:1px solid var(--border); vertical-align:top; }
+  tr:hover td { background:rgba(255,255,255,0.02); }
+
+  .section-nav { position:sticky; top:8px; background:var(--card); border:1px solid var(--border); border-radius:10px; padding:12px 16px; margin-bottom:24px; display:flex; gap:16px; flex-wrap:wrap; z-index:10; }
+  .section-nav a { color:var(--accent); text-decoration:none; font-size:13px; }
+  .section-nav a:hover { text-decoration:underline; }
+
+  pre { background:#0a0b10; padding:12px; border-radius:8px; font-size:12px; overflow-x:auto; }
+
+  .arch-diagram {
+    background: var(--card); border: 1px solid var(--border); border-radius: 12px;
+    padding: 24px; text-align: center; margin: 16px 0;
+  }
+  .arch-row { display: flex; justify-content: center; gap: 12px; align-items: center; margin: 8px 0; flex-wrap: wrap; }
+  .arch-box {
+    padding: 10px 18px; border-radius: 8px; font-size: 13px; font-weight: 600;
+    text-align: center; min-width: 100px;
+  }
+
+  @media (max-width:900px) {
+    .grid-2,.grid-3 { grid-template-columns:1fr; }
+    .flow { flex-direction:column; align-items:flex-start; }
+    .flow-arrow { transform:rotate(90deg); }
+  }
+</style>
+</head>
+<body>
+
+<div class="section-nav">
+  <strong>🔍 导航</strong>
+  <a href="#overview">总览</a>
+  <a href="#architecture">架构</a>
+  <a href="#router">Router</a>
+  <a href="#dispatcher">Dispatcher</a>
+  <a href="#search">SearchAgent</a>
+  <a href="#compare">CompareAgent</a>
+  <a href="#cart">CartService</a>
+  <a href="#orphaned">孤儿 Agent</a>
+  <a href="#orchestration">遗留层</a>
+  <a href="#verdict">结论</a>
+</div>
+
+<h1>🏗️ 租房 AI Agent 工作流全景</h1>
+<p class="subtitle" style="color:var(--muted);margin-bottom:24px">
+  基于源码逆向 | 2026-07-23 更新 | Dispatcher 轻量路由架构
+</p>
+
+<div class="verdict v-yes">
+  ✅ 架构演进：AgentService 单体（1836行）→ Dispatcher 分发 → 专业 Agent 独立执行。废弃 Supervisor + DAG + AgentRegistry 重型编排。
+</div>
+
+<!-- ═══════════════════════ OVERVIEW ═══════════════════════ -->
+<h2 id="overview">📊 模块总览</h2>
+
+<table>
+<tr>
+  <th>模块</th><th>文件</th><th>行数</th><th>状态</th><th>LLM 调用</th><th>核心职责</th>
+</tr>
+<tr>
+  <td><strong>Router</strong></td>
+  <td><code>router.py</code></td>
+  <td>188</td>
+  <td><span class="badge b-active">活跃</span></td>
+  <td>1 次 <code>complete_json</code></td>
+  <td>意图分类 + 阶段判断 + 序号解析，单次 LLM 调用</td>
+</tr>
+<tr>
+  <td><strong>Dispatcher</strong></td>
+  <td><code>dispatcher.py</code></td>
+  <td>170</td>
+  <td><span class="badge b-active">活跃</span></td>
+  <td>0（纯路由）</td>
+  <td>意图 → Agent/Service 分发 + 消息持久化</td>
+</tr>
+<tr>
+  <td><strong>SearchAgent</strong></td>
+  <td><code>search_agent.py</code></td>
+  <td>735</td>
+  <td><span class="badge b-active">活跃</span></td>
+  <td>1-2 次 LLM</td>
+  <td>完整搜索管线：提取条件→检索+放宽→通勤过滤→评分→推荐</td>
+</tr>
+<tr>
+  <td><strong>CompareAgent</strong></td>
+  <td><code>compare_agent.py</code></td>
+  <td>376</td>
+  <td><span class="badge b-active">活跃 ✅</span></td>
+  <td>1 次 <code>complete_json</code></td>
+  <td>多维度对比：评分+LLM解释+规则降级（上次是 Stub！）</td>
+</tr>
+<tr>
+  <td><strong>CartService</strong></td>
+  <td><code>cart_agent.py</code></td>
+  <td>82</td>
+  <td><span class="badge b-active">活跃 ✅</span></td>
+  <td>0（纯 CRUD）</td>
+  <td>购物车 CRUD（上次是 Stub！）</td>
+</tr>
+<tr style="opacity:0.6">
+  <td><strong>FilterAgent</strong></td>
+  <td><code>filter_agent.py</code></td>
+  <td>197</td>
+  <td><span class="badge b-orphan">孤儿</span></td>
+  <td>1 次 <code>complete_json</code></td>
+  <td>NL→结构化条件+跨轮合并（Dispatcher 不调用）</td>
+</tr>
+<tr style="opacity:0.6">
+  <td><strong>SynthesizerAgent</strong></td>
+  <td><code>synthesizer_agent.py</code></td>
+  <td>82</td>
+  <td><span class="badge b-orphan">孤儿</span></td>
+  <td>1 次 <code>complete_text</code></td>
+  <td>漏斗阶段语调适配（Dispatcher 不调用）</td>
+</tr>
+<tr style="opacity:0.6">
+  <td><strong>FAQAgent</strong></td>
+  <td><code>faq_agent.py</code></td>
+  <td>44</td>
+  <td><span class="badge b-orphan">孤儿</span></td>
+  <td>0</td>
+  <td>规则匹配（Dispatcher 直接调 agent_faq 模块）</td>
+</tr>
+<tr style="opacity:0.4">
+  <td><strong>Supervisor</strong></td>
+  <td><code>supervisor.py</code></td>
+  <td>~400</td>
+  <td><span class="badge b-legacy">遗留</span></td>
+  <td>N</td>
+  <td>DAG 编排器（EstateWise 移植，已废弃）</td>
+</tr>
+<tr style="opacity:0.4">
+  <td><strong>ExecutionDAG</strong></td>
+  <td><code>execution_dag.py</code></td>
+  <td>~150</td>
+  <td><span class="badge b-legacy">遗留</span></td>
+  <td>0</td>
+  <td>拓扑排序 DAG（EstateWise 移植，已废弃）</td>
+</tr>
+<tr style="opacity:0.4">
+  <td><strong>AgentLoop</strong></td>
+  <td><code>agent_loop.py</code></td>
+  <td>~200</td>
+  <td><span class="badge b-legacy">半活跃</span></td>
+  <td>N</td>
+  <td>ReAct 循环引擎（仅 SearchAgent.search_react() 使用）</td>
+</tr>
+</table>
+
+<!-- ═══════════════════════ ARCHITECTURE ═══════════════════════ -->
+<h2 id="architecture">🏛️ 当前架构：Dispatcher 轻量路由</h2>
+
+<div class="arch-diagram">
+  <div style="color:var(--muted);font-size:12px;margin-bottom:16px">API → classify → dispatch → Agent/Service 直接执行。无 Supervisor，无 DAG，无 AgentRegistry。</div>
+
+  <div class="arch-row">
+    <div class="arch-box" style="background:#1a1a2a;border:1px solid #2a2a4a;">📨 POST /sessions/{id}/messages</div>
+  </div>
+  <div style="color:var(--muted);font-size:18px;">⬇</div>
+  <div class="arch-row">
+    <div class="arch-box" style="background:#2a1a38;border:1px solid #4a2a5a;">🤖 Router<br><small>classify_message()<br>1×LLM JSON</small></div>
+  </div>
+  <div style="color:var(--muted);font-size:18px;">⬇ intent + stage + refs</div>
+  <div class="arch-row">
+    <div class="arch-box" style="background:#1a2838;border:1px solid #1e3a4a;">🔀 Dispatcher.dispatch()</div>
+  </div>
+  <div style="color:var(--muted);font-size:18px;">⬇</div>
+  <div class="arch-row" style="gap:24px">
+    <div style="display:flex;flex-direction:column;align-items:center;gap:4px">
+      <div class="arch-box" style="background:#1a2a38;border:1px solid #1e3a5a;">search</div>
+      <div style="font-size:11px;color:var(--muted)">→ SearchAgent.search()</div>
+    </div>
+    <div style="display:flex;flex-direction:column;align-items:center;gap:4px">
+      <div class="arch-box" style="background:#2a1a38;border:1px solid #4a2a5a;">compare</div>
+      <div style="font-size:11px;color:var(--muted)">→ CompareAgent.compare()</div>
+    </div>
+    <div style="display:flex;flex-direction:column;align-items:center;gap:4px">
+      <div class="arch-box" style="background:#1a2838;border:1px solid #1e3a4a;">manage_cart</div>
+      <div style="font-size:11px;color:var(--muted)">→ CartService CRUD</div>
+    </div>
+    <div style="display:flex;flex-direction:column;align-items:center;gap:4px">
+      <div class="arch-box" style="background:#1a3828;border:1px solid #1e4a3a;">faq</div>
+      <div style="font-size:11px;color:var(--muted)">→ match_faq() 规则</div>
+    </div>
+    <div style="display:flex;flex-direction:column;align-items:center;gap:4px">
+      <div class="arch-box" style="background:#2a2a1a;border:1px solid #4a4a1e;">general</div>
+      <div style="font-size:11px;color:var(--muted)">→ LLM 闲聊</div>
+    </div>
+  </div>
+  <div style="color:var(--muted);font-size:18px;margin-top:8px">⬇</div>
+  <div class="arch-row">
+    <div class="arch-box" style="background:#1a2830;border:1px solid #1e3a4a;">💾 持久化 ChatMessage → 返回 AgentMessageResponse</div>
+  </div>
+</div>
+
+<div class="grid-2" style="margin-top:16px">
+  <div class="card green">
+    <h3>✅ 相比旧架构的改进</h3>
+    <ul style="font-size:13px;list-style:none">
+      <li style="padding:4px 0">✅ AgentService 单体（1836行）已拆分</li>
+      <li style="padding:4px 0">✅ CompareAgent 从 Stub（19行）→ 完整实现（376行）</li>
+      <li style="padding:4px 0">✅ CartAgent 从 Stub（16行）→ CartService（82行）</li>
+      <li style="padding:4px 0">✅ 意图分类从 AgentService 内嵌 → 独立 Router</li>
+      <li style="padding:4px 0">✅ 分发逻辑从 AgentService → 独立 Dispatcher</li>
+      <li style="padding:4px 0">✅ SearchAgent 支持 ReAct 复杂查询模式</li>
+    </ul>
+  </div>
+  <div class="card yellow">
+    <h3>⚠️ 仍存在的架构债务</h3>
+    <ul style="font-size:13px;list-style:none">
+      <li style="padding:4px 0">⚠️ FilterAgent / SynthesizerAgent / FAQAgent 存在但 Dispatcher 不调用</li>
+      <li style="padding:4px 0">⚠️ Supervisor + DAG + AgentRegistry 全套遗留未清理</li>
+      <li style="padding:4px 0">⚠️ SearchAgent 内嵌了自己的 filter 提取（绕过 FilterAgent）</li>
+      <li style="padding:4px 0">⚠️ SearchAgent 内嵌了自己的回复生成（绕过 SynthesizerAgent）</li>
+      <li style="padding:4px 0">⚠️ FAQ 匹配在 Dispatcher 中直接调 agent_faq 模块（绕过 FAQAgent）</li>
+      <li style="padding:4px 0">⚠️ orchestration/ 目录 7 个文件，仅 agent_loop.py 被实际使用</li>
+    </ul>
+  </div>
+</div>
+
+<!-- ═══════════════════════ ROUTER ═══════════════════════ -->
+<h2 id="router">🧭 Router — 统一意图分类</h2>
+
+<div class="grid-2">
+<div class="card purple">
+  <div class="card-header">
+    <div class="agent-num" style="background:#2a1a38;color:var(--purple)">R</div>
+    <span class="agent-name">Router</span>
+    <span class="badge b-llm">1×LLM JSON</span>
+  </div>
+  <p style="color:var(--muted);font-size:13px;margin-bottom:12px">
+    单次 LLM 调用完成意图分类 + 漏斗阶段 + 路由信号 + 序号引用解析。带规则兜底。
+  </p>
+
+  <div class="flow">
+    <div class="flow-node fn-input">📝 用户消息 + 历史</div>
+    <span class="flow-arrow">→</span>
+    <div class="flow-node fn-llm">🤖 classify_message()</div>
+    <span class="flow-arrow">→</span>
+    <div class="flow-node fn-out">🏷️ {intent, stage, routing, refs}</div>
+  </div>
+
+  <h3>5 种意图分类</h3>
+  <table style="font-size:12px">
+    <tr><th>Intent</th><th>Sub Intent</th><th>Routing</th><th>示例</th></tr>
+    <tr><td>search</td><td>explore / browse / filter / detail / commute</td><td>agent</td><td>"园区2000以内单间"</td></tr>
+    <tr><td>compare</td><td>cart / specific</td><td>agent</td><td>"第二套和第三套哪个好"</td></tr>
+    <tr><td>manage_cart</td><td>add / remove / view</td><td>fast</td><td>"把第一个加入购物车"</td></tr>
+    <tr><td>faq</td><td>deposit / contract / booking / refund / fees</td><td>fast</td><td>"押金什么时候退"</td></tr>
+    <tr><td>general</td><td>greeting / chitchat / other</td><td>fast</td><td>"hi"</td></tr>
+  </table>
+</div>
+
+<div class="card" style="border-color:#2a1a38">
+  <h3>🔍 关键细节</h3>
+  <ul style="list-style:none;font-size:13px">
+    <li style="padding:6px 0;border-bottom:1px solid var(--border)">✅ <strong>UNIFIED_CLASSIFIER_PROMPT</strong>：6 个 Few-Shot 示例覆盖 5 种意图</li>
+    <li style="padding:6px 0;border-bottom:1px solid var(--border)">✅ <strong>5 级漏斗阶段</strong>：explore → calibrate → narrow → compare → decide</li>
+    <li style="padding:6px 0;border-bottom:1px solid var(--border)">✅ <strong>complexity 评分</strong>：0.05（问候）~0.6（通勤搜索），>0.5 走 agent 路由</li>
+    <li style="padding:6px 0;border-bottom:1px solid var(--border)">✅ <strong>中文序号解析</strong>：parse_refs() 正则匹配 "第一个"、"第3套"、"前两个"</li>
+    <li style="padding:6px 0;border-bottom:1px solid var(--border)">✅ <strong>规则兜底</strong>：LLM 不可用时 _fallback_classify() 正则匹配（6 组模式）</li>
+    <li style="padding:6px 0">✅ <strong>confidence 置信度</strong>：LLM 自评 0-1，可用于后续二阶段分类决策</li>
+  </ul>
+</div>
+</div>
+
+<!-- ═══════════════════════ DISPATCHER ═══════════════════════ -->
+<h2 id="dispatcher">🔀 Dispatcher — 意图→执行分发</h2>
+
+<div class="card blue">
+  <div class="card-header">
+    <div class="agent-num" style="background:#1a2a38;color:var(--blue)">D</div>
+    <span class="agent-name">Dispatcher</span>
+    <span class="badge b-rule">零 LLM · 170 行</span>
+  </div>
+
+  <div class="verdict v-yes">
+    📌 替代 Supervisor + ExecutionDAG + AgentRegistry 的复杂编排。纯 if/elif 路由，直接调用 Agent/Service。
+  </div>
+
+  <div class="flow" style="font-size:13px">
+    <div class="flow-node fn-input">📨 dispatch(session, chat_session, user_id, message, filters)</div>
+    <span class="flow-arrow">→</span>
+    <div class="flow-node fn-db">📜 _load_history() 最近10条</div>
+    <span class="flow-arrow">→</span>
+    <div class="flow-node fn-llm">🤖 classify_message()</div>
+    <span class="flow-arrow">→</span>
+    <div class="flow-node fn-code">🔀 5路分发</div>
+  </div>
+
+  <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-top:12px">
+    <div style="background:#1a2a38;padding:10px;border-radius:8px;border:1px solid #1e3a5a;font-size:12px">
+      <strong style="color:var(--blue)">search</strong>
+      <p style="color:var(--muted);font-size:11px;margin-top:4px">
+        SearchAgent.search()<br>
+        → reply + recommendations<br>
+        + top_picks + score_gap<br>
+        + relaxation_level
+      </p>
+    </div>
+    <div style="background:#2a1a38;padding:10px;border-radius:8px;border:1px solid #4a2a5a;font-size:12px">
+      <strong style="color:var(--purple)">compare</strong>
+      <p style="color:var(--muted);font-size:11px;margin-top:4px">
+        CompareAgent.compare()<br>
+        → summary + items<br>
+        + dimension_analysis<br>
+        + recommendation
+      </p>
+    </div>
+    <div style="background:#1a2838;padding:10px;border-radius:8px;border:1px solid #1e3a4a;font-size:12px">
+      <strong style="color:var(--teal)">manage_cart</strong>
+      <p style="color:var(--muted);font-size:11px;margin-top:4px">
+        CartService<br>
+        add / remove / view<br>
+        + _extract_ids() 序号解析
+      </p>
+    </div>
+    <div style="background:#1a3828;padding:10px;border-radius:8px;border:1px solid #1e4a3a;font-size:12px">
+      <strong style="color:var(--green)">faq</strong>
+      <p style="color:var(--muted);font-size:11px;margin-top:4px">
+        match_faq()<br>
+        strong → answer + chips<br>
+        weak → 反问确认<br>
+        none → get_faq() 兜底
+      </p>
+    </div>
+    <div style="background:#2a2a1a;padding:10px;border-radius:8px;border:1px solid #4a4a1e;font-size:12px">
+      <strong style="color:var(--yellow)">general</strong>
+      <p style="color:var(--muted);font-size:11px;margin-top:4px">
+        LLM complete_text()<br>
+        口语化闲聊<br>
+        system prompt: 留学租房顾问
+      </p>
+    </div>
+  </div>
+
+  <p style="color:var(--muted);font-size:12px;margin-top:12px">
+    分发后统一持久化 ChatMessage（user + assistant）→ 返回 dict。所有 Agent 的返回值统一为 reply + recommendations + cart_changed + quick_replies 等字段。
+  </p>
+</div>
+
+<!-- ═══════════════════════ SEARCH AGENT ═══════════════════════ -->
+<h2 id="search">🔍 SearchAgent — 完整搜索管线（735行）</h2>
+
+<div class="grid-2">
+<div class="card blue">
+  <div class="card-header">
+    <div class="agent-num" style="background:#1a2a38;color:var(--blue)">S</div>
+    <span class="agent-name">SearchAgent</span>
+    <span class="badge b-active">活跃 · 8 tools</span>
+  </div>
+  <p style="color:var(--muted);font-size:13px;margin-bottom:12px">
+    独立于 AgentService 的完整搜索管线。双模式：快速管线（search）+ ReAct 复杂查询（search_react）。
+  </p>
+
+  <h3>快速管线：search() 8 步</h3>
+  <ol class="steps">
+    <li>
+      <div class="step-num llm">1</div>
+      <div class="step-content">
+        <div class="step-title">LLM 提取筛选条件</div>
+        <div class="step-detail">EXTRACT_FILTERS_PROMPT + complete_json(t=0.0)。设施映射 17 条规则。失败时返回 {}。</div>
+      </div>
+    </li>
+    <li>
+      <div class="step-num db">2</div>
+      <div class="step-content">
+        <div class="step-title">学校/机构查找 _lookup_institution()</div>
+        <div class="step-detail">4 级匹配：exact abbreviation → ILIKE name/cn → aliases[] 包含 → ILIKE abbreviation。查 universities 表。</div>
+      </div>
+    </li>
+    <li>
+      <div class="step-num db">3</div>
+      <div class="step-content">
+        <div class="step-title">搜索（双分支）</div>
+        <div class="step-detail">
+          有 institute_id → _geo_search()：Haversine 精筛，半径 3→5→10km 渐进放宽<br>
+          无 institute_id → _search_with_relaxation()：district→type→bedrooms→price×1.2 逐级放宽
+        </div>
+      </div>
+    </li>
+    <li>
+      <div class="step-num api">4</div>
+      <div class="step-content">
+        <div class="step-title">(可选) 通勤过滤 _filter_by_commute()</div>
+        <div class="step-detail">多引擎降级链：主API→备选→ORS→Haversine。4 级时间放宽（max→2×→3×→4×）</div>
+      </div>
+    </li>
+    <li>
+      <div class="step-num code">5</div>
+      <div class="step-content">
+        <div class="step-title">得分间隙检测 detect_score_gap()</div>
+        <div class="step-detail">检测 Top 1 与后续得分的断层，用于安全兜底判断</div>
+      </div>
+    </li>
+    <li>
+      <div class="step-num code">6</div>
+      <div class="step-content">
+        <div class="step-title">安全兜底 SafeFallback</div>
+        <div class="step-detail">候选太少/得分断层/放宽过多 → 生成兜底建议（放宽预算/区域/户型）</div>
+      </div>
+    </li>
+    <li>
+      <div class="step-num code">7</div>
+      <div class="step-content">
+        <div class="step-title">确定性评分 score_properties()</div>
+        <div class="step-detail">price×0.40 + space×0.20 + facility×0.20 + base×0.20。选 Top 3 附带亮点理由。</div>
+      </div>
+    </li>
+    <li>
+      <div class="step-num llm">8</div>
+      <div class="step-content">
+        <div class="step-title">LLM 生成推荐回复</div>
+        <div class="step-detail">RECOMMEND_SYSTEM_PROMPT + complete_json。2 个 Few-Shot（结果充足/无结果）。LLM 不可用时降级为规则文本。</div>
+      </div>
+    </li>
+  </ol>
+</div>
+
+<div class="card" style="border-color:#1a2a38">
+  <h3>🔍 关键细节</h3>
+  <ul style="list-style:none;font-size:13px">
+    <li style="padding:6px 0;border-bottom:1px solid var(--border)">✅ <strong>双模式入口</strong>：简单条件走 search() 快速管线，复杂查询（通勤/POI/模糊条件）走 search_react() ReAct 循环</li>
+    <li style="padding:6px 0;border-bottom:1px solid var(--border)">✅ <strong>内部做 Filter 提取</strong>：EXTRACT_FILTERS_PROMPT（87行 prompt），不依赖 FilterAgent</li>
+    <li style="padding:6px 0;border-bottom:1px solid var(--border)">✅ <strong>内部生成回复</strong>：RECOMMEND_SYSTEM_PROMPT（100行 prompt），不依赖 SynthesizerAgent</li>
+    <li style="padding:6px 0;border-bottom:1px solid var(--border)">✅ <strong>渐进放宽 4 级</strong>：district → property_type → bedrooms → price×1.2。最终回退英文关键词裸搜</li>
+    <li style="padding:6px 0;border-bottom:1px solid var(--border)">✅ <strong>Haversine 地理搜索</strong>：从 universities 表取学校坐标，计算球面距离精筛</li>
+    <li style="padding:6px 0;border-bottom:1px solid var(--border)">✅ <strong>通勤多引擎降级</strong>：主API→备选→ORS→Haversine 4 级，时间放宽 4 级</li>
+    <li style="padding:6px 0;border-bottom:1px solid var(--border)">✅ <strong>一致性校验</strong>：validate_recommendations() 丢弃 LLM 幻觉（不在候选快照中的 ID）</li>
+    <li style="padding:6px 0">✅ <strong>溯源信息</strong>：_build_source_info() 生成 "基于 X 套房源检索 | 条件: 区域:园区" 后缀</li>
+  </ul>
+
+  <h3 style="margin-top:16px">ReAct 模式：search_react()</h3>
+  <div class="flow">
+    <div class="flow-node fn-input">📝 复杂查询</div>
+    <span class="flow-arrow">→</span>
+    <div class="flow-node fn-llm">🤖 ReAct Loop (max 5 iters)</div>
+    <span class="flow-arrow">→</span>
+    <div class="flow-node fn-code">🔧 Tool Calls</div>
+  </div>
+  <p style="color:var(--muted);font-size:12px;margin-top:8px">
+    触发词：通勤/多远/多久/地铁站/公交/附近有/周边/便宜点/贵一点<br>
+    SEARCH_REACT_PROMPT 含 8 个工具说明 + 流程建议。LLM 自主决定工具调用顺序，最多 4 个工具后必须输出回复。
+  </p>
+
+  <h3 style="margin-top:16px">注册工具列表（8个）</h3>
+  <table style="font-size:11px">
+    <tr><th>工具名</th><th>类型</th><th>说明</th></tr>
+    <tr><td>extract_filters</td><td>LLM</td><td>自然语言→结构化筛选条件</td></tr>
+    <tr><td>property_search</td><td>DB</td><td>搜索房源（query + 结构化条件，自动放宽）</td></tr>
+    <tr><td>score_properties</td><td>Code</td><td>确定性质量评分</td></tr>
+    <tr><td>gap_detect</td><td>Code</td><td>得分断层检测</td></tr>
+    <tr><td>safe_fallback_check</td><td>Code</td><td>检索质量兜底判断</td></tr>
+    <tr><td>query_rewrite</td><td>LLM</td><td>模糊查询改写</td></tr>
+    <tr><td>poi_lookup</td><td>DB</td><td>周边设施查询（超市/地铁/餐厅）</td></tr>
+    <tr><td>commute_calc</td><td>API</td><td>通勤时间计算</td></tr>
+  </table>
+</div>
+</div>
+
+<!-- ═══════════════════════ COMPARE AGENT ═══════════════════════ -->
+<h2 id="compare">📊 CompareAgent — 多维度对比（376行）</h2>
+
+<div class="grid-2">
+<div class="card purple">
+  <div class="card-header">
+    <div class="agent-num" style="background:#2a1a38;color:var(--purple)">C</div>
+    <span class="agent-name">CompareAgent</span>
+    <span class="badge b-active">✅ 上次是 Stub，现已完整实现</span>
+  </div>
+
+  <div class="verdict v-yes">
+    ✅ 从 19 行 Stub → 376 行完整实现。评分与解释分离：compute_scores() 确定性计算，LLM 只负责解释。
+  </div>
+
+  <h3>compare() 执行流程</h3>
+  <div class="flow">
+    <div class="flow-node fn-input">📋 property_ids</div>
+    <span class="flow-arrow">→</span>
+    <div class="flow-node fn-db">📊 _gather_compare_metrics()</div>
+    <span class="flow-arrow">→</span>
+    <div class="flow-node fn-code">📐 compute_scores()</div>
+    <span class="flow-arrow">→</span>
+    <div class="flow-node fn-llm">🤖 LLM 解释</div>
+    <span class="flow-arrow">→</span>
+    <div class="flow-node fn-out">📊 七维对比 + 推荐</div>
+  </div>
+
+  <ol class="steps">
+    <li>
+      <div class="step-num db">1</div>
+      <div class="step-content">
+        <div class="step-title">加载房源 + POI 通勤数据</div>
+        <div class="step-detail">从 PropertyPOI 取 nearest_transit_meters()。从 Review 聚合评分 avg(rating) + count。</div>
+      </div>
+    </li>
+    <li>
+      <div class="step-num code">2</div>
+      <div class="step-content">
+        <div class="step-title">compute_scores() 确定性评分</div>
+        <div class="step-detail">4 维度加权：通勤×0.35 + 设施×0.20 + 价格×0.20 + 空间×0.15 + 评价×0.10。支持 3 种优先级：balanced / budget / commute。</div>
+      </div>
+    </li>
+    <li>
+      <div class="step-num llm">3</div>
+      <div class="step-content">
+        <div class="step-title">LLM 生成解释（COMPARE_SYSTEM_PROMPT）</div>
+        <div class="step-detail">1 个 Few-Shot。要求：基于真实字段，不改分数，每套覆盖 pros/cons/best_for，呼应用户优先级。</div>
+      </div>
+    </li>
+    <li>
+      <div class="step-num code">4</div>
+      <div class="step-content">
+        <div class="step-title">LLM 不可用时降级 _rule_based_compare()</div>
+        <div class="step-detail">规则生成 pros/cons/best_for，分数完全不变。输出带 AI_UNAVAILABLE_HINT。</div>
+      </div>
+    </li>
+  </ol>
+</div>
+
+<div class="card" style="border-color:#2a1a38">
+  <h3>🔍 关键细节</h3>
+  <ul style="list-style:none;font-size:13px">
+    <li style="padding:6px 0;border-bottom:1px solid var(--border)">✅ <strong>评分与解释分离</strong>：compute_scores() 用真实数据算分，LLM 只能解释不能改分</li>
+    <li style="padding:6px 0;border-bottom:1px solid var(--border)">✅ <strong>3 种优先级</strong>：balanced（均衡）/ budget（预算优先）/ commute（通勤优先），权重动态调整</li>
+    <li style="padding:6px 0;border-bottom:1px solid var(--border)">✅ <strong>规则降级</strong>：LLM 不可用时规则生成 pros/cons，得分完全一致</li>
+    <li style="padding:6px 0;border-bottom:1px solid var(--border)">✅ <strong>两个入口</strong>：compare(property_ids) 直接对比 / compare(cart_agent) 对比购物车全部</li>
+    <li style="padding:6px 0;border-bottom:1px solid var(--border)">✅ <strong>compare_scoring 模块</strong>：PropertyMetrics + DIMENSION_LABELS + PRIORITY_LABELS，独立可测试</li>
+    <li style="padding:6px 0">✅ <strong>build_dimension_analysis()</strong>：生成 7 维 Markdown 分析表（通勤/价格/空间/设施/评价/安全/生活便利）</li>
+  </ul>
+
+  <h3 style="margin-top:16px">评分维度权重</h3>
+  <table style="font-size:12px">
+    <tr><th>优先级</th><th>通勤</th><th>价格</th><th>空间</th><th>设施</th><th>评价</th></tr>
+    <tr><td>balanced</td><td>0.35</td><td>0.20</td><td>0.15</td><td>0.20</td><td>0.10</td></tr>
+    <tr><td>commute</td><td>0.45</td><td>0.15</td><td>0.10</td><td>0.20</td><td>0.10</td></tr>
+    <tr><td>budget</td><td>0.20</td><td>0.40</td><td>0.10</td><td>0.20</td><td>0.10</td></tr>
+  </table>
+</div>
+</div>
+
+<!-- ═══════════════════════ CART SERVICE ═══════════════════════ -->
+<h2 id="cart">🛒 CartService — 购物车 CRUD（82行）</h2>
+
+<div class="card teal">
+  <div class="card-header">
+    <div class="agent-num" style="background:#1a3830;color:var(--teal)">🛒</div>
+    <span class="agent-name">CartService</span>
+    <span class="badge b-crud">零 LLM · 纯 CRUD</span>
+  </div>
+
+  <div class="verdict v-yes">
+    ✅ 从 16 行 Stub → 82 行完整 CRUD。纯数据库操作，被 Dispatcher / API / CompareAgent 三处调用。
+  </div>
+
+  <div class="grid-2" style="margin-top:16px">
+    <div>
+      <h3>4 个方法</h3>
+      <table style="font-size:12px">
+        <tr><th>方法</th><th>说明</th></tr>
+        <tr><td>get_or_create_cart(user_id)</td><td>获取或创建购物车</td></tr>
+        <tr><td>add_to_cart(user_id, property_id, reason?)</td><td>加入购物车（重复返回已有项）</td></tr>
+        <tr><td>remove_from_cart(user_id, property_id)</td><td>移除（返回是否实际删除）</td></tr>
+        <tr><td>get_cart_items(user_id)</td><td>获取购物车+全部条目（按时间升序）</td></tr>
+      </table>
+    </div>
+    <div>
+      <h3>调用方</h3>
+      <ul style="font-size:13px;list-style:none">
+        <li style="padding:4px 0">📡 <strong>API 路由</strong>：GET/POST/DELETE /cart</li>
+        <li style="padding:4px 0">🔀 <strong>Dispatcher</strong>：manage_cart 意图分发</li>
+        <li style="padding:4px 0">📊 <strong>CompareAgent</strong>：对比购物车中全部房源</li>
+      </ul>
+    </div>
+  </div>
+
+  <h3 style="margin-top:16px">Dispatcher 中的购物车分发</h3>
+  <div class="flow">
+    <div class="flow-node fn-input">📝 "把第一个加入购物车"</div>
+    <span class="flow-arrow">→</span>
+    <div class="flow-node fn-llm">🤖 classify → manage_cart / add / refs=[1]</div>
+    <span class="flow-arrow">→</span>
+    <div class="flow-node fn-code">🔢 _extract_ids() 解析序号→property_id</div>
+    <span class="flow-arrow">→</span>
+    <div class="flow-node fn-db">💾 CartService.add_to_cart()</div>
+    <span class="flow-arrow">→</span>
+    <div class="flow-node fn-out">✅ "已加入候选清单"</div>
+  </div>
+  <p style="color:var(--muted);font-size:12px;margin-top:8px">
+    _extract_ids() 正则匹配 "房源 123" 格式提取 property_id。序号 refs 来自 classify 的 parse_refs()。
+  </p>
+</div>
+
+<!-- ═══════════════════════ ORPHANED ═══════════════════════ -->
+<h2 id="orphaned">👻 孤儿 Agent — 存在但不被 Dispatcher 调用</h2>
+
+<div class="grid-3">
+  <div class="card yellow">
+    <div class="card-header">
+      <div class="agent-num" style="background:#3a3a1a;color:var(--yellow)">①</div>
+      <span class="agent-name">FilterAgent</span>
+      <span class="badge b-orphan">孤儿 · 197行</span>
+    </div>
+    <p style="font-size:12px;color:var(--muted);margin-bottom:8px">
+      NL→结构化条件 + 跨轮上下文合并。功能完整但 Dispatcher 不调用。
+    </p>
+    <div class="verdict v-warn" style="font-size:12px">
+      ⚠️ SearchAgent 内部用 EXTRACT_FILTERS_PROMPT（87行）做了相同的事。FilterAgent 的跨轮合并能力（PREV_FILTERS_PLACEHOLDER）未被利用。
+    </div>
+    <p style="font-size:11px;color:var(--muted)">
+      亮点：硬约束 vs 软偏好区分 / 6 个 Few-Shot / 19 条 amenities 映射 / 上下文合并规则 7 条<br>
+      位置：<code>agents/filter_agent.py</code>
+    </p>
+  </div>
+
+  <div class="card yellow">
+    <div class="card-header">
+      <div class="agent-num" style="background:#3a3a1a;color:var(--yellow)">③</div>
+      <span class="agent-name">SynthesizerAgent</span>
+      <span class="badge b-orphan">孤儿 · 82行</span>
+    </div>
+    <p style="font-size:12px;color:var(--muted);margin-bottom:8px">
+      按漏斗阶段选择语气，融合多 Agent 结果生成回复。
+    </p>
+    <div class="verdict v-warn" style="font-size:12px">
+      ⚠️ SearchAgent 内部用 RECOMMEND_SYSTEM_PROMPT（100行）自己生成了推荐回复。Dispatcher 中 search 分支直接取 SearchAgent 的 reply。
+    </div>
+    <p style="font-size:11px;color:var(--muted)">
+      亮点：5 级 STAGE_TONES 映射 / 口语化中文 / 1-3 句话约束<br>
+      位置：<code>agents/synthesizer_agent.py</code>
+    </p>
+  </div>
+
+  <div class="card yellow">
+    <div class="card-header">
+      <div class="agent-num" style="background:#3a3a1a;color:var(--yellow)">⑥</div>
+      <span class="agent-name">FAQAgent</span>
+      <span class="badge b-orphan">孤儿 · 44行</span>
+    </div>
+    <p style="font-size:12px;color:var(--muted);margin-bottom:8px">
+      规则匹配 FAQ，委托 agent_faq 模块。
+    </p>
+    <div class="verdict v-warn" style="font-size:12px">
+      ⚠️ Dispatcher 中 faq 分支直接调 match_faq() / get_faq()，完全跳过 FAQAgent。Agent 壳子还在但从未被实例化。
+    </div>
+    <p style="font-size:11px;color:var(--muted)">
+      亮点：strong/weak/none 三级匹配 / chips 反问<br>
+      位置：<code>agents/faq_agent.py</code>
+    </p>
+  </div>
+</div>
+
+<!-- ═══════════════════════ ORCHESTRATION ═══════════════════════ -->
+<h2 id="orchestration">🪦 遗留编排层 — EstateWise 移植，已废弃</h2>
+
+<div class="card red">
+  <div class="card-header">
+    <span style="font-size:20px;margin-right:8px">⚠️</span>
+    <span class="agent-name">orchestration/ 目录 — 7 个文件，仅 1 个被实际使用</span>
+  </div>
+
+  <table>
+    <tr><th>文件</th><th>行数</th><th>状态</th><th>说明</th></tr>
+    <tr>
+      <td><code>supervisor.py</code></td>
+      <td>~400</td>
+      <td><span class="badge b-legacy">废弃</span></td>
+      <td>核心编排器：分类→DAG→拓扑执行→合成。Dispatcher 完全替代了它。</td>
+    </tr>
+    <tr>
+      <td><code>execution_dag.py</code></td>
+      <td>~150</td>
+      <td><span class="badge b-legacy">废弃</span></td>
+      <td>Intent→Agent 链路模板（SEARCH: filter→search→synthesizer）。Dispatcher 不走 DAG。</td>
+    </tr>
+    <tr>
+      <td><code>agent_registry.py</code></td>
+      <td>~100</td>
+      <td><span class="badge b-legacy">废弃</span></td>
+      <td>Agent 注册表（按能力查找）。Dispatcher 硬编码 import，不查注册表。</td>
+    </tr>
+    <tr>
+      <td><code>agent_loop.py</code></td>
+      <td>~200</td>
+      <td><span class="badge b-orphan">半活跃</span></td>
+      <td>ReAct 循环引擎。仅 SearchAgent.search_react() 通过 BaseAgent.handle_with_react() 使用。</td>
+    </tr>
+    <tr>
+      <td><code>tool_registry.py</code></td>
+      <td>~150</td>
+      <td><span class="badge b-legacy">废弃</span></td>
+      <td>工具注册表。SearchAgent/CompareAgent 直接调方法，不走 ToolRegistry.execute()。</td>
+    </tr>
+    <tr>
+      <td><code>handoff.py</code></td>
+      <td>~100</td>
+      <td><span class="badge b-legacy">废弃</span></td>
+      <td>Agent 交接链（EstateWise handoff 模式）。Dispatcher 单 Agent 执行，无交接。</td>
+    </tr>
+    <tr>
+      <td><code>routing_strategy.py</code></td>
+      <td>~80</td>
+      <td><span class="badge b-legacy">废弃</span></td>
+      <td>复杂度→执行策略选择。Dispatcher 中路由用 if/elif。</td>
+    </tr>
+    <tr>
+      <td><code>types.py</code></td>
+      <td>~120</td>
+      <td><span class="badge b-orphan">部分使用</span></td>
+      <td>AgentContext / AgentResult / AgentError 类型。BaseAgent 和各 Agent 仍依赖。</td>
+    </tr>
+  </table>
+
+  <div class="verdict v-no" style="margin-top:16px">
+    ⚠️ 这 ~1300 行代码是从 EstateWise 移植过来的多 Agent 编排框架（Supervisor + DAG + Registry + Handoff）。当前 Dispatcher 架构完全绕过了它们。仅 agent_loop.py（ReAct 引擎）和 types.py（类型定义）被实际使用。
+  </div>
+</div>
+
+<!-- ═══════════════════════ VERDICT ═══════════════════════ -->
+<h2 id="verdict">📊 最终结论</h2>
+
+<div class="grid-3">
+  <div class="card green">
+    <div class="card-header"><span style="font-size:20px;margin-right:8px">✅</span> <strong>活跃模块</strong></div>
+    <ul style="font-size:13px;list-style:none">
+      <li style="padding:4px 0">🧭 Router — 意图分类（188行）</li>
+      <li style="padding:4px 0">🔀 Dispatcher — 分发路由（170行）</li>
+      <li style="padding:4px 0">🔍 SearchAgent — 搜索管线（735行）</li>
+      <li style="padding:4px 0">📊 CompareAgent — 多维对比（376行）</li>
+      <li style="padding:4px 0">🛒 CartService — 购物车 CRUD（82行）</li>
+    </ul>
+    <p style="font-size:11px;color:var(--muted);margin-top:8px">总计 ~1550 行，无冗余。Dispatcher 直接调用，不走编排层。</p>
+  </div>
+
+  <div class="card yellow">
+    <div class="card-header"><span style="font-size:20px;margin-right:8px">⚠️</span> <strong>孤儿代码</strong></div>
+    <ul style="font-size:13px;list-style:none">
+      <li style="padding:4px 0">① FilterAgent — 197行（功能被 SearchAgent 内化）</li>
+      <li style="padding:4px 0">③ SynthesizerAgent — 82行（功能被 SearchAgent 内化）</li>
+      <li style="padding:4px 0">⑥ FAQAgent — 44行（Dispatcher 直接调 agent_faq）</li>
+    </ul>
+    <p style="font-size:11px;color:var(--muted);margin-top:8px">
+      总计 ~320 行。功能完整但未被调用。要么集成进 Dispatcher，要么删除。
+    </p>
+  </div>
+
+  <div class="card red">
+    <div class="card-header"><span style="font-size:20px;margin-right:8px">❌</span> <strong>遗留代码</strong></div>
+    <ul style="font-size:13px;list-style:none">
+      <li style="padding:4px 0">Supervisor — ~400行</li>
+      <li style="padding:4px 0">ExecutionDAG — ~150行</li>
+      <li style="padding:4px 0">AgentRegistry — ~100行</li>
+      <li style="padding:4px 0">ToolRegistry — ~150行</li>
+      <li style="padding:4px 0">Handoff — ~100行</li>
+      <li style="padding:4px 0">RoutingStrategy — ~80行</li>
+    </ul>
+    <p style="font-size:11px;color:var(--muted);margin-top:8px">
+      总计 ~980 行。EstateWise 移植的重型编排框架，Dispatcher 完全替代。
+    </p>
+  </div>
+</div>
+
+<div class="verdict v-yes" style="margin-top:20px">
+  ✅ 架构方向正确：Dispatcher 轻量路由 → 专业 Agent 独立执行。下一步应清理孤儿 Agent（集成或删除）和遗留编排层（删除 ~1300 行死代码）。
+</div>
+
+<p style="color:var(--muted);font-size:12px;margin-top:24px;text-align:center">
+  架构：Router(分类) → Dispatcher(分发) → Agent/Service(执行)。无 Supervisor，无 DAG，无 Registry。简单直接。
+  <br>源码: backend/app/services/agentic/ | 2026-07-23 更新
+</p>
+
+</body>
+</html>

@@ -101,7 +101,7 @@ class RiskEvaluator:
         district = str(property_data.get("district", ""))
         price = self._to_float(property_data.get("price_monthly", 0))
         area = self._to_float(property_data.get("area_sqm", 0))
-        ptype = str(property_data.get("property_type", "apartment")).lower()
+        ptype = str(property_data.get("property_type", "1-bed")).lower()
 
         # ── Level 2: 阻断性校验 ──────────────────────
 
@@ -341,7 +341,7 @@ class RiskEvaluator:
                         "bedrooms": int(row.get("bedrooms", 0) or 0),
                         "bathrooms": int(row.get("bathrooms", 0) or 0),
                         "district": str(row.get("district", "")),
-                        "property_type": str(row.get("property_type", "apartment")),
+                        "property_type": str(row.get("property_type", "1-bed")),
                     }
                     predicted = rent_predictor.predict_single(features)
                     if predicted > 0:

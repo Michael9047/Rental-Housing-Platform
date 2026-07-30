@@ -36,6 +36,7 @@ def _to_read(ut) -> UnitTypeRead:
         deposit_amount=ut.deposit_amount, deposit_type=_safe_enum(ut.deposit_type),
         lease_start=ut.lease_start, lease_start_date=ut.lease_start_date,
         lease_end=ut.lease_end, lease_end_date=ut.lease_end_date,
+        rental_requirements=ut.rental_requirements,
         currency=ut.currency, special_offer=ut.special_offer,
         floor_pricing=ut.floor_pricing, amenities=ut.amenities,
         description=ut.description, available_from=ut.available_from,

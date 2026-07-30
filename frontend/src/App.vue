@@ -1,8 +1,27 @@
 <template>
-  <router-view />
+  <div v-if="error" style="padding:40px;color:red;background:#fff;max-width:800px;margin:40px auto;border-radius:12px;font-family:monospace">
+    <h2>⚠️ Vue App Error</h2>
+    <pre style="white-space:pre-wrap;word-break:break-all">{{ error }}</pre>
+    <button @click="error=null" style="margin-top:20px;padding:10px 20px;background:#e94560;color:#fff;border:none;border-radius:8px;cursor:pointer">🔄 Retry</button>
+  </div>
+  <router-view v-else />
 </template>
 
 <script setup lang="ts">
+import { ref, onErrorCaptured } from 'vue'
+const error = ref<string | null>(null)
+onErrorCaptured((err: any) => {
+  error.value = err?.message || err?.toString() || 'Unknown error'
+  console.error('Caught:', err)
+  return false
+})
+// Global error handler
+window.addEventListener('error', (e) => {
+  error.value = `[${e.filename?.split('/').pop()}:${e.lineno}] ${e.message}`
+})
+window.addEventListener('unhandledrejection', (e) => {
+  error.value = `[Promise] ${e.reason?.message || e.reason}`
+})
 </script>
 
 <style>

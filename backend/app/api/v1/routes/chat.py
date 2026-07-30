@@ -3,7 +3,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user, get_db_session
+from app.api.deps import get_current_user_optional, get_db_session
 from app.models.user import User
 from app.services.chat_service import ChatService
 
@@ -48,10 +48,10 @@ class MessageResponse(BaseModel):
 async def create_session(
     body: CreateSessionRequest,
     session: AsyncSession = Depends(get_db_session),
-    current_user: User = Depends(get_current_user),
+    current_user: User | None = Depends(get_current_user_optional),
 ) -> SessionResponse:
     chat_service = ChatService(session)
-    chat_session = await chat_service.create_session(current_user.id, body.title)
+    chat_session = await chat_service.create_session((current_user.id if current_user else None), body.title)
     return SessionResponse(
         id=chat_session.id,
         session_id=chat_session.session_id,
@@ -65,10 +65,10 @@ async def create_session(
 @router.get("/sessions", response_model=list[SessionResponse])
 async def list_sessions(
     session: AsyncSession = Depends(get_db_session),
-    current_user: User = Depends(get_current_user),
+    current_user: User | None = Depends(get_current_user_optional),
 ) -> list[SessionResponse]:
     chat_service = ChatService(session)
-    sessions = await chat_service.list_sessions(current_user.id)
+    sessions = await chat_service.list_sessions((current_user.id if current_user else None))
     return [
         SessionResponse(
             id=s.id,
@@ -86,10 +86,10 @@ async def list_sessions(
 async def get_messages(
     session_id: int,
     session: AsyncSession = Depends(get_db_session),
-    current_user: User = Depends(get_current_user),
+    current_user: User | None = Depends(get_current_user_optional),
 ) -> list[MessageResponse]:
     chat_service = ChatService(session)
-    messages = await chat_service.get_messages(session_id, current_user.id)
+    messages = await chat_service.get_messages(session_id, (current_user.id if current_user else None))
     return [
         MessageResponse(
             id=m.id,
@@ -108,19 +108,19 @@ async def send_message(
     session_id: int,
     body: MessageRequest,
     session: AsyncSession = Depends(get_db_session),
-    current_user: User = Depends(get_current_user),
+    current_user: User | None = Depends(get_current_user_optional),
 ):
     chat_service = ChatService(session)
 
     # Fetch existing history for this session
-    existing_messages = await chat_service.get_messages(session_id, current_user.id)
+    existing_messages = await chat_service.get_messages(session_id, (current_user.id if current_user else None))
     history = [
         {"role": m.role.value, "content": m.content}
         for m in existing_messages
     ]
 
     return StreamingResponse(
-        chat_service.chat_stream(session_id, current_user.id, body.content, history),
+        chat_service.chat_stream(session_id, (current_user.id if current_user else None), body.content, history),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
@@ -134,9 +134,9 @@ async def send_message(
 async def delete_session(
     session_id: int,
     session: AsyncSession = Depends(get_db_session),
-    current_user: User = Depends(get_current_user),
+    current_user: User | None = Depends(get_current_user_optional),
 ) -> None:
     chat_service = ChatService(session)
-    deleted = await chat_service.delete_session(session_id, current_user.id)
+    deleted = await chat_service.delete_session(session_id, (current_user.id if current_user else None))
     if not deleted:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Chat session not found")

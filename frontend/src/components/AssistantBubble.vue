@@ -1,7 +1,7 @@
 <template>
-  <!-- 浮动 AI 管家：登录用户可见 -->
+  <!-- 浮动 AI 管家：所有用户可见 -->
   <teleport to="body">
-    <div v-show="visible" class="ab-root" :style="rootStyle">
+    <div class="ab-root" :style="rootStyle">
       <!-- 气泡按钮（可拖动） -->
       <button v-show="!open" class="ab-fab" @pointerdown="onDragStart" @click="onFabClick">
         <el-icon :size="20"><ChatDotRound /></el-icon>
@@ -76,10 +76,11 @@
                     <div class="ab-rec-title" :title="rec.property.title">{{ rec.property.title }}</div>
                     <div class="ab-rec-meta">{{ rec.property.district }} · ¥{{ rec.property.price_monthly }}/月</div>
                     <div class="ab-rec-acts">
-                      <el-button size="small" text type="primary" @click="goLink(`/property/${rec.property_id}`)">
+                      <el-button size="small" text type="primary" @click="goLink(`/room/${rec.property_id}`)">
                         详情
                       </el-button>
                       <el-tooltip
+                        v-if="authStore.isLoggedIn"
                         :content="cartStore.has(rec.property_id) ? '点击移出候选清单' : '加入候选清单'"
                         placement="top"
                       >
@@ -160,9 +161,6 @@ const inputText = ref('')
 const sending = ref(false)
 const faqChips = ref<FaqChip[]>([])
 const listRef = ref<HTMLElement | null>(null)
-
-// 登录可见
-const visible = computed(() => authStore.isLoggedIn)
 
 // ── 拖拽定位（位置存 localStorage，区分点击与拖动）─────────────
 const POS_KEY = 'assistant_bubble_pos'
@@ -305,18 +303,35 @@ async function send(preset?: string) {
   sending.value = true
   await scrollToBottom()
 
+  // 先插入空的 AI 消息占位，流式逐 token 填充
+  const assistantMsg: AgentChatMessage = {
+    role: 'assistant',
+    content: '',
+  }
+  messages.value.push(assistantMsg)
+
   try {
-    const resp = await agentService.sendMessage(sessionId.value, { message: text })
-    messages.value.push({
-      role: 'assistant',
-      content: resp.reply,
-      recommendations: resp.intent === 'recommend' ? resp.recommendations.slice(0, 3) : undefined,
-      quickReplies: resp.quick_replies,
-      links: resp.links,
-    })
-    if (resp.cart_changed) await cartStore.fetch()
+    await agentService.sendMessageStream(
+      sessionId.value,
+      { message: text },
+      {
+        onToken(token: string) {
+          assistantMsg.content += token
+          scrollToBottom()
+        },
+        onMeta(meta) {
+          if (meta.intent && (meta.intent === 'search' || meta.intent === 'recommend')) {
+            if (meta.recommendations?.length) {
+              assistantMsg.recommendations = meta.recommendations.slice(0, 3) as any
+            }
+          }
+          if (meta.quick_replies?.length) assistantMsg.quickReplies = meta.quick_replies
+          if (meta.cart_changed) cartStore.fetch()
+        },
+      },
+    )
   } catch {
-    messages.value.push({ role: 'assistant', content: '抱歉，请求失败了，请稍后再试。' })
+    assistantMsg.content = assistantMsg.content || '抱歉，请求失败了，请稍后再试。'
   } finally {
     sending.value = false
     await scrollToBottom()
@@ -324,6 +339,11 @@ async function send(preset?: string) {
 }
 
 async function toggleCart(rec: AgentRecommendation) {
+  if (!authStore.isLoggedIn) {
+    ElMessage.warning('请先登录后再使用候选清单')
+    router.push('/login')
+    return
+  }
   try {
     if (cartStore.has(rec.property_id)) {
       await cartStore.remove(rec.property_id)

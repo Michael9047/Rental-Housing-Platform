@@ -44,6 +44,17 @@
         <el-divider />
         <el-button type="danger" plain @click="handleCancel">取消报修</el-button>
       </template>
+      <template v-if="isTenant && repair.status === 'completed'">
+        <el-divider />
+        <div style="text-align:center">
+          <p style="color:var(--text-muted);margin-bottom:12px">维修师傅已标记完成，请确认是否修好</p>
+          <el-button type="success" size="large" :loading="confirmLoading" @click="handleConfirm">✅ 确认修好</el-button>
+        </div>
+      </template>
+      <template v-if="repair.status === 'confirmed'">
+        <el-divider />
+        <el-alert type="success" :closable="false" show-icon title="✅ 已确认 — 工单已关闭" />
+      </template>
     </el-card>
 
     <el-empty v-if="!repair && !loading" description="工单不存在" />
@@ -65,6 +76,7 @@ const authStore = useAuthStore()
 
 const repair = ref<RepairRead | null>(null)
 const loading = ref(false)
+const confirmLoading = ref(false)
 
 const isTenant = computed(() => authStore.user?.role === 'tenant')
 
@@ -101,6 +113,17 @@ async function handleCancel() {
     ElMessage.success('报修已取消')
     router.push('/profile?tab=repairs')
   } catch { /* cancelled */ }
+}
+
+async function handleConfirm() {
+  if (!repair.value) return
+  confirmLoading.value = true
+  try {
+    await repairService.confirm(repair.value.id)
+    ElMessage.success('已确认维修完成，工单已关闭')
+    await fetchDetail()
+  } catch { ElMessage.error('确认失败，请重试') }
+  finally { confirmLoading.value = false }
 }
 
 onMounted(fetchDetail)

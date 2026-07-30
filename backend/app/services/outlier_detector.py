@@ -296,7 +296,7 @@ def combined_detect(
                     "bedrooms": int(row.get("bedrooms", 0)),
                     "bathrooms": int(row.get("bathrooms", 0)),
                     "district": row.get("district", ""),
-                    "property_type": row.get("property_type", "apartment"),
+                    "property_type": row.get("property_type", "1-bed"),
                 }
                 predicted = rent_predictor.predict_single(features)
                 actual = float(row.get("price_monthly", 0))

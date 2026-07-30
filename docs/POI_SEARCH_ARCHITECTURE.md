@@ -183,16 +183,19 @@
 
 > 新加坡安全评分已接入 data.gov.sg，与 POI 检索合并到同一 Celery 任务异步执行。
 
-### 7.1 新加坡管线
+### 7.1 双管线
 
-| 参数 | 值 |
-|------|-----|
-| 数据源 | data.gov.sg — Selected Major Offences by NPC（年度） |
-| NPC 映射 | 35 个 NPC 中心坐标，最近邻匹配 |
-| 缓存 | 内存 24h（数据年度更新） |
-| 存储 | `PropertyPOI.safety_data` JSON 字段 |
+| | 新加坡 (SG) | 英国 (UK/GB) |
+|------|------------|-------------|
+| 数据源 | data.gov.sg | crystalroof.co.uk |
+| 粒度 | NPC 辖区（年度） | 邮编地址级 |
+| 映射方式 | 35 个 NPC 中心坐标最近邻 | 地址直查 |
+| 缓存 | 内存 24h | 无（实时请求） |
+| 存储 | `PropertyPOI.safety_data` | 同上 | |
 
-### 7.2 评分维度与权重
+### 7.2 评分维度
+
+**新加坡**（加权评分）：
 
 | 犯罪类别 | 权重 |
 |---------|------|
@@ -203,11 +206,28 @@
 | Motor Theft (偷车) | 10% |
 | UML Harassment (非法放贷骚扰) | 5% |
 
+**英国**（CrystalRoof 原有评分）：
+
+| 维度 | 说明 |
+|------|------|
+| Crime | 街区犯罪率 |
+| Schools | 学区质量 |
+| Transport | 交通便利度 |
+| Restaurants | 餐饮丰富度 |
+| Shopping | 商业配套 |
+
 ### 7.3 评分公式
 
+**新加坡**:
 ```
 ratio = zone_weighted_rate / national_weighted_rate
 score = clamp(100 - ratio × 50, 10, 100)
+```
+
+**英国**:
+```
+score = CrystalRoof.overall_score (0-100，直接使用)
+降级时返回中性 60 分 + CrystalRoof 报告外链
 ```
 
 ---

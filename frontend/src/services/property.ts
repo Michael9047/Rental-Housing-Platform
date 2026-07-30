@@ -10,6 +10,65 @@ import type {
   RoomType,
 } from '@/types/property'
 
+// ── 租期价格类型（对应后端 LeasePricingService）──
+
+/** 金额 */
+export interface MoneyAmount {
+  currency: string
+  minor_units: number
+  minor_unit_exponent: number
+  decimal: string
+}
+
+/** 费用桶（local + cny） */
+export interface FeeBucket {
+  local: MoneyAmount
+  cny: MoneyAmount
+}
+
+/** 费用集合 */
+export interface PriceSet {
+  deposit: FeeBucket
+  service_fee: FeeBucket
+  monthly_rent: FeeBucket
+  amount_due_now: FeeBucket
+  rent_total: FeeBucket
+}
+
+/** 租期选项 */
+export interface LeaseOption {
+  months: number
+  end_date: string
+  prices: PriceSet
+}
+
+/** 租期价格快照 */
+export interface LeasePricing {
+  property_id: number
+  calculation_date: string
+  move_in_date: string
+  local_currency: string
+  exchange_rate_to_cny: string
+  exchange_rate_at: string
+  exchange_rate_source: string
+  options: LeaseOption[]
+}
+
+/** 预订日期可用性 */
+export interface BookingDateAvailability {
+  property_id: number
+  timezone: string
+  local_today: string
+  available_from: string | null
+  blocked_dates: string[]
+}
+
+/** 日期校验结果 */
+export interface BookingDateValidation {
+  available: boolean
+  reason?: string | null
+}
+
 export interface PropertyPOI {
   content: string
   poi_data: Record<string, { name: string; distance: string }[]>
@@ -189,6 +248,23 @@ export const propertyService = {
   /** 一键清空当前用户所有房源审计日志 */
   clearAuditLogs(): Promise<{ deleted: number }> {
     return api.post('/properties/audit/clear').then((r) => r.data)
+  },
+
+  // ── 预订流程相关 ──
+
+  /** 获取房源的可预订日期（日历视图）。 */
+  getBookingDateAvailability(propertyId: number, year: number, month: number): Promise<BookingDateAvailability> {
+    return api.get(`/properties/${propertyId}/booking-availability`, { params: { year, month } }).then((r) => r.data)
+  },
+
+  /** 校验单个日期是否可入住。 */
+  validateBookingDate(propertyId: number, date: string): Promise<BookingDateValidation> {
+    return api.get(`/properties/${propertyId}/validate-booking-date`, { params: { date } }).then((r) => r.data)
+  },
+
+  /** 获取房源指定入住日期的租期价格选项。 */
+  getLeasePricing(propertyId: number, moveInDate: string): Promise<LeasePricing> {
+    return api.get(`/properties/${propertyId}/lease-pricing`, { params: { move_in_date: moveInDate } }).then((r) => r.data)
   },
 }
 

@@ -45,6 +45,7 @@
         <el-button type="primary" @click="$router.push('/property/create')">➕ 发布房源</el-button>
         <el-button type="warning" @click="$router.push('/workspace/repairs')">🔧 报修管理</el-button>
         <el-button type="success" @click="$router.push('/workspace/workers')">👷 维修师傅管理</el-button>
+        <el-button @click="$router.push('/workspace/visit-messages')">📋 看房消息</el-button>
         <el-button @click="$router.push('/bookings/landlord')">📅 预约管理</el-button>
         <el-button @click="$router.push('/property/manage')">🏠 房源管理</el-button>
       </div>

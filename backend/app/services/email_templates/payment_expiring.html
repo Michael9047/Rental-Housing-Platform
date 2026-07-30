@@ -1,0 +1,39 @@
+<h2 style="margin:0 0 16px;color:#dc2626;font-size:20px;">【支付即将截止】您的订单将在3小时后自动取消</h2>
+
+<p style="margin:0 0 12px;color:#475569;font-size:15px;line-height:1.7;">
+您好，{tenant_name}：
+</p>
+
+<p style="margin:0 0 12px;color:#475569;font-size:15px;line-height:1.7;">
+您的租房预订订单尚未支付成功。若未在支付截止时间前完成付款，订单将自动取消，房源预留也将被释放。
+</p>
+
+<!-- Detail Card -->
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:20px;margin-bottom:24px;">
+<tr><td style="padding:8px 0;">
+<p style="margin:0 0 8px;color:#991b1b;font-size:14px;"><strong>订单编号：</strong>{order_number}</p>
+<p style="margin:0 0 8px;color:#991b1b;font-size:14px;"><strong>房源名称：</strong>{property_name}</p>
+<p style="margin:0 0 8px;color:#991b1b;font-size:14px;"><strong>房源城市：</strong>{property_city}</p>
+<p style="margin:0 0 8px;color:#991b1b;font-size:14px;"><strong>入住日期：</strong>{lease_start_date}</p>
+<p style="margin:0 0 8px;color:#991b1b;font-size:14px;"><strong>支付金额：</strong>{settlement_amount} {settlement_currency}</p>
+<p style="margin:0 0 8px;color:#991b1b;font-size:14px;"><strong>支付截止时间：</strong>{localized_expires_at}（{timezone}）</p>
+<p style="margin:0;color:#991b1b;font-size:14px;"><strong>剩余时间：</strong>约3小时</p>
+</td></tr>
+</table>
+
+<!-- CTA Button -->
+<table cellpadding="0" cellspacing="0" style="margin-bottom:24px;">
+<tr>
+<td style="background:#dc2626;border-radius:8px;text-align:center;">
+<a href="{secure_order_url}" style="display:inline-block;padding:12px 32px;color:#ffffff;font-size:15px;font-weight:600;text-decoration:none;">立即支付</a>
+</td>
+</tr>
+</table>
+
+<p style="margin:0 0 12px;color:#f59e0b;font-size:14px;line-height:1.7;">
+如果您已经完成支付但页面仍显示处理中，请勿重复付款，可进入订单页面刷新支付状态或联系客服。
+</p>
+
+<p style="margin:0;color:#94a3b8;font-size:13px;">
+此邮件由系统自动发送，请勿直接回复。
+</p>

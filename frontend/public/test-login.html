@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><title>Login Test</title></head>
+<body>
+<h2>登录诊断</h2>
+<pre id="log"></pre>
+<script>
+const log = (msg) => { document.getElementById('log').textContent += msg + '\n'; };
+
+(async () => {
+  log('1. 测试后端直连...');
+  try {
+    const r1 = await fetch('http://localhost:8000/api/v1/health');
+    log('   后端健康: ' + (await r1.json()).status);
+  } catch(e) { log('   失败: ' + e.message); }
+
+  log('2. 测试代理...');
+  try {
+    const r2 = await fetch('/api/v1/health');
+    log('   代理健康: ' + (await r2.json()).status);
+  } catch(e) { log('   失败: ' + e.message); }
+
+  log('3. 测试登录...');
+  try {
+    const r3 = await fetch('/api/v1/auth/login', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({username_or_email:'lu', password:'test123456'}),
+    });
+    const d3 = await r3.json();
+    if (d3.access_token) {
+      log('   登录成功! token: ' + d3.access_token.substring(0, 20) + '...');
+
+      log('4. 测试 /me...');
+      const r4 = await fetch('/api/v1/me', {
+        headers: {'Authorization': 'Bearer ' + d3.access_token},
+      });
+      const d4 = await r4.json();
+      log('   用户: ' + d4.username + ', 角色: ' + d4.role);
+
+      log('5. 测试 buildings...');
+      const r5 = await fetch('/api/v1/buildings', {
+        headers: {'Authorization': 'Bearer ' + d3.access_token},
+      });
+      const d5 = await r5.json();
+      log('   公寓数: ' + (Array.isArray(d5) ? d5.length : d5.total || '?'));
+    } else {
+      log('   登录失败: ' + JSON.stringify(d3));
+    }
+  } catch(e) { log('   错误: ' + e.message); }
+
+  log('\n诊断完成!');
+})();
+</script>
+</body></html>

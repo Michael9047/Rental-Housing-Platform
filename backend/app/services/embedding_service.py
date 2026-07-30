@@ -9,7 +9,7 @@ def _build_property_text(property_data: dict) -> str:
         property_data.get("description") or "",
         property_data.get("address", ""),
         property_data.get("district", ""),
-        property_data.get("property_type", "apartment"),
+        property_data.get("property_type", "1-bed"),
     ]
     return " ".join(part for part in parts if part)
 

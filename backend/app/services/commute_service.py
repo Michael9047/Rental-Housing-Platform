@@ -967,7 +967,7 @@ async def _try_engine(
     destinations: list[CommuteDestination],
     engine: str, city: str | None,
 ) -> BatchCommuteResult | None:
-    """尝试用指定引擎计算通勤。engine: 'amap' | 'ors'。返回 None 表示完全失败。"""
+    """尝试用指定引擎计算通勤。engine: 'gm' | 'amap' | 'ors'。返回 None 表示完全失败。"""
     try:
         if engine == "amap":
             service = AmapCommuteService()
@@ -987,6 +987,14 @@ async def _try_engine(
                     results.append(r)
                     if r.source == "api":
                         api_ok = True
+            return BatchCommuteResult(results=results, source=f"{engine}_api") if api_ok else None
+
+        elif engine == "gm":
+            service = GoogleCommuteService()
+            if not service.api_key:
+                return None
+            results = await service.get_batch(origin_lat, origin_lng, destinations)
+            api_ok = any(r.source == "api" for r in results)
             return BatchCommuteResult(results=results, source=f"{engine}_api") if api_ok else None
 
         elif engine == "ors":
@@ -1018,9 +1026,9 @@ async def calculate_commute_batch_resilient(
     amap_reachable = await _probe_amap_reachable()
 
     if amap_reachable:
-        chain = ["amap", "ors"]
+        chain = ["amap", "gm", "ors"]
     else:
-        chain = ["ors", "amap"]
+        chain = ["gm", "ors", "amap"]
 
     for engine in chain:
         result = await _try_engine(origin_lat, origin_lng, destinations, engine, city)

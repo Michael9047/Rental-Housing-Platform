@@ -24,7 +24,7 @@ async def migrate():
             "SELECT DISTINCT ON (district) district, country, "
             "  MIN(latitude) as lat, MIN(longitude) as lng, "
             "  MIN(address) as addr "
-            "FROM properties WHERE district IS NOT NULL "
+            "FROM rooms WHERE district IS NOT NULL "
             "GROUP BY district, country"
         ))
         districts = [(row[0], row[1], row[2], row[3], row[4]) for row in r]
@@ -47,7 +47,7 @@ async def migrate():
         print("\n[2/5] 迁移 room_types → unit_types ...")
         # 为每个 property 找它的 district → institute
         r = await s.execute(text(
-            "SELECT p.id, p.district FROM properties p WHERE p.district IS NOT NULL"
+            "SELECT p.id, p.district FROM rooms p WHERE p.district IS NOT NULL"
         ))
         prop_inst = {row[0]: inst_map.get(row[1]) for row in r}
 
@@ -127,8 +127,8 @@ async def migrate():
         print("\n[4/5] 迁移 properties → rooms ...")
         # 先添加缺失列
         for col_sql in [
-            "ALTER TABLE properties ADD COLUMN IF NOT EXISTS unit_type_id INTEGER",
-            "ALTER TABLE properties ADD COLUMN IF NOT EXISTS city VARCHAR(100)",
+            "ALTER TABLE rooms ADD COLUMN IF NOT EXISTS unit_type_id INTEGER",
+            "ALTER TABLE rooms ADD COLUMN IF NOT EXISTS city VARCHAR(100)",
         ]:
             try:
                 await s.execute(text(col_sql))
@@ -139,7 +139,7 @@ async def migrate():
         # 为每个 property 找到匹配的 unit_type
         r = await s.execute(text(
             "SELECT p.id, p.district, p.property_type, p.bedrooms, p.institute_id "
-            "FROM properties p"
+            "FROM rooms p"
         ))
         room_count = 0
         for row in r:

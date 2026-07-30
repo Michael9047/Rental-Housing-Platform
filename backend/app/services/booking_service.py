@@ -34,9 +34,10 @@ class BookingService:
 
         # Fetch property for deposit/fee calculation
         property_obj = await self.session.get(Property, property_id)
-        deposit_amount = property_obj.deposit_amount if property_obj else 1000
-        service_fee_rate = property_obj.service_fee_rate if property_obj else 0.10
-        service_fee = int(float(property_obj.price_monthly) * service_fee_rate) if property_obj else 0
+        deposit_amount = (property_obj.deposit_amount or 1000) if property_obj else 1000
+        service_fee_rate = (property_obj.service_fee_rate or 0.0) if property_obj else 0.0
+        monthly_price = float(property_obj.price_monthly or 0) if property_obj else 0.0
+        service_fee = int(monthly_price * service_fee_rate) if property_obj else 0
 
         booking = Booking(
             tenant_id=tenant_id,

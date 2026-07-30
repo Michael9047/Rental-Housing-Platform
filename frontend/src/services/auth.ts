@@ -26,7 +26,7 @@ export const authService = {
   },
 
   getMe(): Promise<User> {
-    return api.get('/auth/me').then((r) => r.data)
+    return api.get('/me').then((r) => r.data)
   },
 
   /** 发送短信验证码 */

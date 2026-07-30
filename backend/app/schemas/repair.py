@@ -3,7 +3,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, Field
 
-from app.models.repair import RepairIssueType, RepairStatus, WorkerStatus
+from app.models.repair import RepairIssueType, RepairStatus, WorkerScope, WorkerStatus
 
 
 # ── 报修工单 ──────────────────────────────────────
@@ -55,11 +55,12 @@ class RepairRead(BaseModel):
 # ── 维修师傅 ──────────────────────────────────────
 
 class WorkerCreate(BaseModel):
-    """房东创建维修师傅"""
+    """创建维修师傅"""
     username: str = Field(min_length=1, max_length=100)
     password: str = Field(min_length=6)
     phone: str = Field(min_length=1, max_length=32)
     skills: list[str] | None = None
+    scope: WorkerScope = WorkerScope.apartment  # 默认公寓管理，admin可设 platform
 
 
 class WorkerUpdate(BaseModel):
@@ -79,6 +80,7 @@ class WorkerRead(BaseModel):
     user_id: int
     manager_id: int
     status: WorkerStatus
+    scope: WorkerScope
     skills: list[str] | None = None
     phone: str
     total_jobs: int

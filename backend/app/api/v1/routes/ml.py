@@ -100,7 +100,7 @@ async def estimate_rent(
     bedrooms: int = Query(default=0, ge=0, description="卧室数"),
     bathrooms: int = Query(default=0, ge=0, description="卫生间数"),
     district: str = Query(default="工业园区", description="区域"),
-    property_type: str = Query(default="apartment", description="房源类型"),
+    property_type: str = Query(default="1-bed", description="房源类型"),
     deposit_amount: float | None = Query(default=None, description="押金(元)"),
     service_fee_rate: float | None = Query(default=None, description="服务费率"),
     _: User = Depends(get_current_user),

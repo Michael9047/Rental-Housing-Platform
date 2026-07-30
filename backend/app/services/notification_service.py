@@ -104,6 +104,7 @@ class NotificationService:
             type=type,
             title=title,
             content=content,
+            body=content,
         )
         self.session.add(notification)
         await self.session.commit()
@@ -116,17 +117,23 @@ class NotificationService:
 
         return notification
 
-    async def list_by_user(self, user_id: int) -> list[Notification]:
+    async def list_by_user(self, user_id: int, page: int = 1, page_size: int = 50) -> tuple[list[Notification], int]:
         stmt = (
             select(Notification)
             .where(Notification.user_id == user_id)
             .order_by(Notification.created_at.desc())
         )
-        result = await self.session.scalars(stmt)
-        return list(result)
+        total = await self.session.scalar(select(func.count()).select_from(Notification).where(Notification.user_id == user_id)) or 0
+        result = await self.session.scalars(stmt.offset((page - 1) * page_size).limit(page_size))
+        return list(result), int(total)
 
-    async def mark_read(self, notification_id: int) -> Notification | None:
-        notification = await self.session.get(Notification, notification_id)
+    async def mark_read(self, notification_id: int, user_id: int) -> Notification | None:
+        notification = await self.session.scalar(
+            select(Notification).where(
+                Notification.id == notification_id,
+                Notification.user_id == user_id,
+            )
+        )
         if not notification:
             return None
         notification.is_read = True

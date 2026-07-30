@@ -1,4 +1,5 @@
 {
+  "skipWebFetchPreflight": true,
   "permissions": {
     "allow": [
       "Bash(curl:*)",
@@ -85,16 +86,6 @@
       "Edit(*.tsx)",
       "Edit(*.scss)",
       "Edit(*.csv)",
-      "Write(*.py)",
-      "Write(*.ts)",
-      "Write(*.vue)",
-      "Write(*.json)",
-      "Write(*.md)",
-      "Write(*.env)",
-      "Write(*.csv)",
-      "Write(*.html)",
-      "Write(*.sql)",
-      "Write(*.sh)",
       "Grep(*)",
       "Glob(*)",
       "Skill(*)",

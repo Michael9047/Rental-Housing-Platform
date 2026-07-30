@@ -1,13 +1,14 @@
 """租房推荐 Agent —— 会话、推荐、购物车、对比接口
 
-统一使用多 Agent DAG 编排（Supervisor + MoE 专家组）。
+轻量架构：Router 分类 → Dispatcher 分发 → Agent/Service/Tool 直接执行。
 """
+import json
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user, get_db_session
+from app.api.deps import get_current_user, get_current_user_optional, get_db_session
 from app.models.user import User
 from app.schemas.agent import (
     AgentLink,
@@ -36,6 +37,41 @@ router = APIRouter()
 
 
 def _to_search_result(prop) -> PropertySearchResult:
+    """兼容 UnitType ORM、Property ORM 和 dict 三种输入。"""
+    from datetime import datetime
+
+    # dict 输入：直接 model_validate，缺省字段补默认值
+    if isinstance(prop, dict):
+        now = datetime.utcnow()
+        prop.setdefault("created_at", now)
+        prop.setdefault("updated_at", now)
+        return PropertySearchResult.model_validate(prop)
+
+    # UnitType 对象 → 映射到 PropertySearchResult 的字段
+    if hasattr(prop, 'institute_id') and not hasattr(prop, 'landlord_id'):
+        inst = getattr(prop, 'institute', None)
+        return PropertySearchResult(
+            id=prop.id,
+            landlord_id=0,  # UnitType 没有 landlord，填 0
+            title=prop.name,
+            description=getattr(prop, 'description', None),
+            address=getattr(inst, 'address', None) if inst else None,
+            district=getattr(inst, 'district', None) if inst else None,
+            price_monthly=prop.base_rent,
+            area_sqm=prop.area_sqm,
+            bedrooms=prop.bedrooms,
+            bathrooms=prop.bathrooms,
+            property_type=None,
+            status=getattr(prop, 'status', 'available'),
+            currency=getattr(prop, 'currency', None),
+            latitude=getattr(inst, 'latitude', None) if inst else None,
+            longitude=getattr(inst, 'longitude', None) if inst else None,
+            created_at=getattr(prop, 'created_at', None),
+            updated_at=getattr(prop, 'updated_at', None),
+            images=[],
+            institute_id=prop.institute_id,
+            institute_name=getattr(inst, 'name', None) if inst else None,
+        )
     return PropertySearchResult.model_validate(prop)
 
 
@@ -44,21 +80,26 @@ def _to_search_result(prop) -> PropertySearchResult:
 @router.post("/sessions", response_model=AgentSessionResponse, status_code=status.HTTP_201_CREATED)
 async def create_agent_session(
     session: AsyncSession = Depends(get_db_session),
-    current_user: User = Depends(get_current_user),
+    current_user: User | None = Depends(get_current_user_optional),
 ) -> AgentSessionResponse:
     chat_service = ChatService(session)
-    chat_session = await chat_service.create_session(current_user.id, title="租房推荐 Agent")
+    user_id = current_user.id if current_user else None
+    title = "租房推荐 Agent" if current_user else "租房推荐 Agent（游客）"
+    chat_session = await chat_service.create_session(user_id, title)
 
-    cart_agent = CartService(session=session)
-    cart = await cart_agent.get_or_create_cart(current_user.id)
-    # 购物车关联到最新会话
-    cart.session_id = chat_session.id
-    await session.commit()
+    cart_id: int | None = None
+    if current_user:
+        cart_agent = CartService(session=session)
+        cart = await cart_agent.get_or_create_cart(current_user.id)
+        # 购物车关联到最新会话
+        cart.session_id = chat_session.id
+        await session.commit()
+        cart_id = cart.id
 
     return AgentSessionResponse(
         session_id=chat_session.id,
         session_uuid=chat_session.session_id,
-        cart_id=cart.id,
+        cart_id=cart_id,
         title=chat_session.title,
     )
 
@@ -68,14 +109,19 @@ async def send_agent_message(
     session_id: int,
     body: AgentMessageRequest,
     session: AsyncSession = Depends(get_db_session),
-    current_user: User = Depends(get_current_user),
+    current_user: User | None = Depends(get_current_user_optional),
 ) -> AgentMessageResponse:
+    user_id = current_user.id if current_user else None
     chat_service = ChatService(session)
-    chat_session = await chat_service.get_session(session_id, current_user.id)
+    chat_session = await chat_service.get_session(session_id, user_id)
     if chat_session is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Agent 会话不存在")
 
-    result = await _handle_with_supervisor(session, chat_session, current_user.id, body)
+    from app.services.agentic.dispatcher import dispatch
+    filters = body.filters.model_dump(exclude_none=True) if body.filters else None
+    result = await dispatch(session=session, chat_session=chat_session, user_id=user_id,
+                            message=body.message, filters=filters,
+                            compare_property_ids=body.compare_property_ids)
 
     return AgentMessageResponse(
         reply=result["reply"],
@@ -110,89 +156,56 @@ async def send_agent_message(
     )
 
 
-async def _handle_with_supervisor(
-    session: AsyncSession,
-    chat_session,
-    user_id: int,
+@router.post("/sessions/{session_id}/messages/stream")
+async def send_agent_message_stream(
+    session_id: int,
     body: AgentMessageRequest,
-) -> dict:
-    """使用 Supervisor 多 Agent DAG 编排处理消息。"""
-    from app.models.chat import ChatMessage, ChatMessageRole
-    from app.services.agentic.orchestration.supervisor import Supervisor
-    from app.services.agentic.agents.registry import register_all_agents
-    from app.services.agentic.orchestration.agent_registry import AgentRegistry
-    from app.services.agentic.orchestration.tool_registry import ToolRegistry, bind_tool_handlers
+    session: AsyncSession = Depends(get_db_session),
+    current_user: User | None = Depends(get_current_user_optional),
+):
+    """流式 Agent 消息 —— SSE 逐 token 返回 AI 回复。"""
+    from fastapi.responses import StreamingResponse
+    from app.services.agentic.dispatcher import dispatch_stream
 
-    # 注册 Agent + 绑定工具
-    registry = AgentRegistry()
-    register_all_agents(registry)
-    tool_registry = ToolRegistry.get_instance()
-    bind_tool_handlers(tool_registry, session, user_id)
+    user_id = current_user.id if current_user else None
+    chat_service = ChatService(session)
+    chat_session = await chat_service.get_session(session_id, user_id)
+    if chat_session is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Agent 会话不存在")
 
-    # 构建对话历史
-    history = await _build_chat_history(session, chat_session.id, user_id)
-
-    # 提取筛选条件
     filters = body.filters.model_dump(exclude_none=True) if body.filters else None
 
-    supervisor = Supervisor(
-        session=session, registry=registry, tool_registry=tool_registry,
-        chat_session=chat_session,
-    )
-    result = await supervisor.handle_message(
-        message=body.message,
-        history=history,
-        filters=filters,
-        user_id=user_id,
-        compare_property_ids=body.compare_property_ids,
-    )
+    async def event_stream():
+        full_reply = ""
+        try:
+            async for token, meta in dispatch_stream(
+                session=session, chat_session=chat_session, user_id=user_id,
+                message=body.message, filters=filters,
+                compare_property_ids=body.compare_property_ids,
+            ):
+                if token:
+                    full_reply += token
+                    yield f"data: {json.dumps({'token': token})}\n\n"
+                if meta:
+                    yield f"data: {json.dumps({'meta': meta})}\n\n"
+        except Exception as e:
+            yield f"data: {json.dumps({'error': str(e)})}\n\n"
+        yield f"data: [DONE]\n\n"
 
-    # 持久化消息到数据库（与 legacy 行为一致）
-    user_msg = ChatMessage(
-        session_id=chat_session.id,
-        role=ChatMessageRole.user,
-        content=body.message,
-        metadata_={"filters": filters or {}, "pipeline": "agentic"},
-    )
-    assistant_msg = ChatMessage(
-        session_id=chat_session.id,
-        role=ChatMessageRole.assistant,
-        content=result["reply"],
-        metadata_={
-            "intent": result.get("intent"),
-            "pipeline": "agentic",
-            "orchestration": result.get("_orchestration"),
-            "recommendations": [
-                {"property_id": r["property_id"], "match_reason": r.get("match_reason", "")}
-                for r in result.get("recommendations", [])
-            ],
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
         },
     )
-    session.add_all([user_msg, assistant_msg])
-    await session.commit()
-
-    return result
-
-
-async def _build_chat_history(
-    session: AsyncSession, chat_session_id: int, user_id: int
-) -> list[dict]:
-    """从数据库获取对话历史，转为 Supervisor 需要的格式。"""
-    from app.services.chat_service import ChatService as Cs
-    chat_svc = Cs(session)
-    messages = await chat_svc.get_messages(chat_session_id, user_id)
-    history = []
-    for msg in messages:
-        role = "user" if msg.role.value == "user" else "assistant"
-        history.append({"role": role, "content": msg.content})
-    return history
 
 
 @router.get("/faqs", response_model=list[FaqChip])
-async def get_faq_chips(
-    current_user: User = Depends(get_current_user),
-) -> list[FaqChip]:
-    """FAQ 快捷入口 chips（前端渲染在输入框上方/气泡里）"""
+async def get_faq_chips() -> list[FaqChip]:
+    """FAQ 快捷入口 chips（前端渲染在输入框上方/气泡里）—— 无需登录"""
     return [FaqChip(**c) for c in list_faq_chips()]
 
 

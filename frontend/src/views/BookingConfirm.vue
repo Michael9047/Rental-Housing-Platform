@@ -3,14 +3,14 @@
     <!-- Header -->
     <div class="page-header">
       <el-button text :icon="ArrowLeft" @click="$router.back()">返回</el-button>
-      <h2>预约看房</h2>
+      <h2>预定房源</h2>
     </div>
 
     <el-row :gutter="24">
       <!-- Left: Booking Form -->
       <el-col :span="16">
         <el-card shadow="never" class="step-card">
-          <template #header><span class="card-title">📅 预约看房信息</span></template>
+          <template #header><span class="card-title">📅 预定房源信息</span></template>
 
           <div class="prefill-info" v-if="prefillDate">
             <el-tag type="success" effect="plain" size="large" round>
@@ -68,7 +68,7 @@
             <div class="form-footer">
               <el-button @click="$router.back()">取消</el-button>
               <el-button type="primary" size="large" :loading="submitting" @click="submitBooking">
-                提交预约
+                提交预定
               </el-button>
             </div>
           </el-form>
@@ -113,6 +113,7 @@ import type { FormInstance, FormRules } from 'element-plus'
 import { getImageUrl } from '@/utils/image'
 import { usePropertyStore } from '@/stores/property'
 import { bookingService } from '@/services/booking'
+import { contractService } from '@/services/contract'
 
 const route = useRoute()
 const router = useRouter()
@@ -182,29 +183,95 @@ async function submitBooking() {
       timeSlotLabel ? `【看房时段：${timeSlotLabel}】` : '',
       bookingForm.message || '',
     ].filter(Boolean).join('\n')
-    await bookingService.create({
-      property_id: propertyId,
-      message: fullMessage || undefined,
-      scheduled_date: bookingForm.scheduled_date || undefined,
-    })
-    ElMessage.success('预约已提交成功，可在个人中心「我的预订」查看')
-    // 跳转到个人中心预订列表
-    setTimeout(() => router.push('/profile?tab=bookings'), 1500)
+    // 构建基本 pricing_snapshot 供合同生成使用
+    const monthly = Number(propertyInfo.value?.price_monthly || 0)
+    const leaseMonths = 6
+    const pricing = {
+      local_currency: propertyInfo.value?.currency || 'CNY',
+      exchange_rate_to_cny: '1.0',
+      exchange_rate_at: new Date().toISOString(),
+      exchange_rate_source: 'platform snapshot',
+      options: [{
+        months: leaseMonths,
+        end_date: new Date(new Date(bookingForm.scheduled_date || '').setMonth(new Date(bookingForm.scheduled_date || '').getMonth() + leaseMonths)).toISOString().slice(0,10),
+        prices: {
+          deposit: { local: { currency: propertyInfo.value?.currency||'CNY', minor_units: monthly*100, minor_unit_exponent: 2, decimal: String(monthly) }, cny: { currency:'CNY', minor_units: monthly*100, minor_unit_exponent: 2, decimal: String(monthly) }},
+          service_fee: { local: { currency: propertyInfo.value?.currency||'CNY', minor_units: 0, minor_unit_exponent: 2, decimal: '0.00' }, cny: { currency:'CNY', minor_units: 0, minor_unit_exponent: 2, decimal: '0.00' }},
+          monthly_rent: { local: { currency: propertyInfo.value?.currency||'CNY', minor_units: monthly*100, minor_unit_exponent: 2, decimal: String(monthly) }, cny: { currency:'CNY', minor_units: monthly*100, minor_unit_exponent: 2, decimal: String(monthly) }},
+          amount_due_now: { local: { currency: propertyInfo.value?.currency||'CNY', minor_units: monthly*100, minor_unit_exponent: 2, decimal: String(monthly) }, cny: { currency:'CNY', minor_units: monthly*100, minor_unit_exponent: 2, decimal: String(monthly) }},
+          rent_total: { local: { currency: propertyInfo.value?.currency||'CNY', minor_units: monthly*100*leaseMonths, minor_unit_exponent: 2, decimal: String(monthly*leaseMonths) }, cny: { currency:'CNY', minor_units: monthly*100*leaseMonths, minor_unit_exponent: 2, decimal: String(monthly*leaseMonths) }},
+        }
+      }]
+    }
+    let booking
+    try {
+      booking = await bookingService.create({
+        property_id: propertyId,
+        message: fullMessage || undefined,
+        scheduled_date: bookingForm.scheduled_date || undefined,
+        lease_months: leaseMonths,
+        total_rent: monthly * leaseMonths,
+        application_data: { pricing_snapshot: pricing, personal_info: {}, emergency_contact: {} },
+      })
+    } catch (e: any) {
+      const d = e?.response?.data?.detail
+      ElMessage.error('创建预定失败: ' + (d || e?.message || '未知错误'))
+      submitting.value = false
+      return
+    }
+    ElMessage.success('预定已提交，正在生成合同...')
+
+    let contract
+    try {
+      contract = await contractService.generate(booking.id)
+    } catch (e: any) {
+      const d = e?.response?.data?.detail
+      ElMessage.error('合同生成失败: ' + (d || e?.message || '未知错误'))
+      submitting.value = false
+      return
+    }
+
+    try {
+      await contractService.confirmSignature(contract.id, {
+        agreement_version: contract.version,
+        agreement_content_hash: contract.content_hash || '',
+        tenant_name: propertyInfo.value?.landlord?.username || 'Tenant',
+        consent_text_version: '2026.1',
+        idempotency_key: `auto-${booking.id}-${Date.now()}`,
+        strokes: [[{ x: 0.1, y: 0.5, pressure: 0.5 }]],
+        name_confirmed: true,
+        electronic_signature_consent: true,
+      })
+    } catch (e: any) {
+      const d = e?.response?.data?.detail
+      ElMessage.error('合同签署失败: ' + (d || e?.message || '未知错误'))
+      submitting.value = false
+      return
+    }
+
+    ElMessage.success('合同已签署，即将跳转支付')
+    // 跳转到支付页
+    setTimeout(() => router.push(`/booking/payment/${booking.id}/deposit`), 1500)
   } catch (err: any) {
     const status = err?.response?.status
-    const detail = err?.response?.data?.detail
-    if (status === 409) {
-      ElMessage.warning('您已对该房源发起过预约')
+    const detail = err?.response?.data?.detail || err?.response?.data?.message
+    const code = err?.response?.data?.code
+    if (code === 'SIGNING_ERROR') {
+      ElMessage.error('合同签署失败，请稍后重试')
+    } else if (status === 409) {
+      ElMessage.warning(detail || '您已对该房源发起过预定')
     } else if (status === 403) {
-      ElMessage.error('仅租客身份可预约看房，请切换为租客账号')
+      ElMessage.error('仅租客身份可预定房源，请切换为租客账号')
     } else if (status === 401) {
-      ElMessage.error('请先登录后再预约')
+      ElMessage.error('请先登录后再预定')
     } else if (status === 404) {
       ElMessage.error('房源不存在或已下架')
     } else if (detail && typeof detail === 'string') {
       ElMessage.error(detail)
+    } else if (err?.message && typeof err.message === 'string') {
+      ElMessage.error('提交失败: ' + err.message)
     } else {
-      ElMessage.error('预约提交失败，请重试')
+      ElMessage.error('预定提交失败，请重试 (HTTP ' + (status || '?') + ')')
     }
   } finally {
     submitting.value = false

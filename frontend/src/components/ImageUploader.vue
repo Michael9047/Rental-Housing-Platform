@@ -106,20 +106,24 @@ const errorMsg = ref('')
 const showPreview = ref(false)
 const previewUrl = ref('')
 let dragIdx = -1
+let syncFromParent = false  // 防止循环
 
 const isValid = computed(() => {
   const count = uploadedUrls.value.filter((_, i) => !failedIdx.value.has(i)).length
   return count >= props.minFiles
 })
 
+// 仅同步外部→内部
 watch(() => props.modelValue, (val) => {
-  uploadedUrls.value = [...val]
+  syncFromParent = true
+  uploadedUrls.value = [...(val || [])]
 })
 
-watch(uploadedUrls, (val) => {
-  emit('update:modelValue', val)
-  if (val.length >= props.minFiles) errorMsg.value = ''
-}, { deep: true })
+// 仅内部变更时通知外部
+function notifyParent() {
+  if (syncFromParent) { syncFromParent = false; return }
+  emit('update:modelValue', [...uploadedUrls.value])
+}
 
 function triggerFileInput() {
   fileInput.value?.click()
@@ -172,6 +176,7 @@ async function uploadFiles(files: File[]) {
       },
     })
     uploadedUrls.value.push(...res.data.urls)
+    notifyParent()
     ElMessage.success(`成功上传 ${res.data.count} 张图片`)
   } catch (e: any) {
     ElMessage.error('上传失败，请重试')
@@ -184,6 +189,7 @@ async function uploadFiles(files: File[]) {
 function removeImage(idx: number) {
   uploadedUrls.value.splice(idx, 1)
   failedIdx.value.delete(idx)
+  notifyParent()
 }
 
 function retryUpload(idx: number) {
@@ -202,6 +208,7 @@ function onDropSwap(_e: DragEvent, targetIdx: number) {
   arr.splice(targetIdx, 0, item)
   uploadedUrls.value = [...arr]
   dragIdx = -1
+  notifyParent()
 }
 
 function validate(): boolean {

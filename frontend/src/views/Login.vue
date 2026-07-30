@@ -305,10 +305,13 @@ async function handlePasswordLogin() {
       password: passwordForm.password,
     })
     ElMessage.success('登录成功')
-    const redirect = (route.query.redirect as string) || '/'
+    const redirect = (route.query.redirect as string) ||
+      (authStore.user?.role === 'admin' ? '/admin' : '/')
     router.push(redirect)
-  } catch {
-    // error message handled by axios interceptor
+  } catch (e: any) {
+    console.error('登录失败', e)
+    const msg = e?.response?.data?.error?.message || e?.response?.data?.detail || e?.message || '未知错误'
+    ElMessage.error('登录失败：' + (typeof msg === 'string' ? msg : JSON.stringify(msg)))
   } finally {
     loading.value = false
   }
@@ -359,7 +362,8 @@ async function handlePhoneLogin() {
       ElMessage.info('手机号验证通过，请设置账号信息')
     } else {
       ElMessage.success('登录成功')
-      const redirect = (route.query.redirect as string) || '/'
+      const redirect = (route.query.redirect as string) ||
+        (authStore.user?.role === 'admin' ? '/admin' : '/')
       router.push(redirect)
     }
   } catch {
@@ -386,7 +390,8 @@ async function handlePhoneRegister() {
       password: phoneForm.password,
     })
     ElMessage.success('注册成功')
-    const redirect = (route.query.redirect as string) || '/'
+    const redirect = (route.query.redirect as string) ||
+      (authStore.user?.role === 'admin' ? '/admin' : '/')
     router.push(redirect)
   } catch {
     // error handled by interceptor

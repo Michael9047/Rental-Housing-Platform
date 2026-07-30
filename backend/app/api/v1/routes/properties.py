@@ -1,6 +1,8 @@
+from datetime import datetime as _dt
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_db_session, require_landlord
@@ -9,6 +11,8 @@ from app.schemas.property import PropertyCreate, PropertyListResponse, PropertyR
 from app.schemas.property_image import PropertyImageRead
 from app.services.property_service import PropertyService
 from app.services.user_service import UserService
+from app.services.booking_availability_service import BookingAvailabilityService
+from app.services.lease_pricing_service import LeasePricingService
 from app.models.property import Property
 from app.tasks.poi_tasks import generate_full_poi_for_property
 
@@ -42,7 +46,7 @@ async def search_properties(
     price_max: Decimal | None = Query(default=None, ge=0),
     bedrooms: int | None = Query(default=None, ge=0),
     property_type: str | None = Query(default=None),
-    limit: int = Query(default=20, ge=1, le=100),
+    limit: int = Query(default=200, ge=1, le=500),
     institute_id: int | None = Query(default=None, ge=1),
     amenities: list[str] | None = Query(default=None),
     available_from: str | None = Query(default=None),
@@ -52,38 +56,62 @@ async def search_properties(
     sort_by: str | None = Query(default=None),
     session: AsyncSession = Depends(get_db_session),
 ) -> list[PropertySearchResult]:
-    results = await PropertyService(session).search(
-        query=q, district=district, price_min=price_min,
-        price_max=price_max, bedrooms=bedrooms,
-        property_type=property_type, limit=limit,
-        institute_id=institute_id,
-        amenities=amenities,
-        available_from=available_from,
-        room_type=room_type,
-        min_lease_months=min_lease_months,
-        max_lease_months=max_lease_months,
-        sort_by=sort_by,
+    """三层架构：租客首页推荐展示公寓层（Institute），非房间"""
+    from sqlalchemy.orm import selectinload
+    from app.models.institute import Institute
+    from app.models.unit_type import UnitType
+
+    # 查询活跃公寓，预加载户型以获取最低租金
+    stmt = (
+        select(Institute)
+        .where(Institute.status == "active")
+        .options(selectinload(Institute.unit_types), selectinload(Institute.images))
+        .limit(limit)
     )
-    return [
-        PropertySearchResult(
-            id=prop.id, business_id=prop.business_id, landlord_id=prop.landlord_id,
-            title=prop.title, description=prop.description,
-            address=prop.address, district=prop.district,
-            price_monthly=prop.price_monthly,
-            area_sqm=prop.area_sqm, bedrooms=prop.bedrooms, bathrooms=prop.bathrooms,
-            property_type=prop.property_type, status=prop.status,
-            latitude=prop.latitude, longitude=prop.longitude,
-            created_at=prop.created_at, updated_at=prop.updated_at,
-            images=[PropertyImageRead(id=img.id, property_id=img.property_id,
-                     filename=img.filename, original_name=img.original_name,
-                     mime_type=img.mime_type, file_size=img.file_size,
-                     sort_order=img.sort_order, is_primary=img.is_primary,
-                     created_at=img.created_at) for img in (prop.images or [])],
-            institute_name=getattr(prop, 'institute_name', None),
-            similarity=sim,
-        )
-        for prop, sim in results
-    ]
+    if q:
+        stmt = stmt.where(Institute.name.ilike(f"%{q}%"))
+    if institute_id:
+        stmt = stmt.where(Institute.id == institute_id)
+
+    result = await session.execute(stmt)
+    institutes = result.scalars().all()
+
+    output = []
+    for inst in institutes:
+        # 取公寓下所有户型的最低月租
+        rents = [ut.base_rent for ut in (inst.unit_types or []) if ut.base_rent and ut.status.value == "available"]
+        min_rent = Decimal(str(min(rents))) if rents else None
+
+        # 公寓图片
+        inst_images = sorted((inst.images or []), key=lambda x: x.sort_order)
+        images_out = [
+            PropertyImageRead(
+                id=img.id, property_id=img.id,
+                filename=img.filename, original_name=img.original_name,
+                mime_type=img.mime_type, file_size=img.file_size,
+                sort_order=img.sort_order, is_primary=img.is_primary,
+                created_at=img.created_at,
+            )
+            for img in inst_images
+        ]
+
+        output.append(PropertySearchResult(
+            id=inst.id, business_id=inst.business_id, landlord_id=0,
+            title=inst.name or "未命名公寓",
+            description=inst.description,
+            address=inst.address or '',
+            district=inst.city or '',
+            price_monthly=min_rent,
+            area_sqm=None, bedrooms=0, bathrooms=0,
+            property_type='apartment', status=str(inst.status.value),
+            currency='CNY', latitude=inst.latitude, longitude=inst.longitude,
+            created_at=inst.created_at or _dt.min,
+            updated_at=inst.updated_at or _dt.min,
+            images=images_out,
+            institute_name=inst.name,
+            similarity=None,
+        ))
+    return output
 
 
 @router.get("", response_model=PropertyListResponse)
@@ -356,6 +384,28 @@ async def clear_audit_logs(
 
 
 
+@router.get("/institutes-geo")
+async def get_institutes_geo(session: AsyncSession = Depends(get_db_session)) -> list[dict]:
+    """返回所有公寓的地理位置（用于地图可视化）。"""
+    from sqlalchemy import select, func
+    from app.models.institute import Institute
+    from app.models.property import Room as RoomModel
+    rows = await session.execute(
+        select(
+            Institute.name, Institute.country, Institute.latitude, Institute.longitude,
+            func.count(RoomModel.id)
+        )
+        .outerjoin(RoomModel, RoomModel.institute_id == Institute.id)
+        .where(Institute.status == 'active', Institute.latitude.isnot(None), Institute.longitude.isnot(None))
+        .group_by(Institute.id)
+        .order_by(Institute.country, func.count(RoomModel.id).desc())
+    )
+    return [
+        {"name": name, "country": country or "--", "lat": float(lat), "lng": float(lng), "rooms": cnt}
+        for name, country, lat, lng, cnt in rows.fetchall()
+    ]
+
+
 # ── CRUD ──
 @router.get("/{property_id}", response_model=PropertyRead)
 async def get_property(property_id: int, session: AsyncSession = Depends(get_db_session)) -> PropertyRead:
@@ -444,3 +494,50 @@ async def get_property_history(
         }
         for log in logs
     ]
+
+
+# ── 预订流程辅助端点 ──
+
+@router.get("/{property_id}/booking-availability")
+async def get_booking_availability(
+    property_id: int,
+    year: int = Query(..., ge=2020, le=2100),
+    month: int = Query(..., ge=1, le=12),
+    session: AsyncSession = Depends(get_db_session),
+) -> dict:
+    """获取房源指定月份的预订日期可用性（供日历组件使用）。"""
+    availability_service = BookingAvailabilityService(session)
+    property_obj = await availability_service.get_property(property_id)
+    if not property_obj:
+        raise HTTPException(status_code=404, detail="Property not found")
+    result = await availability_service.get_month_availability(property_obj, year, month)
+    return result
+
+
+@router.get("/{property_id}/validate-booking-date")
+async def validate_booking_date(
+    property_id: int,
+    date: str = Query(..., pattern=r"^\d{4}-\d{2}-\d{2}$"),
+    session: AsyncSession = Depends(get_db_session),
+) -> dict:
+    """校验单个日期是否可入住。"""
+    availability_service = BookingAvailabilityService(session)
+    property_obj = await availability_service.get_property(property_id)
+    if not property_obj:
+        raise HTTPException(status_code=404, detail="Property not found")
+    valid, reason, _ = await availability_service.validate(property_obj, date)
+    return {"available": valid, "reason": reason}
+
+
+@router.get("/{property_id}/lease-pricing")
+async def get_lease_pricing(
+    property_id: int,
+    move_in_date: str = Query(..., pattern=r"^\d{4}-\d{2}-\d{2}$"),
+    session: AsyncSession = Depends(get_db_session),
+) -> dict:
+    """获取房源指定入住日期的租期价格选项。"""
+    property_obj = await PropertyService(session).get(property_id)
+    if not property_obj:
+        raise HTTPException(status_code=404, detail="Property not found")
+    pricing = LeasePricingService.calculate(property_obj, move_in_date)
+    return pricing.model_dump(mode="json")

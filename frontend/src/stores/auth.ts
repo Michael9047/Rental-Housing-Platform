@@ -11,7 +11,7 @@ export const useAuthStore = defineStore('auth', () => {
   const loading = ref(false)
 
   const isLoggedIn = computed(() => !!token.value)
-  const isLandlord = computed(() => user.value?.role === 'landlord' || user.value?.role === 'admin')
+  const isLandlord = computed(() => user.value?.role === 'landlord')
   const isAdmin = computed(() => user.value?.role === 'admin')
   const isMaintenance = computed(() => user.value?.role === 'maintenance_worker')
   const isBdManager = computed(() => user.value?.role === 'bd_manager')
@@ -58,7 +58,6 @@ export const useAuthStore = defineStore('auth', () => {
     try {
       const tokenResp = await authService.login(data)
       setAuth(tokenResp.access_token, { } as User)
-      // Fetch full user profile
       const currentUser = await authService.getMe()
       setAuth(tokenResp.access_token, currentUser)
       return currentUser

@@ -1,4 +1,4 @@
-import uuid
+"""公寓周边设施模型 —— 以公寓为单位存储 POI / 安全数据"""
 from datetime import datetime
 
 from sqlalchemy import Boolean, DateTime, ForeignKey, String, Text as SAText
@@ -9,24 +9,25 @@ from app.models.mixins import TimestampMixin
 from app.db.session import Base
 
 
-class PropertyPOI(TimestampMixin, Base):
-    __tablename__ = "property_pois"
+class InstitutePOI(TimestampMixin, Base):
+    __tablename__ = "institute_pois"
 
-    id: Mapped[str] = mapped_column(
-        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    institute_id: Mapped[int] = mapped_column(
+        ForeignKey("institutes.id", ondelete="CASCADE"), primary_key=True
     )
-    property_id: Mapped[int] = mapped_column(
-        ForeignKey("rooms.id", ondelete="CASCADE"), unique=True, index=True
-    )
-    content: Mapped[str] = mapped_column(SAText, nullable=False)
+    content: Mapped[str] = mapped_column(SAText, nullable=False, default="")
     poi_data: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     generated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=datetime.utcnow
     )
     reviewed: Mapped[bool] = mapped_column(Boolean, default=False)
-    # 地图小卡片预生成数据：6 大类 POI（含 lat/lng），创建房源时 Celery 异步生成
+    # 地图小卡片预生成数据：6 大类 POI（含 lat/lng）
     map_poi_data: Mapped[dict | None] = mapped_column(JSON, nullable=True)
-    # 安全评分数据：data.gov.sg / Police.uk 街区犯罪数据，创建房源时 Celery 异步生成
+    # 安全评分数据
     safety_data: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
-    property: Mapped["Room"] = relationship()
+    institute: Mapped["Institute"] = relationship()
+
+
+# 向后兼容别名
+PropertyPOI = InstitutePOI

@@ -11,7 +11,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.property import Property
-from app.models.poi import PropertyPOI
+from app.models.poi import InstitutePOI
 from app.models.review import Review, ReviewStatus
 from app.services.agentic.agents.base_agent import BaseAgent
 from app.services.agentic.orchestration.types import AgentContext, AgentResult, AgentError, AgentErrorType
@@ -141,14 +141,14 @@ class CompareAgent(BaseAgent):
         self, props: list[Property]
     ) -> tuple[list[PropertyMetrics], dict[int, dict]]:
         """为对比补充真实数据：POI 通勤距离 + 机构评价聚合。"""
-        ids = [p.id for p in props]
-
-        pois: dict[int, PropertyPOI] = {}
+        inst_ids = sorted({p.institute_id for p in props if p.institute_id})
+        pois: dict[int, InstitutePOI] = {}
         try:
-            rows = await self.session.scalars(
-                select(PropertyPOI).where(PropertyPOI.property_id.in_(ids))
-            )
-            pois = {poi.property_id: poi for poi in rows}
+            if inst_ids:
+                rows = await self.session.scalars(
+                    select(InstitutePOI).where(InstitutePOI.institute_id.in_(inst_ids))
+                )
+                pois = {poi.institute_id: poi for poi in rows}
         except Exception:
             logger.exception("加载 POI 数据失败，通勤维度取中性分")
 
@@ -176,7 +176,7 @@ class CompareAgent(BaseAgent):
         metrics: list[PropertyMetrics] = []
         extras: dict[int, dict] = {}
         for p in props:
-            poi = pois.get(p.id)
+            poi = pois.get(p.institute_id) if p.institute_id else None
             transit = nearest_transit_meters(poi.poi_data if poi else None)
             inst_id = p.unit_type.institute_id if p.unit_type else None
             rating, count = (None, 0)

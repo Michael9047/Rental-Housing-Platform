@@ -102,7 +102,7 @@ const checkedIds = ref<number[]>([])
 const allIds = computed(() => store.propertyIds)
 const hints = ['我更看重通勤', '我更看重价格', '我更看重安全', '综合对比一下', '哪个性价比最高？']
 
-const typeMap: Record<string, string> = { apartment: '公寓', house: '别墅', studio: '单间', shared: '合租' }
+const typeMap: Record<string, string> = { studio: '单间', '1-bed': '一室', '2-bed': '两室+', shared: '合租', house: '别墅' }
 
 function typeLabel(pid: number): string {
   return typeMap[store.propertyData[pid]?.property_type] || store.propertyData[pid]?.property_type || '?'

@@ -95,18 +95,9 @@
             </el-col>
           </el-row>
 
-          <el-row :gutter="16">
-            <el-col :span="12">
-              <el-form-item label="起租时间">
-                <el-input v-model="f.lease_start" placeholder="如 2026年9月 / 随时入住 / 即日起" maxlength="50" />
-              </el-form-item>
-            </el-col>
-            <el-col :span="12">
-              <el-form-item label="止租时间">
-                <el-input v-model="f.lease_end" placeholder="如 2027年6月 / 租满一年" maxlength="50" />
-              </el-form-item>
-            </el-col>
-          </el-row>
+          <el-form-item label="租房要求">
+            <el-input v-model="f.rental_requirements" type="textarea" :rows="2" placeholder="选填：如 一年起租、仅限学生、无宠物、需提供担保人..." maxlength="500" show-word-limit />
+          </el-form-item>
 
           <el-divider content-position="left">专属优惠</el-divider>
           <el-form-item>
@@ -270,8 +261,7 @@ const f = reactive({
   base_rent: undefined as number | undefined,
   deposit_amount: undefined as number | undefined,
   deposit_type: undefined as string | undefined,
-  lease_start: '' as string | undefined,
-  lease_end: '' as string | undefined,
+  rental_requirements: '' as string | undefined,
   currency: 'CNY' as string | undefined,
   special_offer: '' as string | undefined,
   min_stay_months: 3,
@@ -293,7 +283,7 @@ const rules: FormRules = {
   institute_id: [{ required: true, message: '请选择公寓', trigger: 'change' }],
   name: [{ required: true, message: '请输入户型名称', trigger: 'blur' }],
   base_rent: [{ required: true, message: '请输入标准月租金', trigger: 'blur' }],
-  area_sqm: [{ required: true, message: '请输入套内面积', trigger: 'blur' }],
+  area_sqm: [{ required: true, message: '请输入套内面积', trigger: 'change' }],
 }
 
 // 公寓
@@ -335,14 +325,13 @@ async function loadUnitType(id: number) {
     f.base_rent = ut.base_rent ? Number(ut.base_rent) : undefined
     f.deposit_amount = ut.deposit_amount ?? undefined
     f.deposit_type = ut.deposit_type ?? undefined
-    f.lease_start = ut.lease_start ?? ''
-    f.lease_end = ut.lease_end ?? ''
+    f.rental_requirements = ut.rental_requirements ?? ''
     f.currency = ut.currency || 'CNY'
     f.special_offer = ut.special_offer ?? ''
     f.min_stay_months = ut.min_stay_months ?? 3
     f.description = ut.description ?? ''
     selectedAmenities.value = ut.amenities ?? []
-    uploadedImageUrls.value = ut.image_urls ?? []
+    uploadedImageUrls.value = (ut.images || []).map((img: any) => '/api/v1/uploads/' + img.filename)
     if (ut.floor_pricing && Array.isArray(ut.floor_pricing)) {
       floorPricingTable.length = 0
       ut.floor_pricing.forEach((fp: any) => floorPricingTable.push({ ...fp }))
@@ -354,25 +343,24 @@ async function loadUnitType(id: number) {
 
 // 提交
 async function handleSubmit() {
-  if (!formRef.value) return
-  if (!authStore.user) { ElMessage.error('请先登录'); return }
-  const valid = await formRef.value?.validate().catch(() => false)
-  if (!valid) return
-  if (!f.institute_id) { ElMessage.error('请先选择公寓'); return }
-
+  if (submitting.value) return  // 防止重复提交
   submitting.value = true
+  if (!formRef.value) { submitting.value = false; return }
+  if (!authStore.user) { ElMessage.error('请先登录'); submitting.value = false; return }
+  const valid = await formRef.value?.validate().catch(() => false)
+  if (!valid) { submitting.value = false; return }
+  if (!f.institute_id) { ElMessage.error('请先选择公寓'); submitting.value = false; return }
   const data: any = {
     institute_id: f.institute_id,
     name: f.name.trim(),
     bedrooms: f.bedrooms,
     bathrooms: f.bathrooms,
     hall_count: f.hall_count,
-    area_sqm: f.area_sqm ? String(f.area_sqm) : null,
-    base_rent: f.base_rent ? String(f.base_rent) : '0',
+    area_sqm: f.area_sqm ?? null,
+    base_rent: f.base_rent ?? 0,
     deposit_amount: f.deposit_amount ?? null,
     deposit_type: f.deposit_type || null,
-    lease_start: f.lease_start?.trim() || null,
-    lease_end: f.lease_end?.trim() || null,
+    rental_requirements: f.rental_requirements?.trim() || null,
     currency: f.currency || null,
     special_offer: f.special_offer?.trim() || null,
     min_stay_months: f.min_stay_months,
@@ -390,7 +378,10 @@ async function handleSubmit() {
     }
     showSuccessDialog.value = true
   } catch (e: any) {
-    ElMessage.error(extractErrorMessage(e) || '保存失败')
+    const msg = extractErrorMessage(e) || e?.message || e?.response?.statusText || '保存失败'
+    console.error('[CreateProperty] save error:', e)
+    console.error('[CreateProperty] response:', e?.response?.data)
+    ElMessage.error(typeof msg === 'string' ? msg : JSON.stringify(msg))
   } finally { submitting.value = false }
 }
 

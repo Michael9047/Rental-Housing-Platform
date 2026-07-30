@@ -44,13 +44,13 @@ class RoomRead(BaseModel):
     landlord_id: int
     business_id: str | None = None
     uuid: str | None = None
-    unit_type_id: int
+    unit_type_id: int | None = None
     room_number: str | None = None
     building_block: str | None = None
     floor: int | None = None
     special_discount: str | None = None
     available_from: date | None = None
-    min_stay_months: int
+    min_stay_months: int | None = None
     status: str
     version: int
     deleted_at: datetime | None = None

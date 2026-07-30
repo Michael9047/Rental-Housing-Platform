@@ -17,7 +17,8 @@ from app.models.marketplace import (
 from app.models.news import NewsArticle
 from app.models.notification import Notification
 from app.models.payment import Payment
-from app.models.poi import PropertyPOI
+from app.models.institute_commute import InstituteCommute
+from app.models.poi import InstitutePOI
 from app.models.property import Property
 from app.models.property_image import PropertyImage
 from app.models.review import Review

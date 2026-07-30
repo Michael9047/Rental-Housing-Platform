@@ -114,7 +114,7 @@ def _build_tools(property_ids: list[int]) -> list[dict[str, Any]]:
             "type": "function",
             "function": {
                 "name": "get_safety_scores",
-                "description": "获取一批房源所在区域的安全评分（0-100，越高越安全）。",
+                "description": "获取一批房源所在区域的安全评分（0.0-5.0，越高越安全）。新加坡房源同时返回 om_score（非礼专项评分，3.0-5.0），英国房源仅返回综合 crime 评分。",
                 "parameters": {
                     "type": "object",
                     "properties": {

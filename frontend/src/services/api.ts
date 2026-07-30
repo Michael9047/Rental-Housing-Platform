@@ -12,9 +12,16 @@ const api = axios.create({
 // Request interceptor: attach Authorization header
 api.interceptors.request.use(
   (config) => {
-    const token = localStorage.getItem('access_token')
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`
+    // 登录/注册/刷新 token 等公开接口不附加旧 token
+    const path = config.url || ''
+    const isPublic = path.includes('/auth/login') || path.includes('/auth/register')
+      || path.includes('/auth/refresh') || path.includes('/auth/phone')
+      || path.includes('/auth/send-sms') || path.includes('/auth/verify-sms')
+    if (!isPublic) {
+      const token = localStorage.getItem('access_token')
+      if (token) {
+        config.headers.Authorization = `Bearer ${token}`
+      }
     }
     return config
   },

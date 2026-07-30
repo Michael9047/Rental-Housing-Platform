@@ -28,7 +28,7 @@ PARSE_SYSTEM_PROMPT = """你是一个租房平台的智能助手。用户会用�
     "price_min": 最低月租金（整数，单位元），null 表示未提及,
     "price_max": 最高月租金（整数，单位元），null 表示未提及,
     "bedrooms": 卧室数量（整数），null 表示未提及,
-    "property_type": "apartment/house/studio/shared 之一，null 表示未提及",
+    "property_type": "studio/1-bed/2-bed/shared/house 之一，null 表示未提及",
     "keywords": "用户提到的其他关键词，如近地铁、带阳台、安静等，用逗号分隔"
   },
   "completeness": {
@@ -129,17 +129,22 @@ class LLMService:
         *,
         temperature: float = 0.2,
         max_tokens: int = 1500,
+        reasoning_effort: str | None = None,
     ) -> dict[str, Any]:
         """通用 JSON 补全：返回解析后的 dict，解析失败返回空 dict"""
-        response = await self._client.chat.completions.create(
-            model=self._model,
-            messages=[
+        kwargs: dict[str, Any] = {
+            "model": self._model,
+            "messages": [
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
             ],
-            temperature=temperature,
-            max_tokens=max_tokens,
-        )
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+        }
+        # v4-pro 推理模型：结构化提取不需要长思考，low 即可
+        if reasoning_effort:
+            kwargs["reasoning_effort"] = reasoning_effort
+        response = await self._client.chat.completions.create(**kwargs)
         raw = self._strip_code_fence(response.choices[0].message.content or "{}")
         try:
             result = json.loads(raw)
@@ -163,6 +168,25 @@ class LLMService:
             max_tokens=max_tokens,
         )
         return response.choices[0].message.content or ""
+
+    async def complete_text_stream(
+        self,
+        messages: list[dict[str, str]],
+        *,
+        temperature: float = 0.5,
+        max_tokens: int = 800,
+    ):
+        """流式文本补全 —— 返回 async generator，逐 token yield。"""
+        stream = await self._client.chat.completions.create(
+            model=self._model,
+            messages=messages,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            stream=True,
+        )
+        async for chunk in stream:
+            if chunk.choices and chunk.choices[0].delta.content:
+                yield chunk.choices[0].delta.content
 
     async def complete_with_tools(
         self,
@@ -271,7 +295,7 @@ class LLMService:
             if p.get("area_sqm"):
                 parts.append(f"   面积: {p['area_sqm']}平方米")
             if p.get("property_type"):
-                type_map = {"apartment": "公寓", "house": "别墅", "studio": "单间", "shared": "合租"}
+                type_map = {"studio": "单间", "1-bed": "一室", "2-bed": "两室+", "shared": "合租", "house": "别墅"}
                 parts.append(f"   类型: {type_map.get(p['property_type'], p['property_type'])}")
             if p.get("description"):
                 desc = p["description"][:100]

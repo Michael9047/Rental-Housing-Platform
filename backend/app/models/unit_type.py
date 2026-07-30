@@ -74,6 +74,9 @@ class UnitType(TimestampMixin, Base):
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     available_from: Mapped[date | None] = mapped_column(Date, nullable=True)
     min_stay_months: Mapped[int] = mapped_column(Integer, default=3, nullable=False)
+    rental_requirements: Mapped[str | None] = mapped_column(Text, nullable=True)  # 选填，替代起止租期日期
+
+    embedding: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # ── 状态 ──
     status: Mapped[UnitTypeStatus] = mapped_column(

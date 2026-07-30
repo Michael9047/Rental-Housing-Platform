@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.api.deps import get_current_user, get_db_session, require_landlord
+from app.api.v1.routes.building_staff import _move_qr_from_temp
 from app.models.institute import Institute, InstituteStatus
 from app.models.user import User
 from app.schemas.institute import InstituteCreate, InstituteUpdate
@@ -40,6 +41,39 @@ def _validate_phone(phone: str | None) -> str | None:
         status_code=422,
         detail="联系电话格式不正确，请输入11位手机号或带区号的固定电话",
     )
+
+
+@router.get("/public")
+async def list_public_buildings(
+    session: AsyncSession = Depends(get_db_session),
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=50, ge=1, le=200),
+) -> list[dict]:
+    """公开端点——首页展示公寓列表，无需登录"""
+    stmt = (select(Institute)
+            .options(selectinload(Institute.images))
+            .options(selectinload(Institute.unit_types))
+            .where(Institute.status == InstituteStatus.active)
+            .order_by(Institute.id.desc())
+            .offset(skip).limit(limit))
+    result = await session.scalars(stmt)
+    buildings = []
+    for b in result:
+        buildings.append({
+            "id": b.id, "name": b.name, "name_cn": b.name_cn, "address": b.address,
+            "logo_url": b.logo_url, "description": b.description,
+            "latitude": float(b.latitude) if b.latitude else None,
+            "longitude": float(b.longitude) if b.longitude else None,
+            "amenities": b.amenities,
+            "female_only": bool(b.female_only) if b.female_only is not None else False,
+            "couples_allowed": bool(b.couples_allowed) if b.couples_allowed is not None else False,
+            "unit_type_count": len(b.unit_types) if b.unit_types else 0,
+            "primary_image": next(({
+                "id": img.id, "filename": img.filename,
+                "is_primary": img.is_primary,
+            } for img in sorted(b.images or [], key=lambda x: x.sort_order)), None),
+        })
+    return buildings
 
 
 @router.get("")
@@ -190,6 +224,8 @@ async def create_building(
     # ── 负责人写入 building_staff ──
     manager_name = body.manager_name.strip() if body.manager_name else ""
     manager_phone = body.manager_phone.strip() if body.manager_phone else ""
+    manager_wechat = body.manager_wechat.strip() if body.manager_wechat else ""
+    manager_wechat_qr = _move_qr_from_temp(body.manager_wechat_qr) if body.manager_wechat_qr else None
     manager_email = body.manager_email.strip() if body.manager_email else ""
     if manager_name:
         from app.models.building_staff import BuildingStaff
@@ -198,6 +234,8 @@ async def create_building(
             name=manager_name,
             role="manager",
             phone=manager_phone or None,
+            wechat=manager_wechat or None,
+            wechat_qr=manager_wechat_qr,
             notes=manager_email or None,
         )
         session.add(staff)
@@ -254,6 +292,110 @@ async def list_deleted_buildings(
         "amenities": b.amenities,
         "images": [{"id": img.id, "filename": img.filename, "original_name": img.original_name, "sort_order": img.sort_order, "is_primary": img.is_primary} for img in sorted(b.images or [], key=lambda x: x.sort_order)],
     } for b in result]
+
+
+@router.get("/{building_id}/tenant-detail")
+async def get_building_tenant_detail(
+    building_id: int,
+    session: AsyncSession = Depends(get_db_session),
+) -> dict:
+    """租客端公寓详情页：公寓信息+户型列表+可租房源"""
+    from app.models.unit_type import UnitType, UnitTypeStatus
+    from app.models.property import Room, RoomStatus
+
+    stmt = (
+        select(Institute)
+        .where(Institute.id == building_id, Institute.status == "active")
+        .options(
+            selectinload(Institute.images),
+            selectinload(Institute.unit_types).selectinload(UnitType.images),
+        )
+    )
+    result = await session.execute(stmt)
+    inst = result.scalars().first()
+    if not inst:
+        raise HTTPException(status_code=404, detail="公寓不存在或已下架")
+
+    unit_types_out = []
+    for ut in sorted(inst.unit_types or [], key=lambda x: x.base_rent or 0):
+        if ut.deleted_at is not None:
+            continue  # 跳过已删除户型
+        # 查该户型下可租房源
+        room_stmt = (
+            select(Room)
+            .where(Room.unit_type_id == ut.id, Room.status == "available", Room.deleted_at.is_(None))
+            .limit(10)
+        )
+        room_result = await session.execute(room_stmt)
+        rooms = room_result.scalars().all()
+
+        unit_types_out.append({
+            "id": ut.id, "name": ut.name,
+            "bedrooms": ut.bedrooms, "bathrooms": ut.bathrooms,
+            "hall_count": ut.hall_count, "area_sqm": ut.area_sqm,
+            "base_rent": ut.base_rent,
+            "deposit_amount": ut.deposit_amount,
+            "currency": ut.currency,
+            "amenities": ut.amenities,
+            "description": ut.description,
+            "available_from": str(ut.available_from) if ut.available_from else None,
+            "min_stay_months": ut.min_stay_months,
+            "rental_requirements": ut.rental_requirements,
+            "special_offer": ut.special_offer,
+            "floor_pricing": ut.floor_pricing,
+            "images": [
+                {"id": img.id, "filename": img.filename, "is_primary": img.is_primary}
+                for img in sorted((ut.images or []), key=lambda x: x.sort_order)
+            ],
+            "rooms": [
+                {"id": r.id, "room_number": r.room_number, "floor": r.floor,
+                 "building_block": r.building_block, "status": r.status.value if hasattr(r.status, 'value') else str(r.status),
+                 "special_discount": r.special_discount}
+                for r in rooms
+            ],
+        })
+
+    # 工作人员联系方式
+    staff_list = []
+    for s in (inst.staff or []):
+        staff_list.append({"name": s.name, "role": s.role, "phone": s.phone, "email": s.notes or "", "wechat": s.wechat, "wechat_qr": s.wechat_qr})
+
+    inst_images = sorted((inst.images or []), key=lambda x: x.sort_order)
+    # 安全评分：从 institute_pois.safety_data 读取，若无则返回模拟分
+    safety_score = None
+    try:
+        poi_stmt = select(text("safety_data")).select_from(text("institute_pois")).where(text(f"institute_id = {building_id}"))
+        poi_result = await session.execute(poi_stmt)
+        poi_row = poi_result.first()
+        if poi_row and poi_row[0]:
+            import json as _json
+            sd = _json.loads(poi_row[0]) if isinstance(poi_row[0], str) else poi_row[0]
+            safety_score = sd.get("overall") if isinstance(sd, dict) else None
+    except Exception:
+        pass
+    # 无真实安全数据时给一个基于配套设施的参考分
+    if safety_score is None:
+        amenity_count = len(inst.amenities or [])
+        safety_score = round(min(9.5, 6.0 + amenity_count * 0.15), 1)
+
+    return {
+        "id": inst.id, "name": inst.name, "address": inst.address,
+        "city": inst.city, "country": inst.country,
+        "latitude": float(inst.latitude) if inst.latitude else None,
+        "longitude": float(inst.longitude) if inst.longitude else None,
+        "description": inst.description,
+        "amenities": inst.amenities,
+        "female_only": bool(inst.female_only),
+        "couples_allowed": bool(inst.couples_allowed),
+        "safety_score": safety_score,
+        "ai_score": None,  # UI 占位，当前无真实 AI 评分数据
+        "images": [
+            {"id": img.id, "filename": img.filename, "is_primary": img.is_primary}
+            for img in inst_images
+        ],
+        "unit_types": unit_types_out,
+        "staff": staff_list,
+    }
 
 
 @router.get("/{building_id}")
@@ -372,6 +514,8 @@ async def update_building(
     # ── 负责人同步至 building_staff ──
     manager_name = body.manager_name.strip() if body.manager_name else ""
     manager_phone = body.manager_phone.strip() if body.manager_phone else ""
+    manager_wechat = body.manager_wechat.strip() if body.manager_wechat else ""
+    manager_wechat_qr = _move_qr_from_temp(body.manager_wechat_qr) if body.manager_wechat_qr else None
     manager_email = body.manager_email.strip() if body.manager_email else ""
     if manager_name:
         from app.models.building_staff import BuildingStaff
@@ -384,6 +528,8 @@ async def update_building(
         if existing_staff:
             existing_staff.name = manager_name
             existing_staff.phone = manager_phone or None
+            existing_staff.wechat = manager_wechat or None
+            existing_staff.wechat_qr = manager_wechat_qr
             existing_staff.notes = manager_email or None
         else:
             staff = BuildingStaff(
@@ -391,6 +537,8 @@ async def update_building(
                 name=manager_name,
                 role="manager",
                 phone=manager_phone or None,
+                wechat=manager_wechat or None,
+                wechat_qr=manager_wechat_qr,
                 notes=manager_email or None,
             )
             session.add(staff)

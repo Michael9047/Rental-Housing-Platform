@@ -17,6 +17,8 @@ class BuildingStaff(TimestampMixin, Base):
     name: Mapped[str] = mapped_column(String(100), nullable=False)
     role: Mapped[str] = mapped_column(String(50), default="staff", nullable=False)
     phone: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    wechat: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    wechat_qr: Mapped[str | None] = mapped_column(String(255), nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     institute: Mapped["Institute"] = relationship(back_populates="staff")

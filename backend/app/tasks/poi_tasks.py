@@ -8,9 +8,8 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.celery_app import celery_app
 from app.core.config import get_settings
-from app.models.poi import PropertyPOI
+from app.models.poi import InstitutePOI
 from app.models.property import Property
-from app.services.poi_service import POIService
 from app.services.google_poi_service import GooglePOIService
 
 logger = logging.getLogger(__name__)
@@ -40,6 +39,11 @@ def generate_full_poi_for_property(property_id: int) -> None:
             prop = await session.get(Property, property_id)
             if not prop:
                 logger.warning("Full POI task: property %s not found", property_id)
+                return
+            # POI 以公寓为单位存储；若房间未关联公寓则跳过
+            institute_id = prop.institute_id
+            if not institute_id:
+                logger.warning("Full POI task: property %s has no institute, skipping", property_id)
                 return
 
             lat = float(prop.latitude) if prop.latitude else None
@@ -134,21 +138,23 @@ def generate_full_poi_for_property(property_id: int) -> None:
                 try:
                     from app.services.safety_scoring import SafetyScoringService
                     safety_svc = SafetyScoringService()
-                    country = prop.country or ""
-                    if country.upper() == "SG" and lat is not None and lng is not None:
-                        s_result = await safety_svc.score_single(
-                            property_id, lat=lat, lng=lng, country=country
+                    country = (prop.country or "").upper()
+                    if country in ("SG", "GB", "UK"):
+                        result = await safety_svc.score_single(
+                            property_id,
+                            lat=lat, lng=lng,
+                            country=country,
                         )
-                        safety_data = s_result.to_dict()
-                        logger.info("Safety score for property %s: %.0f (NPC: %s)",
-                                    property_id, s_result.score, s_result.npc)
+                        safety_data = result.to_dict()
+                        logger.info("Safety score for property %s: %.0f (source: %s)",
+                                    property_id, result.score, result.data_source)
                 except Exception:
                     logger.exception("Safety scoring failed for property %s", property_id)
 
-                # Upsert PropertyPOI
+                # Upsert InstitutePOI（公寓粒度）
                 from sqlalchemy import select as sa_select
                 result = await session.execute(
-                    sa_select(PropertyPOI).where(PropertyPOI.property_id == property_id)
+                    sa_select(InstitutePOI).where(InstitutePOI.institute_id == institute_id)
                 )
                 poi_record = result.scalar_one_or_none()
                 if poi_record:
@@ -158,8 +164,8 @@ def generate_full_poi_for_property(property_id: int) -> None:
                     poi_record.safety_data = safety_data
                     poi_record.generated_at = datetime.now(timezone.utc)
                 else:
-                    poi_record = PropertyPOI(
-                        property_id=property_id,
+                    poi_record = InstitutePOI(
+                        institute_id=institute_id,
                         content=content,
                         poi_data=poi_data,
                         map_poi_data=map_poi_data,
@@ -171,8 +177,8 @@ def generate_full_poi_for_property(property_id: int) -> None:
 
                 await session.commit()
                 total = sum(len(v) for v in item_map.values())
-                logger.info("Full POI generated for property %s: %d POIs across %d keywords",
-                            property_id, total, len(item_map))
+                logger.info("Full POI generated for institute %s (via property %s): %d POIs across %d keywords",
+                            institute_id, property_id, total, len(item_map))
 
             except Exception:
                 logger.exception("Full POI task failed for property %s", property_id)
@@ -210,32 +216,14 @@ def generate_map_pois_for_property(property_id: int) -> None:
                 logger.warning("Map POI task: property %s not found", property_id)
                 return
 
-            poi_service = POIService(session)
-            data = await poi_service.generate_map_pois(prop)
-            if not data:
+            poi_service = GooglePOIService()
+            saved = await poi_service.generate_and_save(prop, session)
+            if not saved:
                 logger.warning("Map POI task: empty results for property %s", property_id)
                 return
 
-            # Upsert 到 PropertyPOI
-            result = await session.execute(
-                select(PropertyPOI).where(PropertyPOI.property_id == property_id)
-            )
-            poi = result.scalar_one_or_none()
-            if poi:
-                poi.map_poi_data = data
-            else:
-                poi = PropertyPOI(
-                    property_id=property_id,
-                    content="",
-                    map_poi_data=data,
-                    generated_at=datetime.now(timezone.utc),
-                    reviewed=False,
-                )
-                session.add(poi)
-
-            await session.commit()
             logger.info("Map POI generated for property %s: %d categories",
-                        property_id, len(data.get("categories", {})))
+                        property_id, len((saved.map_poi_data or {}).get("categories", {})))
 
         await engine.dispose()
 
@@ -287,6 +275,58 @@ def backfill_all_map_pois() -> int:
             generate_map_pois_for_property.delay(pid)
 
         logger.info("Backfill enqueued: %d properties for map POI generation", len(missing))
+        return len(missing)
+
+    return asyncio.run(_run())
+
+
+# ═══════════════════════════════════════════════════════
+# 安全评分回填
+# ═══════════════════════════════════════════════════════
+
+@celery_app.task(
+    name="backfill_safety_scores",
+    autoretry_for=(Exception,),
+    retry_backoff=True,
+    max_retries=1,
+)
+def backfill_safety_scores() -> int:
+    """存量房源批量补生成安全评分——遍历有坐标房源，逐条 dispatch"""
+
+    import asyncio
+
+    async def _run() -> int:
+        settings = get_settings()
+        engine = create_async_engine(settings.database_url)
+        async_session = async_sessionmaker(engine, expire_on_commit=False)
+
+        async with async_session() as session:
+            result = await session.execute(
+                select(Property.id)
+                .where(
+                    Property.latitude.isnot(None),
+                    Property.longitude.isnot(None),
+                )
+            )
+            all_ids = [row[0] for row in result.all()]
+
+            # 过滤已有 safety_data 的房源
+            missing = []
+            for pid in all_ids:
+                poi_result = await session.execute(
+                    select(PropertyPOI.safety_data)
+                    .where(PropertyPOI.property_id == pid)
+                )
+                row = poi_result.first()
+                if not row or not row[0]:
+                    missing.append(pid)
+
+        await engine.dispose()
+
+        for pid in missing:
+            generate_full_poi_for_property.delay(pid)
+
+        logger.info("Safety backfill enqueued: %d properties", len(missing))
         return len(missing)
 
     return asyncio.run(_run())

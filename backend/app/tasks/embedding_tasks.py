@@ -58,7 +58,7 @@ def generate_property_embedding(property_id: int) -> None:
                     "description": property_obj.description,
                     "address": property_obj.address,
                     "district": property_obj.district,
-                    "property_type": property_obj.property_type.value,
+                    "property_type": property_obj.property_type if isinstance(property_obj.property_type, str) else (property_obj.property_type.value if hasattr(property_obj.property_type, "value") else str(property_obj.property_type)),
                 }
                 property_obj.embedding = await embedding_service.generate_property_embedding(text_data)
 

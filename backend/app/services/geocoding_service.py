@@ -701,6 +701,10 @@ def get_primary_service(country: str | None = None) -> BaseGeocodingService:
     """根据国家/地区代码返回主地理编码服务"""
     if _is_amap_primary(country):
         return AmapGeocodingService()
+    # 海外 → GM 优先（Overpass 作为降级在 search_nearby_with_fallback 中）
+    gm_service = GoogleGeocodingService()
+    if gm_service.api_key:
+        return gm_service
     return OverpassGeocodingService()
 
 
