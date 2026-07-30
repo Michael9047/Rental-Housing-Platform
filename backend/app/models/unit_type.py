@@ -3,12 +3,24 @@ import enum
 from datetime import date, datetime
 from decimal import Decimal
 
-from sqlalchemy import Date, DateTime, Enum, ForeignKey, Integer, Numeric, String, Text, text
+from sqlalchemy import Boolean, Date, DateTime, Enum, ForeignKey, Integer, Numeric, String, Text, text
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.mixins import TimestampMixin
 from app.db.session import Base
+
+
+class PropertyType(str, enum.Enum):
+    """户型分类"""
+    studio = "studio"           # 开间
+    ensuite = "ensuite"         # 套间（带独立卫浴的单间）
+    _1bed = "1bed"             # 一室一厅
+    _2bed = "2bed"             # 两室一厅
+    _3bed = "3bed"             # 三室
+    _4bed = "4bed"             # 四室
+    _5bed_plus = "5bed+"       # 五室及以上
+    shared = "shared"          # 合租单间
 
 
 class UnitTypeStatus(str, enum.Enum):
@@ -40,6 +52,7 @@ class UnitType(TimestampMixin, Base):
 
     # ── 基本信息 ──
     name: Mapped[str] = mapped_column(String(100), nullable=False)
+    property_type: Mapped[PropertyType | None] = mapped_column(String(50), nullable=True)
     bedrooms: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     bathrooms: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
     hall_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
@@ -59,6 +72,11 @@ class UnitType(TimestampMixin, Base):
     # ── 楼层差异化加价 ──
     # [{"floor_min": 1, "floor_max": 5, "adjustment": 0}, {"floor_min": 6, "floor_max": 10, "adjustment": 200}]
     floor_pricing: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+
+    # ── 库存 ──
+    total_count: Mapped[int] = mapped_column(Integer, default=1, nullable=False, server_default=text("1"))
+    available_count: Mapped[int] = mapped_column(Integer, default=1, nullable=False, server_default=text("1"))
+    has_vacancy: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False, server_default=text("true"))
 
     # ── 配置 ──
     amenities: Mapped[list[str] | None] = mapped_column(ARRAY(String(50)), nullable=True)
@@ -92,5 +110,7 @@ class RoomTypeEnum(str, _enum.Enum):
     ensuite = "ensuite"
     _1bed = "1bed"
     _2bed = "2bed"
-    _3bed_plus = "3bed+"
+    _3bed = "3bed"
+    _4bed = "4bed"
+    _5bed_plus = "5bed+"
     shared = "shared"
