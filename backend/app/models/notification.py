@@ -50,7 +50,7 @@ class Notification(TimestampMixin, Base):
     entity_id: Mapped[str | None] = mapped_column(String(100))
     order_id: Mapped[str | None] = mapped_column(String(64))
     agreement_id: Mapped[str | None] = mapped_column(String(100))
-    property_id: Mapped[int | None] = mapped_column(Integer)
+    unit_type_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     is_read: Mapped[bool] = mapped_column(default=False, nullable=False)
 
     user: Mapped["User"] = relationship()

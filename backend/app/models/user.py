@@ -41,7 +41,4 @@ class User(TimestampMixin, Base):
         default=UserStatus.active,
         nullable=False,
     )
-    rooms: Mapped[list["Room"]] = relationship(
-        back_populates="landlord",
-        cascade="all, delete-orphan",
-    )
+    # rooms 关系已删除（Room 表已废弃），BM 通过 institutes.bm_id 关联

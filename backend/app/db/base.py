@@ -17,19 +17,19 @@ from app.models.marketplace import (
 from app.models.news import NewsArticle
 from app.models.notification import Notification
 from app.models.payment import Payment
-from app.models.poi import PropertyPOI
-from app.models.property import Property
-from app.models.property_image import PropertyImage
+from app.models.poi import InstitutePOI
 from app.models.review import Review
 from app.models.saved_search import SavedSearch
+from app.models.tenant import Tenant
+from app.models.unit_type import UnitType
 from app.models.user import User
 from app.models.user_favorite import UserFavorite
 
 __all__ = [
     "AdImpression", "Advertisement", "AuditLog", "Base", "Booking",
     "ChatMessage", "ChatSession", "Contract", "DataImport", "EmbeddingJob",
-    "Institute", "MarketplaceComment", "MarketplaceItem", "MarketplaceItemImage",
-    "MarketplaceMessage", "MarketplaceReport", "NewsArticle", "Notification",
-    "Payment", "Room", "PropertyImage", "PropertyPOI", "Review",
-    "SavedSearch", "User", "UserFavorite",
+    "Institute", "InstitutePOI", "MarketplaceComment", "MarketplaceItem",
+    "MarketplaceItemImage", "MarketplaceMessage", "MarketplaceReport",
+    "NewsArticle", "Notification", "Payment", "Review", "SavedSearch",
+    "Tenant", "UnitType", "User", "UserFavorite",
 ]

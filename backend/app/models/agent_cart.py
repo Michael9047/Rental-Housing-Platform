@@ -25,17 +25,17 @@ class AgentCart(TimestampMixin, Base):
 class AgentCartItem(TimestampMixin, Base):
     __tablename__ = "agent_cart_items"
     __table_args__ = (
-        UniqueConstraint("cart_id", "property_id", name="uq_agent_cart_items_cart_property"),
+        UniqueConstraint("cart_id", "unit_type_id", name="uq_agent_cart_items_cart_unit_type"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
     cart_id: Mapped[int] = mapped_column(
         ForeignKey("agent_carts.id", ondelete="CASCADE"), index=True
     )
-    property_id: Mapped[int] = mapped_column(
-        ForeignKey("properties.id", ondelete="CASCADE"), index=True
+    unit_type_id: Mapped[int] = mapped_column(
+        ForeignKey("unit_types.id", ondelete="CASCADE"), index=True
     )
     reason: Mapped[str | None] = mapped_column(SAText, nullable=True)
 
     cart: Mapped["AgentCart"] = relationship(back_populates="items")
-    property: Mapped["Room"] = relationship("Room", primaryjoin="AgentCartItem.property_id == Room.id", lazy="selectin")
+    unit_type: Mapped["UnitType"] = relationship(lazy="selectin")
