@@ -132,6 +132,17 @@ async def confirm_booking_with_policies(
     if confirmation.lease_months < max(1, min_stay):
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=f"Lease term must be at least {max(1, min_stay)} month(s)")
 
+    # 生成价格快照
+    pricing = LeasePricingService.calculate(property_obj, confirmation.move_in_date)
+    # 取预设选项的首项作为月租基准
+    base = pricing.options[0]
+    mon_minor = base.prices.monthly_rent.local.minor_units
+    mon_exp = base.prices.monthly_rent.local.minor_unit_exponent
+    monthly = mon_minor // (10 ** mon_exp)
+    deposit = base.prices.deposit.local.minor_units // (10 ** base.prices.deposit.local.minor_unit_exponent)
+    svc_fee = base.prices.service_fee.local.minor_units // (10 ** base.prices.service_fee.local.minor_unit_exponent)
+    m = confirmation.lease_months
+
     duplicate = await session.scalar(select(Booking).where(
         Booking.tenant_id == current_user.id,
         Booking.property_id == property_obj.id,
@@ -147,10 +158,10 @@ async def confirm_booking_with_policies(
         status=BookingStatus.pending,
         scheduled_date=confirmation.move_in_date.isoformat(),
         deposit_amount=property_obj.deposit_amount or 0,
-        service_fee=option.prices.service_fee.local.minor_units // (10 ** option.prices.service_fee.local.minor_unit_exponent),
+        service_fee=svc_fee,
         deposit_status="unpaid",
-        lease_months=confirmation.lease_months,
-        total_rent=option.prices.rent_total.local.minor_units // (10 ** option.prices.rent_total.local.minor_unit_exponent),
+        lease_months=m,
+        total_rent=monthly * m,
         application_data={
             "pricing_snapshot": pricing.model_dump(mode="json"),
             "personal_info": flow_draft.personal_info,
