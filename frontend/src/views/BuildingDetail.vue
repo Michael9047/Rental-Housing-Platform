@@ -154,7 +154,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, nextTick, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import api from '@/services/api'
 import L from 'leaflet'
@@ -167,7 +167,7 @@ L.Icon.Default.mergeOptions({
   shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
 })
 
-const route = useRoute()
+const route = useRoute(); const router = useRouter()
 const loading = ref(true); const error = ref('')
 const building = ref<any>(null); const showContactDialog = ref(false)
 const mapContainer = ref<HTMLElement | null>(null); let mapInstance: L.Map | null = null
@@ -246,7 +246,13 @@ function openUnitGallery(ut: any) {
   c.onclick=(e)=>{e.stopPropagation();o.remove()}; o.appendChild(c); o.onclick=()=>o.remove(); document.body.appendChild(o)
 }
 
-async function handleBook(id: number) { console.log('[BuildingDetail] book:', id) }
+function handleBook(unitTypeId: number) {
+  const ut = building.value?.unit_types?.find((u: any) => u.id === unitTypeId)
+  if (!ut) return ElMessage.warning('户型不存在')
+  const availableRoom = ut.rooms?.find((r: any) => r.status === 'available')
+  if (!availableRoom) return ElMessage.warning('该户型暂无可用房间')
+  router.push({ name: 'booking-move-in-date', params: { propertyId: String(availableRoom.id) } })
+}
 
 let lIdx = 0
 function openLightbox(index: number) {

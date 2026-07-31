@@ -242,10 +242,11 @@ async function toggleCart() {
 
 function goBook() {
   if (!building.value || !selectedUnitType.value) return
-  const propertyId = building.value.id
+  const availableRoom = selectedUnitType.value.rooms?.find((r: any) => r.status === 'available')
+  if (!availableRoom) { ElMessage.warning('该户型暂无可用房间'); return }
   router.push({
     name: 'booking-move-in-date',
-    params: { propertyId: String(propertyId) },
+    params: { propertyId: String(availableRoom.id) },
   })
 }
 
