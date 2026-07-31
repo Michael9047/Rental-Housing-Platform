@@ -37,7 +37,7 @@ class Institute(TimestampMixin, Base):
     contact_email: Mapped[str | None] = mapped_column(String(255))
     logo_url: Mapped[str | None] = mapped_column(String(500))
     website_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
-    amenities: Mapped[list[str] | None] = mapped_column(ARRAY(String(50)), nullable=True)
+    amenities: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
     female_only: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, server_default=text("false"))
     couples_allowed: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, server_default=text("false"))
     # ── 建筑属性 ──
