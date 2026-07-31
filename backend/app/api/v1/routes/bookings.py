@@ -157,7 +157,7 @@ async def confirm_booking_with_policies(
         landlord_id=property_obj.landlord_id,
         status=BookingStatus.pending,
         scheduled_date=confirmation.move_in_date.isoformat(),
-        deposit_amount=property_obj.deposit_amount or 0,
+        deposit_amount=getattr(getattr(property_obj, 'unit_type', None), 'deposit_amount', None) or 0,
         service_fee=svc_fee,
         deposit_status="unpaid",
         lease_months=m,

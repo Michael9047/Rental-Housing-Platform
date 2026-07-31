@@ -64,14 +64,37 @@ class ContractService:
                 None,
             )
         if option is None:
-            snapshot_months = [item.get("months") for item in pricing.get("options", [])] if pricing else []
-            raise ValueError(
-                f"The booking has no valid pricing snapshot: "
-                f"lease_months={booking.lease_months}, "
-                f"snapshot_options={snapshot_months}, "
-                f"has_snapshot={bool(application.get('pricing_snapshot'))}, "
-                f"scheduled_date={booking.scheduled_date}"
-            )
+            # 自定义月数：基于首选项月租/押金/服务费公式实时计算
+            base = next((item for item in pricing.get("options", [])), None)
+            if base:
+                p = base["prices"]
+                monthly = int(p["monthly_rent"]["local"]["minor_units"]) // (10 ** p["monthly_rent"]["local"]["minor_unit_exponent"])
+                deposit = int(p["deposit"]["local"]["minor_units"]) // (10 ** p["deposit"]["local"]["minor_unit_exponent"])
+                svc = int(p["service_fee"]["local"]["minor_units"]) // (10 ** p["service_fee"]["local"]["minor_unit_exponent"])
+                m = booking.lease_months
+                from datetime import date as _date
+                move_in = _date.fromisoformat(booking.scheduled_date)
+                end = LeasePricingService.add_calendar_months(move_in, m)
+                option = {
+                    "months": m,
+                    "end_date": end.isoformat(),
+                    "prices": {
+                        "monthly_rent": p["monthly_rent"],
+                        "deposit": p["deposit"],
+                        "service_fee": p["service_fee"],
+                        "amount_due_now": {"local": {"currency": p["monthly_rent"]["local"]["currency"], "minor_units": (deposit + svc) * 100, "minor_unit_exponent": 2, "decimal": f"{deposit + svc}.00"}, "cny": {"currency": p["monthly_rent"]["cny"]["currency"], "minor_units": (deposit + svc) * 100, "minor_unit_exponent": 2, "decimal": f"{deposit + svc}.00"}},
+                        "rent_total": {"local": {"currency": p["monthly_rent"]["local"]["currency"], "minor_units": monthly * m * 100, "minor_unit_exponent": 2, "decimal": f"{monthly * m}.00"}, "cny": {"currency": p["monthly_rent"]["cny"]["currency"], "minor_units": monthly * m * 100, "minor_unit_exponent": 2, "decimal": f"{monthly * m}.00"}},
+                    }
+                }
+            else:
+                snapshot_months = [item.get("months") for item in pricing.get("options", [])] if pricing else []
+                raise ValueError(
+                    f"The booking has no valid pricing snapshot: "
+                    f"lease_months={booking.lease_months}, "
+                    f"snapshot_options={snapshot_months}, "
+                    f"has_snapshot={bool(application.get('pricing_snapshot'))}, "
+                    f"scheduled_date={booking.scheduled_date}"
+                )
 
         prices = option["prices"]
         policy_rows = await self.session.scalars(
@@ -96,11 +119,11 @@ class ContractService:
             "platform_role": PLATFORM_ROLE,
             "tenant_name_cn": tenant_cn,
             "tenant_name_en": tenant_en,
-            "property_name": property_obj.title,
-            "property_address": property_obj.address,
+            "property_name": getattr(getattr(property_obj, 'unit_type', None), 'name', property_obj.room_number or ''),
+            "property_address": getattr(getattr(getattr(property_obj, 'unit_type', None), 'institute', None), 'address', ''),
             "property_id": property_obj.id,
-            "room_type": PROPERTY_TYPE_LABELS.get(property_obj.property_type, str(property_obj.property_type)),
-            "occupancy_limit": property_rules.get("occupancy_limit") or max(1, property_obj.bedrooms or 1),
+            "room_type": getattr(getattr(property_obj, 'unit_type', None), 'name', '') or '',
+            "occupancy_limit": property_rules.get("occupancy_limit") or max(1, getattr(getattr(property_obj, 'unit_type', None), 'bedrooms', 0) or 1),
             "commencement_date": commencement,
             "expiry_date": option["end_date"],
             "tenancy_months": booking.lease_months,
