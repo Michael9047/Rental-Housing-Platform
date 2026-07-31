@@ -71,7 +71,7 @@ class TenantContractListItem(BaseModel):
     booking_id: int
     property_id: int
     tenant_user_id: int
-    signed_at: datetime
+    signed_at: datetime | None = None
     lease_start_date: str | None
     lease_end_date: str | None
     lease_months: int | None
