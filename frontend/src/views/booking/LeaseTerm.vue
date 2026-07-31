@@ -35,7 +35,7 @@
             type="button"
             class="lease-option custom-option"
             :class="{ selected: customMode }"
-            @click="customMode = !customMode"
+            @click="toggleCustomMode"
           >
             <strong>📝 自定义</strong>
             <span>按月自由设定</span>
@@ -145,6 +145,13 @@ const hasValidSelection = computed(() => {
   if (customMode.value) return customMonths.value >= minCustomMonths.value
   return !!selectedOption.value
 })
+
+function toggleCustomMode() {
+  customMode.value = !customMode.value
+  if (customMode.value) {
+    selectedMonths.value = null  // 取消预选项高亮
+  }
+}
 
 function onCustomChange() {
   if (customMonths.value < minCustomMonths.value) {
