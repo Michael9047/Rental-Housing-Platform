@@ -63,6 +63,10 @@ api.interceptors.response.use(
       if (message) ElMessage.error(message)
       return Promise.reject(error)
     }
+    // 404 不弹全局错误——由调用方自行处理（如草稿不存在属正常流程）
+    if (error.response?.status === 404) {
+      return Promise.reject(error)
+    }
     const message = extractErrorMessage(error)
     if (message) ElMessage.error(message)
     return Promise.reject(error)
