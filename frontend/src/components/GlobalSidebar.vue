@@ -14,34 +14,6 @@
         <span>首页</span>
       </el-menu-item>
 
-      <!-- ====== 租客侧边栏 ====== -->
-      <template v-if="!authStore.isLandlord && !authStore.isAdmin && !authStore.isMaintenance && !authStore.isBdManager">
-        <el-menu-item index="/ai-search">
-          <el-icon><MagicStick /></el-icon>
-          <span>AI 找房</span>
-        </el-menu-item>
-        <el-menu-item v-if="authStore.isLoggedIn" index="/cart">
-          <el-icon><ShoppingCart /></el-icon>
-          <span>候选清单</span>
-        </el-menu-item>
-        <el-menu-item index="/search">
-          <el-icon><Search /></el-icon>
-          <span>搜索房源</span>
-        </el-menu-item>
-        <el-menu-item index="/map">
-          <el-icon><Location /></el-icon>
-          <span>地图找房</span>
-        </el-menu-item>
-        <el-menu-item v-if="authStore.isLoggedIn" index="/bookings/tenant">
-          <el-icon><List /></el-icon>
-          <span>我的预订</span>
-        </el-menu-item>
-        <el-menu-item v-if="authStore.isLoggedIn" index="/profile">
-          <el-icon><User /></el-icon>
-          <span>个人中心</span>
-        </el-menu-item>
-      </template>
-
       <!-- ====== 维修师傅侧边栏 ====== -->
       <template v-if="authStore.isMaintenance">
         <el-menu-item index="/worker/dashboard">
@@ -130,9 +102,8 @@
 import { ref, computed, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import {
-  HomeFilled, ChatDotRound, MagicStick, ShoppingCart, Search,
-  Location, User, List, Bell, DataAnalysis, OfficeBuilding,
-  Plus, Tickets, Fold, Expand, Cpu, Grid, Upload, Document, Clock,
+  HomeFilled, Bell, DataAnalysis, OfficeBuilding,
+  Plus, Tickets, Fold, Expand, Grid, Clock,
 } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 

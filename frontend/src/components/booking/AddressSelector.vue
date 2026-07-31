@@ -24,10 +24,10 @@
 import { computed, watch } from 'vue'
 import divisionsData from 'china-division/dist/pca-code.json'
 import { addressCountries } from '@/data/countries'
-import { buildRegion, type StructuredAddress } from '@/types/address'
+import { buildRegion, type AddressFormLike } from '@/types/address'
 
 interface Division { code: string; name: string; children?: Division[] }
-const model = defineModel<StructuredAddress>({ required: true })
+const model = defineModel<AddressFormLike>({ required: true })
 const props = defineProps<{ disabled?: boolean }>()
 const divisions = divisionsData as Division[]
 const cities = computed(() => divisions.find((item) => item.code === model.value.level1_code)?.children || [])

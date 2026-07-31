@@ -43,6 +43,7 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
+import api from '@/services/api'
 import PropertyCard from '@/components/PropertyCard.vue'
 
 const router = useRouter()

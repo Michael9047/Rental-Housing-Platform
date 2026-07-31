@@ -23,20 +23,20 @@ const routes: RouteRecordRaw[] = [
         component: () => import('@/views/AiSearch.vue'),
       },
       {
-        path: 'map',
-        name: 'map-search',
-        component: () => import('@/views/MapSearch.vue'),
-      },
-      {
         path: 'cart',
         name: 'cart',
         component: () => import('@/views/CartView.vue'),
         meta: { requiresAuth: true },
       },
       {
-        path: 'property/:id',
+        path: 'room/:id',
         name: 'property-detail',
         component: () => import('@/views/PropertyDetail.vue'),
+      },
+      // 兼容旧版 /property/:id 链接
+      {
+        path: 'property/:id',
+        redirect: (to: any) => ({ name: 'property-detail', params: { id: to.params.id } }),
       },
       {
         path: 'profile',
@@ -99,23 +99,58 @@ const routes: RouteRecordRaw[] = [
         meta: { requiresAuth: true, requiresLandlord: true },
       },
       {
+        path: 'buildings/:id/unit-types',
+        name: 'building-unit-types',
+        component: () => import('@/views/UnitTypeList.vue'),
+        meta: { requiresAuth: true, requiresLandlord: true },
+      },
+      {
+        path: 'buildings/:id/staff',
+        name: 'building-staff',
+        component: () => import('@/views/BuildingStaff.vue'),
+        meta: { requiresAuth: true, requiresLandlord: true },
+      },
+      {
+        path: 'unit-type/manage',
+        name: 'unit-type-manage',
+        component: () => import('@/views/ManageProperties.vue'),
+        meta: { requiresAuth: true, requiresLandlord: true },
+      },
+      {
+        path: 'unit-type/create',
+        name: 'unit-type-create',
+        component: () => import('@/views/CreateProperty.vue'),
+        meta: { requiresAuth: true, requiresLandlord: true },
+      },
+      {
+        path: 'unit-type/:id/edit',
+        name: 'unit-type-edit',
+        component: () => import('@/views/CreateProperty.vue'),
+        meta: { requiresAuth: true, requiresLandlord: true },
+      },
+      {
+        path: 'unit-type/:id/copy',
+        name: 'unit-type-copy',
+        component: () => import('@/views/CreateProperty.vue'),
+        meta: { requiresAuth: true, requiresLandlord: true },
+      },
+      {
+        path: 'property/history',
+        name: 'property-history',
+        component: () => import('@/views/PropertyHistory.vue'),
+        meta: { requiresAuth: true, requiresLandlord: true },
+      },
+      {
         path: 'property/:id/images',
         name: 'property-images',
         component: () => import('@/views/PropertyImages.vue'),
         meta: { requiresAuth: true, requiresLandlord: true },
       },
       {
-        path: 'booking/confirm',
-        name: 'booking-confirm',
-        component: () => import('@/views/BookingConfirm.vue'),
-        meta: { requiresAuth: true },
+        path: 'booking/:id/move-in-date',
+        redirect: (to: any) => ({ name: 'property-detail', params: { id: to.params.id } }),
       },
-      {
-        path: 'booking/flow',
-        name: 'booking-flow',
-        component: () => import('@/views/BookingFlow.vue'),
-        meta: { requiresAuth: true },
-      },
+      // ── 新版预订流程（6步）──
       {
         path: 'booking/:propertyId/move-in-date',
         name: 'booking-move-in-date',
@@ -153,28 +188,16 @@ const routes: RouteRecordRaw[] = [
         meta: { requiresAuth: true },
       },
       {
-        path: 'booking-policies/booking-authorization',
-        name: 'policy-booking-authorization',
-        component: () => import('@/views/policies/PolicyDocument.vue'),
-        meta: { policyKey: 'booking-authorization' },
+        path: 'booking/order/:bookingId/:status',
+        name: 'booking-result',
+        component: () => import('@/views/BookingResult.vue'),
+        meta: { requiresAuth: true },
       },
       {
-        path: 'booking-policies/cross-border-data',
-        name: 'policy-cross-border-data',
-        component: () => import('@/views/policies/PolicyDocument.vue'),
-        meta: { policyKey: 'cross-border-data' },
-      },
-      {
-        path: 'booking-policies/privacy',
-        name: 'policy-privacy',
-        component: () => import('@/views/policies/PolicyDocument.vue'),
-        meta: { policyKey: 'privacy' },
-      },
-      {
-        path: 'booking-policies/cancellation',
-        name: 'policy-cancellation',
-        component: () => import('@/views/policies/PolicyDocument.vue'),
-        meta: { policyKey: 'cancellation' },
+        path: 'booking/confirm',
+        name: 'booking-confirm',
+        component: () => import('@/views/BookingConfirm.vue'),
+        meta: { requiresAuth: true },
       },
       {
         path: 'booking/payment/:id',
@@ -189,24 +212,6 @@ const routes: RouteRecordRaw[] = [
         meta: { requiresAuth: true },
       },
       {
-        path: 'booking/order/:id/success',
-        name: 'booking-success',
-        component: () => import('@/views/BookingResult.vue'),
-        meta: { requiresAuth: true },
-      },
-      {
-        path: 'booking/order/:id/payment-status',
-        name: 'booking-payment-status',
-        component: () => import('@/views/BookingResult.vue'),
-        meta: { requiresAuth: true },
-      },
-      {
-        path: 'booking/order/:id/cancelled',
-        name: 'booking-auto-cancelled',
-        component: () => import('@/views/BookingResult.vue'),
-        meta: { requiresAuth: true },
-      },
-      {
         path: 'bookings/tenant',
         name: 'tenant-bookings',
         component: () => import('@/views/TenantBookings.vue'),
@@ -217,6 +222,11 @@ const routes: RouteRecordRaw[] = [
         name: 'landlord-bookings',
         component: () => import('@/views/LandlordBookings.vue'),
         meta: { requiresAuth: true, requiresLandlord: true },
+      },
+      {
+        path: 'building/:id',
+        name: 'building-detail',
+        component: () => import('@/views/BuildingDetail.vue'),
       },
       {
         path: 'buildings',
@@ -246,46 +256,10 @@ const routes: RouteRecordRaw[] = [
         meta: { requiresAuth: true },
       },
       {
-        path: 'admin',
-        name: 'admin-dashboard',
-        component: () => import('@/views/admin/AdminDashboard.vue'),
-        meta: { requiresAuth: true, requiresAdmin: true },
-      },
-      {
         path: 'workspace',
         name: 'landlord-workspace',
         component: () => import('@/views/landlord/LandlordDashboard.vue'),
         meta: { requiresAuth: true, requiresLandlord: true },
-      },
-      {
-        path: 'admin/users',
-        name: 'admin-users',
-        component: () => import('@/views/admin/AdminUsers.vue'),
-        meta: { requiresAuth: true, requiresAdmin: true },
-      },
-      {
-        path: 'admin/properties',
-        name: 'admin-properties',
-        component: () => import('@/views/admin/AdminProperties.vue'),
-        meta: { requiresAuth: true, requiresAdmin: true },
-      },
-      {
-        path: 'admin/logs',
-        name: 'admin-logs',
-        component: () => import('@/views/admin/AdminLogs.vue'),
-        meta: { requiresAuth: true, requiresAdmin: true },
-      },
-      {
-        path: 'admin/embeddings',
-        name: 'admin-embeddings',
-        component: () => import('@/views/admin/AdminEmbeddings.vue'),
-        meta: { requiresAuth: true, requiresAdmin: true },
-      },
-      {
-        path: 'admin/import',
-        name: 'admin-import',
-        component: () => import('@/views/admin/AdminImport.vue'),
-        meta: { requiresAuth: true, requiresAdmin: true },
       },
       // ---- 报修详情（通用）----
       {
@@ -295,6 +269,12 @@ const routes: RouteRecordRaw[] = [
         meta: { requiresAuth: true },
       },
       // ---- 房东报修管理 ----
+      {
+        path: 'workspace/visit-messages',
+        name: 'landlord-visit-messages',
+        component: () => import('@/views/landlord/VisitMessages.vue'),
+        meta: { requiresAuth: true, requiresLandlord: true },
+      },
       {
         path: 'workspace/repairs',
         name: 'landlord-repairs',
@@ -326,6 +306,54 @@ const routes: RouteRecordRaw[] = [
         name: 'bd-dashboard',
         component: () => import('@/views/bd-manager/BdDashboard.vue'),
         meta: { requiresAuth: true, requiresBdManager: true },
+      },
+    ],
+  },
+  // ── 管理后台（独立布局）──
+  {
+    path: '/admin',
+    component: () => import('@/layouts/AdminLayout.vue'),
+    meta: { requiresAuth: true, requiresAdmin: true },
+    children: [
+      {
+        path: '',
+        name: 'admin-dashboard',
+        component: () => import('@/views/admin/AdminWorkspace.vue'),
+      },
+      {
+        path: 'users',
+        name: 'admin-users',
+        component: () => import('@/views/admin/AdminUsers.vue'),
+      },
+      {
+        path: 'properties',
+        name: 'admin-properties',
+        component: () => import('@/views/admin/AdminProperties.vue'),
+      },
+      {
+        path: 'logs',
+        name: 'admin-logs',
+        component: () => import('@/views/admin/AdminLogs.vue'),
+      },
+      {
+        path: 'embeddings',
+        name: 'admin-embeddings',
+        component: () => import('@/views/admin/AdminEmbeddings.vue'),
+      },
+      {
+        path: 'import',
+        name: 'admin-import',
+        component: () => import('@/views/admin/AdminImport.vue'),
+      },
+      {
+        path: 'escalated-repairs',
+        name: 'admin-escalated-repairs',
+        component: () => import('@/views/admin/EscalatedRepairs.vue'),
+      },
+      {
+        path: 'landlord-workers',
+        name: 'admin-landlord-workers',
+        component: () => import('@/views/admin/LandlordWorkersStatus.vue'),
       },
     ],
   },
@@ -361,11 +389,26 @@ const router = createRouter({
 })
 
 router.beforeEach((to, _from, next) => {
-  const token = localStorage.getItem('access_token')
+  // 清理损坏的 localStorage（user 为 {} 或缺少 role 字段）
   const userStr = localStorage.getItem('user')
+  if (userStr) {
+    try {
+      const parsed = JSON.parse(userStr)
+      if (!parsed || !parsed.role) {
+        localStorage.clear()
+        if (to.name !== 'login') return next({ name: 'login' })
+      }
+    } catch {
+      localStorage.clear()
+      if (to.name !== 'login') return next({ name: 'login' })
+    }
+  }
+
+  const token = localStorage.getItem('access_token')
+  const _userStr = localStorage.getItem('user')
   let user: { role: string } | null = null
   try {
-    if (userStr) user = JSON.parse(userStr)
+    if (_userStr) user = JSON.parse(_userStr)
   } catch {
     // ignore
   }
@@ -375,6 +418,7 @@ router.beforeEach((to, _from, next) => {
   }
 
   if (to.meta.guest && token) {
+    if (user?.role === 'admin') return next({ name: 'admin-dashboard' })
     return next({ name: 'home' })
   }
 

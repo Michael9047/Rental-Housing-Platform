@@ -10,6 +10,10 @@
       </div>
 
       <div class="header-center">
+        <!-- 候选清单入口 -->
+        <el-badge v-if="authStore.isLoggedIn" :value="cartStore.count" :hidden="cartStore.count === 0" :max="99" class="cart-badge">
+          <el-button :icon="ShoppingCart" circle class="cart-btn" @click="router.push('/cart')" />
+        </el-badge>
         <div class="header-search-area">
           <div class="header-search-wrapper" :class="{ focused: searchFocused }">
             <el-input
@@ -36,62 +40,96 @@
             </div>
 
             <template v-else>
-              <!-- 学校匹配 -->
-              <div v-if="matchingSchools.length > 0" class="suggestions-group">
-                <div class="suggestions-group-title">🏫 {{ searchQuery.trim() ? '匹配学校' : '热门学校' }}</div>
-                <div
-                  v-for="school in matchingSchools"
-                  :key="'school-' + school.id"
-                  class="suggestion-item"
-                  @mousedown.prevent="selectSchool(school)"
-                >
-                  <div class="suggestion-main">
-                    <span class="suggestion-name">{{ school.name }}</span>
-                    <span v-if="school.abbreviation" class="suggestion-abbr">{{ school.abbreviation }}</span>
-                    <el-tag v-if="school.count > 0" size="small" type="primary" effect="plain">{{ school.count }}套</el-tag>
-                  </div>
-                  <div v-if="school.name_cn" class="suggestion-sub">{{ school.name_cn }}</div>
-                </div>
-              </div>
-
-              <!-- 地区匹配 -->
-              <div v-if="matchingCities.length > 0" class="suggestions-group">
-                <div class="suggestions-group-title">📍 {{ searchQuery.trim() ? '匹配地区' : '热门地区' }}</div>
-                <div
-                  v-for="city in matchingCities"
-                  :key="'city-' + (city.name || '') + '-' + (city.country || '')"
-                  class="suggestion-item"
-                  @mousedown.prevent="selectCity(city)"
-                >
-                  <div class="suggestion-main">
-                    <span class="suggestion-name">{{ city.name }}</span>
-                    <span v-if="city.country" class="suggestion-country">{{ city.country }}</span>
-                    <el-tag v-if="city.count > 0" size="small" type="success" effect="plain">{{ city.count }}套</el-tag>
+              <!-- 无搜索词时展示热门 -->
+              <template v-if="!searchQuery.trim()">
+                <!-- 热门学校：硬编码新加坡 + 伦敦 -->
+                <div class="suggestions-group">
+                  <div class="suggestions-group-title">热门学校</div>
+                  <div class="suggestion-grid school-grid">
+                    <div
+                      v-for="school in popularSchools"
+                      :key="school.id"
+                      class="suggestion-card"
+                      @mousedown.prevent="selectPopularSchool(school)"
+                    >
+                      <span class="card-name">{{ school.name }}</span>
+                      <span class="card-sub">{{ school.city }}</span>
+                    </div>
                   </div>
                 </div>
-              </div>
 
-              <!-- 房源匹配 -->
-              <div v-if="matchingProperties.length > 0" class="suggestions-group">
-                <div class="suggestions-group-title">🏠 匹配房源</div>
-                <div
-                  v-for="prop in matchingProperties"
-                  :key="'prop-' + prop.id"
-                  class="suggestion-item"
-                  @mousedown.prevent="selectProperty(prop)"
-                >
-                  <div class="suggestion-main">
-                    <span class="suggestion-name">{{ prop.title }}</span>
-                    <span class="suggestion-sub">{{ prop.district }}</span>
-                    <span v-if="prop.price_monthly" class="suggestion-price">¥{{ prop.price_monthly }}/月</span>
+                <!-- 热门城市 -->
+                <div v-if="matchingCities.length > 0" class="suggestions-group">
+                  <div class="suggestions-group-title">热门城市</div>
+                  <div class="suggestion-grid">
+                    <div
+                      v-for="city in matchingCities"
+                      :key="'city-' + city.name"
+                      class="suggestion-card"
+                      @mousedown.prevent="selectCity(city)"
+                    >
+                      <span class="card-name">{{ cityLabel(city) }}</span>
+                      <span class="card-sub">{{ city.count }} 套房源</span>
+                    </div>
                   </div>
                 </div>
-              </div>
+              </template>
 
-              <!-- 无结果 -->
-              <div v-if="!hasAnySuggestions && !suggestionsLoading && searchQuery.trim()" class="suggestions-empty">
-                未找到匹配的学校或地区
-              </div>
+              <!-- 有搜索词时展示匹配 -->
+              <template v-else>
+                <!-- 匹配学校 -->
+                <div v-if="matchingSchools.length > 0" class="suggestions-group">
+                  <div class="suggestions-group-title">匹配学校</div>
+                  <div class="suggestion-grid school-grid">
+                    <div
+                      v-for="school in matchingSchools"
+                      :key="'school-' + school.id"
+                      class="suggestion-card"
+                      @mousedown.prevent="selectSchool(school)"
+                    >
+                      <span class="card-name">{{ school.name }}</span>
+                      <span class="card-sub">{{ school.count }} 套房源</span>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- 匹配城市 -->
+                <div v-if="matchingCities.length > 0" class="suggestions-group">
+                  <div class="suggestions-group-title">匹配城市</div>
+                  <div class="suggestion-grid">
+                    <div
+                      v-for="city in matchingCities"
+                      :key="'city-' + city.name"
+                      class="suggestion-card"
+                      @mousedown.prevent="selectCity(city)"
+                    >
+                      <span class="card-name">{{ cityLabel(city) }}</span>
+                      <span class="card-sub">{{ city.count }} 套房源</span>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- 匹配房源 -->
+                <div v-if="matchingProperties.length > 0" class="suggestions-group">
+                  <div class="suggestions-group-title">匹配房源</div>
+                  <div class="suggestion-grid">
+                    <div
+                      v-for="prop in matchingProperties"
+                      :key="'prop-' + prop.id"
+                      class="suggestion-card"
+                      @mousedown.prevent="selectProperty(prop)"
+                    >
+                      <span class="card-name">{{ prop.title }}</span>
+                      <span class="card-sub">{{ prop.district }} · ¥{{ prop.price_monthly }}/月</span>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- 无结果 -->
+                <div v-if="!hasAnySuggestions" class="suggestions-empty">
+                  未找到匹配的学校或地区
+                </div>
+              </template>
             </template>
           </div>
         </div>
@@ -184,8 +222,7 @@
 
     <el-container class="layout-body">
       <!-- 全局侧边栏 -->
-      <GlobalSidebar />
-      <!-- Main Content -->
+      <GlobalSidebar v-if="authStore.isLandlord || authStore.isAdmin || authStore.isMaintenance || authStore.isBdManager" />
       <el-main class="layout-main">
         <div class="back-bar" v-if="route.path !== '/'">
           <el-button text :icon="ArrowLeft" @click="router.back()">返回上一页</el-button>
@@ -203,7 +240,7 @@ import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import {
   Search, User, UserFilled, ArrowDown, ArrowLeft, Setting, SwitchButton,
-  Plus, List, Bell, ChatDotRound, DataAnalysis, Tickets, Loading,} from '@element-plus/icons-vue'
+  Plus, List, Bell, ChatDotRound, DataAnalysis, Tickets, Loading, ShoppingCart,} from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 import { useAgentChatStore } from '@/stores/agentChat'
 import { useCartStore } from '@/stores/cart'
@@ -280,7 +317,7 @@ async function fetchSuggestions(q: string) {
       matchingProperties.value = data.matching_properties || []
     } else {
       matchingSchools.value = data.popular_schools || []
-      matchingCities.value = data.popular_cities || []
+      matchingCities.value = (data.popular_cities || []).filter((c: any) => c.name)
       matchingProperties.value = []
     }
   } catch {
@@ -317,6 +354,42 @@ function onSearchBlur() {
   }, 200)
 }
 
+// ── 热门学校（硬编码新加坡 + 伦敦）─────
+
+interface PopularSchool {
+  id: string
+  abbr: string
+  name: string
+  city: string
+}
+
+const popularSchools: PopularSchool[] = [
+  // 新加坡
+  { id: 'sg-nus',   abbr: 'NUS',      name: 'National University of Singapore',          city: '新加坡' },
+  { id: 'sg-ntu',   abbr: 'NTU',      name: 'Nanyang Technological University',          city: '新加坡' },
+  { id: 'sg-smu',   abbr: 'SMU',      name: 'Singapore Management University',           city: '新加坡' },
+  { id: 'sg-sutd',  abbr: 'SUTD',     name: 'Singapore Univ of Technology & Design',     city: '新加坡' },
+  // 伦敦
+  { id: 'uk-ucl',   abbr: 'UCL',      name: 'University College London',                  city: '伦敦' },
+  { id: 'uk-ic',    abbr: 'Imperial', name: 'Imperial College London',                    city: '伦敦' },
+  { id: 'uk-lse',   abbr: 'LSE',      name: 'London School of Economics',                 city: '伦敦' },
+  { id: 'uk-kcl',   abbr: "King's",   name: "King's College London",                      city: '伦敦' },
+  { id: 'uk-qmul',  abbr: 'QMUL',     name: 'Queen Mary University of London',            city: '伦敦' },
+]
+
+function selectPopularSchool(school: PopularSchool) {
+  showSuggestions.value = false
+  searchQuery.value = school.abbr
+  router.push({ name: 'search', query: { q: school.city } })
+}
+
+/** 去掉 API 返回 district 中的 "国家-" 前缀，只保留城市名 */
+function cityLabel(city: SuggestionCity): string {
+  const name = city.name || ''
+  const idx = name.indexOf('-')
+  return idx > -1 ? name.slice(idx + 1) : name
+}
+
 // ── 选择处理 ─────────────────────────────
 
 function selectSchool(school: SuggestionSchool) {
@@ -328,7 +401,7 @@ function selectSchool(school: SuggestionSchool) {
 function selectCity(city: SuggestionCity) {
   showSuggestions.value = false
   searchQuery.value = city.name
-  router.push({ name: 'search', query: { district: city.name, country: city.country } })
+  router.push({ name: 'search', query: { district: city.name } })
 }
 
 function selectProperty(prop: SuggestionProperty) {
@@ -429,12 +502,34 @@ watch(
 
 .header-center {
   flex: 1;
-  max-width: 520px;
-  margin: 0 40px;
+  max-width: 640px;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  justify-content: center;
+}
+
+.cart-badge {
+  flex-shrink: 0;
+}
+
+.cart-btn {
+  width: 42px;
+  height: 42px;
+  font-size: 18px;
+  color: var(--text-secondary, #606266);
+  border-color: var(--border, #dcdfe6);
+  transition: color 0.2s, border-color 0.2s;
+}
+
+.cart-btn:hover {
+  color: var(--primary);
+  border-color: var(--primary);
 }
 
 .header-search-area {
-  position: relative;
+  position: static;
 }
 
 .header-search-wrapper {
@@ -443,6 +538,7 @@ watch(
   border-radius: 36px;
   overflow: hidden;
   height: 48px;
+  width: 100%;
   transition: box-shadow 0.2s;
 }
 
@@ -493,17 +589,19 @@ watch(
 
 .search-suggestions {
   position: absolute;
-  top: 54px;
-  left: 0;
-  right: 110px;
+  top: 58px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 680px;
+  max-width: 90vw;
   background: var(--bg-white);
   border: 1px solid var(--border-light, #ebeef5);
-  border-radius: 12px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1);
-  max-height: 420px;
+  border-radius: 16px;
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.12);
+  max-height: 480px;
   overflow-y: auto;
   z-index: 200;
-  padding: 8px 0;
+  padding: 16px 20px;
 }
 
 .suggestions-loading {
@@ -511,88 +609,80 @@ watch(
   align-items: center;
   justify-content: center;
   gap: 8px;
-  padding: 24px 16px;
+  padding: 32px 16px;
   color: var(--text-muted);
   font-size: 13px;
 }
 
 .suggestions-group {
-  padding: 4px 0;
+  margin-bottom: 16px;
+}
+
+.suggestions-group:last-child {
+  margin-bottom: 0;
 }
 
 .suggestions-group + .suggestions-group {
   border-top: 1px solid var(--border-light, #f0f0f0);
+  padding-top: 16px;
 }
 
 .suggestions-group-title {
-  padding: 8px 16px 4px;
-  font-size: 12px;
+  padding: 0 0 12px 0;
+  font-size: 13px;
   font-weight: 600;
   color: var(--text-muted);
-  text-transform: uppercase;
   letter-spacing: 0.5px;
 }
 
-.suggestion-item {
-  display: flex;
-  flex-direction: column;
-  padding: 8px 16px;
-  cursor: pointer;
-  transition: background 0.15s;
+/* ── Grid 卡片布局 ── */
+
+.suggestion-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
 }
 
-.suggestion-item:hover {
-  background: var(--primary-light, #ecf5ff);
+.suggestion-grid.school-grid {
+  grid-template-columns: repeat(2, 1fr);
 }
 
-.suggestion-main {
+.suggestion-card {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
+  padding: 6px 10px;
+  background: var(--bg, #fafafa);
+  border: 1px solid transparent;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.15s;
 }
 
-.suggestion-name {
-  font-size: 14px;
+.suggestion-card:hover {
+  background: var(--primary-light, #ecf5ff);
+  border-color: var(--primary);
+}
+
+.suggestion-card .card-name {
+  font-size: 12px;
   font-weight: 500;
   color: var(--text-primary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  flex: 1;
+  min-width: 0;
 }
 
-.suggestion-abbr {
-  font-size: 12px;
-  color: var(--primary);
-  font-weight: 600;
-  background: var(--primary-light, #ecf5ff);
-  padding: 1px 6px;
-  border-radius: 4px;
-}
-
-.suggestion-country {
-  font-size: 11px;
+.suggestion-card .card-sub {
+  font-size: 10px;
   color: var(--text-muted);
-  background: #f5f7fa;
-  padding: 1px 6px;
-  border-radius: 4px;
-}
-
-.suggestion-price {
-  margin-left: auto;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--danger, #f56c6c);
-}
-
-.suggestion-sub {
-  margin-top: 2px;
-  font-size: 12px;
-  color: var(--text-muted);
-  padding-left: 0;
+  flex-shrink: 0;
 }
 
 .suggestions-empty {
-  padding: 24px 16px;
+  padding: 32px 16px;
   text-align: center;
   color: var(--text-muted);
   font-size: 13px;
@@ -630,7 +720,10 @@ watch(
   flex: 1;
 }
 
+/* ── Main ─────────────────────────── */
+
 .layout-main {
+  flex: 1;
   background: var(--bg);
   overflow-y: auto;
   padding: 24px;

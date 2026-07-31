@@ -242,12 +242,10 @@ async function toggleCart() {
 
 function goBook() {
   if (!building.value || !selectedUnitType.value) return
+  const propertyId = building.value.id
   router.push({
-    path: '/booking/confirm',
-    query: {
-      property_id: String(building.value.id),
-      unit_type_id: String(selectedUnitType.value.id),
-    }
+    name: 'booking-move-in-date',
+    params: { propertyId: String(propertyId) },
   })
 }
 

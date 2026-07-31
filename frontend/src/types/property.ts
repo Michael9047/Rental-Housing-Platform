@@ -11,12 +11,20 @@ export interface Property {
   uuid?: string | null
   institute_id: number
   name: string
+  /** @deprecated 兼容旧代码 — 等同于 name */
+  title: string
   property_type?: PropertyType | null
   bedrooms: number
   bathrooms: number
   hall_count: number
   area_sqm: number | null
   base_rent: number
+  /** @deprecated 兼容旧代码 — 等同于 base_rent */
+  price_monthly: number
+  /** @deprecated 兼容旧代码 — 等同于 name */
+  unit_type_name?: string | null
+  /** @deprecated 兼容旧代码 — 房间号（UnitType 不再有房间概念） */
+  room_number?: string | null
   deposit_amount?: number | null
   deposit_type?: DepositType | null
   lease_start?: string | null
@@ -31,6 +39,12 @@ export interface Property {
   description?: string | null
   available_from?: string | null
   min_stay_months: number
+  /** 兼容旧 booking 组件 — 等同于 min_stay_months */
+  min_lease_months: number
+  /** 兼容旧 booking 组件 — 留空表示无上限 */
+  max_lease_months?: number | null
+  /** 兼容旧 booking 组件 — 默认为 0 */
+  service_fee_rate?: number | null
   has_vacancy: boolean
   total_count: number
   available_count: number
@@ -43,8 +57,13 @@ export interface Property {
   institute_name?: string | null
   institute_business_id?: string | null
   institute_address?: string | null
+  /** @deprecated 兼容旧代码 — 等同于 institute_address */
+  address?: string | null
+  /** @deprecated 兼容旧代码 — 等同于 district（或 institute_name） */
+  district?: string | null
   country?: string | null
   city?: string | null
+  district?: string | null
   district?: string | null
   latitude?: number | null
   longitude?: number | null
