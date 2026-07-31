@@ -2,15 +2,18 @@
 from datetime import datetime, timezone
 
 from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.booking import Booking, BookingStatus
 from app.models.contract import Contract, ContractSignature
 from app.models.payment import Payment, PaymentStatus
 from app.models.property import Room
+from app.models.unit_type import UnitType
 from app.models.property_image import RoomImage
 from app.schemas.contract import TenantContractDetail, TenantContractListItem
 from app.services.order_state_policy import booking_is_confirmed, payment_status_can_pay, payment_status_value
+from app.services.lease_pricing_service import LeasePricingService
 
 
 STATUS_LABELS = {
@@ -55,6 +58,8 @@ class TenantContractService:
         )
 
     async def _build_item(self, booking, contract, payment, room, image):
+        ut = getattr(room, 'unit_type', None)
+        inst = getattr(ut, 'institute', None) if ut else None
         payment_status = payment_status_value(
             payment.status if payment else None, booking.status
         )
@@ -86,11 +91,11 @@ class TenantContractService:
             tenant_user_id=booking.tenant_id,
             signed_at=contract.signed_at,
             lease_start_date=booking.scheduled_date,
-            lease_end_date=(booking.application_data or {}).get("pricing_snapshot", {}).get("options", [{}])[0].get("end_date") if booking.application_data else None,
+            lease_end_date=LeasePricingService.add_calendar_months(datetime.fromisoformat(booking.scheduled_date).date(), booking.lease_months).isoformat() if booking.scheduled_date and booking.lease_months else None,
             lease_months=booking.lease_months,
             property_timezone="Asia/Shanghai",
-            property_name=room.title or f"Room #{room.id}",
-            property_address=room.address or "",
+            property_name=getattr(ut, 'name', None) or room.room_number or f"Room #{room.id}",
+            property_address=getattr(inst, 'address', None) or "",
             property_image_url=f"/api/v1/uploads/{image.filename}" if image else None,
             payment_status=payment_status,
             booking_status="confirmed" if confirmed else "not_confirmed",
@@ -121,7 +126,9 @@ class TenantContractService:
             )
             if not contract:
                 continue
-            room = await self.session.get(Room, booking.property_id)
+            room = (await self.session.scalars(
+                select(Room).where(Room.id == booking.property_id).options(selectinload(Room.unit_type).selectinload(UnitType.institute))
+            )).unique().first()
             if not room:
                 continue
             payment = await self._latest_payment(booking.id)
