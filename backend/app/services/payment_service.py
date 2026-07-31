@@ -156,7 +156,16 @@ class PaymentOrderService:
         await self._ensure_availability(booking)
         pricing, snapshot = self._price_snapshot(booking, contract, property_obj, tenant_name)
         local = snapshot["fees"]["current_total"]
-        cny = next(x for x in pricing["options"] if x.get("months") == booking.lease_months)["prices"]["amount_due_now"]["cny"]
+        cny_option = next((x for x in pricing["options"] if x.get("months") == booking.lease_months), None)
+        if cny_option:
+            cny = cny_option["prices"]["amount_due_now"]["cny"]
+        else:
+            # 自定义月数：用首选项 CNH 金额同比例换算
+            base = pricing["options"][0]["prices"]
+            cny = {"currency": base["amount_due_now"]["cny"]["currency"],
+                   "minor_units": int(int(base["amount_due_now"]["cny"]["minor_units"]) * booking.lease_months / base["months"]),
+                   "minor_unit_exponent": base["amount_due_now"]["cny"]["minor_unit_exponent"],
+                   "decimal": f"{int(int(base['amount_due_now']['cny']['minor_units'])) * booking.lease_months // base['months'] / 100:.2f}"}
         expires = booking.payment_expires_at or now + timedelta(hours=24)
         payment_attempt_id = str(uuid.uuid4())
         order_id = f"PAY-{datetime.now(timezone.utc):%Y%m%d}-{uuid.uuid4().hex[:20].upper()}"
