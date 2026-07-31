@@ -1,6 +1,6 @@
 """按当前租客聚合不可变支付快照、订单状态及安全展示信息。"""
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -91,7 +91,8 @@ class TenantOrderService:
         now = datetime.now(timezone.utc)
         expires_at = payment.expires_at if payment else booking.payment_expires_at
         if not expires_at:
-            raise LookupError("订单缺少支付截止时间")
+            # 未签约/未创建支付的订单，给一个默认截止时间（24小时后）
+            expires_at = datetime.now(timezone.utc) + timedelta(hours=24)
         reason = None
         contract = await self.session.scalar(
             select(Contract).where(Contract.booking_id == booking.id, Contract.status == "signed")
@@ -146,19 +147,21 @@ class TenantOrderService:
         confirmed = booking_is_confirmed(booking.status, payment_status, amounts_verified=amounts_verified, webhook_confirmed=webhook_confirmed)
         eligibility = await self.payment_eligibility(booking.id, booking.tenant_id)
         expires_at = payment.expires_at if payment else booking.payment_expires_at
-        remaining = max(0, int((expires_at - datetime.now(timezone.utc)).total_seconds()))
+        remaining = max(0, int(((expires_at or datetime.now(timezone.utc)) - datetime.now(timezone.utc)).total_seconds()))
         settlement_currency = payment.settlement_currency if payment else local_total.get("currency", pricing.get("local_currency", "CNY"))
         settlement_amount = payment.settlement_amount_minor if payment else int(local_total.get("minor_units", 0))
+        ut = getattr(property_obj, 'unit_type', None)
+        inst = getattr(ut, 'institute', None) if ut else None
         return TenantOrderListItem(
             booking_id=booking.id,
             order_id=payment.order_id if payment else f"BOOKING-{booking.id}",
             agreement_id=contract.id,
             agreement_number=contract.agreement_number or contract.id,
             property_id=property_obj.id,
-            property_name=property_obj.title,
+            property_name=getattr(ut, 'name', None) or property_obj.room_number or f"Room #{property_obj.id}",
             property_image_url=f"/api/v1/uploads/{image.filename}" if image else None,
-            property_city=property_obj.district,
-            property_address=property_obj.address,
+            property_city=getattr(inst, 'city', None) or '',
+            property_address=getattr(inst, 'address', None) or '',
             lease_start_date=(snapshot or {}).get("commencement_date") or booking.scheduled_date,
             lease_end_date=(snapshot or {}).get("expiry_date") or option.get("end_date"),
             lease_months=booking.lease_months,
