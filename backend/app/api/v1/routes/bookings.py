@@ -127,10 +127,10 @@ async def confirm_booking_with_policies(
     if not valid:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=reason)
 
-    pricing = LeasePricingService.calculate(property_obj, confirmation.move_in_date)
-    option = next((item for item in pricing.options if item.months == confirmation.lease_months), None)
-    if not option:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Lease term is unavailable")
+    # 租期 >= 最短要求即可（含自定义月数）
+    min_stay = int(getattr(getattr(property_obj, 'unit_type', None), 'min_stay_months', 3) or 3)
+    if confirmation.lease_months < max(1, min_stay):
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=f"Lease term must be at least {max(1, min_stay)} month(s)")
 
     duplicate = await session.scalar(select(Booking).where(
         Booking.tenant_id == current_user.id,
