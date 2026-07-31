@@ -58,7 +58,7 @@
 
         <el-empty v-if="pricing.options.length === 0 && !customMode" description="当前入住日期没有可选租期" />
 
-        <el-card v-if="selectedOption" shadow="never" class="price-card">
+        <el-card v-if="selectedOption || customMode" shadow="never" class="price-card">
           <template #header><strong>价格明细</strong></template>
           <div v-for="row in priceRows" :key="row.label" class="price-row" :class="{ total: row.total }">
             <span>{{ row.label }}</span>
