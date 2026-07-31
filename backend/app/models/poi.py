@@ -31,3 +31,7 @@ class InstitutePOI(TimestampMixin, Base):
     safety_data: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
     institute: Mapped["Institute"] = relationship()
+
+
+# 向后兼容别名
+PropertyPOI = InstitutePOI

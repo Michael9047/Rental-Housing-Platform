@@ -47,10 +47,14 @@ class LeasePricingResult:
 
 class LeasePricingService:
     @staticmethod
-    def calculate(property_obj, move_in_date: str) -> LeasePricingResult:
-        """根据房源和起租日计算各租期价格。"""
-        monthly = int(getattr(property_obj, "price_monthly", 0) or 0)
-        deposit = int(getattr(property_obj, "deposit_amount", 0) or 0)
+    def calculate(unit_type, move_in_date: str) -> LeasePricingResult:
+        """根据户型（UnitType）和起租日计算各租期价格。
+
+        参数 unit_type 为 UnitType 模型实例，需有 base_rent/deposit_amount 字段。
+        兼容旧的 property/room 对象（通过 getattr 兜底）。
+        """
+        monthly = int(getattr(unit_type, "base_rent", 0) or getattr(unit_type, "price_monthly", 0) or 0)
+        deposit = int(getattr(unit_type, "deposit_amount", 0) or 0)
 
         fee_rate = Decimal("0.05")
         options = []

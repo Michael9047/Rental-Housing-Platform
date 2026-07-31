@@ -15,24 +15,29 @@ def test_cache_key_is_version_scoped() -> None:
 
 
 @pytest.mark.asyncio
-async def test_ensure_embedding_falls_back_to_async_without_key(monkeypatch) -> None:
-    """With no OpenAI key (the test default), embedding generation defers to the
-    async Celery task and never blocks the create/update path."""
-    dispatched: list[int] = []
-    monkeypatch.setattr(
-        PropertyService, "_dispatch_embedding_task", staticmethod(dispatched.append)
-    )
+async def test_rewrite_imports_cleanly() -> None:
+    """PropertyService 重写后导入正常，所有必要方法存在。"""
+    svc = PropertyService(session=None)  # type: ignore[arg-type]
 
-    class _StubProp:
-        id = 42
-        title = "t"
-        description = None
-        address = "a"
-        district = "SIP"
-        property_type = "apartment"
-        embedding = None
+    # 核心方法必须存在
+    assert hasattr(svc, "search")
+    assert hasattr(svc, "search_unit_types")
+    assert hasattr(svc, "list")
+    assert hasattr(svc, "get")
+    assert hasattr(svc, "create")
+    assert hasattr(svc, "update")
+    assert hasattr(svc, "delete")
+    assert hasattr(svc, "restore")
+    assert hasattr(svc, "hard_delete")
 
-    svc = PropertyService(session=None)  # session unused on the fallback path
-    await svc._ensure_embedding(_StubProp())  # type: ignore[arg-type]
+    # 批量操作
+    assert hasattr(svc, "batch_delete")
+    assert hasattr(svc, "batch_restore")
+    assert hasattr(svc, "batch_hard_delete")
+    assert hasattr(svc, "batch_update_status")
 
-    assert dispatched == [42]
+    # 已移除的方法不得存在
+    assert not hasattr(svc, "_build_filters")
+    assert not hasattr(svc, "_ensure_embedding")
+    assert not hasattr(svc, "revert_audit")
+    assert not hasattr(svc, "_ROOM_TYPE_MAP")

@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import get_current_user, get_db_session, require_landlord, require_bd_manager, require_maintenance
 from app.models.booking import Booking, BookingStatus
 from app.models.institute import Institute
-from app.models.property import Property, PropertyStatus
+from app.models._compat import Property, PropertyStatus
 from app.models.repair import RepairRequest, RepairStatus, RepairWorker, WorkerStatus
 from app.models.user import User, UserRole
 

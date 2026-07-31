@@ -18,7 +18,7 @@ from app.schemas.payment import (
     PaymentCreate, PaymentEligibilityResponse, PaymentMethodAvailability,
     PaymentResponse, PaymentResultResponse, TenantOrderDetail, TenantOrderListResponse,
 )
-from app.models.property_image import PropertyImage
+from app.models._compat import PropertyImage
 from app.services.payment_provider import (
     AlipayProvider, CardCheckoutProvider, MockHostedPaymentProvider,
     ProviderUnavailableError, WeChatPayProvider, provider_availability,

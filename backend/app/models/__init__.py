@@ -1,5 +1,4 @@
 from app.db.session import Base
-from app.models.advertisement import AdImpression, Advertisement, AdvertisementStatus
 from app.models.agent_cart import AgentCart, AgentCartItem
 from app.models.audit_log import AuditLog
 from app.models.booking import Booking, BookingStatus
@@ -13,17 +12,6 @@ from app.models.data_import import DataImport, ImportSourceType, ImportStatus
 from app.models.embedding_job import EmbeddingJob, EmbeddingJobStatus
 from app.models.institute import Institute, InstituteStatus
 from app.models.institute_commute import InstituteCommute
-from app.models.marketplace import (
-    MarketplaceComment,
-    MarketplaceItem,
-    MarketplaceItemCondition,
-    MarketplaceItemImage,
-    MarketplaceItemStatus,
-    MarketplaceMessage,
-    MarketplaceReport,
-    MarketplaceReportStatus,
-)
-from app.models.news import NewsArticle, NewsArticleStatus
 from app.models.notification import (
     DeliveryStatus,
     Notification,
@@ -52,9 +40,6 @@ from app.models.user import User, UserRole, UserStatus
 from app.models.user_favorite import UserFavorite
 
 __all__ = [
-    "AdImpression",
-    "Advertisement",
-    "AdvertisementStatus",
     "AgentCart",
     "AgentCartItem",
     "AuditLog",
@@ -82,16 +67,6 @@ __all__ = [
     "InstituteCommute",
     "InstitutePOI",
     "InstituteStatus",
-    "MarketplaceComment",
-    "MarketplaceItem",
-    "MarketplaceItemCondition",
-    "MarketplaceItemImage",
-    "MarketplaceItemStatus",
-    "MarketplaceMessage",
-    "MarketplaceReport",
-    "MarketplaceReportStatus",
-    "NewsArticle",
-    "NewsArticleStatus",
     "DeliveryStatus",
     "Notification",
     "NotificationChannel",

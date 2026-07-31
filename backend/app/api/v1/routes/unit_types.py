@@ -121,7 +121,7 @@ async def hard_delete_unit_type(
     _current_user: User = Depends(require_landlord),
 ):
     """硬删除户型及所有下属房间（不可恢复）"""
-    from app.models.property import Room
+    from app.models._compat import Room
     ut = await UnitTypeService(session).get(unit_type_id)
     if not ut:
         from fastapi import HTTPException

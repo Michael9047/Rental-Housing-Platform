@@ -5,8 +5,7 @@ from sqlalchemy.orm import selectinload
 
 from app.api.deps import get_db_session
 from app.core.config import get_settings
-from app.models.property import Property
-from app.models.property_image import PropertyImage
+from app.models._compat import Property
 
 router = APIRouter()
 

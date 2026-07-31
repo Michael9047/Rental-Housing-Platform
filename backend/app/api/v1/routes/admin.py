@@ -171,8 +171,7 @@ async def list_pending_review_properties(
     """列出所有待人工审核的房源（status=pending_review）"""
     from sqlalchemy import select
 
-    from app.models.property import Property, PropertyStatus
-    from app.models.property_image import PropertyImage
+    from app.models._compat import Property, PropertyStatus, PropertyImage
 
     stmt = (
         select(Property)
