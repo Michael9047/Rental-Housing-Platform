@@ -76,11 +76,32 @@ class PaymentOrderService:
         pricing = (booking.application_data or {}).get("pricing_snapshot") or {}
         option = next((x for x in pricing.get("options", []) if x.get("months") == booking.lease_months), None)
         if not option:
-            raise ValueError("订单缺少不可变价格快照")
+            # 自定义月数：基于首选项实时计算
+            base = next((x for x in pricing.get("options", [])), None)
+            if not base:
+                raise ValueError("订单缺少不可变价格快照")
+            bp = base["prices"]
+            monthly = int(bp["monthly_rent"]["local"]["minor_units"]) // (10 ** bp["monthly_rent"]["local"]["minor_unit_exponent"])
+            deposit = int(bp["deposit"]["local"]["minor_units"]) // (10 ** bp["deposit"]["local"]["minor_unit_exponent"])
+            svc = int(bp["service_fee"]["local"]["minor_units"]) // (10 ** bp["service_fee"]["local"]["minor_unit_exponent"])
+            m = booking.lease_months
+            from datetime import date as _d
+            move_in = _d.fromisoformat(booking.scheduled_date)
+            end = LeasePricingService.add_calendar_months(move_in, m)
+            option = {
+                "months": m, "end_date": end.isoformat(),
+                "prices": {
+                    "monthly_rent": bp["monthly_rent"], "deposit": bp["deposit"], "service_fee": bp["service_fee"],
+                    "amount_due_now": {"local": {"currency": bp["monthly_rent"]["local"]["currency"], "minor_units": (deposit + svc) * 100, "minor_unit_exponent": 2, "decimal": f"{deposit + svc}.00"}, "cny": {"currency": bp["monthly_rent"]["cny"]["currency"], "minor_units": (deposit + svc) * 100, "minor_unit_exponent": 2, "decimal": f"{deposit + svc}.00"}},
+                    "rent_total": {"local": {"currency": bp["monthly_rent"]["local"]["currency"], "minor_units": monthly * m * 100, "minor_unit_exponent": 2, "decimal": f"{monthly * m}.00"}, "cny": {"currency": bp["monthly_rent"]["cny"]["currency"], "minor_units": monthly * m * 100, "minor_unit_exponent": 2, "decimal": f"{monthly * m}.00"}},
+                }
+            }
         prices = option["prices"]
+        ut = getattr(property_obj, 'unit_type', None)
+        inst = getattr(ut, 'institute', None) if ut else None
         snapshot = {
             "order_number": str(booking.id), "property_id": booking.property_id,
-            "property_name": property_obj.title, "property_address": property_obj.address,
+            "property_name": getattr(ut, 'name', property_obj.room_number or ''), "property_address": getattr(inst, 'address', ''),
             "commencement_date": booking.scheduled_date, "expiry_date": option["end_date"],
             "tenancy_months": booking.lease_months, "tenant_name": tenant_name,
             "agreement_id": contract.id, "agreement_number": contract.agreement_number,
