@@ -71,9 +71,10 @@ async def save_booking_flow_draft(
     if draft.current_step in {"personal_info", "emergency_contact", "review"}:
         if not draft.lease_months:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Lease term step is incomplete")
-        pricing = LeasePricingService.calculate(property_obj, draft.move_in_date)
-        if not any(option.months == draft.lease_months for option in pricing.options):
-            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Lease term is unavailable")
+        # 租期 >= 最短要求即可（含自定义月数）
+        min_stay = int(getattr(getattr(property_obj, 'unit_type', None), 'min_stay_months', 3) or 3)
+        if draft.lease_months < max(1, min_stay):
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"Lease term must be at least {max(1, min_stay)} month(s)")
     if draft.current_step in {"emergency_contact", "review"} and not draft.personal_info:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Personal information step is incomplete")
     if draft.current_step == "review" and not draft.emergency_contact:

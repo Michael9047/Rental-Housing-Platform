@@ -47,7 +47,6 @@
           <el-input-number
             v-model="customMonths"
             :min="minCustomMonths"
-            :max="24"
             :step="1"
             size="large"
             controls-position="right"
