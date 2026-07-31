@@ -24,6 +24,13 @@
         :closable="false"
         show-icon
       />
+      <el-alert
+        v-if="availableFrom"
+        :title="`该房源最早 ${availableFrom} 可入住，请切换到该月份选择日期`"
+        type="warning"
+        :closable="false"
+        show-icon
+      />
 
       <div class="calendar">
         <div v-for="weekday in weekdays" :key="weekday" class="weekday">{{ weekday }}</div>
