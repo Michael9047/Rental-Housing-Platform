@@ -99,7 +99,7 @@ class UnitType(TimestampMixin, Base):
 
     # ── 关系 ──
     institute: Mapped["Institute"] = relationship(back_populates="unit_types")
-    rooms: Mapped[list["Room"]] = relationship("Room", back_populates="unit_type", cascade="all, delete-orphan", lazy="selectin")
+    # Room 表已删除，rooms 关系移除
 
 # 向后兼容别名
 import enum as _enum

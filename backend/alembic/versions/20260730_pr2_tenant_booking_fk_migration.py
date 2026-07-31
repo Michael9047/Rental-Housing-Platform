@@ -62,7 +62,7 @@ def upgrade():
     # Step 2: 重建 tenants 表
     # ═══════════════════════════════════════
     if _table_exists("tenants"):
-        op.drop_table("tenants")
+        op.execute("DROP TABLE tenants CASCADE")
 
     op.create_table(
         "tenants",

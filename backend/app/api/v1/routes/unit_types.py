@@ -43,6 +43,44 @@ async def list_unit_types(
     )
 
 
+@router.get("/search")
+async def search_unit_types(
+    session: AsyncSession = Depends(get_db_session),
+    q: str | None = Query(default=None, description="关键词搜索"),
+    country: str | None = Query(default=None),
+    city: str | None = Query(default=None),
+    district: str | None = Query(default=None),
+    institute_id: int | None = Query(default=None),
+    price_min: int | None = Query(default=None),
+    price_max: int | None = Query(default=None),
+    bedrooms: int | None = Query(default=None),
+    bathrooms: int | None = Query(default=None),
+    property_type: str | None = Query(default=None),
+    amenities: list[str] | None = Query(default=None),
+    area_min: float | None = Query(default=None),
+    area_max: float | None = Query(default=None),
+    sort_by: str | None = Query(default=None),
+    limit: int = Query(default=200, ge=1, le=500),
+    status: str | None = Query(default=None),
+):
+    """搜索户型 — 兼容前端旧 /properties/search 调用"""
+    from app.services.property_service import PropertyService
+    results = await PropertyService(session).search(
+        query=q, country=country, city=city, district=district,
+        institute_id=institute_id, price_min=price_min, price_max=price_max,
+        bedrooms=bedrooms, bathrooms=bathrooms, property_type=property_type,
+        amenities=amenities, area_min=area_min, area_max=area_max,
+        sort_by=sort_by, limit=limit, status=status,
+    )
+    items = []
+    for unit_type, similarity in results:
+        d = _to_read(unit_type)
+        if similarity is not None:
+            d["similarity"] = float(similarity)
+        items.append(d)
+    return items
+
+
 @router.get("/recycle-bin", response_model=UnitTypeListResponse)
 async def list_deleted_unit_types(
     session: AsyncSession = Depends(get_db_session),
