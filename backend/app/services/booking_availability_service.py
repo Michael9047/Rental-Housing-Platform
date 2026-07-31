@@ -16,8 +16,14 @@ class BookingAvailabilityService:
         self.session = session
 
     async def get_property(self, property_id: int) -> Room | None:
-        """按 ID 获取房源（兼容旧 property_id 命名）。"""
-        return await self.session.get(Room, property_id)
+        """按 ID 获取房源（兼容旧 property_id 命名），加载关联户型信息。"""
+        from sqlalchemy.orm import selectinload
+        from app.models.unit_type import UnitType
+        stmt = (select(Room)
+                .options(selectinload(Room.unit_type).selectinload(UnitType.institute))
+                .where(Room.id == property_id))
+        result = await self.session.scalars(stmt)
+        return result.unique().first()
 
     async def get_month_availability(self, room: Room, year: int, month: int) -> dict:
         """获取房源指定月份的日期可用性（供日历组件使用）。"""
