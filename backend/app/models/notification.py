@@ -50,7 +50,7 @@ class Notification(TimestampMixin, Base):
     entity_id: Mapped[str | None] = mapped_column(String(100))
     order_id: Mapped[str | None] = mapped_column(String(64))
     agreement_id: Mapped[str | None] = mapped_column(String(100))
-    property_id: Mapped[int | None] = mapped_column(Integer)
+    unit_type_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     is_read: Mapped[bool] = mapped_column(default=False, nullable=False)
 
     user: Mapped["User"] = relationship()
@@ -91,8 +91,12 @@ class NotificationOutbox(TimestampMixin, Base):
     sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     provider_message_id: Mapped[str | None] = mapped_column(String(255))
 
+<<<<<<< HEAD
 
 # 向后兼容别名 & 占位（__init__.py 导入需要，具体实现待 PR #30 合入）
+=======
+# 向后兼容别名 — __init__.py 导入需要
+>>>>>>> merge/pr33-pr35
 DeliveryStatus = NotificationOutboxStatus
 NotificationChannel = NotificationOutbox
 NotificationDelivery = NotificationOutbox

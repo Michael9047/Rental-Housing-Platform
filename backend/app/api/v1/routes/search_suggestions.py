@@ -3,7 +3,7 @@ from fastapi import APIRouter, Query, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, or_
 from app.api.deps import get_db_session
-from app.models.property import Property
+from app.models._compat import Property
 from app.models.institute import Institute
 from app.models.unit_type import UnitType
 from typing import Optional

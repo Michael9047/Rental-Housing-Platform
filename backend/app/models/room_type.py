@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 """房型模型 — 一个 Property（楼栋）下可有多个 RoomType（如 Studio/Ensuite/1Bed/2Bed），各自独立定价。"""
 import enum
 from datetime import date
@@ -82,3 +83,12 @@ class RoomType(TimestampMixin, Base):
 
     # 关系
     property: Mapped["Room"] = relationship(back_populates="room_types")
+=======
+"""已废弃 — RoomType 表已删除，已被 UnitType 替代。保留兼容导入。"""
+from app.models._compat import (
+    DepositType,
+    RoomType,
+    RoomTypeEnum,
+    RoomTypeStatus,
+)
+>>>>>>> merge/pr33-pr35

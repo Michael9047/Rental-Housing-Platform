@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 """房间图片模型"""
 from sqlalchemy import Boolean, ForeignKey, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -30,3 +31,7 @@ class RoomImage(TimestampMixin, Base):
 
 # 向后兼容别名
 PropertyImage = RoomImage
+=======
+"""已废弃 — RoomImage 表已删除。保留兼容导入。"""
+from app.models._compat import PropertyImage, RoomImage
+>>>>>>> merge/pr33-pr35

@@ -102,8 +102,8 @@
             <span v-else>-</span>
           </template>
         </el-table-column>
-        <el-table-column label="操作人" width="100">
-          <template #default="{ row }">#{{ row.user_id ?? '-' }}</template>
+        <el-table-column label="操作人" width="120">
+          <template #default="{ row }">{{ row.username || '#' + (row.user_id ?? '-') }}</template>
         </el-table-column>
         <el-table-column label="变更详情" min-width="220" show-overflow-tooltip>
           <template #default="{ row }">

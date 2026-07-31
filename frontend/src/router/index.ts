@@ -135,12 +135,15 @@ const routes: RouteRecordRaw[] = [
         meta: { requiresAuth: true, requiresLandlord: true },
       },
       {
+<<<<<<< HEAD
         path: 'rooms/manage',
         name: 'rooms-manage',
         component: () => import('@/views/RoomManagement.vue'),
         meta: { requiresAuth: true, requiresLandlord: true },
       },
       {
+=======
+>>>>>>> merge/pr33-pr35
         path: 'property/history',
         name: 'property-history',
         component: () => import('@/views/PropertyHistory.vue'),
@@ -230,6 +233,11 @@ const routes: RouteRecordRaw[] = [
         meta: { requiresAuth: true, requiresLandlord: true },
       },
       {
+        path: 'building/:id',
+        name: 'building-detail',
+        component: () => import('@/views/BuildingDetail.vue'),
+      },
+      {
         path: 'buildings',
         name: 'buildings',
         component: () => import('@/views/BuildingList.vue'),
@@ -270,6 +278,12 @@ const routes: RouteRecordRaw[] = [
         meta: { requiresAuth: true },
       },
       // ---- 房东报修管理 ----
+      {
+        path: 'workspace/visit-messages',
+        name: 'landlord-visit-messages',
+        component: () => import('@/views/landlord/VisitMessages.vue'),
+        meta: { requiresAuth: true, requiresLandlord: true },
+      },
       {
         path: 'workspace/repairs',
         name: 'landlord-repairs',
@@ -384,11 +398,26 @@ const router = createRouter({
 })
 
 router.beforeEach((to, _from, next) => {
-  const token = localStorage.getItem('access_token')
+  // 清理损坏的 localStorage（user 为 {} 或缺少 role 字段）
   const userStr = localStorage.getItem('user')
+  if (userStr) {
+    try {
+      const parsed = JSON.parse(userStr)
+      if (!parsed || !parsed.role) {
+        localStorage.clear()
+        if (to.name !== 'login') return next({ name: 'login' })
+      }
+    } catch {
+      localStorage.clear()
+      if (to.name !== 'login') return next({ name: 'login' })
+    }
+  }
+
+  const token = localStorage.getItem('access_token')
+  const _userStr = localStorage.getItem('user')
   let user: { role: string } | null = null
   try {
-    if (userStr) user = JSON.parse(userStr)
+    if (_userStr) user = JSON.parse(_userStr)
   } catch {
     // ignore
   }

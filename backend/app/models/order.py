@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 """订单记录模型"""
 from datetime import date
 from decimal import Decimal
@@ -28,3 +29,7 @@ class Order(TimestampMixin, Base):
 
     room: Mapped["Room | None"] = relationship()
     tenant: Mapped["Tenant | None"] = relationship()
+=======
+"""已废弃 — Order 表已删除。保留兼容导入。"""
+from app.models._compat import Order
+>>>>>>> merge/pr33-pr35

@@ -41,6 +41,7 @@ class User(TimestampMixin, Base):
         default=UserStatus.active,
         nullable=False,
     )
+<<<<<<< HEAD
     rooms: Mapped[list["Room"]] = relationship(
         back_populates="landlord",
         cascade="all, delete-orphan",
@@ -62,3 +63,6 @@ class User(TimestampMixin, Base):
     dietary_needs: Mapped[str | None] = mapped_column(Text, nullable=True)
     gender_identity: Mapped[str | None] = mapped_column(String(30), nullable=True)  # 用于室友匹配
     preferred_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
+=======
+    # rooms 关系已删除（Room 表已废弃），BM 通过 institutes.bm_id 关联
+>>>>>>> merge/pr33-pr35

@@ -2,12 +2,12 @@
 from fastapi import APIRouter
 
 from app.api.v1.routes import (
-    admin, agent, ai_search, auth, bookings,
-    building_staff, buildings, chat, commute, contracts,
-    dashboard, favorites, geocoding, health,
-    imports, map_routes, me, ml, notifications, orders,
-    payments, pms, pois, properties, repair_workers, repairs,
-    properties_compat, rooms, room_transfers, search_suggestions, tenants,
+    admin, agent, auth, bookings,
+    building_staff, buildings, chat, contracts,
+    dashboard, favorites, health,
+    imports, map_routes, notifications,
+    payments, repair_workers, repairs,
+    search_suggestions, tenants,
     unit_types, upload, users, wechat,
 )
 
@@ -16,22 +16,15 @@ api_router = APIRouter()
 # 核心
 api_router.include_router(health.router, tags=["health"])
 api_router.include_router(auth.router, prefix="/auth", tags=["auth"])
-api_router.include_router(me.router, prefix="/me", tags=["me"])
 api_router.include_router(users.router, prefix="/users", tags=["users"])
 
 # 三层架构核心
 api_router.include_router(buildings.router, tags=["buildings"])
-
 api_router.include_router(unit_types.router, prefix="/unit-types", tags=["unit-types"])
-api_router.include_router(rooms.router, prefix="/rooms", tags=["rooms"])
-# api_router.include_router(properties.router, prefix="/properties", tags=["properties"])  # 旧架构路由——三层改造后数据不兼容，禁用
-api_router.include_router(properties_compat.router, tags=["properties-compat"])  # 旧接口兼容——返回空列表避免前端404
 
 # 配套模块
 api_router.include_router(building_staff.router, tags=["building-staff"])
 api_router.include_router(tenants.router, tags=["tenants"])
-api_router.include_router(orders.router, tags=["orders"])
-api_router.include_router(room_transfers.router, tags=["room-transfers"])
 
 # 其他模块
 api_router.include_router(bookings.router, prefix="/bookings", tags=["bookings"])
@@ -47,11 +40,11 @@ api_router.include_router(favorites.router, prefix="/favorites", tags=["favorite
 api_router.include_router(upload.router, tags=["upload"])
 api_router.include_router(dashboard.router, tags=["dashboard"])
 
-# 以下模块暂不启用（本初版搁置）
+# 以下模块暂不启用（本初版搁置，或依赖未迁移的模型）
 # api_router.include_router(ai_search.router, prefix="/ai-search", tags=["ai-search"])
 # api_router.include_router(geocoding.router, tags=["geo"])
 # api_router.include_router(pois.router, prefix="/pois", tags=["pois"])
-api_router.include_router(map_routes.router, prefix="/map", tags=["map"])
+# api_router.include_router(map_routes.router, prefix="/map", tags=["map"])  # 依赖 Property
 api_router.include_router(agent.router, prefix="/agent", tags=["agent"])
 # api_router.include_router(ml.router, tags=["ml"])
 api_router.include_router(repairs.router, tags=["repairs"])

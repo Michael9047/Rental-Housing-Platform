@@ -459,7 +459,7 @@ async def delete_building(
     """级联软删除：公寓 → 户型 → 房间 全部进回收站"""
     from datetime import datetime
     from app.models.unit_type import UnitType
-    from app.models.property import Room
+    from app.models._compat import Room
 
     b = await session.get(Institute, building_id)
     if not b:
@@ -507,7 +507,7 @@ async def restore_building(
 ) -> dict:
     """级联恢复：公寓 → 户型 → 房间 全部恢复"""
     from app.models.unit_type import UnitType
-    from app.models.property import Room
+    from app.models._compat import Room
 
     b = await session.get(Institute, building_id)
     if not b:
@@ -555,7 +555,7 @@ async def hard_delete_building(
 ):
     """硬删除公寓及所有下属户型、房间（不可恢复）"""
     from app.models.unit_type import UnitType
-    from app.models.property import Room
+    from app.models._compat import Room
 
     b = await session.get(Institute, building_id)
     if not b:
@@ -645,7 +645,7 @@ async def get_public_building(
 ):
     """租客端公寓详情 — 含图集、配套、户型列表"""
     from app.models.unit_type import UnitType
-    from app.models.property import Room, RoomStatus
+    from app.models._compat import Room, RoomStatus
     b = await session.get(Institute, building_id, options=[
         selectinload(Institute.images),
         selectinload(Institute.unit_types).selectinload(UnitType.rooms),

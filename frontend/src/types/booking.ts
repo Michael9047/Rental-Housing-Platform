@@ -1,14 +1,19 @@
-export type BookingStatus = 'pending' | 'approved' | 'rejected' | 'cancelled' | 'completed' | 'contract_ready' | 'contract_signed' | 'payment_pending'
+export type BookingStatus = 'pending' | 'approved' | 'rejected' | 'cancelled' | 'completed' | 'contract_ready' | 'contract_signed' | 'payment_pending' | 'payment_processing' | 'paid' | 'payment_failed' | 'payment_expired' | 'refund_pending' | 'refunded' | 'payment_review'
 
-// Matches backend: app/schemas/booking.py BookingRead
+// 匹配后端 schemas/booking.py BookingRead（unit_type_id 替代 property_id）
 export interface Booking {
   id: number
-  tenant_id: number
-  property_id: number
-  landlord_id: number
+  user_id: number
+  tenant_id: number | null
+  unit_type_id: number | null
+  institute_id: number | null
+  bm_id: number | null
+  room_number: string | null
   status: BookingStatus
   message: string | null
   scheduled_date: string | null
+  contract_start: string | null
+  contract_end: string | null
   deposit_amount: number | null
   service_fee: number | null
   deposit_status: string | null
@@ -21,7 +26,10 @@ export interface Booking {
 }
 
 export interface BookingCreate {
-  property_id: number
+  unit_type_id: number
+  institute_id?: number | null
+  tenant_id?: number | null
+  room_number?: string | null
   message?: string
   scheduled_date?: string
   deposit_amount?: number

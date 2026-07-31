@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 """房间流转记录模型"""
 from sqlalchemy import ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -23,3 +24,7 @@ class RoomTransfer(TimestampMixin, Base):
 
     room: Mapped["Room"] = relationship()
     operator: Mapped["User | None"] = relationship()
+=======
+"""已废弃 — RoomTransfer 表已删除。保留兼容导入。"""
+from app.models._compat import RoomTransfer
+>>>>>>> merge/pr33-pr35

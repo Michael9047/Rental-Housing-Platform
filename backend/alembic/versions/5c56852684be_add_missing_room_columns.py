@@ -1,7 +1,7 @@
 """add_missing_room_columns
 
 Revision ID: 5c56852684be
-Revises: bf7f24872cf4
+Revises: 983b708fb08f
 Create Date: 2026-07-24 14:53:01.276602
 
 """

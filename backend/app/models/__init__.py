@@ -1,5 +1,4 @@
 from app.db.session import Base
-from app.models.advertisement import AdImpression, Advertisement, AdvertisementStatus
 from app.models.agent_cart import AgentCart, AgentCartItem
 from app.models.audit_log import AuditLog
 from app.models.booking import Booking, BookingStatus
@@ -7,21 +6,12 @@ from app.models.booking_flow_draft import BookingFlowDraft
 from app.models.building_image import BuildingImage
 from app.models.building_staff import BuildingStaff
 from app.models.chat import ChatMessage, ChatMessageRole, ChatSession, ChatSessionStatus
-from app.models.contract import Contract
+from app.models.compare_session import CompareSession
+from app.models.contract import Contract, ContractSignature
 from app.models.data_import import DataImport, ImportSourceType, ImportStatus
 from app.models.embedding_job import EmbeddingJob, EmbeddingJobStatus
 from app.models.institute import Institute, InstituteStatus
-from app.models.marketplace import (
-    MarketplaceComment,
-    MarketplaceItem,
-    MarketplaceItemCondition,
-    MarketplaceItemImage,
-    MarketplaceItemStatus,
-    MarketplaceMessage,
-    MarketplaceReport,
-    MarketplaceReportStatus,
-)
-from app.models.news import NewsArticle, NewsArticleStatus
+from app.models.institute_commute import InstituteCommute
 from app.models.notification import (
     DeliveryStatus,
     Notification,
@@ -31,14 +21,17 @@ from app.models.notification import (
     NotificationEventType,
     NotificationType,
 )
-from app.models.order import Order
 from app.models.payment import Payment, PaymentStatus
 from app.models.pms_connection import PMSConnection, PMSSyncStatus, PMSType
 from app.models.policy_consent import PolicyConsent
+<<<<<<< HEAD
 from app.models.institute_commute import InstituteCommute
 from app.models.poi import InstitutePOI, PropertyPOI
 from app.models.property import Room, RoomStatus, Property, PropertyStatus
 from app.models.property_image import RoomImage, PropertyImage
+=======
+from app.models.poi import InstitutePOI
+>>>>>>> merge/pr33-pr35
 from app.models.repair import (
     RepairIssueType,
     RepairRequest,
@@ -47,17 +40,13 @@ from app.models.repair import (
     WorkerStatus,
 )
 from app.models.review import Review, ReviewStatus
-from app.models.room_transfer import RoomTransfer
 from app.models.saved_search import SavedSearch
-from app.models.tenant import Tenant
-from app.models.unit_type import DepositType, UnitType, UnitTypeStatus, RoomType, RoomTypeEnum, RoomTypeStatus
+from app.models.tenant import Tenant, HousingStatus
+from app.models.unit_type import DepositType, PropertyType, UnitType, UnitTypeStatus
 from app.models.user import User, UserRole, UserStatus
 from app.models.user_favorite import UserFavorite
 
 __all__ = [
-    "AdImpression",
-    "Advertisement",
-    "AdvertisementStatus",
     "AgentCart",
     "AgentCartItem",
     "AuditLog",
@@ -65,30 +54,26 @@ __all__ = [
     "Booking",
     "BookingFlowDraft",
     "BookingStatus",
+    "BuildingImage",
     "BuildingStaff",
     "ChatMessage",
     "ChatMessageRole",
     "ChatSession",
     "ChatSessionStatus",
+    "CompareSession",
     "Contract",
+    "ContractSignature",
     "DataImport",
     "DepositType",
     "EmbeddingJob",
     "EmbeddingJobStatus",
+    "HousingStatus",
     "ImportSourceType",
     "ImportStatus",
     "Institute",
+    "InstituteCommute",
+    "InstitutePOI",
     "InstituteStatus",
-    "MarketplaceComment",
-    "MarketplaceItem",
-    "MarketplaceItemCondition",
-    "MarketplaceItemImage",
-    "MarketplaceItemStatus",
-    "MarketplaceMessage",
-    "MarketplaceReport",
-    "MarketplaceReportStatus",
-    "NewsArticle",
-    "NewsArticleStatus",
     "DeliveryStatus",
     "Notification",
     "NotificationChannel",
@@ -96,24 +81,19 @@ __all__ = [
     "NotificationEntityType",
     "NotificationEventType",
     "NotificationType",
-    "Order",
     "Payment",
     "PaymentStatus",
     "PMSConnection",
     "PMSSyncStatus",
     "PMSType",
     "PolicyConsent",
-    "PropertyPOI",
+    "PropertyType",
     "RepairIssueType",
     "RepairRequest",
     "RepairStatus",
     "RepairWorker",
     "Review",
     "ReviewStatus",
-    "Room",
-    "RoomImage",
-    "RoomStatus",
-    "RoomTransfer",
     "SavedSearch",
     "Tenant",
     "UnitType",

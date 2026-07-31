@@ -1,62 +1,19 @@
-"""按当前租客聚合不可变支付快照、订单状态及安全展示信息。"""
-
-from datetime import datetime, timezone
-
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
-
-from app.models.booking import Booking, BookingStatus
-from app.models.contract import Contract, ContractSignature
-from app.models.payment import Payment, PaymentStatus
-from app.models.property import Property
-from app.models.property_image import PropertyImage
-from app.models.user import User
-from app.schemas.payment import PaymentEligibilityResponse, TenantOrderDetail, TenantOrderListItem
-from app.services.order_state_policy import booking_is_confirmed, payment_status_can_pay, payment_status_value
-
-
-STATUS_LABELS = {
-    "payment_pending": "待支付",
-    "payment_processing": "处理中",
-    "payment_failed": "支付失败",
-    "payment_expired": "支付超时",
-    "cancelled": "已取消/已失效",
-    "payment_review": "异常核对",
-    "refund_pending": "退款处理中",
-    "refunded": "已退款",
-    "paid": "已支付",
-}
-
-FAILURE_REASONS = {
-    "payment_failed": "支付未成功，可在支付期限内安全重试。",
-    "payment_expired": "支付期限已过，预订未生效。",
-    "cancelled": "订单已取消，预订未生效。",
-    "payment_review": "付款信息正在人工核对，暂未确认预订成功。",
-    "refund_pending": "异常付款正在安排退款。",
-    "refunded": "款项已退款，预订未生效。",
-}
+"""已废弃 — Order 表已删除。保留兼容导入。"""
+from app.models._compat import Order
 
 
 class TenantOrderService:
-    def __init__(self, session: AsyncSession) -> None:
+    """兼容占位 — Order 表已删除。"""
+    def __init__(self, session):
         self.session = session
 
-    @staticmethod
-    def _mask_phone(value: str | None) -> str | None:
-        if not value:
-            return None
-        compact = value.replace(" ", "")
-        if compact.startswith("+86") and len(compact) >= 14:
-            return f"+86 {compact[3:6]}****{compact[-4:]}"
-        return f"{compact[:-8]}****{compact[-4:]}" if len(compact) >= 8 else "****"
+    async def list_by_tenant(self, tenant_id: int):
+        return []
 
-    @staticmethod
-    def _mask_email(value: str | None) -> str | None:
-        if not value or "@" not in value:
-            return None
-        local, domain = value.split("@", 1)
-        return f"{local[:1]}***@{domain}"
+    async def list_all(self):
+        return []
 
+<<<<<<< HEAD
     @staticmethod
     def _payment_status(payment: Payment | None, booking: Booking) -> str:
         return payment_status_value(payment.status if payment else None, booking.status)
@@ -247,3 +204,7 @@ class TenantOrderService:
             amounts_verified=self._amounts_verified(payment) if payment else bool(option),
             inventory_reserved=booking.inventory_reserved,
         )
+=======
+    async def get(self, order_id: int):
+        return None
+>>>>>>> merge/pr33-pr35

@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 """房间模型 — 三层架构最底层出租单元（瘦身后：仅存房间独有字段）"""
 import enum
 from datetime import date, datetime
@@ -102,3 +103,18 @@ class PropertyType(str, _enum2.Enum):
 # DepositType 从 unit_type 导入
 from app.models.unit_type import DepositType as _DT
 DepositType = _DT
+=======
+"""已废弃 — Room 表已删除。保留兼容导入，业务逻辑请迁移到 UnitType。"""
+from app.models._compat import (
+    DepositType,
+    Property,
+    PropertyImage,
+    PropertyStatus,
+    PropertyType,
+    Room,
+    RoomImage,
+    RoomStatus,
+    VALID_ROOM_STATUS_TRANSITIONS,
+    VALID_STATUS_TRANSITIONS,
+)
+>>>>>>> merge/pr33-pr35
