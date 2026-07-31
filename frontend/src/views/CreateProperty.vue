@@ -218,8 +218,8 @@ import ImageUploader from '@/components/ImageUploader.vue'
 const router = useRouter(); const route = useRoute()
 const authStore = useAuthStore()
 
-const isEdit = computed(() => route.name === 'edit-unit-type')
-const isCopy = computed(() => route.name === 'copy-unit-type')
+const isEdit = computed(() => route.name === 'unit-type-edit')
+const isCopy = computed(() => route.name === 'unit-type-copy')
 const editId = computed(() => {
   const id = route.params.id
   return id ? Number(id) : null

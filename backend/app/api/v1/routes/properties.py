@@ -187,8 +187,8 @@ async def list_recent_property_audit(
     base_select = (
         select(
             AuditLog,
-            Property.title.label("property_title"),
-            Property.address.label("property_address"),
+            UnitType.name.label("property_title"),
+            Institute.address.label("property_address"),
             Institute.name.label("institute_name"),
             UserModel.username.label("username"),
         )
@@ -198,21 +198,31 @@ async def list_recent_property_audit(
         .outerjoin(UserModel, AuditLog.user_id == UserModel.id)
     )
 
+    # 房源相关的操作类型（兼容旧 property、当前 room/unit_type/building）
+    property_resource_types = ["property", "room", "unit_type", "building"]
+
     if current_user.role.value == "admin":
         stmt = (
             base_select
-            .where(AuditLog.resource_type == "property")
+            .where(AuditLog.resource_type.in_(property_resource_types))
             .order_by(AuditLog.created_at.desc())
             .limit(limit)
         )
     else:
-        prop_ids_stmt = select(Property.id).where(Property.landlord_id == current_user.id)
+        # 房东看自己名下的房间操作 + 自己的操作记录
+        room_ids_stmt = select(Property.id).where(Property.landlord_id == current_user.id)
+        # 房东创建的公寓
+        inst_ids_stmt = select(Institute.id).where(Institute.created_by == current_user.id)
+        # 房东公寓下的户型
+        ut_ids_stmt = select(UnitType.id).where(UnitType.institute_id.in_(inst_ids_stmt))
         stmt = (
             base_select
             .where(
-                AuditLog.resource_type == "property",
+                AuditLog.resource_type.in_(property_resource_types),
                 or_(
-                    AuditLog.resource_id.in_(prop_ids_stmt),
+                    AuditLog.resource_id.in_(room_ids_stmt),
+                    AuditLog.resource_id.in_(inst_ids_stmt),
+                    AuditLog.resource_id.in_(ut_ids_stmt),
                     AuditLog.user_id == current_user.id,
                 ),
             )

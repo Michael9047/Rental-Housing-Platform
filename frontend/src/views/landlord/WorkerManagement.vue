@@ -33,7 +33,7 @@
     <el-dialog v-model="showCreate" title="新建维修师傅账号" width="420px">
       <el-form :model="createForm" label-width="70px">
         <el-form-item label="用户名"><el-input v-model="createForm.username" placeholder="登录用户名" /></el-form-item>
-        <el-form-item label="密码"><el-input v-model="createForm.password" type="password" placeholder="至少6位" /></el-form-item>
+        <el-form-item label="密码"><el-input v-model="createForm.password" type="password" placeholder="至少8位" minlength="8" show-word-limit maxlength="128" /></el-form-item>
         <el-form-item label="手机号"><el-input v-model="createForm.phone" placeholder="维修师傅手机号" /></el-form-item>
         <el-form-item v-if="authStore.isAdmin" label="归属范围">
           <el-select v-model="createForm.scope" style="width:100%" placeholder="选择归属范围">
@@ -102,7 +102,16 @@ async function doCreate() {
     skillsStr.value = ''
     await fetchData()
   } catch (e: any) {
-    ElMessage.error(e?.response?.data?.detail || '创建失败')
+    const detail = e?.response?.data?.detail
+    if (Array.isArray(detail)) {
+      // FastAPI 422 validation errors
+      const msgs = detail.map((d: any) => d.msg || '').filter(Boolean).join('；')
+      ElMessage.error(msgs || '创建失败')
+    } else if (typeof detail === 'string') {
+      ElMessage.error(detail)
+    } else {
+      ElMessage.error('创建失败')
+    }
   } finally {
     createLoading.value = false
   }

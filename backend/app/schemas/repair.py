@@ -57,7 +57,7 @@ class RepairRead(BaseModel):
 class WorkerCreate(BaseModel):
     """创建维修师傅"""
     username: str = Field(min_length=1, max_length=100)
-    password: str = Field(min_length=6)
+    password: str = Field(min_length=8, max_length=128)
     phone: str = Field(min_length=1, max_length=32)
     skills: list[str] | None = None
     scope: WorkerScope = WorkerScope.apartment  # 默认公寓管理，admin可设 platform
