@@ -23,7 +23,7 @@
               <el-select v-model="f.institute_id" placeholder="选择公寓（必选）" filterable style="flex:1">
                 <el-option v-for="b in buildings" :key="b.id" :label="b.name" :value="b.id" />
               </el-select>
-              <el-button type="primary" @click="showBuildingDialog=true">+ 新建公寓</el-button>
+              <el-button type="primary" plain @click="showBuildingDialog=true">+ 新建公寓</el-button>
             </div>
           </el-form-item>
 
@@ -95,18 +95,9 @@
             </el-col>
           </el-row>
 
-          <el-row :gutter="16">
-            <el-col :span="12">
-              <el-form-item label="起租时间">
-                <el-input v-model="f.lease_start" placeholder="如 2026年9月 / 随时入住 / 即日起" maxlength="50" />
-              </el-form-item>
-            </el-col>
-            <el-col :span="12">
-              <el-form-item label="止租时间">
-                <el-input v-model="f.lease_end" placeholder="如 2027年6月 / 租满一年" maxlength="50" />
-              </el-form-item>
-            </el-col>
-          </el-row>
+          <el-form-item label="租房要求">
+            <el-input v-model="f.rental_requirements" type="textarea" :rows="2" placeholder="选填：如 一年起租、仅限学生、无宠物、需提供担保人..." maxlength="500" show-word-limit />
+          </el-form-item>
 
           <el-divider content-position="left">专属优惠</el-divider>
           <el-form-item>
@@ -116,7 +107,7 @@
           <el-divider content-position="left">楼层差异化加价</el-divider>
           <el-form-item label="楼层加价规则">
             <div style="width:100%">
-              <el-button size="small" type="primary" @click="addFloorTier" style="margin-bottom:8px">+ 添加楼层段</el-button>
+              <el-button size="small" type="primary" plain @click="addFloorTier" style="margin-bottom:8px">+ 添加楼层段</el-button>
               <el-table :data="floorPricingTable" border size="small" v-if="floorPricingTable.length">
                 <el-table-column label="起始楼层" width="110">
                   <template #default="{row,$index}"><el-input-number v-model="row.floor_min" :min="0" size="small" controls-position="right" style="width:90px" /></template>
@@ -171,9 +162,9 @@
             <ImageUploader
               ref="imageUploaderRef"
               title="户型平面图/效果图"
-              hint="支持上传户型平面布局图、效果图，至少3张，最多20张"
-              :min-files="3"
-              :max-files="20"
+              hint="支持上传户型平面布局图、效果图，最多8张"
+              :min-files="0"
+              :max-files="8"
               v-model="uploadedImageUrls"
             />
           </el-form-item>
@@ -189,46 +180,17 @@
       </template>
     </el-card>
 
-    <!-- 创建公寓弹窗（完整版） -->
-    <el-dialog v-model="showBuildingDialog" title="新建公寓" width="720px" :close-on-click-modal="false" @opened="onBldDialogOpened" @closed="onBldDialogClosed">
-      <el-form :model="newBuilding" label-width="100px">
-        <el-form-item label="公寓名称" required><el-input v-model="newBuilding.name" placeholder="中/英文均可" maxlength="200" /></el-form-item>
-        <el-divider>📍 地址与定位</el-divider>
-        <el-form-item label="国家"><el-autocomplete v-model="newBuilding.country" :fetch-suggestions="filterCountries" placeholder="输入或选择国家，如：英国、美国、日本" clearable style="width:100%" /></el-form-item>
-        <el-form-item label="城市"><el-input v-model="newBuilding.city" placeholder="如：伦敦、上海、新加坡" maxlength="100" /></el-form-item>
-        <el-form-item label="区域"><el-input v-model="newBuilding.district" placeholder="如：肯辛顿、浦东、市中心" maxlength="100" /></el-form-item>
-        <el-form-item label="街道/门牌号"><el-input v-model="newBuilding.street" placeholder="如：105 Cheyne Walk 或 南京路100号" maxlength="200" /></el-form-item>
-        <el-form-item label="邮编"><el-input v-model="newBuilding.postalCode" placeholder="选填" maxlength="20" style="width:200px" /></el-form-item>
-        <el-form-item label="地图定位">
-          <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
-            <el-button type="primary" @click="geocodeStructured" :loading="geoLoading" :disabled="!(newBuilding.country || newBuilding.city)">📍 检索定位</el-button>
-            <el-tag v-if="newBuilding.lat!=null && newBuilding.lng!=null" type="success" effect="dark" size="small">✅ 已定位</el-tag>
-            <el-tag v-else type="danger" effect="dark" size="small">❌ 未定位</el-tag>
-            <el-button size="small" type="danger" plain style="margin-left:auto" @click="clearBldAddressFields">🗑️ 清空</el-button>
-          </div>
-          <div ref="bldMapEl" style="width:100%;height:260px;border-radius:8px;border:1px solid #dcdfe6;"></div>
-          <div style="color:#909399;font-size:12px;margin-top:4px">💡 填地址→检索定位；点地图→自动回填</div>
-        </el-form-item>
-        <el-divider>联系方式</el-divider>
-        <el-form-item label="前台电话"><el-input v-model="newBuilding.contact_phone" /></el-form-item>
-        <el-divider>公寓介绍</el-divider>
-        <el-form-item><el-input v-model="newBuilding.description" type="textarea" :rows="3" maxlength="2000" show-word-limit /></el-form-item>
-        <el-divider>🛡️ 安保</el-divider>
-        <el-form-item><el-checkbox-group v-model="buildingAmenities" class="amenity-group"><el-checkbox v-for="a in securityAmenitiesBld" :key="a" :label="a" :value="a" border size="small" /></el-checkbox-group></el-form-item>
-        <el-divider>🛎️ 服务</el-divider>
-        <el-form-item><el-checkbox-group v-model="buildingAmenities" class="amenity-group"><el-checkbox v-for="a in serviceAmenitiesBld" :key="a" :label="a" :value="a" border size="small" /></el-checkbox-group></el-form-item>
-        <el-divider>🏠 公用设施</el-divider>
-        <el-form-item><el-checkbox-group v-model="buildingAmenities" class="amenity-group"><el-checkbox v-for="a in facilityAmenitiesBld" :key="a" :label="a" :value="a" border size="small" /></el-checkbox-group></el-form-item>
-        <el-divider>⚽ 运动娱乐</el-divider>
-        <el-form-item><el-checkbox-group v-model="buildingAmenities" class="amenity-group"><el-checkbox v-for="a in sportAmenitiesBld" :key="a" :label="a" :value="a" border size="small" /></el-checkbox-group></el-form-item>
-        <el-divider>公寓公共图集</el-divider>
-        <el-form-item label="公寓照片">
-          <ImageUploader ref="bldImageUploaderRef" title="公寓外观、大堂、公共设施实拍" hint="至少3张，最多20张，首张为封面" :min-files="3" :max-files="20" v-model="buildingImages" />
-        </el-form-item>
+    <!-- 创建公寓弹窗 -->
+    <el-dialog v-model="showBuildingDialog" title="新建公寓" width="480px">
+      <el-form :model="newBuilding" label-width="80px">
+        <el-form-item label="公寓名称" required><el-input v-model="newBuilding.name" placeholder="如：翰林缘公寓" /></el-form-item>
+        <el-form-item label="地址"><el-input v-model="newBuilding.address" placeholder="公寓详细地址" /></el-form-item>
+        <el-form-item label="联系电话"><el-input v-model="newBuilding.contact_phone" placeholder="管理机构电话" /></el-form-item>
+        <el-form-item label="描述"><el-input v-model="newBuilding.description" type="textarea" :rows="2" /></el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="showBuildingDialog=false">取消</el-button>
-        <el-button type="primary" :loading="creatingBuilding" :disabled="!newBuilding.name.trim() || newBuilding.lat==null" @click="createBuilding">创建</el-button>
+        <el-button type="primary" :loading="creatingBuilding" @click="createBuilding">创建</el-button>
       </template>
     </el-dialog>
 
@@ -256,8 +218,8 @@ import ImageUploader from '@/components/ImageUploader.vue'
 const router = useRouter(); const route = useRoute()
 const authStore = useAuthStore()
 
-const isEdit = computed(() => route.name === 'edit-unit-type')
-const isCopy = computed(() => route.name === 'copy-unit-type')
+const isEdit = computed(() => route.name === 'unit-type-edit')
+const isCopy = computed(() => route.name === 'unit-type-copy')
 const editId = computed(() => {
   const id = route.params.id
   return id ? Number(id) : null
@@ -294,13 +256,12 @@ const selectedAmenities = ref<string[]>([])
 const f = reactive({
   institute_id: null as number | null,
   name: '',
-  bedrooms: 0, bathrooms: 0, hall_count: 0,
+  bedrooms: 0, bathrooms: 1, hall_count: 0,
   area_sqm: undefined as number | undefined,
   base_rent: undefined as number | undefined,
   deposit_amount: undefined as number | undefined,
   deposit_type: undefined as string | undefined,
-  lease_start: '' as string | undefined,
-  lease_end: '' as string | undefined,
+  rental_requirements: '' as string | undefined,
   currency: 'CNY' as string | undefined,
   special_offer: '' as string | undefined,
   min_stay_months: 3,
@@ -322,134 +283,13 @@ const rules: FormRules = {
   institute_id: [{ required: true, message: '请选择公寓', trigger: 'change' }],
   name: [{ required: true, message: '请输入户型名称', trigger: 'blur' }],
   base_rent: [{ required: true, message: '请输入标准月租金', trigger: 'blur' }],
-  area_sqm: [{ required: true, message: '请输入套内面积', trigger: 'blur' }],
+  area_sqm: [{ required: true, message: '请输入套内面积', trigger: 'change' }],
 }
 
-// ── 公寓 ──
+// 公寓
 const buildings = ref<Building[]>([])
-const showBuildingDialog = ref(false); const creatingBuilding = ref(false); const geoLoading = ref(false)
-const buildingAmenities = ref<string[]>([]); const buildingImages = ref<string[]>([])
-const bldImageUploaderRef = ref<InstanceType<typeof ImageUploader>>()
-const bldMapEl = ref<HTMLElement|null>(null)
-
-const countryOptions = ['中国','英国','美国','澳大利亚','加拿大','新加坡','日本','韩国','法国','德国','马来西亚','泰国']
-function filterCountries(query: string, cb: Function) {
-  if (!query) { cb(countryOptions.map(v => ({value:v}))); return }
-  const q = query.toLowerCase()
-  cb(countryOptions.filter(c => c.toLowerCase().includes(q) || c.includes(query)).map(v => ({value:v})))
-}
-
-const newBuilding = reactive({
-  name: '', contact_phone: '', description: '',
-  country: '', city: '', district: '', street: '', postalCode: '',
-  lat: null as number|null, lng: null as number|null,
-})
-
-const securityAmenitiesBld = ['24小时安保','监控系统(CCTV)','智能门禁','电子门锁','前台/礼宾','消防系统','夜间巡逻']
-const serviceAmenitiesBld = ['代收包裹','维修服务','公共区域保洁','定期社交活动','接机服务','班车接驳','入住礼包','管家服务']
-const facilityAmenitiesBld = ['电梯','洗衣房','自行车库','停车场','公共厨房','快递柜/信箱','自习室','影音室','公共休闲区','屋顶露台','庭院/花园','会议室']
-const sportAmenitiesBld = ['健身房','游泳池','篮球场','瑜伽室','游戏室','BBQ区','乒乓球/台球']
-
-// ── 地图 ──
-let bldMapInst:any=null, bldMarkerInst:any=null
-
-function getL(){ return (window as any).L }
-async function ensureLeaflet(){
-  if(getL()) return getL()
-  if(!document.getElementById('leaflet-css')){
-    const c=document.createElement('link');c.id='leaflet-css';c.rel='stylesheet'
-    c.href='https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';document.head.appendChild(c)
-  }
-  return new Promise<any>(r=>{
-    const s=document.createElement('script')
-    s.src='https://unpkg.com/leaflet@1.9.4/dist/leaflet.js'
-    s.onload=()=>r(getL()); document.head.appendChild(s)
-  })
-}
-
-async function initBldMap(lat:number|null, lng:number|null){
-  await import('vue').then(m=>m.nextTick())
-  if(!bldMapEl.value) return
-  if(bldMapInst){ try{bldMapInst.remove()}catch(e){} bldMapInst=null; bldMarkerInst=null }
-  const L = await ensureLeaflet()
-  const center:[number,number] = (lat!=null&&lng!=null&&isFinite(lat)&&isFinite(lng)) ? [lat,lng] : [31.27,120.73]
-  const zoom = (lat!=null&&lng!=null) ? 17 : 12
-  bldMapInst = L.map(bldMapEl.value, {center, zoom})
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'&copy;OSM',maxZoom:19}).addTo(bldMapInst)
-  bldMapInst.on('click', (e:any)=>{ placeBldMarker(e.latlng.lat, e.latlng.lng, true) })
-  if(lat!=null && lng!=null) placeBldMarker(lat, lng, false)
-}
-
-function placeBldMarker(lat:number, lng:number, rev:boolean){
-  const L=getL(); if(!L||!bldMapInst) return
-  if(bldMarkerInst) bldMarkerInst.setLatLng([lat,lng])
-  else {
-    bldMarkerInst = L.marker([lat,lng],{draggable:true}).addTo(bldMapInst)
-    bldMarkerInst.on('dragend', ()=>{ const p=bldMarkerInst.getLatLng(); newBuilding.lat=p.lat; newBuilding.lng=p.lng })
-  }
-  newBuilding.lat=lat; newBuilding.lng=lng
-  if(rev) reverseBldGeocode(lat,lng)
-}
-
-function destroyBldMap(){
-  if(bldMapInst){ try{bldMapInst.remove()}catch(e){} }
-  bldMapInst=null; bldMarkerInst=null
-}
-
-async function geocodeStructured(){
-  if(!(newBuilding.country || newBuilding.city)){ElMessage.warning('请至少填写国家或城市');return}
-  geoLoading.value=true
-  try{
-    const params=new URLSearchParams({format:'json',limit:'1'})
-    if(newBuilding.street) params.set('street',newBuilding.street)
-    if(newBuilding.city) params.set('city',newBuilding.city)
-    if(newBuilding.country) params.set('country',newBuilding.country)
-    if(newBuilding.postalCode) params.set('postalcode',newBuilding.postalCode)
-    const r=await fetch(`https://nominatim.openstreetmap.org/search?${params}`,{headers:{'User-Agent':'RH/1.0'}})
-    const d=await r.json()
-    if(d.length>0){
-      const lat=parseFloat(d[0].lat),lng=parseFloat(d[0].lon)
-      placeBldMarker(lat,lng,false);bldMapInst?.setView([lat,lng],17)
-      ElMessage.success(`已定位 (${lat.toFixed(4)}, ${lng.toFixed(4)})`)
-    }else{ElMessage.warning('未找到该地址，请在地图上手动点击选点')}
-  }catch(e){ElMessage.error('定位失败，请检查网络')}
-  finally{geoLoading.value=false}
-}
-
-async function reverseBldGeocode(lat:number,lng:number){
-  try{
-    const r=await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&accept-language=zh`,{headers:{'User-Agent':'RH/1.0'}})
-    const d=await r.json()
-    if(!d?.address) return
-    const a = d.address
-    if (a.country && !newBuilding.country) newBuilding.country = a.country
-    if (!newBuilding.city) newBuilding.city = a.city || a.town || a.municipality || a.village || a.hamlet || ''
-    if (!newBuilding.district) newBuilding.district = a.suburb || a.borough || a.city_district || a.county || a.state_district || ''
-    if (!newBuilding.street) { const road = a.road || a.pedestrian || a.path || a.footway || ''; const hn = a.house_number || ''; newBuilding.street = hn ? `${hn} ${road}`.trim() : road }
-    if (!newBuilding.postalCode) newBuilding.postalCode = a.postcode || ''
-    ElMessage.success('已从地图反向定位，地址字段已自动填充')
-  }catch(e){}
-}
-
-function clearBldAddressFields(){
-  newBuilding.country=''; newBuilding.city=''; newBuilding.district=''; newBuilding.street=''; newBuilding.postalCode=''
-  newBuilding.lat=null; newBuilding.lng=null
-  if(bldMarkerInst){ bldMarkerInst.remove(); bldMarkerInst=null }
-  ElMessage.success('地址已清空，可在地图上点击选点')
-}
-
-async function onBldDialogOpened(){
-  await import('vue').then(m=>m.nextTick())
-  await initBldMap(newBuilding.lat, newBuilding.lng)
-}
-
-function onBldDialogClosed(){
-  destroyBldMap()
-  newBuilding.name=''; newBuilding.contact_phone=''; newBuilding.description=''
-  newBuilding.country=''; newBuilding.city=''; newBuilding.district=''; newBuilding.street=''; newBuilding.postalCode=''
-  newBuilding.lat=null; newBuilding.lng=null
-  buildingAmenities.value=[]; buildingImages.value=[]
-}
+const showBuildingDialog = ref(false); const creatingBuilding = ref(false)
+const newBuilding = reactive({ name: '', address: '', contact_phone: '', description: '' })
 
 async function loadBuildings() {
   try { buildings.value = await buildingService.list({ limit: 200 }) } catch { /* */ }
@@ -457,23 +297,14 @@ async function loadBuildings() {
 
 async function createBuilding() {
   if (!newBuilding.name.trim()) { ElMessage.error('请输入公寓名称'); return }
-  if (newBuilding.lat==null || newBuilding.lng==null) { ElMessage.warning('请先定位公寓坐标'); return }
   creatingBuilding.value = true
   try {
-    const p: any = {
-      name: newBuilding.name.trim(),
-      country: newBuilding.country.trim()||null, city: newBuilding.city.trim()||null,
-      district: newBuilding.district.trim()||null, street: newBuilding.street.trim()||null,
-      postal_code: newBuilding.postalCode.trim()||null,
-      contact_phone: newBuilding.contact_phone.trim()||null,
-      description: newBuilding.description.trim()||null,
-      amenities: buildingAmenities.value.length ? [...buildingAmenities.value] : null,
-      image_urls: buildingImages.value.length ? [...buildingImages.value] : null,
-      latitude: String(newBuilding.lat), longitude: String(newBuilding.lng),
-    }
-    const b = await buildingService.create(p)
+    const b = await buildingService.create({
+      name: newBuilding.name, address: newBuilding.address,
+      contact_phone: newBuilding.contact_phone, description: newBuilding.description,
+    })
     buildings.value.unshift(b); f.institute_id = b.id; showBuildingDialog.value = false
-    onBldDialogClosed()
+    newBuilding.name = ''; newBuilding.address = ''; newBuilding.contact_phone = ''; newBuilding.description = ''
     ElMessage.success('公寓创建成功')
   } catch (e: any) { ElMessage.error(extractErrorMessage(e) || '创建失败') }
   finally { creatingBuilding.value = false }
@@ -488,20 +319,19 @@ async function loadUnitType(id: number) {
     f.institute_id = ut.institute_id
     f.name = isCopy.value ? `${ut.name} (副本)` : ut.name
     f.bedrooms = ut.bedrooms ?? 0
-    f.bathrooms = ut.bathrooms ?? 0
+    f.bathrooms = ut.bathrooms ?? 1
     f.hall_count = ut.hall_count ?? 0
     f.area_sqm = ut.area_sqm ? Number(ut.area_sqm) : undefined
     f.base_rent = ut.base_rent ? Number(ut.base_rent) : undefined
     f.deposit_amount = ut.deposit_amount ?? undefined
     f.deposit_type = ut.deposit_type ?? undefined
-    f.lease_start = ut.lease_start ?? ''
-    f.lease_end = ut.lease_end ?? ''
+    f.rental_requirements = ut.rental_requirements ?? ''
     f.currency = ut.currency || 'CNY'
     f.special_offer = ut.special_offer ?? ''
     f.min_stay_months = ut.min_stay_months ?? 3
     f.description = ut.description ?? ''
     selectedAmenities.value = ut.amenities ?? []
-    uploadedImageUrls.value = (ut.image_urls ?? []).map((u: string) => u.startsWith('/api') || u.startsWith('http') ? u : '/api/v1/uploads/' + u)
+    uploadedImageUrls.value = (ut.images || []).map((img: any) => '/api/v1/uploads/' + img.filename)
     if (ut.floor_pricing && Array.isArray(ut.floor_pricing)) {
       floorPricingTable.length = 0
       ut.floor_pricing.forEach((fp: any) => floorPricingTable.push({ ...fp }))
@@ -513,25 +343,24 @@ async function loadUnitType(id: number) {
 
 // 提交
 async function handleSubmit() {
-  if (!formRef.value) return
-  if (!authStore.user) { ElMessage.error('请先登录'); return }
-  const valid = await formRef.value?.validate().catch(() => false)
-  if (!valid) return
-  if (!f.institute_id) { ElMessage.error('请先选择公寓'); return }
-
+  if (submitting.value) return  // 防止重复提交
   submitting.value = true
+  if (!formRef.value) { submitting.value = false; return }
+  if (!authStore.user) { ElMessage.error('请先登录'); submitting.value = false; return }
+  const valid = await formRef.value?.validate().catch(() => false)
+  if (!valid) { submitting.value = false; return }
+  if (!f.institute_id) { ElMessage.error('请先选择公寓'); submitting.value = false; return }
   const data: any = {
     institute_id: f.institute_id,
     name: f.name.trim(),
     bedrooms: f.bedrooms,
     bathrooms: f.bathrooms,
     hall_count: f.hall_count,
-    area_sqm: f.area_sqm ? String(f.area_sqm) : null,
-    base_rent: f.base_rent ? String(f.base_rent) : '0',
+    area_sqm: f.area_sqm ?? null,
+    base_rent: f.base_rent ?? 0,
     deposit_amount: f.deposit_amount ?? null,
     deposit_type: f.deposit_type || null,
-    lease_start: f.lease_start?.trim() || null,
-    lease_end: f.lease_end?.trim() || null,
+    rental_requirements: f.rental_requirements?.trim() || null,
     currency: f.currency || null,
     special_offer: f.special_offer?.trim() || null,
     min_stay_months: f.min_stay_months,
@@ -549,7 +378,10 @@ async function handleSubmit() {
     }
     showSuccessDialog.value = true
   } catch (e: any) {
-    ElMessage.error(extractErrorMessage(e) || '保存失败')
+    const msg = extractErrorMessage(e) || e?.message || e?.response?.statusText || '保存失败'
+    console.error('[CreateProperty] save error:', e)
+    console.error('[CreateProperty] response:', e?.response?.data)
+    ElMessage.error(typeof msg === 'string' ? msg : JSON.stringify(msg))
   } finally { submitting.value = false }
 }
 

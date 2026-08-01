@@ -5,7 +5,9 @@
     :current-step="1"
     previous-route="booking-move-in-date"
     next-route="booking-personal-info"
-    :next-disabled="!selectedOption"
+    :next-disabled="!hasValidSelection"
+    :manual-next="customMode"
+    @next="saveCustomAndGoNext"
   >
     <div v-loading="loading" class="lease-page">
       <el-alert v-if="errorMessage" :title="errorMessage" type="error" :closable="false" />
@@ -28,11 +30,35 @@
             <strong>{{ option.months }} 个月</strong>
             <span>至 {{ option.end_date }}</span>
           </button>
+          <!-- 自定义租期 -->
+          <button
+            type="button"
+            class="lease-option custom-option"
+            :class="{ selected: customMode }"
+            @click="toggleCustomMode"
+          >
+            <strong>📝 自定义</strong>
+            <span>按月自由设定</span>
+          </button>
         </div>
 
-        <el-empty v-if="pricing.options.length === 0" description="当前入住日期没有可选租期" />
+        <!-- 自定义月数输入 -->
+        <div v-if="customMode" class="custom-months">
+          <el-input-number
+            v-model="customMonths"
+            :min="minCustomMonths"
+            :step="1"
+            size="large"
+            controls-position="right"
+            @change="onCustomChange"
+          />
+          <span class="custom-unit">个月</span>
+          <span v-if="customEndDate" class="custom-end">至 {{ customEndDate }}</span>
+        </div>
 
-        <el-card v-if="selectedOption" shadow="never" class="price-card">
+        <el-empty v-if="pricing.options.length === 0 && !customMode" description="当前入住日期没有可选租期" />
+
+        <el-card v-if="selectedOption || customMode" shadow="never" class="price-card">
           <template #header><strong>价格明细</strong></template>
           <div v-for="row in priceRows" :key="row.label" class="price-row" :class="{ total: row.total }">
             <span>{{ row.label }}</span>
@@ -57,25 +83,81 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import BookingFlowLayout from '@/components/booking/BookingFlowLayout.vue'
 import { propertyService, type LeaseOption, type LeasePricing, type MoneyAmount } from '@/services/property'
 import { bookingDraftService } from '@/services/bookingDraft'
+import { extractErrorMessage } from '@/services/api'
 
-const route = useRoute()
+const route = useRoute(); const router = useRouter()
 const propertyId = computed(() => Number(route.params.propertyId))
 const loading = ref(false)
 const errorMessage = ref('')
 const pricing = ref<LeasePricing | null>(null)
 const selectedMonths = ref<number | null>(null)
 const selectedOption = computed(() => pricing.value?.options.find((option) => option.months === selectedMonths.value) || null)
-const priceRows = computed(() => selectedOption.value ? [
-  { label: '月租', value: selectedOption.value.prices.monthly_rent },
-  { label: '租金总额', value: selectedOption.value.prices.rent_total },
-  { label: '押金', value: selectedOption.value.prices.deposit },
-  { label: '服务费', value: selectedOption.value.prices.service_fee },
-  { label: '当前应付金额', value: selectedOption.value.prices.amount_due_now, total: true },
-] : [])
+
+// 自定义租期
+const customMode = ref(false)
+const customMonths = ref(3)
+const minCustomMonths = computed(() => pricing.value?.options[0]?.months || 3)
+const customEndDate = computed(() => {
+  if (!pricing.value || !customMonths.value) return null
+  const d = new Date(pricing.value.move_in_date)
+  d.setMonth(d.getMonth() + customMonths.value)
+  return d.toISOString().slice(0, 10)
+})
+const customPriceRows = computed(() => {
+  if (!pricing.value || !customMonths.value) return []
+  const base = pricing.value.options[0]
+  if (!base) return []
+  const monthly = base.prices.monthly_rent.local.minor_units / 100
+  const deposit = base.prices.deposit.local.minor_units / 100
+  const serviceFee = base.prices.service_fee.local.minor_units / 100
+  const rentTotal = monthly * customMonths.value
+  const amountDue = deposit + serviceFee
+  const cur = base.prices.monthly_rent.local.currency
+  const mk = (v: number) => ({ currency: cur, minor_units: v * 100, minor_unit_exponent: 2, decimal: v.toFixed(2) })
+  return [
+    { label: '月租', value: { local: mk(monthly), cny: mk(monthly) } },
+    { label: '租金总额', value: { local: mk(rentTotal), cny: mk(rentTotal) } },
+    { label: '押金', value: { local: mk(deposit), cny: mk(deposit) } },
+    { label: '服务费', value: { local: mk(serviceFee), cny: mk(serviceFee) } },
+    { label: '当前应付金额', value: { local: mk(amountDue), cny: mk(amountDue) }, total: true },
+  ]
+})
+
+// 实际显示的价格行：自定义模式用实时计算的，否则用预设选项的
+const priceRows = computed(() => {
+  if (customMode.value) return customPriceRows.value
+  if (!selectedOption.value) return []
+  return [
+    { label: '月租', value: selectedOption.value.prices.monthly_rent },
+    { label: '租金总额', value: selectedOption.value.prices.rent_total },
+    { label: '押金', value: selectedOption.value.prices.deposit },
+    { label: '服务费', value: selectedOption.value.prices.service_fee },
+    { label: '当前应付金额', value: selectedOption.value.prices.amount_due_now, total: true },
+  ]
+})
+
+// 是否有有效选择
+const hasValidSelection = computed(() => {
+  if (customMode.value) return customMonths.value >= minCustomMonths.value
+  return !!selectedOption.value
+})
+
+function toggleCustomMode() {
+  customMode.value = !customMode.value
+  if (customMode.value) {
+    selectedMonths.value = null  // 取消预选项高亮
+  }
+}
+
+function onCustomChange() {
+  if (customMonths.value < minCustomMonths.value) {
+    customMonths.value = minCustomMonths.value
+  }
+}
 
 function draftKey() {
   return `booking_draft_${propertyId.value}`
@@ -97,6 +179,7 @@ async function selectOption(option: LeaseOption) {
       lease_months: option.months,
       current_step: 'personal_info',
     })
+    customMode.value = false
     selectedMonths.value = option.months
     const draft = readDraft()
     localStorage.setItem(draftKey(), JSON.stringify({
@@ -111,8 +194,32 @@ async function selectOption(option: LeaseOption) {
       local_currency: pricing.value.local_currency,
     }))
   } catch (error: any) {
-    errorMessage.value = error?.response?.data?.detail || '无法保存租期草稿'
+    errorMessage.value = extractErrorMessage(error) || '无法保存租期草稿'
   }
+}
+
+/** 下一步时保存自定义月数到草稿 */
+async function saveCustomAndProceed() {
+  if (!pricing.value || !customMonths.value) return
+  try {
+    await bookingDraftService.save(propertyId.value, {
+      move_in_date: pricing.value.move_in_date,
+      lease_months: customMonths.value,
+      current_step: 'personal_info',
+    })
+  } catch (error: any) {
+    errorMessage.value = extractErrorMessage(error) || '无法保存租期草稿'
+    throw error
+  }
+}
+
+async function saveCustomAndGoNext() {
+  loading.value = true
+  try {
+    await saveCustomAndProceed()
+    if (errorMessage.value) return
+    router.push({ name: 'booking-personal-info', params: { propertyId: String(propertyId.value) } })
+  } finally { loading.value = false }
 }
 
 function money(value: MoneyAmount) {
@@ -150,7 +257,7 @@ onMounted(async () => {
       selectedMonths.value = draft.lease_months
     }
   } catch (error: any) {
-    errorMessage.value = error?.response?.data?.detail || '无法加载租期和价格'
+    errorMessage.value = extractErrorMessage(error) || '无法加载租期和价格'
   } finally {
     loading.value = false
   }
@@ -170,4 +277,9 @@ onMounted(async () => {
 .amounts { display: grid; justify-items: end; gap: 3px; }
 .amounts span { color: var(--text-muted); font-size: 13px; }
 .price-row.total { color: var(--primary); font-size: 17px; }
+.custom-option { border-style: dashed; border-color: var(--primary); color: var(--primary); }
+.custom-option.selected { background: var(--primary-light); }
+.custom-months { display: flex; align-items: center; gap: 12px; padding: 16px 20px; background: #fff; border-radius: var(--radius); border: 1px solid var(--border); }
+.custom-unit { font-size: 18px; font-weight: 600; color: #303133; }
+.custom-end { font-size: 14px; color: var(--text-muted); margin-left: auto; }
 </style>

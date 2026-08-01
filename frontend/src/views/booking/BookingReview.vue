@@ -82,13 +82,16 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, reactive, ref, type ComponentPublicInstance } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { ElMessage } from 'element-plus'
 import BookingFlowLayout from '@/components/booking/BookingFlowLayout.vue'
 import PolicyDialog from '@/components/booking/PolicyDialog.vue'
 import { propertyService, type LeaseOption, type LeasePricing, type MoneyAmount } from '@/services/property'
 import { policyService, type PolicyDocument } from '@/services/policy'
+import { bookingService } from '@/services/booking'
 import { useBookingPersonalInfoStore } from '@/stores/bookingPersonalInfo'
 import { useBookingEmergencyContactStore } from '@/stores/bookingEmergencyContact'
 import { bookingDraftService } from '@/services/bookingDraft'
+import { extractErrorMessage } from '@/services/api'
 import type { Property } from '@/types/property'
 import { areAllPoliciesAccepted } from '@/utils/policyAcceptance'
 
@@ -117,7 +120,33 @@ const policyTriggers = new Map<string, HTMLButtonElement>()
 const activePolicyDocument = computed(() => policyDocuments[activePolicyKey.value] || null)
 const allAccepted = computed(() => areAllPoliciesAccepted(policies.map((policy) => policy.key), accepted))
 const selectAll = computed({ get: () => allAccepted.value, set: (value: boolean) => policies.forEach((policy) => { accepted[policy.key] = value }) })
-const selectedOption = computed<LeaseOption | null>(() => pricing.value?.options.find((option) => option.months === selectedMonths.value) || null)
+
+// 适配自定义月数：若预设选项找不到，取第一个选项按月租公式实时计算
+const selectedOption = computed<LeaseOption | null>(() => {
+  if (!pricing.value || !selectedMonths.value) return null
+  const found = pricing.value.options.find((option) => option.months === selectedMonths.value)
+  if (found) return found
+  // 自定义月数：基于第一个预设选项的月租实时计算
+  const base = pricing.value.options[0]
+  if (!base) return null
+  const monthly = base.prices.monthly_rent.local.minor_units / 100
+  const deposit = base.prices.deposit.local.minor_units / 100
+  const serviceFee = base.prices.service_fee.local.minor_units / 100
+  const m = selectedMonths.value
+  const endDate = (() => { const d = new Date(pricing.value.move_in_date); d.setMonth(d.getMonth() + m); return d.toISOString().slice(0, 10) })()
+  const cur = base.prices.monthly_rent.local.currency
+  const mk = (v: number) => ({ currency: cur, minor_units: v * 100, minor_unit_exponent: 2, decimal: v.toFixed(2) })
+  return {
+    months: m, end_date: endDate,
+    prices: {
+      deposit: { local: mk(deposit), cny: mk(deposit) },
+      service_fee: { local: mk(serviceFee), cny: mk(serviceFee) },
+      monthly_rent: { local: mk(monthly), cny: mk(monthly) },
+      amount_due_now: { local: mk(deposit + serviceFee), cny: mk(deposit + serviceFee) },
+      rent_total: { local: mk(monthly * m), cny: mk(monthly * m) },
+    },
+  }
+})
 const summaryReady = computed(() => Boolean(
   property.value && selectedOption.value && personal.form.chinese_name && emergency.form.chinese_name
   && policies.every((policy) => policyDocuments[policy.key]),
@@ -170,7 +199,31 @@ async function confirmAndContinue() {
     localStorage.setItem(`booking_draft_${propertyId.value}`, JSON.stringify({ ...draft, booking_id: result.booking_id }))
     router.push({ name: 'booking-contract-placeholder', params: { propertyId: String(propertyId.value) }, query: { booking_id: String(result.booking_id) } })
   } catch (error: any) {
-    errorMessage.value = error?.response?.data?.detail || '订单确认失败，请检查信息后重试'
+    const status = error?.response?.status || '?'
+    const msg = extractErrorMessage(error) || ''
+    console.error(`[confirm] HTTP ${status}:`, msg)
+
+    // 409 Conflict — 可能已有该房源的 pending 预订
+    if (status === 409 && msg.includes('already have a pending booking')) {
+      try {
+        const bookings = await bookingService.list()
+        const existing = bookings.find(
+          (b: any) => b.property_id === propertyId.value && b.status === 'pending'
+        )
+        if (existing) {
+          errorMessage.value = ''
+          ElMessage.success('检测到已有待处理预订，直接进入合同签署')
+          await router.push({
+            name: 'booking-contract-placeholder',
+            params: { propertyId: String(propertyId.value) },
+            query: { booking_id: String(existing.id) },
+          })
+          return
+        }
+      } catch { /* 回退到显示原始错误 */ }
+    }
+
+    errorMessage.value = msg || `订单确认失败 (HTTP ${status})，请检查信息后重试`
   } finally { submitting.value = false }
 }
 
@@ -194,7 +247,7 @@ onMounted(async () => {
     documents.forEach((document) => { policyDocuments[document.key] = document })
     selectedMonths.value = Number(serverDraft.lease_months)
   } catch (error: any) {
-    errorMessage.value = error?.response?.data?.detail || '无法加载订单摘要'
+    errorMessage.value = extractErrorMessage(error) || '无法加载订单摘要'
   } finally { loading.value = false }
 })
 </script>

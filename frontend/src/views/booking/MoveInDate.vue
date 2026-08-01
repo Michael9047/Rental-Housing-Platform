@@ -24,6 +24,13 @@
         :closable="false"
         show-icon
       />
+      <el-alert
+        v-if="availableFrom"
+        :title="`该房源最早 ${availableFrom} 可入住，请切换到该月份选择日期`"
+        type="warning"
+        :closable="false"
+        show-icon
+      />
 
       <div class="calendar">
         <div v-for="weekday in weekdays" :key="weekday" class="weekday">{{ weekday }}</div>
@@ -141,7 +148,7 @@ async function loadAvailability() {
     blockedDates.value = new Set(result.blocked_dates)
     if (selectedDate.value) await validateSelection(selectedDate.value)
   } catch (error: any) {
-    errorMessage.value = error?.response?.data?.detail || '无法加载房源可入住日期'
+    errorMessage.value = extractErrorMessage(error) || '无法加载房源可入住日期'
   } finally {
     loading.value = false
   }

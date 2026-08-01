@@ -65,6 +65,7 @@ import BookingFlowLayout from '@/components/booking/BookingFlowLayout.vue'
 import SignaturePad, { type SignaturePoint } from '@/components/booking/SignaturePad.vue'
 import { bookingService } from '@/services/booking'
 import { contractService, type Contract, type ContractSnapshot } from '@/services/contract'
+import { extractErrorMessage } from '@/services/api'
 
 const route = useRoute(); const router = useRouter()
 const contract = ref<Contract | null>(null); const loading = ref(false); const downloading = ref(false); const errorMessage = ref('')
@@ -73,7 +74,7 @@ const signaturePadRef = ref<InstanceType<typeof SignaturePad> | null>(null)
 const idempotencyKey = crypto.randomUUID()
 const snapshot = computed<ContractSnapshot | null>(() => contract.value?.snapshot || null)
 const signatureMetrics = computed(() => { const points = signatureStrokes.value.flat(); let length = 0; signatureStrokes.value.forEach((stroke) => stroke.slice(1).forEach((point, index) => { const previous = stroke[index]; length += Math.hypot(point.x - previous.x, point.y - previous.y) })); return { points: points.length, length } })
-const canSign = computed(() => Boolean(contract.value?.content_hash && nameConfirmed.value && signatureConsent.value && signatureMetrics.value.points >= 8 && signatureMetrics.value.length >= 0.2))
+const canSign = computed(() => Boolean(contract.value?.content_hash && nameConfirmed.value && signatureConsent.value && signatureStrokes.value.length > 0 && signatureStrokes.value.some(s => s.length >= 2)))
 function value(key: string) { return String(snapshot.value?.[key] ?? '') }
 const coverFields = computed(() => [
   ['合同编号 / Agreement Number', value('agreement_number')], ['订单编号 / Order Number', value('order_number')],
@@ -112,7 +113,7 @@ async function confirmSigning() {
     ElMessage.success(result.pdf_status === 'pending' ? '合同已签署，签署版PDF正在生成' : '合同签署成功，合同内容已锁定')
     await router.push(`/booking/payment/${bookingId}/deposit`)
   } catch (error: any) {
-    const data = error?.response?.data || {}; const code = data.code || data.detail?.code || 'SIGNING_ERROR'; const message = data.message || data.detail?.message || data.detail || '合同签署暂时不可用，请稍后重试'
+    const data = error?.response?.data || {}; const err = data.error || {}; const code = err.code || data.code || 'SIGNING_ERROR'; const message = err.message || data.message || extractErrorMessage(error) || '合同签署暂时不可用，请稍后重试'
     if (data.request_id) console.warn(`[contract-sign] request_id=${data.request_id} code=${code}`)
     if (code === 'AGREEMENT_VERSION_MISMATCH') {
       ElMessage.error('合同内容已更新，请重新阅读最新版本后签署')
@@ -132,7 +133,7 @@ onMounted(async () => {
     try { contract.value = await contractService.getByBooking(bookingId) }
     catch (contractError: any) { if (contractError?.response?.status === 404) contract.value = await contractService.generate(bookingId); else throw contractError }
     if (contract.value.snapshot?.agreement_version !== contract.value.version || contract.value.snapshot?.content_hash !== contract.value.content_hash) throw new Error('合同快照版本或哈希不一致，请刷新后重试')
-  } catch (error: any) { errorMessage.value = error?.response?.data?.detail || error?.message || '合同加载失败' }
+  } catch (error: any) { errorMessage.value = extractErrorMessage(error) || error?.message || '合同加载失败' }
   finally { loading.value = false }
 })
 </script>
