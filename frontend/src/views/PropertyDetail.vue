@@ -281,36 +281,32 @@ async function loadBuilding() {
   loading.value = true
   try {
     const id = route.params.id
-    // 用 properties API 取房源（兼容 room/:id 路由）
-    const r = await api.get(`/public/rooms/${id}`)
-    const room = r.data
+    // 两层层结构: 直接取 UnitType（已包含 Institute 字段）
+    const r = await api.get(`/unit-types/${id}`)
+    const ut = r.data
     building.value = {
-      id: room.id, name: room.title || room.address,
-      address: room.address, description: room.description,
-      latitude: room.latitude, longitude: room.longitude,
-      amenities: room.amenities || [], images: room.images || [],
-      contact_phone: null, female_only: false, couples_allowed: false,
-      unit_types: [],
+      id: ut.id,
+      name: ut.institute_name || ut.name,
+      address: ut.institute_address || ut.address,
+      description: ut.description,
+      latitude: ut.latitude, longitude: ut.longitude,
+      amenities: ut.amenities || [],
+      images: (ut.image_urls || []).map((url: string) => ({ filename: url, is_primary: false })),
+      contact_phone: ut.contact_phone,
+      female_only: ut.female_only ?? false,
+      couples_allowed: ut.couples_allowed ?? false,
+      unit_types: [{ ...ut, room_count: ut.total_count || 1, rooms: [] }],
     }
-    if (room.latitude && room.longitude) {
-      await nextTick(); initMap(room.latitude, room.longitude)
+    if (ut.latitude && ut.longitude) {
+      await nextTick(); initMap(ut.latitude, ut.longitude)
     }
-    // 取户型信息
-    if (room.unit_type_id) {
+    selectedUnitType.value = building.value.unit_types[0]
+    // 如果有 institute_id，额外拉取同公寓的其他户型
+    if (ut.institute_id) {
       try {
-        const utRes = await api.get(`/unit-types/${room.unit_type_id}`)
-        building.value.unit_types = [{ ...utRes.data, room_count: 1,
-          rooms: [{ id: room.id, room_number: room.room_number, floor: room.floor,
-            special_discount: room.special_discount, available_from: room.available_from,
-            status: room.status }]
-        }]
-        selectedUnitType.value = building.value.unit_types[0]
-      } catch { /* */ }
-    }
-    if (!building.value.unit_types?.length && room.institute_id) {
-      try {
-        const utsRes = await api.get('/unit-types', { params: { institute_id: room.institute_id, page_size: 20 } })
-        building.value.unit_types = (utsRes.data.items || []).map((ut: any) => ({ ...ut, room_count: 0, rooms: [] }))
+        const utsRes = await api.get('/unit-types', { params: { institute_id: ut.institute_id, page_size: 20 } })
+        const all = (utsRes.data.items || []).map((u: any) => ({ ...u, room_count: 0, rooms: [] }))
+        if (all.length > 1) building.value.unit_types = all
       } catch { /* */ }
     }
   } catch (e: any) { console.error('PropertyDetail load failed:', e?.message || e) }
