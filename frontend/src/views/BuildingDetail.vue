@@ -247,11 +247,11 @@ function openUnitGallery(ut: any) {
 }
 
 function handleBook(unitTypeId: number) {
+  // 两层结构：直接用 unit_type_id 预订，不再检查 rooms（Room 表已删除）
   const ut = building.value?.unit_types?.find((u: any) => u.id === unitTypeId)
   if (!ut) return ElMessage.warning('户型不存在')
-  const availableRoom = ut.rooms?.find((r: any) => r.status === 'available')
-  if (!availableRoom) return ElMessage.warning('该户型暂无可用房间')
-  router.push({ name: 'booking-move-in-date', params: { propertyId: String(availableRoom.id) } })
+  if (!ut.has_vacancy && ut.available_count <= 0) return ElMessage.warning('该户型暂无空房')
+  router.push({ name: 'booking-move-in-date', params: { propertyId: String(unitTypeId) } })
 }
 
 let lIdx = 0
