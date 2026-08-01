@@ -231,7 +231,7 @@ const amenityTags = computed(() => {
 
 function goDetail() {
   if (props.property.property_type === 'apartment') {
-    router.push({ name: 'building-detail', params: { id: props.property.id } })
+    router.push({ name: 'building-detail', params: { id: props.property.institute_id || props.property.id } })
     return
   }
   router.push({

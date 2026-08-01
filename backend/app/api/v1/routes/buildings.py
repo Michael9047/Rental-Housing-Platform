@@ -309,6 +309,75 @@ async def get_building(
     }
 
 
+def _ev(obj, attr):
+    """安全获取枚举值：如果是枚举返回 .value，否则返回字符串"""
+    v = getattr(obj, attr, None)
+    if v is None: return None
+    return v.value if hasattr(v, 'value') else str(v)
+
+
+@router.get("/{building_id}/tenant-detail")
+async def get_tenant_building_detail(
+    building_id: int,
+    session: AsyncSession = Depends(get_db_session),
+) -> dict:
+    """租客端公寓详情 — 返回楼栋 + 户型 + 图片"""
+    b = await session.get(Institute, building_id,
+        options=[selectinload(Institute.unit_types), selectinload(Institute.images)])
+    if not b or b.status != InstituteStatus.active:
+        raise HTTPException(status_code=404, detail="楼栋不存在")
+
+    uts = []
+    for ut in (b.unit_types or []):
+        if ut.deleted_at is not None: continue
+        uts.append({
+            "id": ut.id, "name": ut.name,
+            "property_type": _ev(ut, 'property_type'),
+            "bedrooms": ut.bedrooms, "bathrooms": ut.bathrooms,
+            "hall_count": ut.hall_count,
+            "area_sqm": float(ut.area_sqm) if ut.area_sqm else None,
+            "base_rent": float(ut.base_rent) if ut.base_rent else 0,
+            "deposit_amount": ut.deposit_amount,
+            "deposit_type": _ev(ut, 'deposit_type'),
+            "currency": ut.currency,
+            "amenities": ut.amenities,
+            "image_urls": ut.image_urls,
+            "description": ut.description,
+            "available_from": ut.available_from.isoformat() if ut.available_from else None,
+            "min_stay_months": ut.min_stay_months,
+            "has_vacancy": ut.has_vacancy,
+            "total_count": ut.total_count,
+            "available_count": ut.available_count,
+            "status": _ev(ut, 'status') or "available",
+            "created_at": ut.created_at.isoformat() if ut.created_at else None,
+        })
+
+    return {
+        "id": b.id, "name": b.name, "name_cn": b.name_cn,
+        "address": b.address,
+        "country": b.country, "city": b.city, "district": b.district,
+        "street": b.street, "postal_code": b.postal_code,
+        "latitude": float(b.latitude) if b.latitude else None,
+        "longitude": float(b.longitude) if b.longitude else None,
+        "contact_phone": b.contact_phone, "contact_email": b.contact_email,
+        "website_url": b.website_url,
+        "logo_url": b.logo_url, "description": b.description,
+        "amenities": b.amenities,
+        "female_only": bool(b.female_only),
+        "couples_allowed": bool(b.couples_allowed),
+        "building_type": b.building_type,
+        "total_floors": b.total_floors, "year_built": b.year_built,
+        "total_units": b.total_units, "has_elevator": bool(b.has_elevator),
+        "bm_wechat": b.bm_wechat, "bm_wechat_qr": b.bm_wechat_qr,
+        "status": b.status.value if hasattr(b.status, 'value') else str(b.status),
+        "business_id": b.business_id,
+        "images": [{"id": img.id, "filename": img.filename, "original_name": img.original_name,
+                     "sort_order": img.sort_order, "is_primary": img.is_primary}
+                   for img in sorted(b.images or [], key=lambda x: x.sort_order)],
+        "unit_types": uts,
+    }
+
+
 @router.patch("/{building_id}")
 async def update_building(
     building_id: int, body: InstituteUpdate,
