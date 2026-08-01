@@ -119,22 +119,26 @@ async def confirm_booking_with_policies(
                 detail=f"Policy {key} has changed; please review the latest version",
             )
 
+    # 获取 UnitType（不再使用旧的 Property/Room）
+    unit_type_id = getattr(confirmation, 'unit_type_id', None) or getattr(confirmation, 'property_id', None)
+    if not unit_type_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing unit_type_id")
+
     availability_service = BookingAvailabilityService(session)
-    property_obj = await availability_service.get_property(confirmation.property_id)
-    if not property_obj:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Property not found")
-    valid, reason, _ = await availability_service.validate(property_obj, confirmation.move_in_date)
+    unit_type = await availability_service.get_unit_type(unit_type_id)
+    if not unit_type:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="UnitType not found")
+    valid, reason, _ = await availability_service.validate(unit_type, confirmation.move_in_date)
     if not valid:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=reason)
 
-    # 租期 >= 最短要求即可（含自定义月数）
-    min_stay = int(getattr(getattr(property_obj, 'unit_type', None), 'min_stay_months', 3) or 3)
+    # 租期 >= 最短要求
+    min_stay = getattr(unit_type, 'min_stay_months', 3) or 3
     if confirmation.lease_months < max(1, min_stay):
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=f"Lease term must be at least {max(1, min_stay)} month(s)")
 
     # 生成价格快照
-    pricing = LeasePricingService.calculate(property_obj, confirmation.move_in_date)
-    # 取预设选项的首项作为月租基准
+    pricing = LeasePricingService.calculate(unit_type, confirmation.move_in_date)
     base = pricing.options[0]
     mon_minor = base.prices.monthly_rent.local.minor_units
     mon_exp = base.prices.monthly_rent.local.minor_unit_exponent
@@ -144,20 +148,22 @@ async def confirm_booking_with_policies(
     m = confirmation.lease_months
 
     duplicate = await session.scalar(select(Booking).where(
-        Booking.tenant_id == current_user.id,
-        Booking.property_id == property_obj.id,
+        Booking.user_id == current_user.id,
+        Booking.unit_type_id == unit_type_id,
         Booking.status == BookingStatus.pending,
     ))
     if duplicate:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="You already have a pending booking for this property")
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="You already have a pending booking for this unit type")
 
     booking = Booking(
+        user_id=current_user.id,
         tenant_id=current_user.id,
-        property_id=property_obj.id,
-        landlord_id=property_obj.landlord_id,
+        unit_type_id=unit_type_id,
+        institute_id=unit_type.institute_id,
+        bm_id=getattr(getattr(unit_type, 'institute', None), 'bm_id', None),
         status=BookingStatus.pending,
         scheduled_date=confirmation.move_in_date.isoformat(),
-        deposit_amount=getattr(getattr(property_obj, 'unit_type', None), 'deposit_amount', None) or 0,
+        deposit_amount=getattr(unit_type, 'deposit_amount', None) or 0,
         service_fee=svc_fee,
         deposit_status="unpaid",
         lease_months=m,
@@ -208,16 +214,18 @@ async def create_booking(
     session: AsyncSession = Depends(get_db_session),
     current_user: User = Depends(require_tenant),
 ) -> BookingRead:
-    property_obj = await PropertyService(session).get(booking_in.property_id)
-    if not property_obj:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Property not found")
+    unit_type_id = booking_in.unit_type_id
+    unit_type = await PropertyService(session).get(unit_type_id)
+    if not unit_type:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="UnitType not found")
 
     booking_service = BookingService(session)
     try:
         booking = await booking_service.create_booking(
+            user_id=current_user.id,
+            unit_type_id=unit_type_id,
+            bm_id=getattr(getattr(unit_type, 'institute', None), 'bm_id', 0) or 0,
             tenant_id=current_user.id,
-            property_id=booking_in.property_id,
-            landlord_id=property_obj.landlord_id,
             booking_in=booking_in,
         )
     except ValueError as e:
