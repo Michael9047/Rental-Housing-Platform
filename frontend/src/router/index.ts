@@ -31,7 +31,7 @@ const routes: RouteRecordRaw[] = [
       {
         path: 'room/:id',
         name: 'property-detail',
-        component: () => import('@/views/PropertyDetail.vue'),
+        redirect: (to: any) => ({ name: 'building-detail', params: { id: to.params.id } }),
       },
       // 兼容旧版 /property/:id 链接
       {
