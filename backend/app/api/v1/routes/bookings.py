@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Request, status
+from starlette.responses import JSONResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -33,7 +34,7 @@ async def get_booking_flow_draft(
         BookingFlowDraft.unit_type_id == unit_type_id,
     ))
     if not draft:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Booking draft not found")
+        return JSONResponse(content=None, status_code=200)
     return draft
 
 
