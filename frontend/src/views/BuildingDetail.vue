@@ -277,9 +277,23 @@ function initMap() {
 }
 
 onMounted(async () => {
-  try { const r = await api.get(`/buildings/${route.params.id}/tenant-detail`); building.value = r.data }
-  catch (e: any) { error.value = e?.response?.status === 404 ? '公寓不存在或已下架' : '加载失败' }
-  finally { loading.value = false }
+  // 兼容 unit_type ID：如果 /buildings/{id} 返回 404，尝试通过 UnitType 查找 Institute
+  try {
+    const r = await api.get(`/buildings/${route.params.id}/tenant-detail`)
+    building.value = r.data
+  } catch (e: any) {
+    if (e?.response?.status === 404) {
+      try {
+        const utRes = await api.get(`/unit-types/${route.params.id}`)
+        const instId = utRes.data?.institute_id
+        if (instId && instId !== Number(route.params.id)) {
+          router.replace({ name: 'building-detail', params: { id: String(instId) } })
+          return
+        }
+      } catch {}
+      error.value = '公寓不存在或已下架'
+    } else { error.value = '加载失败' }
+  } finally { loading.value = false }
 })
 </script>
 
