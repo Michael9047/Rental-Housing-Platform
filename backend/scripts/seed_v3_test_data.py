@@ -20,7 +20,6 @@ import json
 import os
 import random
 import sys
-import uuid
 from datetime import date, datetime, timezone
 from decimal import Decimal
 from pathlib import Path
@@ -47,39 +46,38 @@ from app.core.config import get_settings
 # 定价常量
 # ═══════════════════════════════════════════════════════════════════
 
-# 房型市场基准价（SGD/月）—— 已隐含 Condo/HDB 差异
-# 数据来源：PropertyGuru / Hozuko / 99.co 2025 年新加坡中位数
+# 房型市场基准价（SGD/月）—— 学生预算为主
+# 大部分房源集中在 S$900-1,400 区间
 ROOM_TYPE_BASE: dict[str, Decimal] = {
-    "shared":  Decimal("750"),    # 合租床位
-    "common":  Decimal("950"),    # HDB 普通房
-    "ensuite": Decimal("1250"),   # 学生公寓套间
-    "master":  Decimal("1450"),   # HDB 主卧
-    "studio":  Decimal("2400"),   # Condo Studio
-    "1bed":    Decimal("2800"),   # Condo 一室
-    "2bed":    Decimal("4200"),   # Condo 两室
-    "3bed":    Decimal("5200"),   # Condo 三室
+    "shared":  Decimal("650"),    # 合租床位
+    "common":  Decimal("850"),    # HDB 普通房
+    "ensuite": Decimal("1000"),   # 学生公寓套间
+    "master":  Decimal("1250"),   # HDB 主卧
+    "studio":  Decimal("1700"),   # Condo Studio
+    "1bed":    Decimal("2000"),   # Condo 一室
+    "2bed":    Decimal("3000"),   # Condo 两室
+    "3bed":    Decimal("3800"),   # Condo 三室
 }
 
-# 区位调整（加法型，避免乘法叠加失真）
-# 每个因子相对于基准的百分比调整
+# 区位调整（加法型，压缩幅度）
 ZONE_ADJ: dict[str, Decimal] = {
-    "suburb":       Decimal("-0.10"),  # Woodlands 偏远
-    "west":         Decimal("-0.04"),  # Jurong 西部
-    "central_west": Decimal("+0.06"),  # Clementi / Buona Vista
-    "city_fringe":  Decimal("+0.10"),  # Kallang / Lavender
-    "city":         Decimal("+0.16"),  # Bugis 市中心
+    "suburb":       Decimal("-0.08"),  # Woodlands
+    "west":         Decimal("-0.03"),  # Jurong
+    "central_west": Decimal("+0.05"),  # Clementi / Buona Vista
+    "city_fringe":  Decimal("+0.08"),  # Kallang / Lavender
+    "city":         Decimal("+0.12"),  # Bugis
 }
 
 MRT_ADJ: dict[str, Decimal] = {
-    "near":    Decimal("+0.08"),   # <400m
-    "mid":     Decimal("+0.02"),   # 400-800m
-    "far":     Decimal("-0.06"),   # >800m
+    "near":    Decimal("+0.06"),   # <400m
+    "mid":     Decimal("+0.01"),   # 400-800m
+    "far":     Decimal("-0.05"),   # >800m
 }
 
 UNI_ADJ: dict[str, Decimal] = {
-    "near":    Decimal("+0.08"),   # <1km
-    "mid":     Decimal("+0.02"),   # 1-3km
-    "far":     Decimal("-0.04"),   # >3km
+    "near":    Decimal("+0.06"),   # <1km
+    "mid":     Decimal("+0.01"),   # 1-3km
+    "far":     Decimal("-0.03"),   # >3km
 }
 
 # ── 房内配套加价（S$/月）──
@@ -884,7 +882,7 @@ async def seed(clear_existing: bool = False) -> None:
                 "range": f"S${min(unit_prices)} - S${max(unit_prices)}",
             })
 
-            # ── POI 数据 ──
+            # ── POI 数据（Raw SQL — model 的 id 列与 DB 不同步）──
             poi_items = POI_TEMPLATES.get(cfg["poi_zone"], [])
             map_poi_data: dict[str, list] = {}
             for item in poi_items:
@@ -898,15 +896,21 @@ async def seed(clear_existing: bool = False) -> None:
                     "distance_m": item["distance_m"],
                 })
 
-            poi = InstitutePOI(
-                institute_id=inst.id,
-                content=f"{cfg['name']} 周边设施描述",
-                poi_data={"categories": list(map_poi_data.keys()), "total_pois": len(poi_items)},
-                map_poi_data=map_poi_data,
-                safety_data={"crime_rate": "low" if cfg["zone"] != "suburb" else "very_low"},
-                generated_at=datetime.now(timezone.utc),
+            await session.execute(
+                text("""
+                    INSERT INTO institute_pois (institute_id, content, poi_data, map_poi_data, safety_data, generated_at, reviewed)
+                    VALUES (:inst_id, :content, :poi_data, :map_poi, :safety, :gen_at, false)
+                    ON CONFLICT (institute_id) DO NOTHING
+                """),
+                {
+                    "inst_id": inst.id,
+                    "content": f"{cfg['name']} 周边设施",
+                    "poi_data": json.dumps({"categories": list(map_poi_data.keys()), "total_pois": len(poi_items)}),
+                    "map_poi": json.dumps(map_poi_data),
+                    "safety": json.dumps({"crime_rate": "low" if cfg["zone"] != "suburb" else "very_low"}),
+                    "gen_at": datetime.now(timezone.utc),
+                },
             )
-            session.add(poi)
 
             # ── Commute 数据 ──
             commute = InstituteCommute(

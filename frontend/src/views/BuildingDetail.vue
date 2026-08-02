@@ -246,12 +246,12 @@ function openUnitGallery(ut: any) {
   c.onclick=(e)=>{e.stopPropagation();o.remove()}; o.appendChild(c); o.onclick=()=>o.remove(); document.body.appendChild(o)
 }
 
-function handleBook(unitTypeId: number) {
-  // 两层结构：直接用 unit_type_id 预订，不再检查 rooms（Room 表已删除）
-  const ut = building.value?.unit_types?.find((u: any) => u.id === unitTypeId)
+function handleBook(id: number) {
+  // 两层结构：直接用 unit_type_id 预订
+  const ut = building.value?.unit_types?.find((u: any) => u.id === id)
   if (!ut) return ElMessage.warning('户型不存在')
   if (!ut.has_vacancy && ut.available_count <= 0) return ElMessage.warning('该户型暂无空房')
-  router.push({ name: 'booking-move-in-date', params: { propertyId: String(unitTypeId) } })
+  router.push({ name: 'booking-move-in-date', params: { propertyId: String(id) } })
 }
 
 let lIdx = 0

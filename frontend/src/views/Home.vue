@@ -63,7 +63,6 @@ async function loadRooms() {
   try {
     const res = await api.get('/unit-types/search', { params: { limit: 18, status: 'available' } })
     const data = res.data
-    // 后端返回数组或 {items: [...]} 都兼容
     rooms.value = Array.isArray(data) ? data : (data?.items || [])
   } catch (e: any) {
     console.error('[Home] load rooms failed:', e?.message || e)

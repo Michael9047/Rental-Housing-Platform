@@ -230,7 +230,7 @@ const amenityTags = computed(() => {
 })
 
 function goDetail() {
-  // 两层结构：始终导航到公寓详情页（BuildingDetail）
+  // 两层结构：始终导航到公寓详情页
   router.push({ name: 'building-detail', params: { id: props.property.institute_id || props.property.id } })
 }
 
