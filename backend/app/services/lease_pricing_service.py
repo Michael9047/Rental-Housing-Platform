@@ -103,7 +103,7 @@ class LeasePricingService:
             ))
 
         return LeasePricing(
-            property_id=room.id,
+            property_id=unit_type.id,
             calculation_date=datetime.now(timezone.utc).date().isoformat(),
             move_in_date=move_in.isoformat(),
             local_currency=currency,
