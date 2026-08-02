@@ -42,6 +42,79 @@ def _validate_phone(phone: str | None) -> str | None:
     )
 
 
+def _build_card(b: Institute) -> dict:
+    """构建公寓卡片数据 — 含价格区间、图片等展示字段"""
+    uts = b.unit_types or []
+    available_uts = [ut for ut in uts if ut.deleted_at is None and ut.status.value == "available"]
+    prices = [float(ut.base_rent) for ut in available_uts if ut.base_rent]
+    min_rent = min(prices) if prices else None
+    max_rent = max(prices) if prices else None
+    primary = None
+    for img in sorted(b.images or [], key=lambda x: x.sort_order):
+        if img.is_primary:
+            primary = {"id": img.id, "filename": img.filename, "is_primary": True}
+            break
+    if not primary and b.images:
+        img = sorted(b.images, key=lambda x: x.sort_order)[0]
+        primary = {"id": img.id, "filename": img.filename, "is_primary": img.is_primary}
+    # 汇总户型属性（如所有户型都是 studio，则 property_type=studio）
+    pt_set = set(getattr(ut, 'property_type', None) for ut in available_uts)
+    pt_vals = [v for v in pt_set if v]
+    property_type = pt_vals[0] if len(pt_vals) == 1 else (pt_vals[0] if pt_vals else None)
+    total_beds = sum(ut.bedrooms for ut in available_uts)
+    avg_beds = round(total_beds / len(available_uts), 1) if available_uts else 0
+    return {
+        "id": b.id, "name": b.name, "name_cn": b.name_cn, "address": b.address,
+        "country": b.country, "city": b.city, "district": b.district,
+        "logo_url": b.logo_url, "description": b.description,
+        "latitude": float(b.latitude) if b.latitude else None,
+        "longitude": float(b.longitude) if b.longitude else None,
+        "amenities": b.amenities,
+        "female_only": bool(b.female_only) if b.female_only is not None else False,
+        "couples_allowed": bool(b.couples_allowed) if b.couples_allowed is not None else False,
+        "unit_type_count": len(available_uts),
+        "min_rent": min_rent, "max_rent": max_rent,
+        "avg_bedrooms": avg_beds,
+        "property_type": property_type.value if hasattr(property_type, 'value') else str(property_type) if property_type else None,
+        "primary_image": primary,
+        "images": [{"id": img.id, "filename": img.filename, "original_name": img.original_name,
+                     "sort_order": img.sort_order, "is_primary": img.is_primary}
+                   for img in sorted(b.images or [], key=lambda x: x.sort_order)],
+        "institute_id": b.id,
+        "institute_name": b.name,
+    }
+
+
+async def _search_buildings(
+    session: AsyncSession,
+    q: str | None = None,
+    district: str | None = None,
+    country: str | None = None,
+    city: str | None = None,
+    skip: int = 0,
+    limit: int = 50,
+) -> list[dict]:
+    stmt = (select(Institute)
+            .options(selectinload(Institute.images))
+            .options(selectinload(Institute.unit_types))
+            .where(Institute.status == InstituteStatus.active))
+    if q:
+        stmt = stmt.where(or_(
+            Institute.name.ilike(f"%{q}%"),
+            Institute.name_cn.ilike(f"%{q}%"),
+            Institute.address.ilike(f"%{q}%"),
+        ))
+    if district:
+        stmt = stmt.where(Institute.district.ilike(f"%{district}%"))
+    if country:
+        stmt = stmt.where(Institute.country == country)
+    if city:
+        stmt = stmt.where(Institute.city.ilike(f"%{city}%"))
+    stmt = stmt.order_by(Institute.id.desc()).offset(skip).limit(limit)
+    result = await session.scalars(stmt)
+    return [_build_card(b) for b in result]
+
+
 @router.get("/public")
 async def list_public_buildings(
     session: AsyncSession = Depends(get_db_session),
@@ -49,28 +122,21 @@ async def list_public_buildings(
     limit: int = Query(default=50, ge=1, le=200),
 ) -> list[dict]:
     """公开端点——首页展示公寓列表，无需登录"""
-    stmt = (select(Institute)
-            .options(selectinload(Institute.images))
-            .options(selectinload(Institute.unit_types))
-            .where(Institute.status == InstituteStatus.active)
-            .order_by(Institute.id.desc())
-            .offset(skip).limit(limit))
-    result = await session.scalars(stmt)
-    buildings = []
-    for b in result:
-        buildings.append({
-            "id": b.id, "name": b.name, "name_cn": b.name_cn, "address": b.address,
-            "logo_url": b.logo_url, "description": b.description,
-            "latitude": float(b.latitude) if b.latitude else None,
-            "longitude": float(b.longitude) if b.longitude else None,
-            "amenities": b.amenities,
-            "female_only": bool(b.female_only) if b.female_only is not None else False,
-            "couples_allowed": bool(b.couples_allowed) if b.couples_allowed is not None else False,
-            "unit_type_count": len(b.unit_types) if b.unit_types else 0,
-            "primary_image": next(({
-                "id": img.id, "filename": img.filename,
-                "is_primary": img.is_primary,
-            } for img in sorted(b.images or [], key=lambda x: x.sort_order)), None),
+    return await _search_buildings(session, skip=skip, limit=limit)
+
+
+@router.get("/public/search")
+async def search_public_buildings(
+    session: AsyncSession = Depends(get_db_session),
+    q: str | None = Query(default=None),
+    district: str | None = Query(default=None),
+    country: str | None = Query(default=None),
+    city: str | None = Query(default=None),
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=50, ge=1, le=200),
+) -> list[dict]:
+    """公开搜索——按名称/区域搜索公寓，返回卡片级数据"""
+    return await _search_buildings(session, q=q, district=district, country=country, city=city, skip=skip, limit=limit)
         })
     return buildings
 

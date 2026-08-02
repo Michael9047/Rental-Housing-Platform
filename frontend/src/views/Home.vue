@@ -61,7 +61,7 @@ async function handleAiSearch() {
 
 async function loadRooms() {
   try {
-    const res = await api.get('/unit-types/search', { params: { limit: 18, status: 'available' } })
+    const res = await api.get('/buildings/public/search', { params: { limit: 18 } })
     const data = res.data
     rooms.value = Array.isArray(data) ? data : (data?.items || [])
   } catch (e: any) {

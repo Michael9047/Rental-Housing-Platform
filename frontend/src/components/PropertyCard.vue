@@ -130,14 +130,20 @@ const authStore = useAuthStore()
 const cartStore = useCartStore()
 
 const busy = ref(false)
-// 兼容新旧字段名 — 房间数据用 unit_type_name/base_rent，旧数据用 title/price_monthly
+// 兼容新旧字段名 — 公寓数据(Institute)用 min_rent/primary_image，户型数据(UnitType)用 base_rent/images
 const p = computed(() => ({
   ...props.property,
-  title: props.property.title || props.property.unit_type_name || props.property.room_number || '未命名',
-  price_monthly: props.property.price_monthly ?? props.property.base_rent ?? 0,
-  district: props.property.district || props.property.institute_name || '',
+  title: props.property.name || props.property.title || props.property.unit_type_name || '未命名',
+  price_monthly: props.property.min_rent ?? props.property.price_monthly ?? props.property.base_rent ?? 0,
+  district: props.property.district || props.property.institute_name || props.property.city || '',
   property_type: props.property.property_type || '1-bed',
   address: props.property.address || props.property.institute_address || '',
+  // 图片: 公寓用 primary_image，户型用 images[0]
+  primary_image_url: props.property.primary_image?.filename
+    ? (props.property.primary_image.filename.startsWith('http') ? props.property.primary_image.filename : `/api/v1/uploads/${props.property.primary_image.filename}`)
+    : props.property.images?.[0]?.filename
+      ? (props.property.images[0].filename.startsWith('http') ? props.property.images[0].filename : `/api/v1/uploads/${props.property.images[0].filename}`)
+      : null,
 }))
 const inCart = computed(() => cartStore.has(props.property.id))
 
@@ -169,6 +175,9 @@ const typeLabels: Record<PropertyType, string> = {
 }
 
 const primaryImageUrl = computed(() => {
+  // 公寓数据 (Institute): 使用 primary_image_url
+  if (p.value.primary_image_url) return p.value.primary_image_url
+  // 户型数据 (UnitType): 使用 images 数组
   const images = props.property.images
   if (!images || images.length === 0) return null
   const primary = images.find((img) => img.is_primary) || images[0]

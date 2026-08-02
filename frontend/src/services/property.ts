@@ -78,7 +78,13 @@ export const propertyService = {
   },
 
   search(params: PropertySearchParams): Promise<PropertySearchResult[]> {
-    return api.get('/unit-types/search', { params: { ...params, _t: Date.now() } }).then((r) => r.data)
+    const sp: Record<string,any> = {}
+    if (params.q) sp.q = params.q
+    if (params.district) sp.district = params.district
+    if (params.country) sp.country = params.country
+    if (params.city) sp.city = params.city
+    if (params.limit) sp.limit = params.limit
+    return api.get('/buildings/public/search', { params: { ...sp, _t: Date.now() } }).then((r) => r.data)
   },
 
   getById(id: number | string): Promise<Property> {
