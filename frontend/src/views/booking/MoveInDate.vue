@@ -110,7 +110,7 @@ function draftKey() {
 
 function saveDraft() {
   localStorage.setItem(draftKey(), JSON.stringify({
-    property_id: propertyId.value,
+    unit_type_id: propertyId.value,
     move_in_date: selectedDate.value,
     timezone: timezone.value,
   }))
@@ -119,7 +119,7 @@ function saveDraft() {
 function loadDraft() {
   try {
     const draft = JSON.parse(localStorage.getItem(draftKey()) || '{}')
-    if (draft.property_id === propertyId.value && typeof draft.move_in_date === 'string') {
+    if (draft.unit_type_id === propertyId.value && typeof draft.move_in_date === 'string') {
       selectedDate.value = draft.move_in_date
       const [year, month] = draft.move_in_date.split('-').map(Number)
       if (year && month) {

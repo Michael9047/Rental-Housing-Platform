@@ -183,7 +183,7 @@ async function selectOption(option: LeaseOption) {
     selectedMonths.value = option.months
     const draft = readDraft()
     localStorage.setItem(draftKey(), JSON.stringify({
-      property_id: propertyId.value,
+      unit_type_id: propertyId.value,
       move_in_date: pricing.value.move_in_date,
       timezone: draft.timezone,
       lease_months: option.months,
