@@ -106,6 +106,12 @@ export interface PropertySearchParams {
   sort_by?: string
   limit?: number
   status?: string
+  /** 近距搜索：中心点纬度 */
+  near_lat?: number
+  /** 近距搜索：中心点经度 */
+  near_lng?: number
+  /** 近距搜索：半径(km) */
+  near_distance_km?: number
 }
 
 export interface PropertyListResponse {

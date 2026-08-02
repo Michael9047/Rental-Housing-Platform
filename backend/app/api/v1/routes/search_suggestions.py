@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import get_db_session
 from app.models.institute import Institute
 from app.models.unit_type import UnitType
+from app.models.university import University
 
 router = APIRouter()
 
@@ -47,8 +48,10 @@ async def get_search_suggestions(
     result = {
         "popular_cities": [],
         "popular_schools": [],
+        "popular_universities": [],
         "matching_cities": [],
         "matching_schools": [],
+        "matching_universities": [],
         "matching_properties": [],
     }
 
@@ -107,6 +110,28 @@ async def get_search_suggestions(
                 "count": r.property_count, "query": {"school_id": r.id},
             }
             for r in school_results.all()
+        ]
+
+        # 热门大学（按 is_hot 排序）
+        uni_query = (
+            select(University.id, University.name, University.name_cn,
+                   University.abbreviation, University.city, University.country,
+                   University.latitude, University.longitude)
+            .where(University.is_hot.is_(True), University.is_active.is_(True))
+            .order_by(University.name.asc())
+            .limit(limit)
+        )
+        uni_results = await db.execute(uni_query)
+        result["popular_universities"] = [
+            {
+                "type": "university",
+                "id": r.id, "name": r.name, "name_cn": r.name_cn,
+                "abbreviation": r.abbreviation, "city": r.city, "country": r.country,
+                "latitude": float(r.latitude) if r.latitude else None,
+                "longitude": float(r.longitude) if r.longitude else None,
+                "query": {"uni_id": r.id},
+            }
+            for r in uni_results.all()
         ]
     else:
         search_term = f"%{q.strip()}%"
@@ -169,6 +194,36 @@ async def get_search_suggestions(
                 "count": r.property_count, "query": {"school_id": r.id},
             }
             for r in school_results.all()
+        ]
+
+        # 匹配的大学
+        uni_query = (
+            select(University.id, University.name, University.name_cn,
+                   University.abbreviation, University.city, University.country,
+                   University.latitude, University.longitude)
+            .where(
+                University.is_active.is_(True),
+                or_(
+                    University.name.ilike(search_term),
+                    University.name_cn.ilike(search_term),
+                    University.abbreviation.ilike(search_term),
+                    University.aliases.any(func.lower(q.strip())),
+                ),
+            )
+            .order_by(University.is_hot.desc(), University.name.asc())
+            .limit(limit)
+        )
+        uni_results = await db.execute(uni_query)
+        result["matching_universities"] = [
+            {
+                "type": "university",
+                "id": r.id, "name": r.name, "name_cn": r.name_cn,
+                "abbreviation": r.abbreviation, "city": r.city, "country": r.country,
+                "latitude": float(r.latitude) if r.latitude else None,
+                "longitude": float(r.longitude) if r.longitude else None,
+                "query": {"uni_id": r.id},
+            }
+            for r in uni_results.all()
         ]
 
         # 匹配的户型（名称或地址）

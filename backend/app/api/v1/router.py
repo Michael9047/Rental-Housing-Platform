@@ -8,7 +8,7 @@ from app.api.v1.routes import (
     imports, map_routes, notifications,
     payments, repair_workers, repairs,
     search_suggestions, tenants,
-    unit_types, upload, users, wechat,
+    unit_types, universities, upload, users, wechat,
 )
 
 api_router = APIRouter()
@@ -34,6 +34,7 @@ api_router.include_router(admin.router, prefix="/admin", tags=["admin"])
 api_router.include_router(imports.router, prefix="/import", tags=["import"])
 api_router.include_router(wechat.router, tags=["wechat"])
 api_router.include_router(search_suggestions.router, prefix="/search", tags=["search"])
+api_router.include_router(universities.router, prefix="/universities", tags=["universities"])
 api_router.include_router(contracts.router, prefix="/contracts", tags=["contracts"])
 api_router.include_router(payments.router, prefix="/payments", tags=["payments"])
 api_router.include_router(favorites.router, prefix="/favorites", tags=["favorites"])

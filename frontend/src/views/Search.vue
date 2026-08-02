@@ -1,5 +1,22 @@
 <template>
   <div class="search-page">
+    <!-- 大学模式顶部横幅 -->
+    <div v-if="searchMode === 'uni' && uniName" class="school-banner uni-banner">
+      <el-icon :size="22"><School /></el-icon>
+      <h1>靠近 {{ uniName }} 的房源</h1>
+      <span class="school-count">{{ uniRadius }}km 内 · {{ searchResults.length }} 套</span>
+      <div class="radius-slider">
+        <span class="radius-label">半径:</span>
+        <el-slider
+          v-model="uniRadius"
+          :min="1" :max="20" :step="1"
+          style="width:120px"
+          @change="onRadiusChange"
+        />
+        <span class="radius-value">{{ uniRadius }}km</span>
+      </div>
+    </div>
+
     <!-- 学校模式顶部横幅 -->
     <div v-if="searchMode === 'school' && schoolName" class="school-banner">
       <el-icon :size="22"><School /></el-icon>
@@ -241,9 +258,14 @@ const propertyStore = usePropertyStore()
 const { searchResults, loading } = storeToRefs(propertyStore)
 
 // ── 模式 ──
-const searchMode = ref<'city' | 'school' | 'agent'>('city')
+const searchMode = ref<'city' | 'school' | 'uni' | 'agent'>('city')
 const schoolId = ref<number | null>(null)
 const schoolName = ref('')
+const uniId = ref<number | null>(null)
+const uniName = ref('')
+const uniLat = ref<number | null>(null)
+const uniLng = ref<number | null>(null)
+const uniRadius = ref<number>(5)
 const viewMode = ref<'grid' | 'list'>('grid')
 /** 是否来自 Agent 推荐（显示 AI 推荐横幅） */
 const fromAgent = ref(false)
@@ -435,12 +457,23 @@ const commuteLoading = ref(false)
 
 /** 异步获取真实通勤时间（API → Haversine 兜底） */
 async function fetchCommuteTimes() {
+  // 大学模式：用 uniLat/Lng 作为起点
+  if (searchMode.value === 'uni' && uniLat.value != null && uniLng.value != null) {
+    const origin = { lat: uniLat.value, lng: uniLng.value, country: 'SG', city: 'Singapore' }
+    await _calcCommute(origin)
+    return
+  }
   if (searchMode.value !== 'school' || !schoolId.value) {
     commuteMap.value = {}
     return
   }
   const school = SCHOOL_INFO[schoolId.value]
   if (!school) { commuteMap.value = {}; return }
+  await _calcCommute(school)
+}
+
+async function _calcCommute(origin: { lat: number; lng: number; country: string; city: string }) {
+  // collect destinations...
 
   // 收集有坐标的房源
   const destinations: { id: number; lat: number; lng: number }[] = []
@@ -457,7 +490,7 @@ async function fetchCommuteTimes() {
   // 第一步：立即用 Haversine 填充，保证 UI 不空白
   const fallbackMap: Record<number, CommuteInfo> = {}
   for (const d of destinations) {
-    const km = haversineKm(school.lat, school.lng, d.lat, d.lng)
+    const km = haversineKm(origin.lat, origin.lng, d.lat, d.lng)
     fallbackMap[d.id] = estimateCommuteFallback(km)
   }
   commuteMap.value = fallbackMap
@@ -466,11 +499,11 @@ async function fetchCommuteTimes() {
   commuteLoading.value = true
   try {
     const resp = await commuteService.calculate({
-      origin_lat: school.lat,
-      origin_lng: school.lng,
-      destinations: destinations.slice(0, 30), // 最多 30 个
-      country: school.country,
-      city: school.city,
+      origin_lat: origin.lat,
+      origin_lng: origin.lng,
+      destinations: destinations.slice(0, 30),
+      country: origin.country,
+      city: origin.city,
     })
     // 用 API 结果更新
     const apiMap: Record<number, CommuteInfo> = {}
@@ -699,6 +732,13 @@ function doSearch() {
   if (filters.property_type) p.property_type = filters.property_type as PropertyType
   if (filters.amenities?.length) p.amenities = filters.amenities
 
+  // 大学近距搜索
+  if (uniLat.value != null && uniLng.value != null) {
+    p.near_lat = uniLat.value
+    p.near_lng = uniLng.value
+    p.near_distance_km = uniRadius.value
+  }
+
   // 排序（非通勤排序发送到后端）
   if (sortBy.value && !['commute_time', 'commute_dist'].includes(sortBy.value)) {
     p.sort_by = sortBy.value
@@ -709,10 +749,21 @@ function doSearch() {
   propertyStore.fetchSearch(p)
 }
 
+/** 半径变更 → 重新搜索 */
+function onRadiusChange() {
+  // 更新 URL 并重新搜索
+  if (uniId.value) {
+    router.replace({
+      path: '/search',
+      query: { uni_id: String(uniId.value), radius: String(uniRadius.value), uni_name: uniName.value }
+    })
+  }
+  doSearch()
+}
+
 /** 通勤筛选变更（纯客户端筛选，不需要重新请求后端） */
 function onCommuteFilterChange() {
-  currentPage.value = 1 // 重置分页
-  // filteredAndSortedResults 会自动响应 commuteTime/distanceFilter/commuteMap 变化
+  currentPage.value = 1
 }
 
 /** 排序变更 — 后端排序需重新请求，客户端排序仅重置分页 */
@@ -734,7 +785,7 @@ function resetFilters() {
 }
 
 // ── 路由初始化 ──
-function initFromRoute() {
+async function initFromRoute() {
   const q = route.query
 
   // 优先检查是否来自 Agent 推荐（sessionStorage 中预存了结果）
@@ -749,23 +800,39 @@ function initFromRoute() {
         fromAgent.value = true
         agentContext.value = ctx
         searchMode.value = 'agent'
-        // 预填筛选条件
         if (ctx?.filters) {
           const f = ctx.filters as Record<string, unknown>
           if (f.country) filters.country = f.country as string
           if (f.district) filters.district = f.district as string
         }
       }
-    } catch {
-      // 解析失败，回退到正常搜索
-    }
-    // 消费后清除（避免刷新页面重复加载）
+    } catch { /* fallback */ }
     sessionStorage.removeItem('agentSearchResults')
     sessionStorage.removeItem('agentSearchContext')
     return
   }
 
-  if (q.school_id) {
+  // 大学近距搜索
+  if (q.uni_id) {
+    uniId.value = Number(q.uni_id)
+    uniName.value = (q.uni_name as string) || ''
+    uniRadius.value = Number(q.radius) || 5
+    searchMode.value = 'uni'
+    filters.district = undefined
+    filters.institute_id = undefined
+
+    // 从 API 获取大学坐标
+    try {
+      const resp = await api.get(`/universities?q=&limit=50`)
+      const unis: any[] = resp.data || []
+      const found = unis.find((u: any) => u.id === uniId.value)
+      if (found?.latitude && found?.longitude) {
+        uniLat.value = found.latitude
+        uniLng.value = found.longitude
+        uniName.value = found.name_cn || found.name || uniName.value
+      }
+    } catch { /* fallback: use hardcoded */ }
+  } else if (q.school_id) {
     searchMode.value = 'school'; schoolId.value = Number(q.school_id)
     filters.institute_id = schoolId.value; filters.district = undefined
     schoolName.value = SCHOOL_INFO[schoolId.value]?.name || ''
@@ -778,7 +845,6 @@ function initFromRoute() {
     filters.institute_id = undefined; schoolName.value = ''
   }
   if (q.q) filters.q = q.q as string
-  // 来自 AI 搜索的精确筛选条件
   if (q.price_min) filters.price_min = Number(q.price_min) || undefined
   if (q.price_max) filters.price_max = Number(q.price_max) || undefined
   if (q.bedrooms) filters.bedrooms = Number(q.bedrooms) || undefined
@@ -793,7 +859,7 @@ onUnmounted(() => {
   document.documentElement.classList.remove('search-page-active')
   destroyMap()
 })
-watch(() => route.query, () => initFromRoute())
+watch(() => route.query, () => { initFromRoute() })
 </script>
 
 <style scoped>
@@ -811,6 +877,10 @@ watch(() => route.query, () => initFromRoute())
 }
 .school-banner h1 { font-size: 20px; font-weight: 700; color: var(--text-primary); margin: 0; }
 .school-count { font-size: 13px; color: var(--text-muted); background: var(--bg); padding: 2px 12px; border-radius: 20px; }
+.uni-banner { flex-wrap: wrap; gap: 8px; }
+.radius-slider { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+.radius-label { font-size: 12px; color: var(--text-muted); }
+.radius-value { font-size: 13px; font-weight: 600; color: var(--primary); min-width: 36px; }
 
 /* Agent 推荐横幅 */
 .agent-banner {
