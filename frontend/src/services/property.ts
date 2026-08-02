@@ -160,6 +160,23 @@ export const propertyService = {
     return api.get(`/unit-types/${propertyId}/room-types`).then((r) => r.data)
   },
 
+  // ── 预订管线：日历可用性 + 日期校验 + 租期价格 ──
+
+  getBookingDateAvailability(unitTypeId: number, year: number, month: number): Promise<{
+    property_id: number; timezone: string; local_today: string;
+    available_from: string | null; blocked_dates: string[];
+  }> {
+    return api.get(`/unit-types/${unitTypeId}/booking-availability`, { params: { year, month } }).then((r) => r.data)
+  },
+
+  validateBookingDate(unitTypeId: number, moveInDate: string): Promise<{ available: boolean; reason?: string | null }> {
+    return api.post(`/unit-types/${unitTypeId}/validate-booking-date`, { move_in_date: moveInDate }).then((r) => r.data)
+  },
+
+  getLeasePricing(unitTypeId: number, moveInDate: string): Promise<any> {
+    return api.get(`/unit-types/${unitTypeId}/lease-pricing`, { params: { move_in_date: moveInDate } }).then((r) => r.data)
+  },
+
   // ---- 修改历史 ----
   /** 获取房源操作审计日志（修改历史） */
   getHistory(propertyId: number | string, params?: { skip?: number; limit?: number }): Promise<PropertyHistoryItem[]> {

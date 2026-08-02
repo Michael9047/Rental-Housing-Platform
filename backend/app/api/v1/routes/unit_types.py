@@ -81,6 +81,128 @@ async def search_unit_types(
     return items
 
 
+@router.get("/{unit_type_id}/lease-pricing")
+async def get_lease_pricing(
+    unit_type_id: int,
+    move_in_date: str = Query(..., description="预计入住日期 YYYY-MM-DD"),
+    session: AsyncSession = Depends(get_db_session),
+):
+    """租期价格计算 — 基于 UnitType 返回多租期选项"""
+    from app.services.lease_pricing_service import LeasePricingService
+    from app.models.unit_type import UnitType
+    ut = await session.get(UnitType, unit_type_id)
+    if not ut:
+        from fastapi import HTTPException
+        raise HTTPException(404, "户型不存在")
+    result = LeasePricingService.calculate(ut, move_in_date)
+    return result.model_dump()
+
+
+@router.get("/{unit_type_id}/booking-availability")
+async def get_booking_availability(
+    unit_type_id: int,
+    year: int = Query(..., ge=2020, le=2100),
+    month: int = Query(..., ge=1, le=12),
+    session: AsyncSession = Depends(get_db_session),
+):
+    """日历可用性 — 返回该月每天是否有冲突预约"""
+    from datetime import date as _date
+    from app.models.unit_type import UnitType
+    from app.models.booking import Booking, BookingStatus
+    from sqlalchemy import select
+
+    ut = await session.get(UnitType, unit_type_id)
+    if not ut:
+        from fastapi import HTTPException
+        raise HTTPException(404, "户型不存在")
+
+    year_int = int(year); month_int = int(month)
+    import calendar
+    days_in_month = calendar.monthrange(year_int, month_int)[1]
+    today = _date.today()
+    blocked: list[str] = []
+
+    # 查询该月内已确认的预约
+    start_of_month = _date(year_int, month_int, 1)
+    end_of_month = _date(year_int, month_int, days_in_month)
+    bookings = (await session.scalars(
+        select(Booking).where(
+            Booking.unit_type_id == unit_type_id,
+            Booking.status.in_([
+                BookingStatus.pending, BookingStatus.approved,
+                BookingStatus.contract_ready, BookingStatus.contract_signed,
+                BookingStatus.payment_pending, BookingStatus.payment_processing,
+                BookingStatus.paid, BookingStatus.completed,
+            ]),
+        )
+    )).all()
+
+    for b in bookings:
+        if b.contract_start and b.contract_end:
+            start = b.contract_start
+            end = b.contract_end
+        elif b.scheduled_date:
+            start = _date.fromisoformat(b.scheduled_date)
+            end = _date(start.year, start.month, start.day)
+            if b.lease_months:
+                from app.services.lease_pricing_service import LeasePricingService
+                end = LeasePricingService.add_calendar_months(start, b.lease_months)
+        else:
+            continue
+
+        d = start
+        while d <= end:
+            if d.year == year_int and d.month == month_int:
+                blocked.append(d.isoformat())
+            d = _date.fromordinal(d.toordinal() + 1)
+            if d > end_of_month: break
+
+    return {
+        "property_id": unit_type_id,
+        "timezone": "Asia/Shanghai",
+        "local_today": today.isoformat(),
+        "available_from": ut.available_from.isoformat() if ut.available_from else None,
+        "blocked_dates": list(set(blocked)),
+    }
+
+
+@router.post("/{unit_type_id}/validate-booking-date")
+async def validate_booking_date(
+    unit_type_id: int,
+    body: dict,
+    session: AsyncSession = Depends(get_db_session),
+):
+    """校验单个日期是否可预订"""
+    from datetime import date as _date
+    from app.models.unit_type import UnitType
+
+    move_in_date = body.get("move_in_date")
+    if not move_in_date:
+        from fastapi import HTTPException
+        raise HTTPException(400, "缺少 move_in_date")
+
+    ut = await session.get(UnitType, unit_type_id)
+    if not ut:
+        from fastapi import HTTPException
+        raise HTTPException(404, "户型不存在")
+
+    if not ut.has_vacancy or ut.available_count <= 0:
+        return {"available": False, "reason": "该户型暂无空房"}
+
+    try:
+        d = _date.fromisoformat(move_in_date)
+    except ValueError:
+        return {"available": False, "reason": "日期格式不正确"}
+
+    if d < _date.today():
+        return {"available": False, "reason": "不能预订过去的日期"}
+
+    if ut.available_from and d < ut.available_from:
+        return {"available": False, "reason": f"最早可预订日期为 {ut.available_from}"}
+
+    return {"available": True, "reason": None}
+
+
 @router.get("/recycle-bin", response_model=UnitTypeListResponse)
 async def list_deleted_unit_types(
     session: AsyncSession = Depends(get_db_session),
