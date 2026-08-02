@@ -39,6 +39,7 @@ from app.models.institute import Institute, InstituteStatus
 from app.models.unit_type import UnitType, UnitTypeStatus, PropertyType, DepositType
 from app.models.poi import InstitutePOI
 from app.models.institute_commute import InstituteCommute
+from app.models.university import University
 from app.models.user import User, UserRole, UserStatus
 from app.core.config import get_settings
 
@@ -836,12 +837,10 @@ async def seed(clear_existing: bool = False) -> None:
             for ut_cfg in cfg["unit_types"]:
                 price, breakdown = compute_price(
                     room_type=ut_cfg["type"],
-                    property_type=cfg["category"],
                     zone=cfg["zone"],
                     mrt_proximity=cfg["mrt_proximity"],
                     uni_proximity=cfg["uni_proximity"],
                     room_amenities=ut_cfg["amenities"],
-                    building_amenities=cfg.get("building_amenities", []),
                 )
 
                 unit_prices.append(price)
@@ -865,8 +864,6 @@ async def seed(clear_existing: bool = False) -> None:
                     total_count=_guess_total_count(ut_cfg["type"], cfg["category"]),
                     available_count=_guess_available_count(ut_cfg["type"], cfg["category"]),
                     has_vacancy=True,
-                    business_id=f"{inst.abbreviation}-{ut_cfg['type']}-{ut_cfg['tier']}",
-                    uuid=str(uuid.uuid4()),
                 )
                 session.add(ut)
                 total_ut += 1
@@ -972,16 +969,13 @@ async def main():
             for ut_cfg in cfg["unit_types"]:
                 price, bd = compute_price(
                     room_type=ut_cfg["type"],
-                    property_type=cfg["category"],
                     zone=cfg["zone"],
                     mrt_proximity=cfg["mrt_proximity"],
                     uni_proximity=cfg["uni_proximity"],
                     room_amenities=ut_cfg["amenities"],
-                    building_amenities=cfg.get("building_amenities", []),
                 )
-                mults = " × ".join(f"{k}={v}" for k, v in bd.items() if k != "配套加价" and k != "随机抖动")
-                print(f"  {_make_unit_type_name(ut_cfg):<20} S${price:<8} | {mults}")
-                print(f"    {'':20} 配套+S${bd.get('配套加价', 0):<5} jitter={bd.get('随机抖动', 1)}")
+                print(f"  {_make_unit_type_name(ut_cfg):<20} S${price:<8} | 基准=S${bd.get('基准价',0)} "
+                      f"区位={bd.get('区位调整',0):+.2f} 配套+S${bd.get('配套加价',0)} 抖动={bd.get('抖动',1)}")
         print("\n✅ --dry-run 完成（未写库）\n")
         return
 

@@ -22,37 +22,37 @@ from app.services.property_service import PropertyService
 router = APIRouter()
 
 
-@router.get("/drafts/{property_id}", response_model=BookingFlowDraftRead)
+@router.get("/drafts/{unit_type_id}", response_model=BookingFlowDraftRead)
 async def get_booking_flow_draft(
-    property_id: int,
+    unit_type_id: int,
     session: AsyncSession = Depends(get_db_session),
     current_user: User = Depends(require_tenant),
 ) -> BookingFlowDraftRead:
     draft = await session.scalar(select(BookingFlowDraft).where(
         BookingFlowDraft.user_id == current_user.id,
-        BookingFlowDraft.property_id == property_id,
+        BookingFlowDraft.unit_type_id == unit_type_id,
     ))
     if not draft:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Booking draft not found")
     return draft
 
 
-@router.put("/drafts/{property_id}", response_model=BookingFlowDraftRead)
+@router.put("/drafts/{unit_type_id}", response_model=BookingFlowDraftRead)
 async def save_booking_flow_draft(
-    property_id: int,
+    unit_type_id: int,
     update: BookingFlowDraftUpdate,
     session: AsyncSession = Depends(get_db_session),
     current_user: User = Depends(require_tenant),
 ) -> BookingFlowDraftRead:
-    property_obj = await PropertyService(session).get(property_id)
+    property_obj = await PropertyService(session).get(unit_type_id)
     if not property_obj:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Property not found")
     draft = await session.scalar(select(BookingFlowDraft).where(
         BookingFlowDraft.user_id == current_user.id,
-        BookingFlowDraft.property_id == property_id,
+        BookingFlowDraft.unit_type_id == unit_type_id,
     ))
     if not draft:
-        draft = BookingFlowDraft(user_id=current_user.id, property_id=property_id)
+        draft = BookingFlowDraft(user_id=current_user.id, unit_type_id=unit_type_id)
         session.add(draft)
     payload = update.model_dump(exclude_unset=True)
     if update.personal_info is not None:
@@ -93,7 +93,7 @@ async def confirm_booking_with_policies(
 ) -> BookingConfirmationRead:
     flow_draft = await session.scalar(select(BookingFlowDraft).where(
         BookingFlowDraft.user_id == current_user.id,
-        BookingFlowDraft.property_id == confirmation.property_id,
+        BookingFlowDraft.unit_type_id == confirmation.unit_type_id,
     ))
     if not flow_draft:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Booking flow steps are incomplete: draft not found")
@@ -120,7 +120,7 @@ async def confirm_booking_with_policies(
             )
 
     # 获取 UnitType（不再使用旧的 Property/Room）
-    unit_type_id = getattr(confirmation, 'unit_type_id', None) or getattr(confirmation, 'property_id', None)
+    unit_type_id = getattr(confirmation, 'unit_type_id', None) or getattr(confirmation, 'unit_type_id', None)
     if not unit_type_id:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing unit_type_id")
 
