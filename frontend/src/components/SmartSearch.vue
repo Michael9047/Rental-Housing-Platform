@@ -339,7 +339,7 @@ function selectUniversity(uni: SuggestionUniversity) {
 function selectProperty(prop: SuggestionProperty) {
   showSuggestions.value = false
   query.value = ''
-  router.push(`/room/${prop.id}`)
+  router.push(`/building/${prop.institute_id || prop.id}`)
 }
 
 // 回车搜索：有唯一匹配建议时自动选中，否则按原始文本搜索

@@ -110,7 +110,7 @@ function imageUrl(property: PropertySearchResult): string | null {
 }
 
 function goDetail(propertyId: number) {
-  router.push(`/room/${propertyId}`)
+  router.push(`/building/${propertyId}`)
 }
 
 function goCompare() {

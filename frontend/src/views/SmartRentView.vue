@@ -515,7 +515,7 @@ function inCart(propertyId: number): boolean {
 }
 
 function goDetail(propertyId: number) {
-  router.push(`/room/${propertyId}`)
+  router.push(`/building/${propertyId}`)
 }
 
 function scoreColor(score: number): string {
