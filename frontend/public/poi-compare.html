@@ -110,7 +110,7 @@ const ST_PAGES={餐厅:3,cafe:3,烘焙:3,快餐:3,食阁:3,超市:2,便利店:2,
 const HIGH_DENSITY=new Set(["餐厅","cafe","烘焙","快餐","食阁","超市","便利店","药店","健身房","公交站","市场","酒吧"]);
 // 混合半径：日常高频 1km，低频设施/交通/地标 2km
 const FOOD_RADIUS=1000,FACILITY_RADIUS=2000;
-const KW_RADIUS={餐厅:FOOD_RADIUS,cafe:FOOD_RADIUS,烘焙:FOOD_RADIUS,快餐:FOOD_RADIUS,食阁:FOOD_RADIUS,超市:FOOD_RADIUS,便利店:FOOD_RADIUS,药店:FACILITY_RADIUS,健身房:FACILITY_RADIUS,市场:FACILITY_RADIUS,酒吧:FACILITY_RADIUS,地铁站:FACILITY_RADIUS,公交站:FACILITY_RADIUS,医院:FACILITY_RADIUS,商场:FACILITY_RADIUS,小贩中心:FACILITY_RADIUS};
+const KW_RADIUS={餐厅:FOOD_RADIUS,cafe:FOOD_RADIUS,烘焙:FOOD_RADIUS,快餐:FOOD_RADIUS,食阁:FOOD_RADIUS,超市:FOOD_RADIUS,便利店:FOOD_RADIUS,药店:FOOD_RADIUS,健身房:FOOD_RADIUS,公交站:FOOD_RADIUS,市场:FACILITY_RADIUS,酒吧:FACILITY_RADIUS,地铁站:FACILITY_RADIUS,医院:FACILITY_RADIUS,商场:FACILITY_RADIUS,小贩中心:FACILITY_RADIUS};
 
 function $(id){return document.getElementById(id)}
 
@@ -446,7 +446,7 @@ function renderResults(){
       h+=`<tr style="cursor:pointer" onclick="switchTab('${catName}')"><td style="padding:4px 4px;font-weight:600">${catName}</td><td style="padding:4px 4px;text-align:center;color:#4285f4;font-weight:600">${cnt}</td></tr>`;
     }
     h+=`<tr style="border-top:1px solid #0f3460"><td style="padding:4px 4px;font-weight:700">合计</td><td style="padding:4px 4px;text-align:center;color:#4285f4;font-weight:700">${total}</td></tr></tbody></table>`;
-    h+=`<div style="margin-top:8px;padding:6px;background:#1a1a2e;border-radius:5px;font-size:10px;color:#aaa">⏱ ${lastGmTime.toFixed(0)}ms<br><span style="color:#22c55e;font-size:9px">🟢 1km 1×1网格×3页: 餐厅/cafe/烘焙/快餐/食阁<br>🟢 1km 1×1网格×2页: 超市/便利店</span><br><span style="color:#e94560;font-size:9px">🔴 2km 2×2网格×2页: 药店/健身房/市场/酒吧/公交站</span><br><span style="color:#888;font-size:9px">searchNearby 20条(2km): 地铁站/商场/医院 · 小贩中心(2km 单矩形×双词×3页)</span></div>`;
+    h+=`<div style="margin-top:8px;padding:6px;background:#1a1a2e;border-radius:5px;font-size:10px;color:#aaa">⏱ ${lastGmTime.toFixed(0)}ms<br><span style="color:#22c55e;font-size:9px">🟢 1km 1×1×3页: 餐厅/cafe/烘焙/快餐/食阁<br>🟢 1km 1×1×2页: 超市/便利店/药店/健身房/公交站</span><br><span style="color:#e94560;font-size:9px">🔴 2km 2×2×2页: 市场/酒吧</span><br><span style="color:#888;font-size:9px">searchNearby 20条(2km): 地铁站/商场/医院 · 小贩中心(2km 单矩形×双词×3页)</span></div>`;
     h+=`<div style="margin-top:6px;padding:6px;background:#1a1a2e;border-radius:5px;font-size:10px;color:#888;line-height:1.5"><b style="color:#aaa">searchText 搜索词对照</b><br>`;
     for(const[kw,q]of Object.entries(GM_ST))h+=`<span style="color:#ccc">${kw}</span> → <span style="color:#4285f4">${Array.isArray(q)?q.join(' + '):q}</span> &nbsp;`;
     h+=`<br><b style="color:#aaa">searchNearby includedTypes 对照</b><br>`;
