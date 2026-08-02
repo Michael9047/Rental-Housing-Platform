@@ -1,9 +1,8 @@
-"""租期价格计算服务 — 根据房源、入住日期、汇率生成不可变价格快照。"""
+"""租期价格计算服务 — 根据户型 UnitType、入住日期、汇率生成不可变价格快照。"""
 import calendar
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from pydantic import BaseModel
-from app.models.property import Room
 
 
 class Money(BaseModel):
@@ -44,7 +43,6 @@ class LeasePricing(BaseModel):
 
 
 class LeasePricingService:
-<<<<<<< HEAD
     """根据房源、租期计算价格选项。"""
 
     @staticmethod
@@ -57,27 +55,27 @@ class LeasePricingService:
         return date(year, month, day)
 
     @staticmethod
-    def calculate(room: Room, move_in_date_str: str) -> LeasePricing:
-        """为给定房源和入住日期生成价格选项。"""
+    def calculate(unit_type, move_in_date_str: str) -> LeasePricing:
+        """为指定 UnitType 和入住日期生成价格选项。"""
         move_in = date.fromisoformat(move_in_date_str) if isinstance(move_in_date_str, str) else move_in_date_str
-        monthly = int(getattr(room, "price_monthly", 0) or 0)
-        deposit_raw = getattr(room, "deposit_amount", None) or 0
-        service_rate = getattr(room, "service_fee_rate", None) or 0.0
-        currency = str(getattr(room, "currency", None) or "CNY")
-=======
-    @staticmethod
-    def calculate(unit_type, move_in_date: str) -> LeasePricingResult:
-        """根据户型（UnitType）和起租日计算各租期价格。
 
-        参数 unit_type 为 UnitType 模型实例，需有 base_rent/deposit_amount 字段。
-        兼容旧的 property/room 对象（通过 getattr 兜底）。
-        """
-        monthly = int(getattr(unit_type, "base_rent", 0) or getattr(unit_type, "price_monthly", 0) or 0)
-        deposit = int(getattr(unit_type, "deposit_amount", 0) or 0)
->>>>>>> merge/pr33-pr35
+        # 直接从 UnitType 读取价格
+        monthly = int(getattr(unit_type, "base_rent", 0) or 0) if unit_type else 0
+        deposit_raw = int(getattr(unit_type, "deposit_amount", 0) or 0) if unit_type else 0
+        currency = str(getattr(unit_type, "currency", None) or "CNY") if unit_type else "CNY"
+        min_stay = int(getattr(unit_type, "min_stay_months", 3) or 3) if unit_type else 3
+        # 默认服务费 0（UnitType 无 service_fee_rate 字段）
+        service_rate = 0.0
+
+        # 租期选项：基于最短租期生成（最少3个月起步）
+        min_months = max(3, min_stay)
+        candidate_months = [3, 6, 9, 12, 24]
+        term_months = [m for m in candidate_months if m >= min_months]
+        if not term_months:
+            term_months = [min_months]
 
         options = []
-        for months in (3, 6, 12):
+        for months in term_months:
             end = LeasePricingService.add_calendar_months(move_in, months)
             deposit = deposit_raw or monthly * 2
             service_fee = int(monthly * float(service_rate))
@@ -105,7 +103,7 @@ class LeasePricingService:
             ))
 
         return LeasePricing(
-            property_id=room.id,
+            property_id=unit_type.id,
             calculation_date=datetime.now(timezone.utc).date().isoformat(),
             move_in_date=move_in.isoformat(),
             local_currency=currency,

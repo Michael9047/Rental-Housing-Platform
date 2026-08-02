@@ -1,10 +1,10 @@
-/** 预订流程草稿服务 —— 对应后端 /bookings/drafts/{property_id} */
+/** 预订流程草稿服务 —— 对应后端 /bookings/drafts/{unit_type_id} */
 import api from './api'
 
 export interface BookingDraft {
   id: number
   user_id: number
-  property_id: number
+  unit_type_id: number
   current_step: string
   move_in_date: string | null
   lease_months: number | null

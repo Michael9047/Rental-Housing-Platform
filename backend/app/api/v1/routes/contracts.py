@@ -30,7 +30,16 @@ async def generate_contract(
     session: AsyncSession = Depends(get_db_session),
     current_user: User = Depends(get_current_user),
 ) -> ContractResponse:
-    booking = await BookingService(session).get(booking_id)
+    from sqlalchemy.orm import selectinload
+    from app.models.booking import Booking
+    from app.models.property import Room
+    from app.models.unit_type import UnitType
+    booking = (await session.scalars(
+        select(Booking).where(Booking.id == booking_id).options(
+            selectinload(Booking.property).selectinload(Room.unit_type).selectinload(UnitType.institute),
+            selectinload(Booking.tenant),
+        )
+    )).unique().first()
     if not booking:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Booking not found")
 

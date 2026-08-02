@@ -554,8 +554,8 @@ async function fetchAll() {
   if(summaryResult.status==='fulfilled'){summary.value=summaryResult.value;summaryError.value=false}else{summary.value=null;summaryError.value=true}
   summaryLoading.value=false
   if(bookingsResult.status==='fulfilled')bookings.value=bookingsResult.value
-  if(contractsResult.status==='fulfilled'){contracts.value=contractsResult.value;contractsError.value=false}else{contractsError.value=true}
-  if(ordersResult.status==='fulfilled'){orders.value=ordersResult.value;ordersError.value=false}else{ordersError.value=true}
+  if(contractsResult.status==='fulfilled'){contracts.value=contractsResult.value;contractsError.value=false}else{console.error('contractsResult rejected:', contractsResult.reason);contractsError.value=true}
+  if(ordersResult.status==='fulfilled'){orders.value=ordersResult.value;ordersError.value=false}else{console.error('ordersResult rejected:', ordersResult.reason);ordersError.value=true}
   if(repairsResult.status==='fulfilled')repairs.value=repairsResult.value
   if(favoritesResult.status==='fulfilled'){
     const favItems = favoritesResult.value

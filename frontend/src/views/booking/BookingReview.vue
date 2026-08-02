@@ -120,7 +120,33 @@ const policyTriggers = new Map<string, HTMLButtonElement>()
 const activePolicyDocument = computed(() => policyDocuments[activePolicyKey.value] || null)
 const allAccepted = computed(() => areAllPoliciesAccepted(policies.map((policy) => policy.key), accepted))
 const selectAll = computed({ get: () => allAccepted.value, set: (value: boolean) => policies.forEach((policy) => { accepted[policy.key] = value }) })
-const selectedOption = computed<LeaseOption | null>(() => pricing.value?.options.find((option) => option.months === selectedMonths.value) || null)
+
+// 适配自定义月数：若预设选项找不到，取第一个选项按月租公式实时计算
+const selectedOption = computed<LeaseOption | null>(() => {
+  if (!pricing.value || !selectedMonths.value) return null
+  const found = pricing.value.options.find((option) => option.months === selectedMonths.value)
+  if (found) return found
+  // 自定义月数：基于第一个预设选项的月租实时计算
+  const base = pricing.value.options[0]
+  if (!base) return null
+  const monthly = base.prices.monthly_rent.local.minor_units / 100
+  const deposit = base.prices.deposit.local.minor_units / 100
+  const serviceFee = base.prices.service_fee.local.minor_units / 100
+  const m = selectedMonths.value
+  const endDate = (() => { const d = new Date(pricing.value.move_in_date); d.setMonth(d.getMonth() + m); return d.toISOString().slice(0, 10) })()
+  const cur = base.prices.monthly_rent.local.currency
+  const mk = (v: number) => ({ currency: cur, minor_units: v * 100, minor_unit_exponent: 2, decimal: v.toFixed(2) })
+  return {
+    months: m, end_date: endDate,
+    prices: {
+      deposit: { local: mk(deposit), cny: mk(deposit) },
+      service_fee: { local: mk(serviceFee), cny: mk(serviceFee) },
+      monthly_rent: { local: mk(monthly), cny: mk(monthly) },
+      amount_due_now: { local: mk(deposit + serviceFee), cny: mk(deposit + serviceFee) },
+      rent_total: { local: mk(monthly * m), cny: mk(monthly * m) },
+    },
+  }
+})
 const summaryReady = computed(() => Boolean(
   property.value && selectedOption.value && personal.form.chinese_name && emergency.form.chinese_name
   && policies.every((policy) => policyDocuments[policy.key]),

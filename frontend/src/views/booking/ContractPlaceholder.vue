@@ -74,7 +74,7 @@ const signaturePadRef = ref<InstanceType<typeof SignaturePad> | null>(null)
 const idempotencyKey = crypto.randomUUID()
 const snapshot = computed<ContractSnapshot | null>(() => contract.value?.snapshot || null)
 const signatureMetrics = computed(() => { const points = signatureStrokes.value.flat(); let length = 0; signatureStrokes.value.forEach((stroke) => stroke.slice(1).forEach((point, index) => { const previous = stroke[index]; length += Math.hypot(point.x - previous.x, point.y - previous.y) })); return { points: points.length, length } })
-const canSign = computed(() => Boolean(contract.value?.content_hash && nameConfirmed.value && signatureConsent.value && signatureMetrics.value.points >= 8 && signatureMetrics.value.length >= 0.2))
+const canSign = computed(() => Boolean(contract.value?.content_hash && nameConfirmed.value && signatureConsent.value && signatureStrokes.value.length > 0 && signatureStrokes.value.some(s => s.length >= 2)))
 function value(key: string) { return String(snapshot.value?.[key] ?? '') }
 const coverFields = computed(() => [
   ['合同编号 / Agreement Number', value('agreement_number')], ['订单编号 / Order Number', value('order_number')],

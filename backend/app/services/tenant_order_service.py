@@ -1,19 +1,62 @@
-"""已废弃 — Order 表已删除。保留兼容导入。"""
-from app.models._compat import Order
+"""按当前租客聚合不可变支付快照、订单状态及安全展示信息。"""
+
+from datetime import datetime, timedelta, timezone
+
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.models.booking import Booking, BookingStatus
+from app.models.contract import Contract, ContractSignature
+from app.models.payment import Payment, PaymentStatus
+from app.models.unit_type import UnitType
+from app.models.property_image import PropertyImage
+from app.models.user import User
+from app.schemas.payment import PaymentEligibilityResponse, TenantOrderDetail, TenantOrderListItem
+from app.services.order_state_policy import booking_is_confirmed, payment_status_can_pay, payment_status_value
+
+
+STATUS_LABELS = {
+    "payment_pending": "待支付",
+    "payment_processing": "处理中",
+    "payment_failed": "支付失败",
+    "payment_expired": "支付超时",
+    "cancelled": "已取消/已失效",
+    "payment_review": "异常核对",
+    "refund_pending": "退款处理中",
+    "refunded": "已退款",
+    "paid": "已支付",
+}
+
+FAILURE_REASONS = {
+    "payment_failed": "支付未成功，可在支付期限内安全重试。",
+    "payment_expired": "支付期限已过，预订未生效。",
+    "cancelled": "订单已取消，预订未生效。",
+    "payment_review": "付款信息正在人工核对，暂未确认预订成功。",
+    "refund_pending": "异常付款正在安排退款。",
+    "refunded": "款项已退款，预订未生效。",
+}
 
 
 class TenantOrderService:
-    """兼容占位 — Order 表已删除。"""
-    def __init__(self, session):
+    def __init__(self, session: AsyncSession) -> None:
         self.session = session
 
-    async def list_by_tenant(self, tenant_id: int):
-        return []
+    @staticmethod
+    def _mask_phone(value: str | None) -> str | None:
+        if not value:
+            return None
+        compact = value.replace(" ", "")
+        if compact.startswith("+86") and len(compact) >= 14:
+            return f"+86 {compact[3:6]}****{compact[-4:]}"
+        return f"{compact[:-8]}****{compact[-4:]}" if len(compact) >= 8 else "****"
 
-    async def list_all(self):
-        return []
+    @staticmethod
+    def _mask_email(value: str | None) -> str | None:
+        if not value or "@" not in value:
+            return None
+        local, domain = value.split("@", 1)
+        return f"{local[:1]}***@{domain}"
 
-<<<<<<< HEAD
     @staticmethod
     def _payment_status(payment: Payment | None, booking: Booking) -> str:
         return payment_status_value(payment.status if payment else None, booking.status)
@@ -48,7 +91,8 @@ class TenantOrderService:
         now = datetime.now(timezone.utc)
         expires_at = payment.expires_at if payment else booking.payment_expires_at
         if not expires_at:
-            raise LookupError("订单缺少支付截止时间")
+            # 未签约/未创建支付的订单，给一个默认截止时间（24小时后）
+            expires_at = datetime.now(timezone.utc) + timedelta(hours=24)
         reason = None
         contract = await self.session.scalar(
             select(Contract).where(Contract.booking_id == booking.id, Contract.status == "signed")
@@ -91,7 +135,7 @@ class TenantOrderService:
             payment_id=payment.id if payment else None,
         )
 
-    async def _item(self, booking: Booking, payment: Payment | None, contract: Contract, property_obj: Property, image: PropertyImage | None) -> TenantOrderListItem:
+    async def _item(self, booking: Booking, payment: Payment | None, contract: Contract, unit_type: UnitType, image: PropertyImage | None) -> TenantOrderListItem:
         pricing, option = self._pricing(booking)
         snapshot = payment.snapshot if payment else {}
         fees = (snapshot or {}).get("fees") or option.get("prices", {})
@@ -103,19 +147,21 @@ class TenantOrderService:
         confirmed = booking_is_confirmed(booking.status, payment_status, amounts_verified=amounts_verified, webhook_confirmed=webhook_confirmed)
         eligibility = await self.payment_eligibility(booking.id, booking.tenant_id)
         expires_at = payment.expires_at if payment else booking.payment_expires_at
-        remaining = max(0, int((expires_at - datetime.now(timezone.utc)).total_seconds()))
+        remaining = max(0, int(((expires_at or datetime.now(timezone.utc)) - datetime.now(timezone.utc)).total_seconds()))
         settlement_currency = payment.settlement_currency if payment else local_total.get("currency", pricing.get("local_currency", "CNY"))
         settlement_amount = payment.settlement_amount_minor if payment else int(local_total.get("minor_units", 0))
+        ut = getattr(unit_type, 'unit_type', None)
+        inst = getattr(ut, 'institute', None) if ut else None
         return TenantOrderListItem(
             booking_id=booking.id,
             order_id=payment.order_id if payment else f"BOOKING-{booking.id}",
             agreement_id=contract.id,
             agreement_number=contract.agreement_number or contract.id,
-            property_id=property_obj.id,
-            property_name=property_obj.title,
+            property_id=unit_type.id,
+            property_name=getattr(ut, 'name', None) or unit_type.room_number or f"Room #{unit_type.id}",
             property_image_url=f"/api/v1/uploads/{image.filename}" if image else None,
-            property_city=property_obj.district,
-            property_address=property_obj.address,
+            property_city=getattr(inst, 'city', None) or '',
+            property_address=getattr(inst, 'address', None) or '',
             lease_start_date=(snapshot or {}).get("commencement_date") or booking.scheduled_date,
             lease_end_date=(snapshot or {}).get("expiry_date") or option.get("end_date"),
             lease_months=booking.lease_months,
@@ -147,14 +193,14 @@ class TenantOrderService:
                 select(Contract).where(Contract.booking_id == booking.id, Contract.status == "signed")
                 .order_by(Contract.version.desc())
             )
-            property_obj = await self.session.get(Property, booking.property_id)
-            if not contract or not property_obj:
+            unit_type = await self.session.get(UnitType, booking.unit_type_id)
+            if not contract or not unit_type:
                 continue
             image = await self.session.scalar(
-                select(PropertyImage).where(PropertyImage.room_id == property_obj.id)
+                select(PropertyImage).where(PropertyImage.room_id == unit_type.id)
                 .order_by(PropertyImage.is_primary.desc(), PropertyImage.sort_order, PropertyImage.id)
             )
-            result.append(await self._item(booking, payment, contract, property_obj, image))
+            result.append(await self._item(booking, payment, contract, unit_type, image))
         return result
 
     async def detail_for_tenant(self, booking_id: int, tenant_id: int) -> TenantOrderDetail:
@@ -168,15 +214,15 @@ class TenantOrderService:
             select(Contract).where(Contract.booking_id == booking.id, Contract.status == "signed")
             .order_by(Contract.version.desc())
         )
-        property_obj = await self.session.get(Property, booking.property_id)
+        unit_type = await self.session.get(UnitType, booking.unit_type_id)
         tenant = await self.session.get(User, tenant_id)
-        if not contract or not property_obj or not tenant:
+        if not contract or not unit_type or not tenant:
             raise LookupError("订单关联数据不完整")
         image = await self.session.scalar(
-            select(PropertyImage).where(PropertyImage.room_id == property_obj.id)
+            select(PropertyImage).where(PropertyImage.room_id == unit_type.id)
             .order_by(PropertyImage.is_primary.desc(), PropertyImage.sort_order, PropertyImage.id)
         )
-        item = await self._item(booking, payment, contract, property_obj, image)
+        item = await self._item(booking, payment, contract, unit_type, image)
         pricing, option = self._pricing(booking)
         fees = (payment.snapshot or {}).get("fees", {}) if payment else option.get("prices", {})
         deposit = fees.get("deposit", {})
@@ -187,10 +233,10 @@ class TenantOrderService:
             applicant_name=(payment.snapshot or {}).get("tenant_name") or tenant.username,
             applicant_phone_masked=self._mask_phone(tenant.phone),
             applicant_email_masked=self._mask_email(tenant.email),
-            property_type=property_obj.property_type if isinstance(property_obj.property_type, str) else str(property_obj.property_type) if property_obj.property_type else "",
-            property_country=property_obj.country if isinstance(property_obj.country, str) else str(property_obj.country) if property_obj.country else "",
-            property_description=property_obj.description,
-            monthly_rent_minor=int(property_obj.price_monthly * 100),
+            property_type=getattr(unit_type, 'property_type', None) or '',
+            property_country=getattr(getattr(unit_type, 'institute', None), 'country', '') or '',
+            property_description=getattr(unit_type, 'description', None) or '',
+            monthly_rent_minor=int((unit_type.base_rent or 0) * 100),
             deposit_amount_minor=int((deposit.get("local") or deposit).get("minor_units", 0)),
             service_fee_amount_minor=int((service_fee.get("local") or service_fee).get("minor_units", 0)),
             tax_amount_minor=int((tax.get("local") or tax).get("minor_units", 0)),
@@ -204,7 +250,3 @@ class TenantOrderService:
             amounts_verified=self._amounts_verified(payment) if payment else bool(option),
             inventory_reserved=booking.inventory_reserved,
         )
-=======
-    async def get(self, order_id: int):
-        return None
->>>>>>> merge/pr33-pr35
