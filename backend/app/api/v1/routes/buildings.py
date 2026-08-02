@@ -137,8 +137,6 @@ async def search_public_buildings(
 ) -> list[dict]:
     """公开搜索——按名称/区域搜索公寓，返回卡片级数据"""
     return await _search_buildings(session, q=q, district=district, country=country, city=city, skip=skip, limit=limit)
-        })
-    return buildings
 
 
 @router.get("")
