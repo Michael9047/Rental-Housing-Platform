@@ -166,7 +166,7 @@
         <template v-else>
           <div :class="viewMode === 'grid' ? 'card-grid' : 'card-list'">
             <!-- 内联卡片替代 PropertyCard，避免组件依赖崩溃 -->
-            <div v-for="p in pagedResults" :key="p.id" class="property-card" @click="$router.push('/room/'+p.id)">
+            <div v-for="p in pagedResults" :key="p.id" class="property-card" @click="$router.push({ name: 'building-detail', params: { id: p.institute_id || p.id } })">
               <div class="card-image">
                 <img v-if="p.images?.length" :src="p.images[0].filename?.startsWith('http')?p.images[0].filename:'/api/v1/uploads/'+p.images[0].filename" alt="" class="property-img" />
                 <div v-else class="image-placeholder"><span>暂无图片</span></div>
