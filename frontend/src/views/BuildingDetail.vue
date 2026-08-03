@@ -42,15 +42,21 @@
         <el-empty description="暂无图片" :image-size="60" />
       </section>
 
-      <!-- ═══ 3. 地理位置 + 地图 ═══ -->
-      <section class="bd-map">
-        <h2 class="sec-title">📍 地理位置</h2>
-        <p class="map-addr">{{ building.address || '地址未设置' }}</p>
-        <div v-if="building.latitude" ref="mapContainer" class="map-box"></div>
-        <p v-else class="map-empty">暂无地图坐标</p>
+      <!-- ═══ 3. 基础信息 ═══ -->
+      <section class="bd-info">
+        <h2 class="sec-title">📋 公寓信息</h2>
+        <div class="info-grid">
+          <div class="info-item" v-if="building.building_type"><span class="info-label">建筑类型</span><span class="info-val">{{ building.building_type === 'apartment' ? '公寓' : building.building_type === 'dormitory' ? '宿舍' : building.building_type === 'high-rise' ? '高层' : building.building_type === 'low-rise' ? '低层' : building.building_type }}</span></div>
+          <div class="info-item" v-if="building.total_floors"><span class="info-label">总楼层</span><span class="info-val">{{ building.total_floors }} 层</span></div>
+          <div class="info-item" v-if="building.year_built"><span class="info-label">建成年份</span><span class="info-val">{{ building.year_built }} 年</span></div>
+          <div class="info-item" v-if="building.total_units"><span class="info-label">总户数</span><span class="info-val">{{ building.total_units }} 户</span></div>
+          <div class="info-item"><span class="info-label">电梯</span><span class="info-val">{{ building.has_elevator ? '✅ 有' : '❌ 无' }}</span></div>
+          <div class="info-item" v-if="building.female_only"><span class="info-label">👩 女生独栋</span></div>
+          <div class="info-item" v-if="building.couples_allowed"><span class="info-label">💑 支持情侣入住</span></div>
+        </div>
       </section>
 
-      <!-- ═══ 4. 配套设施（4栏卡片） ═══ -->
+      <!-- ═══ 4. 配套设施 ═══ -->
       <section class="bd-amenity" v-if="amenityCards.length">
         <h2 class="sec-title">配套设施与服务</h2>
         <div class="am-grid">
@@ -67,18 +73,20 @@
         </div>
       </section>
 
-      <!-- ═══ 5. 特殊标记（独立区块） ═══ -->
+      <!-- ═══ 5. 地理位置 ═══ -->
+      <section class="bd-map">
+        <h2 class="sec-title">📍 地理位置</h2>
+        <p class="map-addr">{{ building.address || '地址未设置' }}</p>
+        <div v-if="building.latitude" ref="mapContainer" class="map-box"></div>
+        <p v-else class="map-empty">暂无地图坐标</p>
+      </section>
+
+      <!-- ═══ 6. 特别说明 ═══ -->
       <section class="bd-special" v-if="specialMarkers.length">
         <h2 class="sec-title">特别说明</h2>
         <div class="sp-bar">
           <span v-for="m in specialMarkers" :key="m.label" class="sp-tag">{{ m.icon }} {{ m.label }}</span>
         </div>
-      </section>
-
-      <!-- ═══ 6. AI 占位 ═══ -->
-      <section class="bd-ai">
-        <h2 class="sec-title">🔍 地图周边检测</h2>
-        <div class="ai-box">🤖<p>AI 智能周边分析即将上线</p></div>
       </section>
 
       <!-- ═══ 7. 户型卡片 ═══ -->
@@ -324,6 +332,13 @@ onMounted(async () => {
 .map-box { width: 100%; height: 340px; min-height: 340px; border-radius: 10px; overflow: hidden; border: 1px solid #eee; z-index: 1; position: relative }
 :deep(.map-box .leaflet-tile) { visibility: visible !important }
 .map-empty { color: #999; text-align: center; padding: 50px }
+
+/* ═══ 3. 基础信息 ═══ */
+.bd-info { background: #fff; border-radius: 14px; padding: 24px 28px; margin-bottom: 24px; box-shadow: 0 2px 10px rgba(0,0,0,.03) }
+.info-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px }
+.info-item { display: flex; flex-direction: column; gap: 4px; padding: 12px; background: #fafbfc; border-radius: 8px }
+.info-label { font-size: 12px; color: #909399 }
+.info-val { font-size: 15px; font-weight: 600; color: #303133 }
 
 /* ═══ 4. 配套设施4栏 ═══ */
 .bd-amenity { background: #fff; border-radius: 14px; padding: 24px 28px; margin-bottom: 24px; box-shadow: 0 2px 10px rgba(0,0,0,.03) }
