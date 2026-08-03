@@ -222,6 +222,7 @@
 import { ref, reactive, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Search, School, Grid, List, Location, Loading, ChatDotRound } from '@element-plus/icons-vue'
+import { ElMessage } from 'element-plus'
 import { usePropertyStore } from '@/stores/property'
 import { storeToRefs } from 'pinia'
 interface CommuteInfo { dist_km: number; walk_min: number; bike_min: number; drive_min: number; transit_min: number }
