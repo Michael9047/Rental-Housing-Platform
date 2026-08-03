@@ -49,7 +49,7 @@ class BookingFlowDraftRead(BaseModel):
 
     id: int
     user_id: int
-    property_id: int
+    unit_type_id: int
     current_step: str
     move_in_date: str | None = None
     lease_months: int | None = None

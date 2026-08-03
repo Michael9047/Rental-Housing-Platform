@@ -6,7 +6,7 @@
       <span style="color:#909399">{{ results.length }} 套</span>
     </div>
     <div class="card-grid" v-if="results.length">
-      <div v-for="p in results" :key="p.id" class="card" @click="$router.push('/room/'+p.id)">
+      <div v-for="p in results" :key="p.id" class="card" @click="$router.push('/building/'+(p.institute_id||p.id))">
         <div class="card-img-wrap">
           <img v-if="p.images?.length" :src="imgUrl(p.images[0])" class="card-img" />
           <div v-else class="card-noimg">暂无图片</div>

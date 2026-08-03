@@ -62,7 +62,7 @@
                 <el-button type="primary" text @click="router.push(`/my-contracts/${row.agreement_id}`)">查看合同</el-button>
                 <el-button text :disabled="!row.signed_pdf_available" @click="downloadContract(row)">下载合同</el-button>
                 <el-button text @click="router.push(`/booking/order/${row.booking_id}/payment-status`)">查看订单</el-button>
-                <el-button text @click="router.push(`/room/${row.property_id}`)">查看房源</el-button>
+                <el-button text @click="router.push(`/building/${row.property_id}`)">查看房源</el-button>
                 <el-button v-if="row.booking_id && !['paid','cancelled','refunded','payment_expired'].includes(row.payment_status) && row.booking_status !== 'confirmed'" type="primary" @click="router.push(`/booking/payment/${row.booking_id}/deposit`)">继续支付</el-button>
                 <el-button v-if="row.booking_id && ['payment_expired','cancelled'].includes(row.payment_status)" type="warning" @click="router.push(`/booking/${row.property_id}/move-in-date`)">重新预订</el-button>
               </div>
@@ -100,7 +100,7 @@
               </div>
               <div class="contract-actions">
                 <el-button text type="primary" @click="router.push(`/my-orders/${order.booking_id}`)">查看详情</el-button>
-                <el-button text @click="router.push(`/room/${order.property_id}`)">查看房源</el-button>
+                <el-button text @click="router.push(`/building/${order.property_id}`)">查看房源</el-button>
                 <el-button v-if="order.agreement_id && order.booking_status !== 'confirmed'" text @click="router.push(`/my-contracts/${order.agreement_id}`)">查看合同</el-button>
                 <el-button v-if="order.payment_status === 'payment_processing'" text @click="refreshOrders">刷新状态</el-button>
                 <!-- 非终态的订单：直接跳支付页，由支付页自行判决 -->

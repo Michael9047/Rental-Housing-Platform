@@ -67,7 +67,7 @@ class ReviewService:
         review = Review(
             tenant_id=tenant_id,
             property_id=booking.property_id,
-            landlord_id=booking.landlord_id,
+            landlord_id=booking.bm_id,
             booking_id=review_in.booking_id,
             property_rating=review_in.property_rating,
             property_comment=review_in.property_comment,

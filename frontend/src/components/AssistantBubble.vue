@@ -76,7 +76,7 @@
                     <div class="ab-rec-title" :title="rec.property.title">{{ rec.property.title }}</div>
                     <div class="ab-rec-meta">{{ rec.property.district }} · ¥{{ rec.property.price_monthly }}/月</div>
                     <div class="ab-rec-acts">
-                      <el-button size="small" text type="primary" @click="goLink(`/room/${rec.property_id}`)">
+                      <el-button size="small" text type="primary" @click="goLink(`/building/${rec.property_id}`)">
                         详情
                       </el-button>
                       <el-tooltip

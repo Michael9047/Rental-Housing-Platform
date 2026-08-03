@@ -91,7 +91,6 @@ import { useBookingPersonalInfoStore } from '@/stores/bookingPersonalInfo'
 import { useAuthStore } from '@/stores/auth'
 import { bookingPersonalInfoService } from '@/services/bookingPersonalInfo'
 import { bookingDraftService } from '@/services/bookingDraft'
-import { extractErrorMessage } from '@/services/api'
 import { normalizePinyin, requiredFields, validatePersonalInfo, validatePersonalInfoField, type PersonalInfoField } from '@/utils/personalInfoValidation'
 import { restoreLegacyAddress } from '@/types/address'
 
@@ -119,30 +118,10 @@ function disableBirthDate(date: Date) { return date > new Date() }
 
 function fillFromAccount() {
   const user = authStore.user
-  // 先尝试从 Profile 页面保存的个人信息读取
-  try {
-    const saved = localStorage.getItem('user_profile_info')
-    if (saved) {
-      const profile = JSON.parse(saved)
-      if (profile.chinese_name && !form.chinese_name) form.chinese_name = profile.chinese_name
-      if (profile.given_name_pinyin && !form.given_name_pinyin) form.given_name_pinyin = profile.given_name_pinyin
-      if (profile.surname_pinyin && !form.surname_pinyin) form.surname_pinyin = profile.surname_pinyin
-      if (profile.birth_date && !form.birth_date) form.birth_date = profile.birth_date
-      if (profile.gender && !form.gender) form.gender = profile.gender
-      if (profile.phone && !form.phone) form.phone = profile.phone.replace(/\D/g, '')
-      if (profile.email && !form.email) form.email = profile.email
-      if (profile.nationality && !form.nationality) form.nationality = profile.nationality
-      if (profile.school_name && !form.school_name) form.school_name = profile.school_name
-      if (profile.enrollment_grade && !form.enrollment_grade) form.enrollment_grade = profile.enrollment_grade
-      if (profile.major_english && !form.major_english) form.major_english = profile.major_english
-    }
-  } catch { /* ignore */ }
-  // 兜底：从登录用户信息补充
-  if (user) {
-    if (!form.chinese_name) form.chinese_name = user.username || ''
-    if (!form.phone) form.phone = user.phone?.replace(/\D/g, '') || ''
-    if (!form.email) form.email = user.email || ''
-  }
+  if (!user) return
+  if (!form.chinese_name) form.chinese_name = user.username || ''
+  if (!form.phone) form.phone = user.phone?.replace(/\D/g, '') || ''
+  if (!form.email) form.email = user.email || ''
   ElMessage.success('已从账户资料填充可用信息')
 }
 
@@ -150,22 +129,28 @@ async function submitForm() {
   submitted.value = true
   Object.assign(errors, validatePersonalInfo(form))
   requiredFields.forEach((field) => touched.add(field))
-  if (requiredFields.some((field) => errors[field])) {
-    const firstError = requiredFields.find((f) => errors[f])
-    ElMessage.warning(`请检查：${firstError ? errors[firstError] : '有必填项未通过校验'}`)
+  const failed = requiredFields.filter((field) => errors[field])
+  if (failed.length > 0) {
+    console.error('[PersonalInfo] validation failed:', failed, errors)
+    submitError.value = `请填写所有必填项（${failed.join('、')}）`
+    window.scrollTo({ top: 0, behavior: 'smooth' })
     return
   }
   submitting.value = true
   submitError.value = ''
   try {
-    await bookingPersonalInfoService.validate({ ...form })
-    await bookingDraftService.save(Number(route.params.propertyId), {
+    console.log('[PersonalInfo] submitting form:', { ...form })
+    const validateResp = await bookingPersonalInfoService.validate({ ...form })
+    console.log('[PersonalInfo] validate OK:', validateResp)
+    const saveResp = await bookingDraftService.save(Number(route.params.propertyId), {
       personal_info: { ...form },
       current_step: 'emergency_contact',
     })
+    console.log('[PersonalInfo] draft saved:', saveResp)
     router.push({ name: 'booking-emergency-contact', params: { propertyId: String(route.params.propertyId) } })
   } catch (error: any) {
-    submitError.value = extractErrorMessage(error) || '个人信息校验失败，请检查后重试'
+    console.error('[PersonalInfo] submit error:', error?.response?.status, error?.response?.data)
+    submitError.value = error?.response?.data?.detail?.[0]?.msg || error?.response?.data?.detail || '个人信息校验失败，请检查后重试'
   } finally {
     submitting.value = false
   }

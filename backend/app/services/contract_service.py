@@ -42,7 +42,7 @@ class ContractService:
 
     async def _build_source_snapshot(self, booking: Booking) -> dict:
         tenant = await self.session.get(User, booking.tenant_id)
-        landlord = await self.session.get(User, booking.landlord_id)
+        landlord = await self.session.get(User, booking.bm_id)
         property_obj = await self.session.get(Property, booking.property_id)
         if not property_obj:
             raise ValueError("Property not found")
@@ -114,7 +114,7 @@ class ContractService:
         return {
             "development_notice": DEVELOPMENT_NOTICE,
             "order_number": str(booking.id),
-            "provider_name": landlord.username if landlord else f"Provider account #{booking.landlord_id}",
+            "provider_name": landlord.username if landlord else f"Provider account #{booking.bm_id}",
             "platform_name": PLATFORM_NAME,
             "platform_role": PLATFORM_ROLE,
             "tenant_name_cn": tenant_cn,

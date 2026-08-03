@@ -13,11 +13,7 @@ export default defineConfig({
     port: 5173,
     proxy: {
       '/api': {
-<<<<<<< HEAD
-        target: 'http://localhost:8002',
-=======
-        target: 'http://localhost:8000',
->>>>>>> merge/pr33-pr35
+        target: 'http://localhost:8001',
         changeOrigin: true,
       },
     },

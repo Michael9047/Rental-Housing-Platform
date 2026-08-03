@@ -42,7 +42,7 @@ async def landlord_dashboard(
     # 预约统计
     pending_bookings = await session.scalar(
         select(func.count(Booking.id)).where(
-            Booking.landlord_id == current_user.id, Booking.status == BookingStatus.pending
+            Booking.bm_id == current_user.id, Booking.status == BookingStatus.pending
         )
     )
 

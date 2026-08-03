@@ -64,6 +64,9 @@ async def search_unit_types(
     sort_by: str | None = Query(default=None),
     limit: int = Query(default=200, ge=1, le=500),
     status: str | None = Query(default=None),
+    near_lat: float | None = Query(default=None, description="近距搜索：中心点纬度"),
+    near_lng: float | None = Query(default=None, description="近距搜索：中心点经度"),
+    near_distance_km: float | None = Query(default=None, ge=0.1, le=50, description="近距搜索：半径(km)，默认5"),
 ):
     """搜索户型 — 兼容前端旧 /properties/search 调用"""
     from app.services.property_service import PropertyService
@@ -73,6 +76,7 @@ async def search_unit_types(
         bedrooms=bedrooms, bathrooms=bathrooms, property_type=property_type,
         amenities=amenities, area_min=area_min, area_max=area_max,
         sort_by=sort_by, limit=limit, status=status,
+        near_lat=near_lat, near_lng=near_lng, near_distance_km=near_distance_km,
     )
     items = []
     for unit_type, similarity in results:

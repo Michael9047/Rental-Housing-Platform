@@ -1,5 +1,12 @@
 <template>
   <div class="search-page">
+    <!-- 大学模式顶部横幅 -->
+    <div v-if="searchMode === 'uni' && uniName" class="school-banner uni-banner">
+      <el-icon :size="22"><School /></el-icon>
+      <h1>靠近 {{ uniName }} 的房源</h1>
+      <span class="school-count">共 {{ searchResults.length }} 套</span>
+    </div>
+
     <!-- 学校模式顶部横幅 -->
     <div v-if="searchMode === 'school' && schoolName" class="school-banner">
       <el-icon :size="22"><School /></el-icon>
@@ -36,28 +43,43 @@
           </el-button>
         </div>
 
-        <!-- ① 学校/公寓搜索 -->
-        <div class="filter-block">
-          <div class="filter-block-title">学校 / 公寓</div>
-          <el-select
-            v-model="filters.institute_id"
-            placeholder="搜索学校或公寓名称"
-            clearable
-            filterable
-            remote
-            :remote-method="searchInstitutes"
-            :loading="instituteLoading"
-            style="width:100%"
-            @change="onInstituteChange"
-          >
-            <el-option
-              v-for="inst in instituteOptions"
-              :key="inst.id"
-              :label="inst.name"
-              :value="inst.id"
-            />
-          </el-select>
-        </div>
+        <!-- ① 学校 / 半径 -->
+        <template v-if="searchMode === 'uni' && uniName">
+          <!-- 学校模式：显示学校名 + 半径 -->
+          <div class="filter-block">
+            <div class="filter-block-title">🎓 {{ uniName }}</div>
+            <el-button size="small" text type="danger" @click="clearSchool">✕ 清除学校</el-button>
+          </div>
+          <div class="filter-block">
+            <div class="filter-block-title">搜索半径：{{ uniRadius }}km</div>
+            <el-slider v-model="uniRadius" :min="1" :max="20" :step="1" show-input @change="doSearch" />
+          </div>
+        </template>
+        <template v-else>
+          <!-- 地区模式：学校选择器 + 半径 -->
+          <div class="filter-block">
+            <div class="filter-block-title">学校</div>
+            <el-select
+              v-model="selectedUniId"
+              placeholder="输入学校名搜索"
+              clearable
+              filterable
+              remote
+              :remote-method="searchSchools"
+              :loading="schoolLoading"
+              style="width:100%"
+              @change="onSchoolSelect"
+              @visible-change="(v:boolean) => { if(v) searchSchools('') }"
+            >
+              <el-option v-for="s in schoolOptions" :key="s.id"
+                :label="(s.name_cn||'') + ' / ' + s.name" :value="s.id" />
+            </el-select>
+          </div>
+          <div class="filter-block">
+            <div class="filter-block-title">搜索半径：{{ uniRadius }}km</div>
+            <el-slider v-model="uniRadius" :min="1" :max="20" :step="1" show-input @change="doSearch" />
+          </div>
+        </template>
 
         <!-- ② 月租金范围 -->
         <div class="filter-block">
@@ -137,24 +159,8 @@
           <div class="map-body">
             <!-- 房源列表列 -->
             <div class="map-property-col" ref="propertyListCol">
-              <div
-                v-for="p in filteredAndSortedResults" :key="p.id"
-                :id="'prop-' + p.id"
-                class="map-property-card"
-              >
-                <div class="property-card" :class="{ 'map-card-highlight': highlightedId === p.id }" @click="flyToProperty(p)">
-                  <div class="card-image">
-                    <img v-if="p.images?.length" :src="p.images[0].filename?.startsWith('http')?p.images[0].filename:'/api/v1/uploads/'+p.images[0].filename" alt="" class="property-img" />
-                    <div v-else class="image-placeholder"><span>暂无图片</span></div>
-                    <span class="district-badge">{{ p.district }}</span>
-                  </div>
-                  <div class="card-body">
-                    <h3 class="card-title">{{ p.title }}</h3>
-                    <div class="card-footer">
-                      <span class="card-price">¥{{ Number(p.price_monthly).toLocaleString() }}/月</span>
-                    </div>
-                  </div>
-                </div>
+              <div v-for="p in filteredAndSortedResults" :key="p.id" :id="'prop-'+p.id" class="map-property-card">
+                <PropertyCard :property="p" :commute="commuteMap[p.id]" :no-navigate="true" @click="flyToProperty(p)" />
               </div>
             </div>
             <!-- 地图 -->
@@ -165,25 +171,7 @@
         <!-- ═══ 网格 / 列表模式 ═══ -->
         <template v-else>
           <div :class="viewMode === 'grid' ? 'card-grid' : 'card-list'">
-            <!-- 内联卡片替代 PropertyCard，避免组件依赖崩溃 -->
-            <div v-for="p in pagedResults" :key="p.id" class="property-card" @click="$router.push({ name: 'building-detail', params: { id: p.institute_id || p.id } })">
-              <div class="card-image">
-                <img v-if="p.images?.length" :src="p.images[0].filename?.startsWith('http')?p.images[0].filename:'/api/v1/uploads/'+p.images[0].filename" alt="" class="property-img" />
-                <div v-else class="image-placeholder"><span>暂无图片</span></div>
-                <span class="district-badge">{{ p.district }}</span>
-              </div>
-              <div class="card-body">
-                <h3 class="card-title">{{ p.title }}</h3>
-                <div class="card-tags">
-                  <el-tag size="small" type="info">{{ p.property_type || '1-bed' }}</el-tag>
-                  <el-tag size="small">{{ p.bedrooms }}室{{ p.bathrooms }}卫</el-tag>
-                  <el-tag v-if="p.area_sqm" size="small" type="info">{{ p.area_sqm }}㎡</el-tag>
-                </div>
-                <div class="card-footer">
-                  <span class="card-price">¥{{ Number(p.price_monthly).toLocaleString() }}/月</span>
-                </div>
-              </div>
-            </div>
+            <PropertyCard v-for="p in pagedResults" :key="p.id" :property="p" :commute="commuteMap[p.id]" :show-similarity="false" />
           </div>
           <div v-if="searchResults.length > pageSize" class="pag">
             <el-pagination
@@ -209,11 +197,13 @@
 import { ref, reactive, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Search, School, Grid, List, Location, Loading, ChatDotRound } from '@element-plus/icons-vue'
+
 import { usePropertyStore } from '@/stores/property'
 import { storeToRefs } from 'pinia'
 interface CommuteInfo { dist_km: number; walk_min: number; bike_min: number; drive_min: number; transit_min: number }
 // PropertyCard 替换，避免组件依赖崩溃
 import BookingDateDialog from '@/components/BookingDateDialog.vue'
+import PropertyCard from '@/components/PropertyCard.vue'
 import type { Property, PropertySearchParams, PropertyType } from '@/types/property'
 import { commuteService } from '@/services/commute'
 import api from '@/services/api'
@@ -241,9 +231,47 @@ const propertyStore = usePropertyStore()
 const { searchResults, loading } = storeToRefs(propertyStore)
 
 // ── 模式 ──
-const searchMode = ref<'city' | 'school' | 'agent'>('city')
+const searchMode = ref<'city' | 'school' | 'uni' | 'agent'>('city')
 const schoolId = ref<number | null>(null)
 const schoolName = ref('')
+const uniId = ref<number | null>(null)
+const uniName = ref('')
+const uniLat = ref<number | null>(null)
+const uniLng = ref<number | null>(null)
+const uniRadius = ref<number>(5)
+
+const selectedUniId = ref<number | null>(null)
+const schoolOptions = ref<any[]>([])
+const schoolLoading = ref(false)
+
+async function searchSchools(q: string) {
+  if (!q || q.length < 1) q = ''
+  schoolLoading.value = true
+  try {
+    const r = await import('@/services/api').then(m => m.default.get('/search/schools', { params: { q, limit: 20 } }))
+    schoolOptions.value = r.data || []
+  } catch { schoolOptions.value = [] }
+  finally { schoolLoading.value = false }
+}
+
+function onSchoolSelect(schoolId: number | null) {
+  if (!schoolId) {
+    uniId.value = null; uniName.value = ''; uniLat.value = null; uniLng.value = null; searchMode.value = 'city'
+  } else {
+    const s = schoolOptions.value.find((u: any) => u.id === schoolId)
+    if (s) {
+      uniId.value = s.id; uniName.value = s.name_cn || s.name; uniLat.value = s.latitude; uniLng.value = s.longitude
+      searchMode.value = 'uni'
+    }
+  }
+  doSearch()
+}
+
+function clearSchool() {
+  uniId.value = null; uniName.value = ''; uniLat.value = null; uniLng.value = null
+  selectedUniId.value = null; schoolOptions.value = []; searchMode.value = 'city'
+  doSearch()
+}
 const viewMode = ref<'grid' | 'list'>('grid')
 /** 是否来自 Agent 推荐（显示 AI 推荐横幅） */
 const fromAgent = ref(false)
@@ -284,6 +312,7 @@ async function initMap() {
   mapInstance = new google.maps.Map(mapContainer.value, {
     zoom: 12,
     center: { lat: 1.3521, lng: 103.8198 },
+    gestureHandling: 'greedy',
     mapTypeControl: false,
     streetViewControl: false,
     fullscreenControl: true,
@@ -303,6 +332,26 @@ function renderMarkers() {
   const bounds = new google.maps.LatLngBounds()
   let hasValid = false
 
+  // 学校模式：标注大学位置（蓝色圆形+标签）
+  if (uniLat.value != null && uniLng.value != null && uniName.value) {
+    const uniPos = { lat: uniLat.value, lng: uniLng.value }
+    const uniMarker = new google.maps.Marker({
+      position: uniPos, map: mapInstance, title: uniName.value,
+      icon: {
+        path: google.maps.SymbolPath.CIRCLE,
+        scale: 16, fillColor: '#4285F4', fillOpacity: 1,
+        strokeColor: '#fff', strokeWeight: 2,
+      },
+      label: { text: '🏫', fontSize: '16px' },
+    })
+    uniMarker.addListener('click', () => {
+      infoWindow?.setContent('<b>'+uniName.value+'</b>'); infoWindow?.open(mapInstance, uniMarker)
+    })
+    markers.push(uniMarker)
+    bounds.extend(uniPos)
+    hasValid = true
+  }
+
   for (const p of filteredAndSortedResults.value) {
     const lat = Number((p as any).latitude)
     const lng = Number((p as any).longitude)
@@ -313,14 +362,15 @@ function renderMarkers() {
     const marker = new google.maps.Marker({
       position: pos,
       map: mapInstance,
-      title: (p as any).title || '',
+      title: (p as any).name || (p as any).title || '',
       animation: google.maps.Animation.DROP,
     })
 
+    const name = (p as any).name || (p as any).title || ''
+    const rent = (p as any).min_rent ?? (p as any).base_rent ?? (p as any).price_monthly ?? 0
     const content = `<div style="max-width:200px;font-size:13px">
-      <strong>${(p as any).title || ''}</strong><br/>
-      ${(p as any).district || ''}<br/>
-      ¥${Number((p as any).price_monthly).toLocaleString()}/月 · ${(p as any).bedrooms || 0}室
+      <strong>${name}</strong><br/>
+      ¥${Number(rent).toLocaleString()}/月起
     </div>`
 
     marker.addListener('click', () => {
@@ -435,12 +485,23 @@ const commuteLoading = ref(false)
 
 /** 异步获取真实通勤时间（API → Haversine 兜底） */
 async function fetchCommuteTimes() {
+  // 大学模式：用 uniLat/Lng 作为起点
+  if (searchMode.value === 'uni' && uniLat.value != null && uniLng.value != null) {
+    const origin = { lat: uniLat.value, lng: uniLng.value, country: 'SG', city: 'Singapore' }
+    await _calcCommute(origin)
+    return
+  }
   if (searchMode.value !== 'school' || !schoolId.value) {
     commuteMap.value = {}
     return
   }
   const school = SCHOOL_INFO[schoolId.value]
   if (!school) { commuteMap.value = {}; return }
+  await _calcCommute(school)
+}
+
+async function _calcCommute(origin: { lat: number; lng: number; country: string; city: string }) {
+  // collect destinations...
 
   // 收集有坐标的房源
   const destinations: { id: number; lat: number; lng: number }[] = []
@@ -457,7 +518,7 @@ async function fetchCommuteTimes() {
   // 第一步：立即用 Haversine 填充，保证 UI 不空白
   const fallbackMap: Record<number, CommuteInfo> = {}
   for (const d of destinations) {
-    const km = haversineKm(school.lat, school.lng, d.lat, d.lng)
+    const km = haversineKm(origin.lat, origin.lng, d.lat, d.lng)
     fallbackMap[d.id] = estimateCommuteFallback(km)
   }
   commuteMap.value = fallbackMap
@@ -466,11 +527,11 @@ async function fetchCommuteTimes() {
   commuteLoading.value = true
   try {
     const resp = await commuteService.calculate({
-      origin_lat: school.lat,
-      origin_lng: school.lng,
-      destinations: destinations.slice(0, 30), // 最多 30 个
-      country: school.country,
-      city: school.city,
+      origin_lat: origin.lat,
+      origin_lng: origin.lng,
+      destinations: destinations.slice(0, 30),
+      country: origin.country,
+      city: origin.city,
     })
     // 用 API 结果更新
     const apiMap: Record<number, CommuteInfo> = {}
@@ -686,7 +747,7 @@ watch(filteredAndSortedResults, (results) => {
 })
 
 // ── 搜索 ──
-function doSearch() {
+async function doSearch() {
   currentPage.value = 1
   const p: PropertySearchParams = {}
 
@@ -694,10 +755,27 @@ function doSearch() {
   else if (filters.district) p.district = filters.district
 
   if (filters.q) p.q = filters.q
+  // 文字搜索→geocode→自动切换为学校模式
+  if (filters.q && !uniLat.value) {
+    try {
+      const geo = await import('@/services/property').then(m => m.propertyService.geocodeAddress(filters.q!))
+      if (geo.latitude && geo.longitude) {
+        uniLat.value = geo.latitude; uniLng.value = geo.longitude
+        uniName.value = geo.formatted_address || (geo.city ? geo.city + ' · ' + (geo.district || '') : filters.q)
+        searchMode.value = 'uni'
+      }
+    } catch { /* ignore */ }
+  }
   if (filters.price_min != null) p.price_min = filters.price_min
   if (filters.price_max != null) p.price_max = filters.price_max
   if (filters.property_type) p.property_type = filters.property_type as PropertyType
   if (filters.amenities?.length) p.amenities = filters.amenities
+
+  // 半径搜索：大学坐标 → 地图中心
+  if (uniLat.value != null && uniLng.value != null) {
+    p.near_lat = uniLat.value; p.near_lng = uniLng.value
+    p.near_distance_km = uniRadius.value
+  }
 
   // 排序（非通勤排序发送到后端）
   if (sortBy.value && !['commute_time', 'commute_dist'].includes(sortBy.value)) {
@@ -709,10 +787,21 @@ function doSearch() {
   propertyStore.fetchSearch(p)
 }
 
+/** 半径变更 → 重新搜索 */
+function onRadiusChange() {
+  // 更新 URL 并重新搜索
+  if (uniId.value) {
+    router.replace({
+      path: '/search',
+      query: { uni_id: String(uniId.value), radius: String(uniRadius.value), uni_name: uniName.value }
+    })
+  }
+  doSearch()
+}
+
 /** 通勤筛选变更（纯客户端筛选，不需要重新请求后端） */
 function onCommuteFilterChange() {
-  currentPage.value = 1 // 重置分页
-  // filteredAndSortedResults 会自动响应 commuteTime/distanceFilter/commuteMap 变化
+  currentPage.value = 1
 }
 
 /** 排序变更 — 后端排序需重新请求，客户端排序仅重置分页 */
@@ -734,7 +823,7 @@ function resetFilters() {
 }
 
 // ── 路由初始化 ──
-function initFromRoute() {
+async function initFromRoute() {
   const q = route.query
 
   // 优先检查是否来自 Agent 推荐（sessionStorage 中预存了结果）
@@ -749,23 +838,39 @@ function initFromRoute() {
         fromAgent.value = true
         agentContext.value = ctx
         searchMode.value = 'agent'
-        // 预填筛选条件
         if (ctx?.filters) {
           const f = ctx.filters as Record<string, unknown>
           if (f.country) filters.country = f.country as string
           if (f.district) filters.district = f.district as string
         }
       }
-    } catch {
-      // 解析失败，回退到正常搜索
-    }
-    // 消费后清除（避免刷新页面重复加载）
+    } catch { /* fallback */ }
     sessionStorage.removeItem('agentSearchResults')
     sessionStorage.removeItem('agentSearchContext')
     return
   }
 
-  if (q.school_id) {
+  // 大学近距搜索
+  if (q.uni_id) {
+    uniId.value = Number(q.uni_id)
+    uniName.value = (q.uni_name as string) || ''
+    uniRadius.value = Number(q.radius) || 5
+    searchMode.value = 'uni'
+    filters.district = undefined
+    filters.institute_id = undefined
+
+    // 从 API 获取大学坐标
+    try {
+      const resp = await api.get(`/universities?q=&limit=50`)
+      const unis: any[] = resp.data || []
+      const found = unis.find((u: any) => u.id === uniId.value)
+      if (found?.latitude && found?.longitude) {
+        uniLat.value = found.latitude
+        uniLng.value = found.longitude
+        uniName.value = found.name_cn || found.name || uniName.value
+      }
+    } catch { /* fallback: use hardcoded */ }
+  } else if (q.school_id) {
     searchMode.value = 'school'; schoolId.value = Number(q.school_id)
     filters.institute_id = schoolId.value; filters.district = undefined
     schoolName.value = SCHOOL_INFO[schoolId.value]?.name || ''
@@ -778,7 +883,6 @@ function initFromRoute() {
     filters.institute_id = undefined; schoolName.value = ''
   }
   if (q.q) filters.q = q.q as string
-  // 来自 AI 搜索的精确筛选条件
   if (q.price_min) filters.price_min = Number(q.price_min) || undefined
   if (q.price_max) filters.price_max = Number(q.price_max) || undefined
   if (q.bedrooms) filters.bedrooms = Number(q.bedrooms) || undefined
@@ -786,20 +890,20 @@ function initFromRoute() {
   doSearch()
 }
 onMounted(() => {
-  document.documentElement.classList.add('search-page-active')
+
   initFromRoute()
 })
 onUnmounted(() => {
-  document.documentElement.classList.remove('search-page-active')
+
   destroyMap()
 })
-watch(() => route.query, () => initFromRoute())
+watch(() => route.query, () => { initFromRoute() })
 </script>
 
 <style scoped>
 .search-page {
-  height: calc(100vh - 64px - 24px); /* header 64px + layout-main padding-top 24px */
-  margin: 0; padding: 0 16px 8px 16px;
+  height: calc(100vh - 108px);
+  margin: 0; padding: 0 16px;
   display: flex; flex-direction: column; overflow: hidden;
 }
 
@@ -811,6 +915,10 @@ watch(() => route.query, () => initFromRoute())
 }
 .school-banner h1 { font-size: 20px; font-weight: 700; color: var(--text-primary); margin: 0; }
 .school-count { font-size: 13px; color: var(--text-muted); background: var(--bg); padding: 2px 12px; border-radius: 20px; }
+.uni-banner { flex-wrap: wrap; gap: 8px; }
+.radius-slider { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+.radius-label { font-size: 12px; color: var(--text-muted); }
+.radius-value { font-size: 13px; font-weight: 600; color: var(--primary); min-width: 36px; }
 
 /* Agent 推荐横幅 */
 .agent-banner {
@@ -895,8 +1003,9 @@ watch(() => route.query, () => initFromRoute())
 .results-area {
   flex: 1; min-width: 0;
   display: flex; flex-direction: column;
-  overflow-y: auto; /* 网格/列表模式下内部滚动 */
+  overflow-y: auto;
   overflow-x: hidden;
+  padding-bottom: 60px;
 }
 .results-area.map-layout { overflow-y: hidden; } /* 地图模式由 map-body 控制滚动 */
 .results-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; padding: 0 4px; flex-shrink: 0; }
@@ -983,10 +1092,4 @@ watch(() => route.query, () => initFromRoute())
 </style>
 
 <style>
-/* 搜索页全局样式：锁定视口，阻止 body 滚动 */
-html.search-page-active,
-html.search-page-active body {
-  overflow: hidden;
-  height: 100%;
-}
 </style>

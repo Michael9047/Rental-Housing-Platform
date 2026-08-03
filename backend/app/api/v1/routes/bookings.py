@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Request, status
+from starlette.responses import JSONResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -33,7 +34,7 @@ async def get_booking_flow_draft(
         BookingFlowDraft.unit_type_id == unit_type_id,
     ))
     if not draft:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Booking draft not found")
+        return JSONResponse(content=None, status_code=200)
     return draft
 
 
@@ -270,7 +271,7 @@ async def get_booking(
     if not booking:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Booking not found")
 
-    if current_user.id not in {booking.tenant_id, booking.landlord_id} and current_user.role != UserRole.admin:
+    if current_user.id not in {booking.tenant_id, booking.bm_id} and current_user.role != UserRole.admin:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
 
     return booking
@@ -294,7 +295,7 @@ async def update_booking_status(
     if not booking:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Booking not found")
 
-    if current_user.id != booking.landlord_id and current_user.role != UserRole.admin:
+    if current_user.id != booking.bm_id and current_user.role != UserRole.admin:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only the landlord can update this booking")
 
     updated = await booking_service.update_status(booking_id, update_in.status)

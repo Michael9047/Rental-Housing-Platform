@@ -60,10 +60,6 @@
           <el-icon><Grid /></el-icon>
           <span>户型管理</span>
         </el-menu-item>
-        <el-menu-item index="/rooms/manage">
-          <el-icon><OfficeBuilding /></el-icon>
-          <span>房间管理</span>
-        </el-menu-item>
         <el-menu-item index="/property/history">
           <el-icon><Clock /></el-icon>
           <span>修改记录</span>
@@ -129,8 +125,6 @@ const activeMenu = computed(() => {
   if (path.startsWith('/bookings/')) return path
   if (path.startsWith('/buildings')) return '/buildings'
   if (path.startsWith('/unit-type')) return path.startsWith('/unit-type/create') ? '/unit-type/create' : '/unit-type/manage'
-  if (path.startsWith('/rooms/')) return '/rooms/manage'
-  if (path.startsWith('/room/')) return '/room/import'
   if (path.startsWith('/tenants')) return '/tenants'
   if (path.startsWith('/orders')) return '/orders'
   if (path.startsWith('/workspace')) return '/workspace'

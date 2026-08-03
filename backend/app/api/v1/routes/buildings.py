@@ -42,6 +42,123 @@ def _validate_phone(phone: str | None) -> str | None:
     )
 
 
+def _build_card(b: Institute) -> dict:
+    """构建公寓卡片数据 — 含价格区间、图片等展示字段"""
+    uts = b.unit_types or []
+    available_uts = [ut for ut in uts if ut.deleted_at is None and ut.status.value == "available"]
+    prices = [float(ut.base_rent) for ut in available_uts if ut.base_rent]
+    min_rent = min(prices) if prices else None
+    max_rent = max(prices) if prices else None
+    primary = None
+    for img in sorted(b.images or [], key=lambda x: x.sort_order):
+        if img.is_primary:
+            primary = {"id": img.id, "filename": img.filename, "is_primary": True}
+            break
+    if not primary and b.images:
+        img = sorted(b.images, key=lambda x: x.sort_order)[0]
+        primary = {"id": img.id, "filename": img.filename, "is_primary": img.is_primary}
+    # 户型类型汇总
+    pt_set = set(getattr(ut, 'property_type', None) for ut in available_uts)
+    pt_vals = [v for v in pt_set if v]
+    property_type = pt_vals[0] if len(pt_vals) == 1 else None
+    # 户型标签列表（如 ["studio","1bed","2bed"]）
+    pt_labels: dict = {"studio":"Studio","ensuite":"Ensuite","1bed":"一室","2bed":"两室","3bed":"三室","4bed":"四室","5bed+":"五室+","shared":"合租"}
+    unit_type_tags = [pt_labels.get(v.value if hasattr(v,'value') else str(v), str(v)) for v in pt_set if v]
+    return {
+        "id": b.id, "name": b.name, "name_cn": b.name_cn, "address": b.address,
+        "country": b.country, "city": b.city, "district": b.district,
+        "logo_url": b.logo_url, "description": b.description,
+        "latitude": float(b.latitude) if b.latitude else None,
+        "longitude": float(b.longitude) if b.longitude else None,
+        "amenities": b.amenities,
+        "female_only": bool(b.female_only) if b.female_only is not None else False,
+        "couples_allowed": bool(b.couples_allowed) if b.couples_allowed is not None else False,
+        "unit_type_count": len(available_uts),
+        "unit_type_tags": unit_type_tags,
+        "min_rent": min_rent, "max_rent": max_rent,
+        "avg_bedrooms": 0,
+        "property_type": property_type.value if hasattr(property_type, 'value') else str(property_type) if property_type else None,
+        "primary_image": primary,
+        "images": [{"id": img.id, "filename": img.filename, "original_name": img.original_name,
+                     "sort_order": img.sort_order, "is_primary": img.is_primary}
+                   for img in sorted(b.images or [], key=lambda x: x.sort_order)],
+        "institute_id": b.id,
+        "institute_name": b.name,
+    }
+
+
+from math import radians, cos, sin, asin, sqrt as _sqrt
+
+def _haversine(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
+    """Haversine 距离（km）"""
+    dlat, dlng = radians(lat2 - lat1), radians(lng2 - lng1)
+    a = sin(dlat / 2) ** 2 + cos(radians(lat1)) * cos(radians(lat2)) * sin(dlng / 2) ** 2
+    return 6371 * 2 * asin(_sqrt(a))
+
+async def _search_buildings(
+    session: AsyncSession,
+    q: str | None = None,
+    district: str | None = None,
+    country: str | None = None,
+    city: str | None = None,
+    price_min: int | None = None,
+    price_max: int | None = None,
+    property_type: str | None = None,
+    sort_by: str | None = None,
+    near_lat: float | None = None,
+    near_lng: float | None = None,
+    near_distance_km: float | None = 5.0,
+    skip: int = 0,
+    limit: int = 50,
+) -> list[dict]:
+    stmt = (select(Institute)
+            .options(selectinload(Institute.images))
+            .options(selectinload(Institute.unit_types))
+            .where(Institute.status == InstituteStatus.active))
+    if q:
+        stmt = stmt.where(or_(
+            Institute.name.ilike(f"%{q}%"),
+            Institute.name_cn.ilike(f"%{q}%"),
+            Institute.address.ilike(f"%{q}%"),
+        ))
+    if district:
+        stmt = stmt.where(Institute.district.ilike(f"%{district}%"))
+    if country:
+        stmt = stmt.where(Institute.country == country)
+    if city:
+        stmt = stmt.where(Institute.city.ilike(f"%{city}%"))
+    if sort_by == 'price_asc':
+        stmt = stmt.order_by(Institute.id.asc())
+    elif sort_by == 'price_desc':
+        stmt = stmt.order_by(Institute.id.desc())
+    elif sort_by == 'created_at':
+        stmt = stmt.order_by(Institute.created_at.desc())
+    else:
+        stmt = stmt.order_by(Institute.id.desc())
+    stmt = stmt.offset(skip).limit(limit if limit <= 200 else 200)
+    result = await session.scalars(stmt)
+    cards = [_build_card(b) for b in result]
+
+    # 客户端过滤（价格 / 户型 / 地理位置）
+    if price_min is not None:
+        cards = [c for c in cards if c.get("min_rent") is not None and c["min_rent"] >= price_min]
+    if price_max is not None:
+        cards = [c for c in cards if c.get("min_rent") is not None and c["min_rent"] <= price_max]
+    if property_type:
+        cards = [c for c in cards if c.get("property_type") == property_type]
+    if near_lat is not None and near_lng is not None and near_distance_km:
+        cards = [c for c in cards if c.get("latitude") and c.get("longitude")
+                 and _haversine(near_lat, near_lng, float(c["latitude"]), float(c["longitude"])) <= near_distance_km]
+
+    # 按价格排序（需在过滤后）
+    if sort_by == 'price_asc':
+        cards.sort(key=lambda c: c.get("min_rent") or 0)
+    elif sort_by == 'price_desc':
+        cards.sort(key=lambda c: c.get("min_rent") or 0, reverse=True)
+
+    return cards
+
+
 @router.get("/public")
 async def list_public_buildings(
     session: AsyncSession = Depends(get_db_session),
@@ -49,30 +166,33 @@ async def list_public_buildings(
     limit: int = Query(default=50, ge=1, le=200),
 ) -> list[dict]:
     """公开端点——首页展示公寓列表，无需登录"""
-    stmt = (select(Institute)
-            .options(selectinload(Institute.images))
-            .options(selectinload(Institute.unit_types))
-            .where(Institute.status == InstituteStatus.active)
-            .order_by(Institute.id.desc())
-            .offset(skip).limit(limit))
-    result = await session.scalars(stmt)
-    buildings = []
-    for b in result:
-        buildings.append({
-            "id": b.id, "name": b.name, "name_cn": b.name_cn, "address": b.address,
-            "logo_url": b.logo_url, "description": b.description,
-            "latitude": float(b.latitude) if b.latitude else None,
-            "longitude": float(b.longitude) if b.longitude else None,
-            "amenities": b.amenities,
-            "female_only": bool(b.female_only) if b.female_only is not None else False,
-            "couples_allowed": bool(b.couples_allowed) if b.couples_allowed is not None else False,
-            "unit_type_count": len(b.unit_types) if b.unit_types else 0,
-            "primary_image": next(({
-                "id": img.id, "filename": img.filename,
-                "is_primary": img.is_primary,
-            } for img in sorted(b.images or [], key=lambda x: x.sort_order)), None),
-        })
-    return buildings
+    return await _search_buildings(session, skip=skip, limit=limit)
+
+
+@router.get("/public/search")
+async def search_public_buildings(
+    session: AsyncSession = Depends(get_db_session),
+    q: str | None = Query(default=None),
+    district: str | None = Query(default=None),
+    country: str | None = Query(default=None),
+    city: str | None = Query(default=None),
+    price_min: int | None = Query(default=None),
+    price_max: int | None = Query(default=None),
+    property_type: str | None = Query(default=None),
+    sort_by: str | None = Query(default=None),
+    near_lat: float | None = Query(default=None),
+    near_lng: float | None = Query(default=None),
+    near_distance_km: float | None = Query(default=5.0),
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=50, ge=1, le=200),
+) -> list[dict]:
+    """公开搜索——按名称/区域/价格/户型搜索公寓，返回卡片级数据"""
+    return await _search_buildings(
+        session, q=q, district=district, country=country, city=city,
+        price_min=price_min, price_max=price_max, property_type=property_type,
+        sort_by=sort_by, near_lat=near_lat, near_lng=near_lng,
+        near_distance_km=near_distance_km, skip=skip, limit=limit,
+    )
 
 
 @router.get("")

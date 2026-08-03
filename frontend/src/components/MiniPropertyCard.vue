@@ -104,7 +104,7 @@ const imageUrl = computed(() => {
 const inCart = computed(() => cartStore.has(props.property.id))
 
 function goDetail() {
-  router.push(`/room/${props.property.id}`)
+  router.push(`/building/${props.property.institute_id || props.property.id}`)
 }
 
 async function toggleCart() {

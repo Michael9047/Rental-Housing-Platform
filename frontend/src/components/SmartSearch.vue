@@ -63,6 +63,22 @@
               </div>
             </div>
           </div>
+
+          <div v-if="popularUniversities.length > 0" class="suggestion-section">
+            <div class="section-title">热门大学（按距离搜房）</div>
+            <div class="suggestion-grid">
+              <div
+                v-for="uni in popularUniversities.slice(0, 8)"
+                :key="uni.id"
+                class="suggestion-item uni-item"
+                @click="selectUniversity(uni)"
+              >
+                <el-icon><School /></el-icon>
+                <span class="item-name">{{ formatSchoolName(uni) }}</span>
+                <span class="item-count">5km</span>
+              </div>
+            </div>
+          </div>
         </template>
 
         <!-- 有输入时：显示匹配结果 -->
@@ -85,6 +101,22 @@
                   <el-icon><Location /></el-icon>
                   <span class="item-name">{{ city.name }}</span>
                   <span class="item-count">{{ city.count }}套</span>
+                </div>
+              </div>
+            </div>
+
+            <div v-if="matchingUniversities.length > 0" class="suggestion-section">
+              <div class="section-title">匹配大学（5km 内搜房）</div>
+              <div class="suggestion-list">
+                <div
+                  v-for="uni in matchingUniversities"
+                  :key="uni.id"
+                  class="suggestion-item uni-item"
+                  @click="selectUniversity(uni)"
+                >
+                  <el-icon><School /></el-icon>
+                  <span class="item-name">{{ formatSchoolName(uni) }}</span>
+                  <span class="item-count">{{ uni.city || '' }}</span>
                 </div>
               </div>
             </div>
@@ -161,6 +193,19 @@ interface SuggestionSchool {
   query: { school_id: number }
 }
 
+interface SuggestionUniversity {
+  type: 'university'
+  id: number
+  name: string
+  name_cn?: string | null
+  abbreviation?: string | null
+  city?: string | null
+  country?: string | null
+  latitude?: number | null
+  longitude?: number | null
+  query: { uni_id: number }
+}
+
 interface SuggestionProperty {
   type: 'property'
   id: number
@@ -195,8 +240,10 @@ const listening = ref(false)
 
 const popularCities = ref<SuggestionCity[]>([])
 const popularSchools = ref<SuggestionSchool[]>([])
+const popularUniversities = ref<SuggestionUniversity[]>([])
 const matchingCities = ref<SuggestionCity[]>([])
 const matchingSchools = ref<SuggestionSchool[]>([])
+const matchingUniversities = ref<SuggestionUniversity[]>([])
 const matchingProperties = ref<SuggestionProperty[]>([])
 
 let debounceTimer: ReturnType<typeof setTimeout> | null = null
@@ -220,10 +267,12 @@ async function fetchSuggestions(searchQuery?: string) {
     if (searchQuery) {
       matchingCities.value = data.matching_cities || []
       matchingSchools.value = data.matching_schools || []
+      matchingUniversities.value = data.matching_universities || []
       matchingProperties.value = data.matching_properties || []
     } else {
       popularCities.value = data.popular_cities || []
       popularSchools.value = data.popular_schools || []
+      popularUniversities.value = data.popular_universities || []
     }
   } catch (err) {
     console.error('获取搜索建议失败:', err)
@@ -271,11 +320,26 @@ function selectSchool(school: SuggestionSchool) {
   })
 }
 
+// 选择大学 — 按 5km 半径搜索
+function selectUniversity(uni: SuggestionUniversity) {
+  showSuggestions.value = false
+  query.value = ''
+  const name = uni.name_cn || uni.name
+  router.push({
+    path: '/search',
+    query: {
+      uni_id: String(uni.id),
+      radius: '5',
+      uni_name: name,
+    },
+  })
+}
+
 // 选择房源
 function selectProperty(prop: SuggestionProperty) {
   showSuggestions.value = false
   query.value = ''
-  router.push(`/room/${prop.id}`)
+  router.push(`/building/${prop.institute_id || prop.id}`)
 }
 
 // 回车搜索：有唯一匹配建议时自动选中，否则按原始文本搜索
