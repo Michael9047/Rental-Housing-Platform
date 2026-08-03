@@ -4,17 +4,7 @@
     <div v-if="searchMode === 'uni' && uniName" class="school-banner uni-banner">
       <el-icon :size="22"><School /></el-icon>
       <h1>靠近 {{ uniName }} 的房源</h1>
-      <span class="school-count">{{ uniRadius }}km 内 · {{ searchResults.length }} 套</span>
-      <div class="radius-slider">
-        <span class="radius-label">半径:</span>
-        <el-slider
-          v-model="uniRadius"
-          :min="1" :max="20" :step="1"
-          style="width:120px"
-          @change="onRadiusChange"
-        />
-        <span class="radius-value">{{ uniRadius }}km</span>
-      </div>
+      <span class="school-count">共 {{ searchResults.length }} 套</span>
     </div>
 
     <!-- 学校模式顶部横幅 -->
@@ -739,13 +729,14 @@ function doSearch() {
   if (filters.property_type) p.property_type = filters.property_type as PropertyType
   if (filters.amenities?.length) p.amenities = filters.amenities
 
-  // 地理位置搜索（始终使用搜索半径，大学模式优先用大学坐标）
-  const centerLat = uniLat.value ?? mapCenter?.value?.lat ?? null
-  const centerLng = uniLng.value ?? mapCenter?.value?.lng ?? null
-  if (centerLat != null && centerLng != null) {
-    p.near_lat = centerLat
-    p.near_lng = centerLng
-    p.near_distance_km = uniLat.value != null ? uniRadius.value : searchRadius.value
+  // 半径搜索：主动搜索或大学模式下生效，默认5km
+  const sRadius = uniLat.value != null ? uniRadius.value : searchRadius.value
+  const lat = uniLat.value ?? (mapInstance?.getCenter?.()?.lat() ?? null)
+  const lng = uniLng.value ?? (mapInstance?.getCenter?.()?.lng() ?? null)
+  if (lat != null && lng != null) {
+    p.near_lat = lat
+    p.near_lng = lng
+    p.near_distance_km = sRadius
   }
 
   // 排序（非通勤排序发送到后端）
