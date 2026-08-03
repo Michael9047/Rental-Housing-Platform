@@ -276,7 +276,10 @@ function initMap() {
   L.marker([building.value.latitude,building.value.longitude]).addTo(mapInstance)
 }
 
+let redirecting = false
+
 async function loadBuilding(buildingId: string) {
+  if (redirecting) return
   loading.value = true; error.value = ''
   try {
     const r = await api.get(`/buildings/${buildingId}/tenant-detail`)
@@ -287,6 +290,7 @@ async function loadBuilding(buildingId: string) {
       const utRes = await api.get(`/unit-types/${buildingId}`).catch(() => null)
       const instId = utRes?.data?.institute_id
       if (instId && instId !== Number(buildingId)) {
+        redirecting = true
         await router.replace({ path: `/building/${instId}` })
         return
       }
@@ -294,11 +298,15 @@ async function loadBuilding(buildingId: string) {
     } else {
       error.value = '加载失败'
     }
-  } finally { loading.value = false }
+  } finally {
+    if (!redirecting) loading.value = false
+  }
 }
 
-onMounted(() => loadBuilding(String(route.params.id)))
-watch(() => route.params.id, (newId) => { if (newId) loadBuilding(String(newId)) })
+onMounted(() => { redirecting = false; loadBuilding(String(route.params.id)) })
+watch(() => route.params.id, (newId) => {
+  if (newId && !redirecting) loadBuilding(String(newId))
+})
 </script>
 
 <style scoped>
