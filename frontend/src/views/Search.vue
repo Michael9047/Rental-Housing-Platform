@@ -150,24 +150,8 @@
           <div class="map-body">
             <!-- 房源列表列 -->
             <div class="map-property-col" ref="propertyListCol">
-              <div
-                v-for="p in filteredAndSortedResults" :key="p.id"
-                :id="'prop-' + p.id"
-                class="map-property-card"
-              >
-                <div class="property-card" :class="{ 'map-card-highlight': highlightedId === p.id }" @click="flyToProperty(p)">
-                  <div class="card-image">
-                    <img v-if="p.primary_image?.filename" :src="p.primary_image.filename.startsWith('http')?p.primary_image.filename:'/api/v1/uploads/'+p.primary_image.filename" alt="" class="property-img" />
-                    <div v-else class="image-placeholder"><span>暂无图片</span></div>
-                    <span class="district-badge">{{ p.district || p.city }}</span>
-                  </div>
-                  <div class="card-body">
-                    <h3 class="card-title">{{ p.name || p.title }}</h3>
-                    <div class="card-footer">
-                      <span class="card-price" v-if="p.min_rent">¥{{ Number(p.min_rent).toLocaleString() }}/月起</span>
-                    </div>
-                  </div>
-                </div>
+              <div v-for="p in filteredAndSortedResults" :key="p.id" :id="'prop-'+p.id" class="map-property-card">
+                <PropertyCard :property="p" @click="flyToProperty(p)" />
               </div>
             </div>
             <!-- 地图 -->
@@ -178,25 +162,7 @@
         <!-- ═══ 网格 / 列表模式 ═══ -->
         <template v-else>
           <div :class="viewMode === 'grid' ? 'card-grid' : 'card-list'">
-            <!-- 内联卡片替代 PropertyCard，避免组件依赖崩溃 -->
-            <div v-for="p in pagedResults" :key="p.id" class="property-card" @click="$router.push({ name: 'building-detail', params: { id: p.institute_id || p.id } })">
-              <div class="card-image">
-                <img v-if="p.primary_image?.filename" :src="p.primary_image.filename.startsWith('http')?p.primary_image.filename:'/api/v1/uploads/'+p.primary_image.filename" alt="" class="property-img" />
-                <div v-else class="image-placeholder"><span>暂无图片</span></div>
-                <span class="district-badge">{{ p.district || p.city }}</span>
-              </div>
-              <div class="card-body">
-                <h3 class="card-title">{{ p.name || p.title }}</h3>
-                <div class="card-tags">
-                  <el-tag size="small" type="info">{{ p.property_type || '公寓' }}</el-tag>
-                  <el-tag size="small">{{ p.unit_type_count || 0 }}种户型</el-tag>
-                  <el-tag v-if="p.avg_bedrooms" size="small">均{{ p.avg_bedrooms }}室</el-tag>
-                </div>
-                <div class="card-footer">
-                  <span class="card-price" v-if="p.min_rent">¥{{ Number(p.min_rent).toLocaleString() }}/月起</span>
-                </div>
-              </div>
-            </div>
+            <PropertyCard v-for="p in pagedResults" :key="p.id" :property="p" :show-similarity="false" />
           </div>
           <div v-if="searchResults.length > pageSize" class="pag">
             <el-pagination
@@ -228,6 +194,7 @@ import { storeToRefs } from 'pinia'
 interface CommuteInfo { dist_km: number; walk_min: number; bike_min: number; drive_min: number; transit_min: number }
 // PropertyCard 替换，避免组件依赖崩溃
 import BookingDateDialog from '@/components/BookingDateDialog.vue'
+import PropertyCard from '@/components/PropertyCard.vue'
 import type { Property, PropertySearchParams, PropertyType } from '@/types/property'
 import { commuteService } from '@/services/commute'
 import api from '@/services/api'
