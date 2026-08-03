@@ -304,9 +304,7 @@ async function loadBuilding(buildingId: string) {
 }
 
 onMounted(() => { redirecting = false; loadBuilding(String(route.params.id)) })
-watch(() => route.params.id, (newId) => {
-  if (newId && !redirecting) loadBuilding(String(newId))
-})
+watch(() => route.params.id, (newId) => { if (newId) loadBuilding(String(newId)) })
 </script>
 
 <style scoped>
