@@ -294,7 +294,6 @@ const matchingSchools = ref<SuggestionSchool[]>([])
 const matchingCities = ref<SuggestionCity[]>([])
 const matchingUniversities = ref<SuggestionSchool[]>([])
 const matchingProperties = ref<SuggestionProperty[]>([])
-const popularUniversities = ref<SuggestionSchool[]>([])
 let debounceTimer: ReturnType<typeof setTimeout> | null = null
 let blurTimer: ReturnType<typeof setTimeout> | null = null
 const hasAnySuggestions = computed(() =>
