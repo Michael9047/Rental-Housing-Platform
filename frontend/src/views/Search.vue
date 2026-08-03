@@ -328,6 +328,21 @@ function renderMarkers() {
   // 清除旧标记
   markers.forEach(m => m.setMap(null))
   markers = []
+  // 学校模式：标注大学位置
+  if (uniLat.value != null && uniLng.value != null && uniName.value) {
+    const uniPos = { lat: uniLat.value, lng: uniLng.value }
+    const uniMarker = new google.maps.Marker({
+      position: uniPos, map: mapInstance, title: uniName.value,
+      icon: { url: 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="#4285F4" stroke="#fff" stroke-width="2"/><text x="12" y="16" text-anchor="middle" fill="#fff" font-size="14">🎓</text></svg>'), scaledSize: new google.maps.Size(32,32) }
+    })
+    uniMarker.addListener('click', () => {
+      if (infoWindow) infoWindow.setContent('<b>'+uniName.value+'</b>'); infoWindow?.open(mapInstance, uniMarker)
+    })
+    markers.push(uniMarker)
+    bounds.extend(uniPos)
+    hasValid = true
+  }
+
   const bounds = new google.maps.LatLngBounds()
   let hasValid = false
 
@@ -880,9 +895,9 @@ watch(() => route.query, () => { initFromRoute() })
 
 <style scoped>
 .search-page {
-  height: calc(100vh - 64px - 24px); /* header 64px + layout-main padding-top 24px */
-  margin: 0; padding: 0 16px 8px 16px;
-  display: flex; flex-direction: column; overflow: hidden;
+  min-height: calc(100vh - 64px - 24px);
+  margin: 0; padding: 0 16px 80px 16px;
+  display: flex; flex-direction: column;
 }
 
 /* ── Banner ── */
