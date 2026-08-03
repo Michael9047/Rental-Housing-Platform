@@ -159,11 +159,8 @@
           <div class="map-body">
             <!-- 房源列表列 -->
             <div class="map-property-col" ref="propertyListCol">
-              <div v-for="p in filteredAndSortedResults" :key="p.id" :id="'prop-'+p.id" class="map-property-card" @click.stop="flyToProperty(p)">
-                <PropertyCard :property="p" :commute="commuteMap[p.id]" />
-                <div style="padding:4px 0;text-align:right">
-                  <el-button size="small" type="primary" @click.stop="$router.push({name:'building-detail',params:{id:p.institute_id||p.id}})">查看详情</el-button>
-                </div>
+              <div v-for="p in filteredAndSortedResults" :key="p.id" :id="'prop-'+p.id" class="map-property-card">
+                <PropertyCard :property="p" :commute="commuteMap[p.id]" :no-navigate="true" @click="flyToProperty(p)" />
               </div>
             </div>
             <!-- 地图 -->

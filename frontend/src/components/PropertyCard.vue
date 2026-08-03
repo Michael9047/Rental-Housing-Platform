@@ -63,6 +63,12 @@
           >
             预约看房
           </el-button>
+          <el-button
+            size="small"
+            @click="goDetail"
+          >
+            查看详情
+          </el-button>
           <el-tooltip
             v-if="authStore.isLoggedIn"
             :content="inCart ? '点击移出候选清单' : '加入候选清单'"
@@ -108,6 +114,8 @@ const props = defineProps<{
   commute?: CommuteInfo | null
   /** 跳转详情页时附加的 query 参数（如 school 信息） */
   linkQuery?: Record<string, string>
+  /** 禁用点击跳转（仅用于地图卡片列表） */
+  noNavigate?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -231,6 +239,7 @@ const amenityTags = computed(() => {
 })
 
 function goDetail() {
+  if (props.noNavigate) return
   // 两层结构：始终导航到公寓详情页
   router.push({ name: 'building-detail', params: { id: props.property.institute_id || props.property.id } })
 }
