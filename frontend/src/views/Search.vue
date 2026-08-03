@@ -716,13 +716,23 @@ async function doSearch() {
   else if (filters.district) p.district = filters.district
 
   if (filters.q) p.q = filters.q
-  // 文字搜索→geocode→自动定位
+  // 文字搜索→geocode→自动定位 + 更新学校选择器
   if (filters.q && !uniLat.value) {
     try {
-      const geo = await import('@/services/property').then(m => m.propertyService.geocodeAddress(filters.q!))
-      if (geo.latitude && geo.longitude) {
-        uniLat.value = geo.latitude; uniLng.value = geo.longitude
-        uniName.value = filters.q; searchMode.value = 'uni'
+      const [geoRes, schRes] = await Promise.all([
+        import('@/services/property').then(m => m.propertyService.geocodeAddress(filters.q!)),
+        api.get('/search/schools', { params: { q: filters.q, limit: 5 } })
+      ])
+      if (geoRes.latitude && geoRes.longitude) {
+        uniLat.value = geoRes.latitude; uniLng.value = geoRes.longitude
+        uniName.value = geoRes.formatted_address || filters.q
+        searchMode.value = 'uni'
+        schoolOptions.value = schRes.data || []
+        await nextTick()
+        if (schRes.data?.length) {
+          uniId.value = schRes.data[0].id
+          selectedUniId.value = schRes.data[0].id
+        }
       }
     } catch { /* ignore */ }
   }
