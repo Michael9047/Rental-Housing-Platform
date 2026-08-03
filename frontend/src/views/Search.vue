@@ -729,18 +729,23 @@ function doSearch() {
   if (filters.property_type) p.property_type = filters.property_type as PropertyType
   if (filters.amenities?.length) p.amenities = filters.amenities
 
-  // 半径搜索：优先大学坐标 → 地图中心 → 默认新加坡（若无地图）
+  // 半径搜索：优先大学坐标 → 文字搜索geocode → 地图中心 → 默认
   const sRadius = uniLat.value != null ? uniRadius.value : searchRadius.value
   let lat = uniLat.value ?? null
   let lng = uniLng.value ?? null
+  if (lat == null && p.q && !filters.institute_id) {
+    // 文字搜索时尝试 geocode 获取坐标（如搜"NTU"→NTU坐标）
+    try {
+      const geo = await import('@/services/property').then(m => m.propertyService.geocodeAddress(p.q!))
+      if (geo.latitude && geo.longitude) { lat = geo.latitude; lng = geo.longitude }
+    } catch { /* ignore */ }
+  }
   if (lat == null && mapInstance) {
     const c = mapInstance.getCenter()
     if (c) { lat = c.lat(); lng = c.lng() }
   }
-  if (lat == null) { lat = 1.3521; lng = 103.8198 } // 默认新加坡
-  p.near_lat = lat
-  p.near_lng = lng
-  p.near_distance_km = sRadius
+  if (lat == null) { lat = 1.3521; lng = 103.8198 }
+  p.near_lat = lat; p.near_lng = lng; p.near_distance_km = sRadius
 
   // 排序（非通勤排序发送到后端）
   if (sortBy.value && !['commute_time', 'commute_dist'].includes(sortBy.value)) {
