@@ -66,6 +66,12 @@
           </el-select>
         </div>
 
+        <!-- 搜索半径 -->
+        <div class="filter-block">
+          <div class="filter-block-title">搜索半径：{{ uniRadius }}km</div>
+          <el-slider v-model="uniRadius" :min="1" :max="20" :step="1" show-input @change="doSearch" />
+        </div>
+
         <!-- ② 月租金范围 -->
         <div class="filter-block">
           <div class="filter-block-title">月租金范围</div>
