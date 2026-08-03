@@ -57,12 +57,13 @@ def _build_card(b: Institute) -> dict:
     if not primary and b.images:
         img = sorted(b.images, key=lambda x: x.sort_order)[0]
         primary = {"id": img.id, "filename": img.filename, "is_primary": img.is_primary}
-    # 汇总户型属性（如所有户型都是 studio，则 property_type=studio）
+    # 户型类型汇总
     pt_set = set(getattr(ut, 'property_type', None) for ut in available_uts)
     pt_vals = [v for v in pt_set if v]
-    property_type = pt_vals[0] if len(pt_vals) == 1 else (pt_vals[0] if pt_vals else None)
-    total_beds = sum(ut.bedrooms for ut in available_uts)
-    avg_beds = round(total_beds / len(available_uts), 1) if available_uts else 0
+    property_type = pt_vals[0] if len(pt_vals) == 1 else None
+    # 户型标签列表（如 ["studio","1bed","2bed"]）
+    pt_labels: dict = {"studio":"Studio","ensuite":"Ensuite","1bed":"一室","2bed":"两室","3bed":"三室","4bed":"四室","5bed+":"五室+","shared":"合租"}
+    unit_type_tags = [pt_labels.get(v.value if hasattr(v,'value') else str(v), str(v)) for v in pt_set if v]
     return {
         "id": b.id, "name": b.name, "name_cn": b.name_cn, "address": b.address,
         "country": b.country, "city": b.city, "district": b.district,
@@ -73,8 +74,9 @@ def _build_card(b: Institute) -> dict:
         "female_only": bool(b.female_only) if b.female_only is not None else False,
         "couples_allowed": bool(b.couples_allowed) if b.couples_allowed is not None else False,
         "unit_type_count": len(available_uts),
+        "unit_type_tags": unit_type_tags,
         "min_rent": min_rent, "max_rent": max_rent,
-        "avg_bedrooms": avg_beds,
+        "avg_bedrooms": 0,
         "property_type": property_type.value if hasattr(property_type, 'value') else str(property_type) if property_type else None,
         "primary_image": primary,
         "images": [{"id": img.id, "filename": img.filename, "original_name": img.original_name,

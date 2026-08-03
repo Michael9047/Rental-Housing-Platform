@@ -24,36 +24,24 @@
     <div class="card-body">
       <h3 class="card-title" :title="p.title">{{ p.title }}</h3>
 
-      <div class="card-tags">
-        <el-tag size="small" type="info">{{ typeLabels[p.property_type] || p.property_type }}</el-tag>
-        <el-tag size="small">{{ p.bedrooms }}室{{ p.bathrooms }}卫</el-tag>
-        <el-tag size="small" type="info" v-if="p.area_sqm">{{ p.area_sqm }}㎡</el-tag>
+      <!-- 户型类型标签 -->
+      <div class="card-tags" v-if="property.unit_type_tags?.length">
+        <el-tag v-for="t in property.unit_type_tags" :key="t" size="small" type="info" effect="plain">{{ t }}</el-tag>
+      </div>
+
+      <!-- 公寓配套 -->
+      <div class="card-amenities" v-if="property.amenities?.length">
+        <el-tag v-for="a in property.amenities.slice(0,4)" :key="a" size="small" effect="plain" round class="amenity-tag">{{ a }}</el-tag>
+        <el-tag v-if="property.amenities.length > 4" size="small" effect="plain" round class="amenity-tag">+{{ property.amenities.length - 4 }}</el-tag>
       </div>
 
       <!-- ── 通勤时间（仅学校模式） ── -->
       <div v-if="commute" class="commute-row">
-        <span class="commute-item" title="步行时间"><span class="commute-icon">🚶</span>{{ commute.walk_min }}分钟</span>
+        <span class="commute-item" title="步行"><span class="commute-icon">🚶</span>{{ commute.walk_min }}m</span>
         <span class="commute-sep">|</span>
-        <span class="commute-item" title="开车时间"><span class="commute-icon">🚗</span>{{ commute.drive_min }}分钟</span>
-        <span class="commute-sep">|</span>
-        <span class="commute-item" title="骑车时间"><span class="commute-icon">🚲</span>{{ commute.bike_min }}分钟</span>
-        <span class="commute-sep">|</span>
-        <span class="commute-item" title="公交地铁时间"><span class="commute-icon">🚌</span>{{ commute.transit_min }}分钟</span>
+        <span class="commute-item" title="驾车"><span class="commute-icon">🚗</span>{{ commute.drive_min }}m</span>
       </div>
-      <div v-if="commute" class="commute-dist">
-        📍 步行约 <strong>{{ commute.dist_km }}km</strong> 到学校
-      </div>
-
-      <div class="card-amenities" v-if="amenityTags.length > 0">
-        <el-tag
-          v-for="tag in amenityTags"
-          :key="tag"
-          size="small"
-          effect="plain"
-          round
-          class="amenity-tag"
-        >{{ tag }}</el-tag>
-      </div>
+      <div v-if="commute" class="commute-dist">📍 {{ commute.dist_km }}km 到学校</div>
 
       <p class="card-address" :title="p.address">
         <el-icon :size="14"><LocationFilled /></el-icon>
