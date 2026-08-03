@@ -151,7 +151,7 @@
             <!-- 房源列表列 -->
             <div class="map-property-col" ref="propertyListCol">
               <div v-for="p in filteredAndSortedResults" :key="p.id" :id="'prop-'+p.id" class="map-property-card">
-                <PropertyCard :property="p" @click="flyToProperty(p)" />
+                <PropertyCard :property="p" :commute="commuteMap[p.id]" @click="flyToProperty(p)" />
               </div>
             </div>
             <!-- 地图 -->
@@ -162,7 +162,7 @@
         <!-- ═══ 网格 / 列表模式 ═══ -->
         <template v-else>
           <div :class="viewMode === 'grid' ? 'card-grid' : 'card-list'">
-            <PropertyCard v-for="p in pagedResults" :key="p.id" :property="p" :show-similarity="false" />
+            <PropertyCard v-for="p in pagedResults" :key="p.id" :property="p" :commute="commuteMap[p.id]" :show-similarity="false" />
           </div>
           <div v-if="searchResults.length > pageSize" class="pag">
             <el-pagination
