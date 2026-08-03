@@ -276,35 +276,34 @@ function initMap() {
   L.marker([building.value.latitude,building.value.longitude]).addTo(mapInstance)
 }
 
-onMounted(async () => {
-  console.log('[BuildingDetail] v3 mounted with id:', route.params.id)
-  // 兼容 unit_type ID：如果 /buildings/{id} 返回 404，尝试通过 UnitType 查找 Institute
+async function loadBuilding(buildingId: string) {
+  loading.value = true; error.value = ''
+  console.log('[BuildingDetail] v4 loading id:', buildingId)
   try {
-    const r = await api.get(`/buildings/${route.params.id}/tenant-detail`)
+    const r = await api.get(`/buildings/${buildingId}/tenant-detail`)
     building.value = r.data
+    if (r.data.latitude && r.data.longitude) initMap(r.data.latitude, r.data.longitude)
   } catch (e: any) {
     if (e?.response?.status === 404) {
       try {
-        const utRes = await api.get(`/unit-types/${route.params.id}`)
+        const utRes = await api.get(`/unit-types/${buildingId}`)
         const instId = utRes.data?.institute_id
-        console.log('[BuildingDetail] unit_type lookup:', { id: route.params.id, instId })
-        if (instId && instId !== Number(route.params.id)) {
+        console.log('[BuildingDetail] unit_type lookup:', { id: buildingId, instId })
+        if (instId && instId !== Number(buildingId)) {
           console.log('[BuildingDetail] redirecting to building', instId)
           await router.replace({ name: 'building-detail', params: { id: String(instId) } })
           return
         }
-        console.warn('[BuildingDetail] no institute_id found for unit_type', route.params.id)
-      } catch (e2) {
-        console.error('[BuildingDetail] unit_type lookup failed:', e2)
-      }
+      } catch {}
       error.value = '公寓不存在或已下架'
-      console.warn('[BuildingDetail] 404 fallback done, showing error')
     } else {
       error.value = '加载失败'
-      console.error('[BuildingDetail] load failed:', e)
     }
   } finally { loading.value = false }
-})
+}
+
+onMounted(() => loadBuilding(String(route.params.id)))
+watch(() => route.params.id, (newId) => { if (newId) loadBuilding(String(newId)) })
 </script>
 
 <style scoped>
