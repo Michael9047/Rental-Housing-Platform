@@ -85,12 +85,27 @@ def _build_card(b: Institute) -> dict:
     }
 
 
+from math import radians, cos, sin, asin, sqrt as _sqrt
+
+def _haversine(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
+    """Haversine 距离（km）"""
+    dlat, dlng = radians(lat2 - lat1), radians(lng2 - lng1)
+    a = sin(dlat / 2) ** 2 + cos(radians(lat1)) * cos(radians(lat2)) * sin(dlng / 2) ** 2
+    return 6371 * 2 * asin(_sqrt(a))
+
 async def _search_buildings(
     session: AsyncSession,
     q: str | None = None,
     district: str | None = None,
     country: str | None = None,
     city: str | None = None,
+    price_min: int | None = None,
+    price_max: int | None = None,
+    property_type: str | None = None,
+    sort_by: str | None = None,
+    near_lat: float | None = None,
+    near_lng: float | None = None,
+    near_distance_km: float | None = 5.0,
     skip: int = 0,
     limit: int = 50,
 ) -> list[dict]:
@@ -110,9 +125,36 @@ async def _search_buildings(
         stmt = stmt.where(Institute.country == country)
     if city:
         stmt = stmt.where(Institute.city.ilike(f"%{city}%"))
-    stmt = stmt.order_by(Institute.id.desc()).offset(skip).limit(limit)
+    if sort_by == 'price_asc':
+        stmt = stmt.order_by(Institute.id.asc())
+    elif sort_by == 'price_desc':
+        stmt = stmt.order_by(Institute.id.desc())
+    elif sort_by == 'created_at':
+        stmt = stmt.order_by(Institute.created_at.desc())
+    else:
+        stmt = stmt.order_by(Institute.id.desc())
+    stmt = stmt.offset(skip).limit(limit if limit <= 200 else 200)
     result = await session.scalars(stmt)
-    return [_build_card(b) for b in result]
+    cards = [_build_card(b) for b in result]
+
+    # 客户端过滤（价格 / 户型 / 地理位置）
+    if price_min is not None:
+        cards = [c for c in cards if c.get("min_rent") is not None and c["min_rent"] >= price_min]
+    if price_max is not None:
+        cards = [c for c in cards if c.get("min_rent") is not None and c["min_rent"] <= price_max]
+    if property_type:
+        cards = [c for c in cards if c.get("property_type") == property_type]
+    if near_lat is not None and near_lng is not None and near_distance_km:
+        cards = [c for c in cards if c.get("latitude") and c.get("longitude")
+                 and _haversine(near_lat, near_lng, float(c["latitude"]), float(c["longitude"])) <= near_distance_km]
+
+    # 按价格排序（需在过滤后）
+    if sort_by == 'price_asc':
+        cards.sort(key=lambda c: c.get("min_rent") or 0)
+    elif sort_by == 'price_desc':
+        cards.sort(key=lambda c: c.get("min_rent") or 0, reverse=True)
+
+    return cards
 
 
 @router.get("/public")
@@ -132,11 +174,23 @@ async def search_public_buildings(
     district: str | None = Query(default=None),
     country: str | None = Query(default=None),
     city: str | None = Query(default=None),
+    price_min: int | None = Query(default=None),
+    price_max: int | None = Query(default=None),
+    property_type: str | None = Query(default=None),
+    sort_by: str | None = Query(default=None),
+    near_lat: float | None = Query(default=None),
+    near_lng: float | None = Query(default=None),
+    near_distance_km: float | None = Query(default=5.0),
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=50, ge=1, le=200),
 ) -> list[dict]:
-    """公开搜索——按名称/区域搜索公寓，返回卡片级数据"""
-    return await _search_buildings(session, q=q, district=district, country=country, city=city, skip=skip, limit=limit)
+    """公开搜索——按名称/区域/价格/户型搜索公寓，返回卡片级数据"""
+    return await _search_buildings(
+        session, q=q, district=district, country=country, city=city,
+        price_min=price_min, price_max=price_max, property_type=property_type,
+        sort_by=sort_by, near_lat=near_lat, near_lng=near_lng,
+        near_distance_km=near_distance_km, skip=skip, limit=limit,
+    )
 
 
 @router.get("")

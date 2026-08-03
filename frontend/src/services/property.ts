@@ -84,10 +84,14 @@ export const propertyService = {
     if (params.country) sp.country = params.country
     if (params.city) sp.city = params.city
     if (params.limit) sp.limit = params.limit
+    if (params.price_min != null) sp.price_min = params.price_min
+    if (params.price_max != null) sp.price_max = params.price_max
+    if (params.property_type) sp.property_type = params.property_type
+    if (params.sort_by) sp.sort_by = params.sort_by
     if (params.near_lat != null) sp.near_lat = params.near_lat
     if (params.near_lng != null) sp.near_lng = params.near_lng
     if (params.near_distance_km != null) sp.near_distance_km = params.near_distance_km
-    return api.get('/unit-types/search', { params: { ...sp, _t: Date.now() } }).then((r) => r.data)
+    return api.get('/buildings/public/search', { params: { ...sp, _t: Date.now() } }).then((r) => r.data)
   },
 
   getById(id: number | string): Promise<Property> {
