@@ -48,14 +48,13 @@
           <div class="filter-block-title">学校</div>
           <el-select
             v-model="selectedUniId"
-            placeholder="选择学校（NTU/NUS等）"
+            placeholder="选择学校（自动识别或手动搜索）"
             clearable
             filterable
-            remote
-            :remote-method="searchSchools"
             :loading="schoolLoading"
             style="width:100%"
             @change="onSchoolSelect"
+            @focus="searchSchools('')"
           >
             <el-option
               v-for="s in schoolOptions"
@@ -236,7 +235,7 @@ const schoolOptions = ref<any[]>([])
 const schoolLoading = ref(false)
 
 async function searchSchools(q: string) {
-  if (!q || q.length < 2) { schoolOptions.value = []; return }
+  if (!q || q.length < 1) q = ''
   schoolLoading.value = true
   try {
     const r = await import('@/services/api').then(m => m.default.get('/search/schools', { params: { q, limit: 20 } }))
