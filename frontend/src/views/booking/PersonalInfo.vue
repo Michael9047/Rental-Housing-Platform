@@ -129,7 +129,11 @@ async function submitForm() {
   submitted.value = true
   Object.assign(errors, validatePersonalInfo(form))
   requiredFields.forEach((field) => touched.add(field))
-  if (requiredFields.some((field) => errors[field])) return
+  if (requiredFields.some((field) => errors[field])) {
+    submitError.value = '请填写所有必填项'
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+    return
+  }
   submitting.value = true
   submitError.value = ''
   try {
