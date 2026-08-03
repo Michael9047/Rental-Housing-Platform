@@ -43,33 +43,41 @@
           </el-button>
         </div>
 
-        <!-- ① 学校搜索 -->
-        <div class="filter-block">
-          <div class="filter-block-title">学校</div>
-          <el-select
-            v-model="selectedUniId"
-            placeholder="选择学校（自动识别或手动搜索）"
-            clearable
-            filterable
-            :loading="schoolLoading"
-            style="width:100%"
-            @change="onSchoolSelect"
-            @focus="searchSchools('')"
-          >
-            <el-option
-              v-for="s in schoolOptions"
-              :key="s.id"
-              :label="(s.name_cn||'') + ' / ' + s.name"
-              :value="s.id"
-            />
-          </el-select>
-        </div>
-
-        <!-- 搜索半径 -->
-        <div class="filter-block">
-          <div class="filter-block-title">搜索半径：{{ uniRadius }}km</div>
-          <el-slider v-model="uniRadius" :min="1" :max="20" :step="1" show-input @change="doSearch" />
-        </div>
+        <!-- ① 学校 / 半径 -->
+        <template v-if="searchMode === 'uni' && uniName">
+          <!-- 学校模式：显示学校名 + 半径 -->
+          <div class="filter-block">
+            <div class="filter-block-title">🎓 {{ uniName }}</div>
+            <el-button size="small" text type="danger" @click="clearSchool">✕ 清除学校</el-button>
+          </div>
+          <div class="filter-block">
+            <div class="filter-block-title">搜索半径：{{ uniRadius }}km</div>
+            <el-slider v-model="uniRadius" :min="1" :max="20" :step="1" show-input @change="doSearch" />
+          </div>
+        </template>
+        <template v-else>
+          <!-- 地区模式：学校选择器 + 半径 -->
+          <div class="filter-block">
+            <div class="filter-block-title">学校</div>
+            <el-select
+              v-model="selectedUniId"
+              placeholder="选择学校搜索周边"
+              clearable
+              filterable
+              :remote-method="searchSchools"
+              :loading="schoolLoading"
+              style="width:100%"
+              @change="onSchoolSelect"
+            >
+              <el-option v-for="s in schoolOptions" :key="s.id"
+                :label="(s.name_cn||'') + ' / ' + s.name" :value="s.id" />
+            </el-select>
+          </div>
+          <div class="filter-block">
+            <div class="filter-block-title">搜索半径：{{ uniRadius }}km</div>
+            <el-slider v-model="uniRadius" :min="1" :max="20" :step="1" show-input @change="doSearch" />
+          </div>
+        </template>
 
         <!-- ② 月租金范围 -->
         <div class="filter-block">
@@ -246,13 +254,20 @@ async function searchSchools(q: string) {
 
 function onSchoolSelect(schoolId: number | null) {
   if (!schoolId) {
-    uniId.value = null; uniName.value = ''; uniLat.value = null; uniLng.value = null
+    uniId.value = null; uniName.value = ''; uniLat.value = null; uniLng.value = null; searchMode.value = 'city'
   } else {
     const s = schoolOptions.value.find((u: any) => u.id === schoolId)
     if (s) {
-      uniId.value = s.id; uniName.value = s.name; uniLat.value = s.latitude; uniLng.value = s.longitude
+      uniId.value = s.id; uniName.value = s.name_cn || s.name; uniLat.value = s.latitude; uniLng.value = s.longitude
+      searchMode.value = 'uni'
     }
   }
+  doSearch()
+}
+
+function clearSchool() {
+  uniId.value = null; uniName.value = ''; uniLat.value = null; uniLng.value = null
+  selectedUniId.value = null; schoolOptions.value = []; searchMode.value = 'city'
   doSearch()
 }
 const viewMode = ref<'grid' | 'list'>('grid')
@@ -716,23 +731,14 @@ async function doSearch() {
   else if (filters.district) p.district = filters.district
 
   if (filters.q) p.q = filters.q
-  // 文字搜索→geocode→自动定位 + 更新学校选择器
+  // 文字搜索→geocode→自动切换为学校模式
   if (filters.q && !uniLat.value) {
     try {
-      const [geoRes, schRes] = await Promise.all([
-        import('@/services/property').then(m => m.propertyService.geocodeAddress(filters.q!)),
-        api.get('/search/schools', { params: { q: filters.q, limit: 5 } })
-      ])
-      if (geoRes.latitude && geoRes.longitude) {
-        uniLat.value = geoRes.latitude; uniLng.value = geoRes.longitude
-        uniName.value = geoRes.formatted_address || filters.q
+      const geo = await import('@/services/property').then(m => m.propertyService.geocodeAddress(filters.q!))
+      if (geo.latitude && geo.longitude) {
+        uniLat.value = geo.latitude; uniLng.value = geo.longitude
+        uniName.value = geo.formatted_address || (geo.city ? geo.city + ' · ' + (geo.district || '') : filters.q)
         searchMode.value = 'uni'
-        schoolOptions.value = schRes.data || []
-        await nextTick()
-        if (schRes.data?.length) {
-          uniId.value = schRes.data[0].id
-          selectedUniId.value = schRes.data[0].id
-        }
       }
     } catch { /* ignore */ }
   }
