@@ -716,19 +716,15 @@ async function doSearch() {
   else if (filters.district) p.district = filters.district
 
   if (filters.q) p.q = filters.q
-  // 搜索文本若匹配到学校，自动设置坐标做半径搜索
+  // 文字搜索→geocode→自动定位
   if (filters.q && !uniLat.value) {
     try {
-      const sch = await api.get('/search/schools', { params: { q: filters.q, limit: 1 } })
-      if (sch.data?.length) {
-        const s = sch.data[0]
-        uniId.value = s.id; uniName.value = s.name; uniLat.value = s.latitude; uniLng.value = s.longitude
-        searchMode.value = 'uni'
-        schoolOptions.value = sch.data
-        await nextTick()
-        selectedUniId.value = s.id
+      const geo = await import('@/services/property').then(m => m.propertyService.geocodeAddress(filters.q!))
+      if (geo.latitude && geo.longitude) {
+        uniLat.value = geo.latitude; uniLng.value = geo.longitude
+        uniName.value = filters.q; searchMode.value = 'uni'
       }
-    } catch { /* geocode fallback below */ }
+    } catch { /* ignore */ }
   }
   if (filters.price_min != null) p.price_min = filters.price_min
   if (filters.price_max != null) p.price_max = filters.price_max
