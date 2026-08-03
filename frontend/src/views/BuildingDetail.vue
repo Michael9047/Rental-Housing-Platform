@@ -50,9 +50,19 @@
           <div class="info-item" v-if="building.total_floors"><span class="info-label">总楼层</span><span class="info-val">{{ building.total_floors }} 层</span></div>
           <div class="info-item" v-if="building.year_built"><span class="info-label">建成年份</span><span class="info-val">{{ building.year_built }} 年</span></div>
           <div class="info-item" v-if="building.total_units"><span class="info-label">总户数</span><span class="info-val">{{ building.total_units }} 户</span></div>
-          <div class="info-item"><span class="info-label">电梯</span><span class="info-val">{{ building.has_elevator ? '✅ 有' : '❌ 无' }}</span></div>
           <div class="info-item" v-if="building.female_only"><span class="info-label">👩 女生独栋</span></div>
           <div class="info-item" v-if="building.couples_allowed"><span class="info-label">💑 支持情侣入住</span></div>
+        </div>
+      </section>
+
+      <!-- 公寓描述（可收起） -->
+      <section class="bd-desc" v-if="building.description">
+        <div class="desc-header" @click="descExpanded = !descExpanded">
+          <h2 class="sec-title" style="margin:0">📝 公寓简介</h2>
+          <span class="desc-toggle">{{ descExpanded ? '收起 ▲' : '展开 ▼' }}</span>
+        </div>
+        <div class="desc-body" v-show="descExpanded">
+          <p class="desc-text">{{ building.description }}</p>
         </div>
       </section>
 
@@ -178,6 +188,7 @@ L.Icon.Default.mergeOptions({
 const route = useRoute(); const router = useRouter()
 const loading = ref(true); const error = ref('')
 const building = ref<any>(null); const showContactDialog = ref(false)
+const descExpanded = ref(false)
 const mapContainer = ref<HTMLElement | null>(null); let mapInstance: L.Map | null = null
 
 // 预约看房表单
@@ -332,6 +343,13 @@ onMounted(async () => {
 .map-box { width: 100%; height: 340px; min-height: 340px; border-radius: 10px; overflow: hidden; border: 1px solid #eee; z-index: 1; position: relative }
 :deep(.map-box .leaflet-tile) { visibility: visible !important }
 .map-empty { color: #999; text-align: center; padding: 50px }
+
+/* ═══ 描述 ═══ */
+.bd-desc { background: #fff; border-radius: 14px; padding: 24px 28px; margin-bottom: 24px; box-shadow: 0 2px 10px rgba(0,0,0,.03) }
+.desc-header { display: flex; justify-content: space-between; align-items: center; cursor: pointer; user-select: none }
+.desc-toggle { font-size: 13px; color: #409EFF }
+.desc-body { margin-top: 16px }
+.desc-text { font-size: 14px; line-height: 1.8; color: #606266; white-space: pre-line }
 
 /* ═══ 3. 基础信息 ═══ */
 .bd-info { background: #fff; border-radius: 14px; padding: 24px 28px; margin-bottom: 24px; box-shadow: 0 2px 10px rgba(0,0,0,.03) }
