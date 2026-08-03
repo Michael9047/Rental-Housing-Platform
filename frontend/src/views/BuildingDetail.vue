@@ -277,6 +277,7 @@ function initMap() {
 }
 
 onMounted(async () => {
+  console.log('[BuildingDetail] v3 mounted with id:', route.params.id)
   // 兼容 unit_type ID：如果 /buildings/{id} 返回 404，尝试通过 UnitType 查找 Institute
   try {
     const r = await api.get(`/buildings/${route.params.id}/tenant-detail`)
@@ -286,13 +287,18 @@ onMounted(async () => {
       try {
         const utRes = await api.get(`/unit-types/${route.params.id}`)
         const instId = utRes.data?.institute_id
+        console.log('[BuildingDetail] unit_type lookup:', { id: route.params.id, instId })
         if (instId && instId !== Number(route.params.id)) {
-          router.replace({ name: 'building-detail', params: { id: String(instId) } })
+          console.log('[BuildingDetail] redirecting to building', instId)
+          await router.replace({ name: 'building-detail', params: { id: String(instId) } })
           return
         }
-      } catch {}
+        console.warn('[BuildingDetail] no institute_id found for unit_type', route.params.id)
+      } catch (e2) {
+        console.error('[BuildingDetail] unit_type lookup failed:', e2)
+      }
       error.value = '公寓不存在或已下架'
-      console.warn('[BuildingDetail] 404 for ID', route.params.id, '— trying unit_type lookup')
+      console.warn('[BuildingDetail] 404 fallback done, showing error')
     } else {
       error.value = '加载失败'
       console.error('[BuildingDetail] load failed:', e)
