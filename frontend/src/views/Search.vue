@@ -65,28 +65,6 @@
             />
           </el-select>
         </div>
-        <!-- 公寓筛选 -->
-        <div class="filter-block">
-          <div class="filter-block-title">公寓</div>
-          <el-select
-            v-model="filters.institute_id"
-            placeholder="搜索公寓名称"
-            clearable
-            filterable
-            remote
-            :remote-method="searchInstitutes"
-            :loading="instituteLoading"
-            style="width:100%"
-            @change="onInstituteChange"
-          >
-            <el-option
-              v-for="inst in instituteOptions"
-              :key="inst.id"
-              :label="inst.name"
-              :value="inst.id"
-            />
-          </el-select>
-        </div>
 
         <!-- ② 月租金范围 -->
         <div class="filter-block">
@@ -96,12 +74,6 @@
             <span class="price-dash">—</span>
             <el-input-number v-model="filters.price_max" :min="0" :step="500" placeholder="最高" controls-position="right" size="small" style="flex:1" @change="doSearch" />
           </div>
-        </div>
-
-        <!-- 搜索半径 -->
-        <div class="filter-block">
-          <div class="filter-block-title">搜索半径：{{ searchRadius }}km</div>
-          <el-slider v-model="searchRadius" :min="1" :max="20" :step="1" show-input @change="doSearch" />
         </div>
 
         <!-- ③ 户型类型 -->
@@ -244,7 +216,7 @@
 import { ref, reactive, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Search, School, Grid, List, Location, Loading, ChatDotRound } from '@element-plus/icons-vue'
-import { ElMessage } from 'element-plus'
+
 import { usePropertyStore } from '@/stores/property'
 import { storeToRefs } from 'pinia'
 interface CommuteInfo { dist_km: number; walk_min: number; bike_min: number; drive_min: number; transit_min: number }
@@ -285,7 +257,7 @@ const uniName = ref('')
 const uniLat = ref<number | null>(null)
 const uniLng = ref<number | null>(null)
 const uniRadius = ref<number>(5)
-const searchRadius = ref<number>(5)
+
 const selectedUniId = ref<number | null>(null)
 const schoolOptions = ref<any[]>([])
 const schoolLoading = ref(false)
@@ -772,31 +744,27 @@ async function doSearch() {
   else if (filters.district) p.district = filters.district
 
   if (filters.q) p.q = filters.q
+  // 搜索文本若匹配到学校，自动设置坐标做半径搜索
+  if (filters.q && !uniLat.value) {
+    try {
+      const sch = await api.get('/search/schools', { params: { q: filters.q, limit: 1 } })
+      if (sch.data?.length) {
+        const s = sch.data[0]
+        uniId.value = s.id; uniName.value = s.name; uniLat.value = s.latitude; uniLng.value = s.longitude
+        selectedUniId.value = s.id
+        schoolOptions.value = sch.data
+      }
+    } catch { /* geocode fallback below */ }
+  }
   if (filters.price_min != null) p.price_min = filters.price_min
   if (filters.price_max != null) p.price_max = filters.price_max
   if (filters.property_type) p.property_type = filters.property_type as PropertyType
   if (filters.amenities?.length) p.amenities = filters.amenities
 
-  // 半径搜索：大学坐标 → geocode → 地图中心
-  const sRadius = uniLat.value != null ? uniRadius.value : searchRadius.value
-  let lat = uniLat.value ?? null
-  let lng = uniLng.value ?? null
-  if (lat == null && p.q && !filters.institute_id) {
-    try {
-      const geo = await import('@/services/property').then(m => m.propertyService.geocodeAddress(p.q!))
-      if (geo.latitude && geo.longitude) { lat = geo.latitude; lng = geo.longitude }
-    } catch (e: any) {
-      ElMessage.error('无法识别地址「' + p.q + '」，请从左侧筛选栏选择学校或输入城市名')
-      loading.value = false
-      return
-    }
-  }
-  if (lat == null && mapInstance) {
-    const c = mapInstance.getCenter()
-    if (c) { lat = c.lat(); lng = c.lng() }
-  }
-  if (lat != null && lng != null) {
-    p.near_lat = lat; p.near_lng = lng; p.near_distance_km = sRadius
+  // 半径搜索：大学坐标 → 地图中心
+  if (uniLat.value != null && uniLng.value != null) {
+    p.near_lat = uniLat.value; p.near_lng = uniLng.value
+    p.near_distance_km = uniRadius.value
   }
 
   // 排序（非通勤排序发送到后端）
