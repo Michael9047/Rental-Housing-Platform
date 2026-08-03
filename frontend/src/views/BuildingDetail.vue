@@ -278,23 +278,18 @@ function initMap() {
 
 async function loadBuilding(buildingId: string) {
   loading.value = true; error.value = ''
-  console.log('[BuildingDetail] v4 loading id:', buildingId)
   try {
     const r = await api.get(`/buildings/${buildingId}/tenant-detail`)
     building.value = r.data
     if (r.data.latitude && r.data.longitude) initMap(r.data.latitude, r.data.longitude)
   } catch (e: any) {
     if (e?.response?.status === 404) {
-      try {
-        const utRes = await api.get(`/unit-types/${buildingId}`)
-        const instId = utRes.data?.institute_id
-        console.log('[BuildingDetail] unit_type lookup:', { id: buildingId, instId })
-        if (instId && instId !== Number(buildingId)) {
-          console.log('[BuildingDetail] redirecting to building', instId)
-          await router.replace({ name: 'building-detail', params: { id: String(instId) } })
-          return
-        }
-      } catch {}
+      const utRes = await api.get(`/unit-types/${buildingId}`).catch(() => null)
+      const instId = utRes?.data?.institute_id
+      if (instId && instId !== Number(buildingId)) {
+        await router.replace({ path: `/building/${instId}` })
+        return
+      }
       error.value = '该公寓暂无数据，请稍后重试'
     } else {
       error.value = '加载失败'
