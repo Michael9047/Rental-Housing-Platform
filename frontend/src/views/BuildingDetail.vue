@@ -295,7 +295,7 @@ async function loadBuilding(buildingId: string) {
           return
         }
       } catch {}
-      error.value = '公寓不存在或已下架'
+      error.value = '该公寓暂无数据，请稍后重试'
     } else {
       error.value = '加载失败'
     }
