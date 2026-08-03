@@ -61,13 +61,15 @@
             <div class="filter-block-title">学校</div>
             <el-select
               v-model="selectedUniId"
-              placeholder="选择学校搜索周边"
+              placeholder="输入学校名搜索"
               clearable
               filterable
+              remote
               :remote-method="searchSchools"
               :loading="schoolLoading"
               style="width:100%"
               @change="onSchoolSelect"
+              @visible-change="(v:boolean) => { if(v) searchSchools('') }"
             >
               <el-option v-for="s in schoolOptions" :key="s.id"
                 :label="(s.name_cn||'') + ' / ' + s.name" :value="s.id" />

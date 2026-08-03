@@ -77,18 +77,18 @@
 
               <!-- 有搜索词时展示匹配 -->
               <template v-else>
-                <!-- 匹配学校 -->
-                <div v-if="matchingSchools.length > 0" class="suggestions-group">
-                  <div class="suggestions-group-title">匹配学校</div>
+                <!-- 匹配大学 -->
+                <div v-if="matchingUniversities.length > 0" class="suggestions-group">
+                  <div class="suggestions-group-title">匹配大学</div>
                   <div class="suggestion-grid school-grid">
                     <div
-                      v-for="school in matchingSchools"
-                      :key="'school-' + school.id"
+                      v-for="uni in matchingUniversities"
+                      :key="'uni-' + uni.id"
                       class="suggestion-card"
-                      @mousedown.prevent="selectSchool(school)"
+                      @mousedown.prevent="selectUniversity(uni)"
                     >
-                      <span class="card-name">{{ school.name }}</span>
-                      <span class="card-sub">{{ school.count }} 套房源</span>
+                      <span class="card-name">{{ uni.name_cn || uni.name }}</span>
+                      <span class="card-sub">{{ uni.city || '' }}</span>
                     </div>
                   </div>
                 </div>
@@ -292,11 +292,13 @@ const showSuggestions = ref(false)
 const suggestionsLoading = ref(false)
 const matchingSchools = ref<SuggestionSchool[]>([])
 const matchingCities = ref<SuggestionCity[]>([])
+const matchingUniversities = ref<SuggestionSchool[]>([])
 const matchingProperties = ref<SuggestionProperty[]>([])
+const popularUniversities = ref<SuggestionSchool[]>([])
 let debounceTimer: ReturnType<typeof setTimeout> | null = null
 let blurTimer: ReturnType<typeof setTimeout> | null = null
 const hasAnySuggestions = computed(() =>
-  matchingSchools.value.length > 0 ||
+  matchingUniversities.value.length > 0 ||
   matchingCities.value.length > 0 ||
   matchingProperties.value.length > 0
 )
@@ -314,10 +316,12 @@ async function fetchSuggestions(q: string) {
     if (q.trim()) {
       matchingSchools.value = data.matching_schools || []
       matchingCities.value = data.matching_cities || []
+      matchingUniversities.value = data.matching_universities || []
       matchingProperties.value = data.matching_properties || []
     } else {
-      matchingSchools.value = data.popular_schools || []
+      matchingSchools.value = []
       matchingCities.value = (data.popular_cities || []).filter((c: any) => c.name)
+      popularUniversities.value = data.popular_universities || []
       matchingProperties.value = []
     }
   } catch {
@@ -396,6 +400,12 @@ function cityLabel(city: SuggestionCity): string {
 }
 
 // ── 选择处理 ─────────────────────────────
+
+function selectUniversity(uni: SuggestionSchool) {
+  showSuggestions.value = false
+  const name = uni.name_cn || uni.name
+  router.push({ name: 'search', query: { uni_id: String(uni.id), radius: '5', uni_name: name } })
+}
 
 function selectSchool(school: SuggestionSchool) {
   showSuggestions.value = false
