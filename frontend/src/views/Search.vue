@@ -726,6 +726,7 @@ async function doSearch() {
         uniId.value = s.id; uniName.value = s.name; uniLat.value = s.latitude; uniLng.value = s.longitude
         selectedUniId.value = s.id
         schoolOptions.value = sch.data
+        searchMode.value = 'uni'
       }
     } catch { /* geocode fallback below */ }
   }
