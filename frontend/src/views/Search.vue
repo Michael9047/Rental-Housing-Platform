@@ -43,12 +43,34 @@
           </el-button>
         </div>
 
-        <!-- ① 学校/公寓搜索 -->
+        <!-- ① 学校搜索 -->
         <div class="filter-block">
-          <div class="filter-block-title">学校 / 公寓</div>
+          <div class="filter-block-title">学校</div>
+          <el-select
+            v-model="selectedUniId"
+            placeholder="选择学校（NTU/NUS等）"
+            clearable
+            filterable
+            remote
+            :remote-method="searchSchools"
+            :loading="schoolLoading"
+            style="width:100%"
+            @change="onSchoolSelect"
+          >
+            <el-option
+              v-for="s in schoolOptions"
+              :key="s.id"
+              :label="(s.name_cn||'') + ' / ' + s.name"
+              :value="s.id"
+            />
+          </el-select>
+        </div>
+        <!-- 公寓筛选 -->
+        <div class="filter-block">
+          <div class="filter-block-title">公寓</div>
           <el-select
             v-model="filters.institute_id"
-            placeholder="搜索学校或公寓名称"
+            placeholder="搜索公寓名称"
             clearable
             filterable
             remote
@@ -264,6 +286,31 @@ const uniLat = ref<number | null>(null)
 const uniLng = ref<number | null>(null)
 const uniRadius = ref<number>(5)
 const searchRadius = ref<number>(5)
+const selectedUniId = ref<number | null>(null)
+const schoolOptions = ref<any[]>([])
+const schoolLoading = ref(false)
+
+async function searchSchools(q: string) {
+  if (!q || q.length < 2) { schoolOptions.value = []; return }
+  schoolLoading.value = true
+  try {
+    const r = await import('@/services/api').then(m => m.default.get('/search/schools', { params: { q, limit: 20 } }))
+    schoolOptions.value = r.data || []
+  } catch { schoolOptions.value = [] }
+  finally { schoolLoading.value = false }
+}
+
+function onSchoolSelect(schoolId: number | null) {
+  if (!schoolId) {
+    uniId.value = null; uniName.value = ''; uniLat.value = null; uniLng.value = null
+  } else {
+    const s = schoolOptions.value.find((u: any) => u.id === schoolId)
+    if (s) {
+      uniId.value = s.id; uniName.value = s.name; uniLat.value = s.latitude; uniLng.value = s.longitude
+    }
+  }
+  doSearch()
+}
 const viewMode = ref<'grid' | 'list'>('grid')
 /** 是否来自 Agent 推荐（显示 AI 推荐横幅） */
 const fromAgent = ref(false)

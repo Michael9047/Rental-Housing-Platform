@@ -13,6 +13,26 @@ from app.models.university import University
 router = APIRouter()
 
 
+@router.get("/schools")
+async def search_schools(
+    q: str = Query(..., min_length=1),
+    limit: int = Query(20, ge=1, le=50),
+    db: AsyncSession = Depends(get_db_session),
+):
+    """搜索学校——支持中英文名 + 缩写"""
+    term = f"%{q.strip()}%"
+    r = await db.execute(
+        select(University.id, University.name, University.name_cn,
+               University.abbreviation, University.latitude, University.longitude)
+        .where(University.is_active == True, or_(
+            University.name.ilike(term), University.name_cn.ilike(term),
+            University.abbreviation.ilike(term)))
+        .order_by(University.is_hot.desc(), University.id).limit(limit))
+    return [{"id": row[0], "name": row[1], "name_cn": row[2], "abbreviation": row[3],
+             "latitude": float(row[4]) if row[4] else None, "longitude": float(row[5]) if row[5] else None}
+            for row in r.all()]
+
+
 @router.get("/school/{school_id}")
 async def get_school_info(
     school_id: int,
