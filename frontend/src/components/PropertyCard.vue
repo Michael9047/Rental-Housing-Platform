@@ -26,8 +26,8 @@
 
       <div class="card-tags">
         <el-tag size="small" type="info">{{ typeLabels[p.property_type] || p.property_type }}</el-tag>
-        <el-tag size="small">{{ property.bedrooms }}室{{ property.bathrooms }}卫</el-tag>
-        <el-tag size="small" type="info" v-if="property.area_sqm">{{ property.area_sqm }}㎡</el-tag>
+        <el-tag size="small">{{ p.bedrooms }}室{{ p.bathrooms }}卫</el-tag>
+        <el-tag size="small" type="info" v-if="p.area_sqm">{{ p.area_sqm }}㎡</el-tag>
       </div>
 
       <!-- ── 通勤时间（仅学校模式） ── -->
@@ -137,6 +137,9 @@ const p = computed(() => ({
   price_monthly: props.property.min_rent ?? props.property.price_monthly ?? props.property.base_rent ?? 0,
   district: props.property.district || props.property.institute_name || props.property.city || '',
   property_type: props.property.property_type || '1-bed',
+  bedrooms: props.property.avg_bedrooms ?? props.property.bedrooms ?? 0,
+  bathrooms: props.property.bathrooms ?? 1,
+  area_sqm: props.property.area_sqm ?? null,
   address: props.property.address || props.property.institute_address || '',
   // 图片: 公寓用 primary_image，户型用 images[0]
   primary_image_url: props.property.primary_image?.filename
