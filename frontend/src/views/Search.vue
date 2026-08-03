@@ -723,9 +723,10 @@ async function doSearch() {
       if (sch.data?.length) {
         const s = sch.data[0]
         uniId.value = s.id; uniName.value = s.name; uniLat.value = s.latitude; uniLng.value = s.longitude
-        selectedUniId.value = s.id
-        schoolOptions.value = sch.data
         searchMode.value = 'uni'
+        schoolOptions.value = sch.data
+        await nextTick()
+        selectedUniId.value = s.id
       }
     } catch { /* geocode fallback below */ }
   }
