@@ -284,7 +284,7 @@ onMounted(async () => {
 </script>
 
 <style scoped>
-.bd-page { max-width: 100%; margin: 0; padding: 0 16px 80px; background: #f5f6f8; min-height: 100vh }
+.bd-page { max-width: 1200px; margin: 0 auto; padding: 0 24px 80px; background: #f5f6f8; min-height: 100vh }
 .sec-title { font-size: 18px; font-weight: 700; margin: 0 0 16px; color: #1a1a2e; padding-left: 12px; position: relative }
 .sec-title::before { content:''; position:absolute; left:0; top:2px; bottom:2px; width:3px; border-radius:2px; background:#FF6B35 }
 
