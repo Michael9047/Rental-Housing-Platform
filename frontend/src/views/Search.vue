@@ -328,6 +328,9 @@ function renderMarkers() {
   // 清除旧标记
   markers.forEach(m => m.setMap(null))
   markers = []
+  const bounds = new google.maps.LatLngBounds()
+  let hasValid = false
+
   // 学校模式：标注大学位置
   if (uniLat.value != null && uniLng.value != null && uniName.value) {
     const uniPos = { lat: uniLat.value, lng: uniLng.value }
@@ -335,16 +338,10 @@ function renderMarkers() {
       position: uniPos, map: mapInstance, title: uniName.value,
       icon: { url: 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="#4285F4" stroke="#fff" stroke-width="2"/><text x="12" y="16" text-anchor="middle" fill="#fff" font-size="14">🎓</text></svg>'), scaledSize: new google.maps.Size(32,32) }
     })
-    uniMarker.addListener('click', () => {
-      if (infoWindow) infoWindow.setContent('<b>'+uniName.value+'</b>'); infoWindow?.open(mapInstance, uniMarker)
-    })
     markers.push(uniMarker)
     bounds.extend(uniPos)
     hasValid = true
   }
-
-  const bounds = new google.maps.LatLngBounds()
-  let hasValid = false
 
   for (const p of filteredAndSortedResults.value) {
     const lat = Number((p as any).latitude)
