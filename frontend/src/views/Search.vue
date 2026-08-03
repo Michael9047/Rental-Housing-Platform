@@ -312,6 +312,7 @@ async function initMap() {
   mapInstance = new google.maps.Map(mapContainer.value, {
     zoom: 12,
     center: { lat: 1.3521, lng: 103.8198 },
+    gestureHandling: 'greedy',
     mapTypeControl: false,
     streetViewControl: false,
     fullscreenControl: true,
@@ -336,7 +337,7 @@ function renderMarkers() {
     const uniPos = { lat: uniLat.value, lng: uniLng.value }
     const uniMarker = new google.maps.Marker({
       position: uniPos, map: mapInstance, title: uniName.value,
-      icon: { url: 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="#4285F4" stroke="#fff" stroke-width="2"/><text x="12" y="16" text-anchor="middle" fill="#fff" font-size="14">🎓</text></svg>'), scaledSize: new google.maps.Size(32,32) }
+      icon: { url: 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="28" height="36" viewBox="0 0 28 36"><path d="M14 0C6.3 0 0 5.4 0 13c0 8 14 23 14 23s14-15 14-23C28 5.4 21.7 0 14 0z" fill="#4285F4" stroke="#fff" stroke-width="1.5"/><circle cx="14" cy="11" r="5" fill="#fff" opacity=".9"/><text x="14" y="14" text-anchor="middle" fill="#4285F4" font-size="8" font-weight="bold">🎓</text></svg>'), scaledSize: new google.maps.Size(28,36), anchor: new google.maps.Point(14,36) }
     })
     markers.push(uniMarker)
     bounds.extend(uniPos)
@@ -892,8 +893,9 @@ watch(() => route.query, () => { initFromRoute() })
 
 <style scoped>
 .search-page {
-  margin: 0; padding: 0 16px 60px 16px;
-  display: flex; flex-direction: column;
+  height: calc(100vh - 64px);
+  margin: 0; padding: 0 16px;
+  display: flex; flex-direction: column; overflow: hidden;
 }
 
 /* ── Banner ── */
@@ -992,8 +994,9 @@ watch(() => route.query, () => { initFromRoute() })
 .results-area {
   flex: 1; min-width: 0;
   display: flex; flex-direction: column;
-  overflow-y: auto; /* 网格/列表模式下内部滚动 */
+  overflow-y: auto;
   overflow-x: hidden;
+  padding-bottom: 60px;
 }
 .results-area.map-layout { overflow-y: hidden; } /* 地图模式由 map-body 控制滚动 */
 .results-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; padding: 0 4px; flex-shrink: 0; }
