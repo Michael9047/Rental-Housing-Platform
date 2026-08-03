@@ -276,31 +276,11 @@ function initMap() {
   L.marker([building.value.latitude,building.value.longitude]).addTo(mapInstance)
 }
 
-async function loadBuilding(buildingId: string) {
-  loading.value = true; error.value = ''
-  try {
-    const r = await api.get(`/buildings/${buildingId}/tenant-detail`)
-    building.value = r.data
-    if (r.data.latitude && r.data.longitude) initMap(r.data.latitude, r.data.longitude)
-    loading.value = false
-  } catch (e: any) {
-    if (e?.response?.status === 404) {
-      const utRes = await api.get(`/unit-types/${buildingId}`).catch(() => null)
-      const instId = utRes?.data?.institute_id
-      if (instId && instId !== Number(buildingId)) {
-        router.replace({ path: `/building/${instId}` })
-        return
-      }
-      error.value = '该公寓暂无数据，请稍后重试'
-    } else {
-      error.value = '加载失败'
-    }
-    loading.value = false
-  }
-}
-
-onMounted(() => loadBuilding(String(route.params.id)))
-watch(() => route.params.id, (newId) => { if (newId) loadBuilding(String(newId)) })
+onMounted(async () => {
+  try { const r = await api.get(`/buildings/${route.params.id}/tenant-detail`); building.value = r.data }
+  catch (e: any) { error.value = e?.response?.status === 404 ? '公寓不存在' : '加载失败' }
+  finally { loading.value = false }
+})
 </script>
 
 <style scoped>
