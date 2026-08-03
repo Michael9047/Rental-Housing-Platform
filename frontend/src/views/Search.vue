@@ -339,7 +339,7 @@ function renderMarkers() {
       position: uniPos, map: mapInstance, title: uniName.value,
       icon: {
         path: google.maps.SymbolPath.CIRCLE,
-        scale: 8, fillColor: '#4285F4', fillOpacity: 1,
+        scale: 12, fillColor: '#4285F4', fillOpacity: 1,
         strokeColor: '#fff', strokeWeight: 2,
       },
       label: { text: '🏫', fontSize: '16px' },
@@ -901,7 +901,7 @@ watch(() => route.query, () => { initFromRoute() })
 
 <style scoped>
 .search-page {
-  height: calc(100vh - 64px - 48px);
+  height: calc(100vh - 108px);
   margin: 0; padding: 0 16px;
   display: flex; flex-direction: column; overflow: hidden;
 }
