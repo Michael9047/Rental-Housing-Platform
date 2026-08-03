@@ -883,11 +883,11 @@ async function initFromRoute() {
   doSearch()
 }
 onMounted(() => {
-  document.documentElement.classList.add('search-page-active')
+
   initFromRoute()
 })
 onUnmounted(() => {
-  document.documentElement.classList.remove('search-page-active')
+
   destroyMap()
 })
 watch(() => route.query, () => { initFromRoute() })
@@ -895,8 +895,7 @@ watch(() => route.query, () => { initFromRoute() })
 
 <style scoped>
 .search-page {
-  min-height: calc(100vh - 64px - 24px);
-  margin: 0; padding: 0 16px 80px 16px;
+  margin: 0; padding: 0 16px 60px 16px;
   display: flex; flex-direction: column;
 }
 
@@ -1084,10 +1083,4 @@ watch(() => route.query, () => { initFromRoute() })
 </style>
 
 <style>
-/* 搜索页全局样式：锁定视口，阻止 body 滚动 */
-html.search-page-active,
-html.search-page-active body {
-  overflow: hidden;
-  height: 100%;
-}
 </style>
