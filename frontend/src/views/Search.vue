@@ -332,12 +332,20 @@ function renderMarkers() {
   const bounds = new google.maps.LatLngBounds()
   let hasValid = false
 
-  // 学校模式：标注大学位置
+  // 学校模式：标注大学位置（蓝色圆形+标签）
   if (uniLat.value != null && uniLng.value != null && uniName.value) {
     const uniPos = { lat: uniLat.value, lng: uniLng.value }
     const uniMarker = new google.maps.Marker({
       position: uniPos, map: mapInstance, title: uniName.value,
-      icon: { url: 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="32" height="42" viewBox="0 0 28 36"><path d="M14 0C6.3 0 0 5.4 0 13c0 8 14 23 14 23s14-15 14-23C28 5.4 21.7 0 14 0z" fill="#4285F4" stroke="#fff" stroke-width="1.5"/><circle cx="14" cy="11" r="6" fill="#fff" opacity=".95"/><text x="14" y="14.5" text-anchor="middle" fill="#4285F4" font-size="10" font-weight="bold">🎓</text></svg>'), scaledSize: new google.maps.Size(32,42), anchor: new google.maps.Point(16,42) }
+      icon: {
+        path: google.maps.SymbolPath.CIRCLE,
+        scale: 8, fillColor: '#4285F4', fillOpacity: 1,
+        strokeColor: '#fff', strokeWeight: 2,
+      },
+      label: { text: '🏫', fontSize: '16px' },
+    })
+    uniMarker.addListener('click', () => {
+      infoWindow?.setContent('<b>'+uniName.value+'</b>'); infoWindow?.open(mapInstance, uniMarker)
     })
     markers.push(uniMarker)
     bounds.extend(uniPos)
