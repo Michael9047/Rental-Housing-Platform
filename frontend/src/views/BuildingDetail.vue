@@ -53,16 +53,11 @@
           <div class="info-item" v-if="building.female_only"><span class="info-label">👩 女生独栋</span></div>
           <div class="info-item" v-if="building.couples_allowed"><span class="info-label">💑 支持情侣入住</span></div>
         </div>
-      </section>
-
-      <!-- 公寓描述（可收起） -->
-      <section class="bd-desc" v-if="building.description">
-        <div class="desc-header" @click="descExpanded = !descExpanded">
-          <h2 class="sec-title" style="margin:0">📝 公寓简介</h2>
-          <span class="desc-toggle">{{ descExpanded ? '收起 ▲' : '展开 ▼' }}</span>
-        </div>
-        <div class="desc-body" v-show="descExpanded">
-          <p class="desc-text">{{ building.description }}</p>
+        <div v-if="building.description" class="desc-wrap">
+          <div class="desc-text" :class="{ collapsed: !descExpanded }">{{ building.description }}</div>
+          <el-button v-if="building.description && building.description.length > 200" text size="small" type="primary" @click="descExpanded = !descExpanded">
+            {{ descExpanded ? '收起 ▲' : '展开全文 ▼' }}
+          </el-button>
         </div>
       </section>
 
@@ -345,11 +340,9 @@ onMounted(async () => {
 .map-empty { color: #999; text-align: center; padding: 50px }
 
 /* ═══ 描述 ═══ */
-.bd-desc { background: #fff; border-radius: 14px; padding: 24px 28px; margin-bottom: 24px; box-shadow: 0 2px 10px rgba(0,0,0,.03) }
-.desc-header { display: flex; justify-content: space-between; align-items: center; cursor: pointer; user-select: none }
-.desc-toggle { font-size: 13px; color: #409EFF }
-.desc-body { margin-top: 16px }
+.desc-wrap { margin-top: 16px; padding-top: 16px; border-top: 1px solid #eee }
 .desc-text { font-size: 14px; line-height: 1.8; color: #606266; white-space: pre-line }
+.desc-text.collapsed { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden }
 
 /* ═══ 3. 基础信息 ═══ */
 .bd-info { background: #fff; border-radius: 14px; padding: 24px 28px; margin-bottom: 24px; box-shadow: 0 2px 10px rgba(0,0,0,.03) }
