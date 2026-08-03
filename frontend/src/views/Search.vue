@@ -161,14 +161,14 @@
               >
                 <div class="property-card" :class="{ 'map-card-highlight': highlightedId === p.id }" @click="flyToProperty(p)">
                   <div class="card-image">
-                    <img v-if="p.images?.length" :src="p.images[0].filename?.startsWith('http')?p.images[0].filename:'/api/v1/uploads/'+p.images[0].filename" alt="" class="property-img" />
+                    <img v-if="p.primary_image?.filename" :src="p.primary_image.filename.startsWith('http')?p.primary_image.filename:'/api/v1/uploads/'+p.primary_image.filename" alt="" class="property-img" />
                     <div v-else class="image-placeholder"><span>暂无图片</span></div>
-                    <span class="district-badge">{{ p.district }}</span>
+                    <span class="district-badge">{{ p.district || p.city }}</span>
                   </div>
                   <div class="card-body">
-                    <h3 class="card-title">{{ p.title }}</h3>
+                    <h3 class="card-title">{{ p.name || p.title }}</h3>
                     <div class="card-footer">
-                      <span class="card-price">¥{{ Number(p.price_monthly).toLocaleString() }}/月</span>
+                      <span class="card-price" v-if="p.min_rent">¥{{ Number(p.min_rent).toLocaleString() }}/月起</span>
                     </div>
                   </div>
                 </div>
@@ -185,19 +185,19 @@
             <!-- 内联卡片替代 PropertyCard，避免组件依赖崩溃 -->
             <div v-for="p in pagedResults" :key="p.id" class="property-card" @click="$router.push({ name: 'building-detail', params: { id: p.institute_id || p.id } })">
               <div class="card-image">
-                <img v-if="p.images?.length" :src="p.images[0].filename?.startsWith('http')?p.images[0].filename:'/api/v1/uploads/'+p.images[0].filename" alt="" class="property-img" />
+                <img v-if="p.primary_image?.filename" :src="p.primary_image.filename.startsWith('http')?p.primary_image.filename:'/api/v1/uploads/'+p.primary_image.filename" alt="" class="property-img" />
                 <div v-else class="image-placeholder"><span>暂无图片</span></div>
-                <span class="district-badge">{{ p.district }}</span>
+                <span class="district-badge">{{ p.district || p.city }}</span>
               </div>
               <div class="card-body">
-                <h3 class="card-title">{{ p.title }}</h3>
+                <h3 class="card-title">{{ p.name || p.title }}</h3>
                 <div class="card-tags">
-                  <el-tag size="small" type="info">{{ p.property_type || '1-bed' }}</el-tag>
-                  <el-tag size="small">{{ p.bedrooms }}室{{ p.bathrooms }}卫</el-tag>
-                  <el-tag v-if="p.area_sqm" size="small" type="info">{{ p.area_sqm }}㎡</el-tag>
+                  <el-tag size="small" type="info">{{ p.property_type || '公寓' }}</el-tag>
+                  <el-tag size="small">{{ p.unit_type_count || 0 }}种户型</el-tag>
+                  <el-tag v-if="p.avg_bedrooms" size="small">均{{ p.avg_bedrooms }}室</el-tag>
                 </div>
                 <div class="card-footer">
-                  <span class="card-price">¥{{ Number(p.price_monthly).toLocaleString() }}/月</span>
+                  <span class="card-price" v-if="p.min_rent">¥{{ Number(p.min_rent).toLocaleString() }}/月起</span>
                 </div>
               </div>
             </div>
