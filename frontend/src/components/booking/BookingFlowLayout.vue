@@ -77,7 +77,8 @@ function goNext() {
 }
 
 function goBack() {
-  router.push({ name: 'property-detail', params: { id: routeParams().propertyId } })
+  // 退出流程：导航到公寓详情（BuildingDetail 会处理 unit_type ID 到 institute ID 的转换）
+  router.push({ name: 'building-detail', params: { id: routeParams().propertyId } })
 }
 </script>
 

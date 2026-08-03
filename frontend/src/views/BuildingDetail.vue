@@ -292,7 +292,11 @@ onMounted(async () => {
         }
       } catch {}
       error.value = '公寓不存在或已下架'
-    } else { error.value = '加载失败' }
+      console.warn('[BuildingDetail] 404 for ID', route.params.id, '— trying unit_type lookup')
+    } else {
+      error.value = '加载失败'
+      console.error('[BuildingDetail] load failed:', e)
+    }
   } finally { loading.value = false }
 })
 </script>
