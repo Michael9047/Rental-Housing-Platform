@@ -764,7 +764,7 @@ watch(filteredAndSortedResults, (results) => {
 })
 
 // ── 搜索 ──
-function doSearch() {
+async function doSearch() {
   currentPage.value = 1
   const p: PropertySearchParams = {}
 
