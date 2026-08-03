@@ -3,7 +3,7 @@ from fastapi import APIRouter, HTTPException, status
 from app.schemas.geocoding import GeocodeRequest, GeocodeResponse
 from app.services.geocoding_service import geocode_with_fallback
 
-router = APIRouter(prefix="/geo", tags=["geo"])
+router = APIRouter(tags=["geo"])
 
 
 @router.post("/geocode", response_model=GeocodeResponse)
