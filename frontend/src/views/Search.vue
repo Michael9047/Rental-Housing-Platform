@@ -86,6 +86,12 @@
           </div>
         </div>
 
+        <!-- 搜索半径 -->
+        <div class="filter-block">
+          <div class="filter-block-title">搜索半径：{{ searchRadius }}km</div>
+          <el-slider v-model="searchRadius" :min="1" :max="20" :step="1" show-input @change="doSearch" />
+        </div>
+
         <!-- ③ 户型类型 -->
         <div class="filter-block">
           <div class="filter-block-title">户型类型</div>
@@ -266,6 +272,7 @@ const uniName = ref('')
 const uniLat = ref<number | null>(null)
 const uniLng = ref<number | null>(null)
 const uniRadius = ref<number>(5)
+const searchRadius = ref<number>(5)
 const viewMode = ref<'grid' | 'list'>('grid')
 /** 是否来自 Agent 推荐（显示 AI 推荐横幅） */
 const fromAgent = ref(false)
@@ -732,11 +739,13 @@ function doSearch() {
   if (filters.property_type) p.property_type = filters.property_type as PropertyType
   if (filters.amenities?.length) p.amenities = filters.amenities
 
-  // 大学近距搜索
-  if (uniLat.value != null && uniLng.value != null) {
-    p.near_lat = uniLat.value
-    p.near_lng = uniLng.value
-    p.near_distance_km = uniRadius.value
+  // 地理位置搜索（始终使用搜索半径，大学模式优先用大学坐标）
+  const centerLat = uniLat.value ?? mapCenter?.value?.lat ?? null
+  const centerLng = uniLng.value ?? mapCenter?.value?.lng ?? null
+  if (centerLat != null && centerLng != null) {
+    p.near_lat = centerLat
+    p.near_lng = centerLng
+    p.near_distance_km = uniLat.value != null ? uniRadius.value : searchRadius.value
   }
 
   // 排序（非通勤排序发送到后端）
