@@ -276,34 +276,30 @@ function initMap() {
   L.marker([building.value.latitude,building.value.longitude]).addTo(mapInstance)
 }
 
-let redirecting = false
-
 async function loadBuilding(buildingId: string) {
-  if (redirecting) return
   loading.value = true; error.value = ''
   try {
     const r = await api.get(`/buildings/${buildingId}/tenant-detail`)
     building.value = r.data
     if (r.data.latitude && r.data.longitude) initMap(r.data.latitude, r.data.longitude)
+    loading.value = false
   } catch (e: any) {
     if (e?.response?.status === 404) {
       const utRes = await api.get(`/unit-types/${buildingId}`).catch(() => null)
       const instId = utRes?.data?.institute_id
       if (instId && instId !== Number(buildingId)) {
-        redirecting = true
-        await router.replace({ path: `/building/${instId}` })
+        router.replace({ path: `/building/${instId}` })
         return
       }
       error.value = '该公寓暂无数据，请稍后重试'
     } else {
       error.value = '加载失败'
     }
-  } finally {
-    if (!redirecting) loading.value = false
+    loading.value = false
   }
 }
 
-onMounted(() => { redirecting = false; loadBuilding(String(route.params.id)) })
+onMounted(() => loadBuilding(String(route.params.id)))
 watch(() => route.params.id, (newId) => { if (newId) loadBuilding(String(newId)) })
 </script>
 
