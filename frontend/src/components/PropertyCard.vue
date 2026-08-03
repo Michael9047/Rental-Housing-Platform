@@ -65,7 +65,7 @@
           </el-button>
           <el-button
             size="small"
-            @click="goDetail"
+            @click="openDetail"
           >
             查看详情
           </el-button>
@@ -246,6 +246,10 @@ function goDetail() {
 
 function handleBook() {
   emit('book', props.property)
+}
+
+function openDetail() {
+  router.push({ name: 'building-detail', params: { id: props.property.institute_id || props.property.id } })
 }
 </script>
 
