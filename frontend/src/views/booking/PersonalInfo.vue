@@ -129,21 +129,27 @@ async function submitForm() {
   submitted.value = true
   Object.assign(errors, validatePersonalInfo(form))
   requiredFields.forEach((field) => touched.add(field))
-  if (requiredFields.some((field) => errors[field])) {
-    submitError.value = '请填写所有必填项'
+  const failed = requiredFields.filter((field) => errors[field])
+  if (failed.length > 0) {
+    console.error('[PersonalInfo] validation failed:', failed, errors)
+    submitError.value = `请填写所有必填项（${failed.join('、')}）`
     window.scrollTo({ top: 0, behavior: 'smooth' })
     return
   }
   submitting.value = true
   submitError.value = ''
   try {
-    await bookingPersonalInfoService.validate({ ...form })
-    await bookingDraftService.save(Number(route.params.propertyId), {
+    console.log('[PersonalInfo] submitting form:', { ...form })
+    const validateResp = await bookingPersonalInfoService.validate({ ...form })
+    console.log('[PersonalInfo] validate OK:', validateResp)
+    const saveResp = await bookingDraftService.save(Number(route.params.propertyId), {
       personal_info: { ...form },
       current_step: 'emergency_contact',
     })
+    console.log('[PersonalInfo] draft saved:', saveResp)
     router.push({ name: 'booking-emergency-contact', params: { propertyId: String(route.params.propertyId) } })
   } catch (error: any) {
+    console.error('[PersonalInfo] submit error:', error?.response?.status, error?.response?.data)
     submitError.value = error?.response?.data?.detail?.[0]?.msg || error?.response?.data?.detail || '个人信息校验失败，请检查后重试'
   } finally {
     submitting.value = false
