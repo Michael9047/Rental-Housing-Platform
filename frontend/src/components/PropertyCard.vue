@@ -37,9 +37,10 @@
 
       <!-- ── 通勤时间（仅学校模式） ── -->
       <div v-if="commute" class="commute-row">
-        <span class="commute-item" title="步行"><span class="commute-icon">🚶</span>{{ commute.walk_min }}m</span>
-        <span class="commute-sep">|</span>
-        <span class="commute-item" title="驾车"><span class="commute-icon">🚗</span>{{ commute.drive_min }}m</span>
+        <span class="commute-item" title="步行"><span class="commute-icon">🚶</span>{{ commute.walk_min }}min</span>
+        <span class="commute-item" title="骑行"><span class="commute-icon">🚲</span>{{ commute.bike_min }}min</span>
+        <span class="commute-item" title="驾车"><span class="commute-icon">🚗</span>{{ commute.drive_min }}min</span>
+        <span class="commute-item" title="公交"><span class="commute-icon">🚌</span>{{ commute.transit_min }}min</span>
       </div>
       <div v-if="commute" class="commute-dist">📍 {{ commute.dist_km }}km 到学校</div>
 
