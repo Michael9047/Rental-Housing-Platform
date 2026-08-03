@@ -3,7 +3,7 @@ from fastapi import APIRouter
 
 from app.api.v1.routes import (
     admin, agent, auth, bookings,
-    building_staff, buildings, chat, contracts,
+    building_staff, buildings, chat, commute, contracts,
     dashboard, favorites, health,
     imports, map_routes, notifications,
     payments, repair_workers, repairs,
