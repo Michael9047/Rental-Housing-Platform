@@ -159,8 +159,11 @@
           <div class="map-body">
             <!-- 房源列表列 -->
             <div class="map-property-col" ref="propertyListCol">
-              <div v-for="p in filteredAndSortedResults" :key="p.id" :id="'prop-'+p.id" class="map-property-card">
-                <PropertyCard :property="p" :commute="commuteMap[p.id]" @click="flyToProperty(p)" />
+              <div v-for="p in filteredAndSortedResults" :key="p.id" :id="'prop-'+p.id" class="map-property-card" @click.stop="flyToProperty(p)">
+                <PropertyCard :property="p" :commute="commuteMap[p.id]" />
+                <div style="padding:4px 0;text-align:right">
+                  <el-button size="small" type="primary" @click.stop="$router.push({name:'building-detail',params:{id:p.institute_id||p.id}})">查看详情</el-button>
+                </div>
               </div>
             </div>
             <!-- 地图 -->
@@ -339,7 +342,7 @@ function renderMarkers() {
       position: uniPos, map: mapInstance, title: uniName.value,
       icon: {
         path: google.maps.SymbolPath.CIRCLE,
-        scale: 12, fillColor: '#4285F4', fillOpacity: 1,
+        scale: 16, fillColor: '#4285F4', fillOpacity: 1,
         strokeColor: '#fff', strokeWeight: 2,
       },
       label: { text: '🏫', fontSize: '16px' },
@@ -362,14 +365,15 @@ function renderMarkers() {
     const marker = new google.maps.Marker({
       position: pos,
       map: mapInstance,
-      title: (p as any).title || '',
+      title: (p as any).name || (p as any).title || '',
       animation: google.maps.Animation.DROP,
     })
 
+    const name = (p as any).name || (p as any).title || ''
+    const rent = (p as any).min_rent ?? (p as any).base_rent ?? (p as any).price_monthly ?? 0
     const content = `<div style="max-width:200px;font-size:13px">
-      <strong>${(p as any).title || ''}</strong><br/>
-      ${(p as any).district || ''}<br/>
-      ¥${Number((p as any).price_monthly).toLocaleString()}/月 · ${(p as any).bedrooms || 0}室
+      <strong>${name}</strong><br/>
+      ¥${Number(rent).toLocaleString()}/月起
     </div>`
 
     marker.addListener('click', () => {
