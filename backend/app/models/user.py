@@ -11,7 +11,6 @@ from app.db.session import Base
 class UserRole(str, enum.Enum):
     tenant = "tenant"
     landlord = "landlord"
-    bd_manager = "bd_manager"
     maintenance_worker = "maintenance_worker"
     admin = "admin"
 

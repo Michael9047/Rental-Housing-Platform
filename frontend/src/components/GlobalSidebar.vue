@@ -26,28 +26,10 @@
         </el-menu-item>
       </template>
 
-      <!-- ====== BD经理侧边栏 ====== -->
-      <template v-if="authStore.isBdManager">
-        <el-menu-item index="/bd/dashboard">
-          <el-icon><DataAnalysis /></el-icon>
-          <span>数据台</span>
-        </el-menu-item>
-        <el-menu-item index="/property/manage">
-          <el-icon><OfficeBuilding /></el-icon>
-          <span>房源管理</span>
-        </el-menu-item>
-        <el-menu-item index="/property/create">
-          <el-icon><Plus /></el-icon>
-          <span>发布房源</span>
-        </el-menu-item>
-        <el-menu-item index="/notifications">
-          <el-icon><Bell /></el-icon>
-          <span>消息通知</span>
-        </el-menu-item>
-      </template>
+      <!-- ====== BD经理侧边栏（已废弃） ====== -->
 
-      <!-- ====== 房东/管理员侧边栏 ====== -->
-      <template v-if="authStore.isLandlord || authStore.isAdmin">
+      <!-- ====== 房东侧边栏 ====== -->
+      <template v-if="authStore.isLandlord">
         <el-menu-item index="/workspace">
           <el-icon><DataAnalysis /></el-icon>
           <span>运营工作台</span>
@@ -74,21 +56,16 @@
         </el-menu-item>
       </template>
 
-      <!-- 管理员额外菜单 -->
+      <!-- 管理员：系统管理（不含仪表盘，仪表盘归房东） -->
       <template v-if="authStore.isAdmin">
-        <el-divider style="margin: 8px 0" />
-        <el-sub-menu index="admin-sub">
-          <template #title>
-            <el-icon><DataAnalysis /></el-icon>
-            <span>系统管理</span>
-          </template>
-          <el-menu-item index="/admin">仪表盘</el-menu-item>
-          <el-menu-item index="/admin/users">用户管理</el-menu-item>
-          <el-menu-item index="/admin/properties">房源审核</el-menu-item>
-          <el-menu-item index="/admin/import">数据导入</el-menu-item>
-          <el-menu-item index="/admin/logs">审计日志</el-menu-item>
-          <el-menu-item index="/admin/embeddings">Embedding</el-menu-item>
-        </el-sub-menu>
+        <el-menu-item index="/admin/users">
+          <el-icon><User /></el-icon>
+          <span>用户管理</span>
+        </el-menu-item>
+        <el-menu-item index="/admin/logs">
+          <el-icon><Document /></el-icon>
+          <span>审计日志</span>
+        </el-menu-item>
       </template>
     </el-menu>
   </el-aside>
@@ -98,8 +75,8 @@
 import { ref, computed, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import {
-  HomeFilled, Bell, DataAnalysis, OfficeBuilding,
-  Plus, Tickets, Fold, Expand, Grid, Clock,
+  HomeFilled, Bell, DataAnalysis, User, Document,
+  Tickets, Fold, Expand, Grid, Clock,
 } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 

@@ -1,24 +1,18 @@
 <template>
   <div class="bd-page" v-loading="loading">
     <template v-if="building && !loading">
-      <!-- ═══ 1. 头部：左70%标题+地址+简介 / 右30%评分+预约 ═══ -->
+      <!-- ═══ 1. 头部：左名称+地址 / 右安全评分+预约 ═══ -->
       <section class="bd-header">
         <div class="hd-split">
           <div class="hd-left">
             <h1 class="hd-title">{{ building.name }}</h1>
             <p class="hd-addr">{{ building.address || '地址未设置' }}</p>
-            <p class="hd-desc">{{ building.description || '暂无介绍' }}</p>
           </div>
           <div class="hd-right">
             <div class="score-card safety">
-              <div class="sc-label">安全综合评分</div>
-              <div class="sc-num">{{ building.safety_score ?? '--' }}</div>
-              <div class="sc-sub">/10</div>
-            </div>
-            <div class="score-card ai">
-              <div class="sc-label">AI综合评分</div>
-              <div class="sc-num">{{ building.ai_score ?? '--' }}</div>
-              <div class="sc-sub" v-if="building.ai_score">/10</div>
+              <span class="sc-label">安全评分</span>
+              <span class="sc-num">{{ building.safety_score ?? '--' }}</span>
+              <span class="sc-sub">/10</span>
             </div>
             <el-button type="primary" size="large" class="hd-book-btn" @click="showContactDialog = true">📅 预约看房</el-button>
           </div>
@@ -306,17 +300,14 @@ onMounted(async () => {
 .bd-header { padding: 28px 0 24px }
 .hd-split { display: flex; gap: 36px; align-items: flex-start }
 .hd-left { flex: 7; min-width: 0 }
-.hd-right { flex: 3; display: flex; flex-direction: column; gap: 14px; min-width: 260px }
+.hd-right { flex: 3; display: flex; align-items: center; gap: 16px; min-width: 260px; justify-content: flex-end }
 .hd-title { font-size: 32px; font-weight: 800; margin: 0 0 6px; color: #1a1a2e; letter-spacing: .5px; line-height: 1.2 }
-.hd-addr { font-size: 15px; color: #888; margin: 0 0 14px }
+.hd-addr { font-size: 15px; color: #888; margin: 0 }
 .hd-desc { color: #555; line-height: 1.7; font-size: 16px; margin: 0; white-space: pre-wrap; max-height: 180px; overflow: auto }
-.score-card { display:flex; flex-direction:column; align-items:center; justify-content:center; width:100%; height:86px; border-radius:14px; background:#fff; box-shadow:0 2px 12px rgba(0,0,0,.06); transition:transform .2s }
-.score-card:hover { transform:translateY(-2px) }
+.score-card { display:flex; flex-direction:column; align-items:center; justify-content:center;  border-radius:14px; background:#fff; box-shadow:0 2px 12px rgba(0,0,0,.06); transition:transform .2s }
 .score-card.safety { border:2px solid #e8f5e9; background:linear-gradient(135deg,#f1f8e9,#fff) }
-.score-card.ai { border:2px solid #e3f2fd; background:linear-gradient(135deg,#e8f0fe,#fff) }
-.sc-label { font-size:13px; color:#999; margin-bottom:4px }
 .sc-num { font-size:30px; font-weight:800; color:#1a1a2e; line-height:1 }
-.sc-sub { font-size:11px; color:#999; margin-top:2px }
+.sc-sub { font-size:11px; color:#999;  }
 .hd-book-btn { font-size: 16px; padding: 14px 0; border-radius: 10px; font-weight: 600; letter-spacing: 2px; width: 100% }
 
 /* ═══ 2. 图片轮播 ═══ */

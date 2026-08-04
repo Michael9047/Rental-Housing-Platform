@@ -32,31 +32,220 @@ def build_search_text(room) -> str:
     return " | ".join(p for p in parts if p)
 
 
-def build_unit_type_search_text(institute: Any, unit_type: Any) -> str:
-    """将 Institute + UnitType 拼接为 embedding 文本。
+def _describe_neighborhood(institute: Any, unit_type: Any, safety_info: dict | None = None) -> str:
+    """根据建筑类型 + 配套档次 + 安全评分，生成社区阶层描述。
 
-    户型是最小的可租单元模板，向量化后实现「找类似户型」的语义检索。
+    数据驱动，不硬编码区域名。
+    """
+    country = getattr(institute, 'country', 'SG')
+    bld_amenities = getattr(institute, 'amenities', None) or []
+    bld_type = (getattr(institute, 'building_type', '') or "").lower()
+    safety_score = safety_info.get("safety_score") if safety_info else None
+
+    # 建筑档次评分
+    if "condo" in bld_type or "pbsa" in bld_type or "new_build" in bld_type:
+        bld_tier = 3
+        bld_label = "公寓" if country == "SG" else "学生公寓"
+    elif "hdb" in bld_type:
+        bld_tier = 1
+        bld_label = "组屋"
+    elif "hmo" in bld_type:
+        bld_tier = 0
+        bld_label = "合租房"
+    else:
+        bld_tier = 1
+        bld_label = "住宅"
+
+    # 配套档次
+    has_pool = any(a in str(bld_amenities) for a in ["泳池", "pool"])
+    has_gym = any(a in str(bld_amenities) for a in ["健身房", "gym"])
+    has_security = any(a in str(bld_amenities) for a in ["24小时安保", "门禁系统", "24h"])
+    amenity_tier = (1 if has_pool else 0) + (1 if has_gym else 0) + (1 if has_security else 0)
+
+    # 综合社区画像
+    if country == "GB":
+        if bld_tier >= 3 and amenity_tier >= 2:
+            if safety_score and safety_score >= 4:
+                return "高端学生社区，配套完善，治安优秀"
+            return "学生公寓社区，配套齐全"
+        elif bld_tier >= 3:
+            return "学生公寓社区"
+        elif amenity_tier >= 2:
+            return "成熟住宅社区，配套较好"
+        elif safety_score is not None and safety_score < 2.5:
+            return "普通居民区，治安一般"
+        else:
+            return "普通居民区，生活成本较低"
+    else:
+        if bld_tier >= 3 and amenity_tier >= 2:
+            return "高端公寓社区，泳池健身房俱全，居民以中高收入人群为主"
+        elif bld_tier >= 3:
+            return "公寓社区，配套完善"
+        elif bld_tier == 1 and amenity_tier <= 1:
+            if safety_score and safety_score < 2.5:
+                return "普通组屋区，生活成本低"
+            return "成熟组屋社区，周边配套完善，居民以本地家庭为主"
+        else:
+            return "普通住宅区"
+
+
+def _describe_safety(safety_data: dict | None = None) -> str:
+    """从 safety_data 生成安全描述。"""
+    if not safety_data:
+        return ""
+    score = safety_data.get("safety_score")
+    if score is None:
+        return ""
+    score = float(score)
+    source = safety_data.get("data_source", "")
+    if score >= 4.0:
+        return "治安优秀" + ("（官方数据）" if source != "stub" else "")
+    elif score >= 3.0:
+        return "治安良好"
+    elif score >= 2.0:
+        return "治安一般"
+    else:
+        return "治安需注意"
+
+
+def build_unit_type_search_text(
+    institute: Any, unit_type: Any,
+    poi_map: dict | None = None,
+    commute_text: str | None = None,
+    safety_data: dict | None = None,
+) -> str:
+    """RAG 富文本模板 — 自然语言描述，供 embedding 向量化。
+
+    融合 Institute + UnitType + POI + Commute 四层信息，
+    生成一段完整的房源描述，支持「找类似户型」「NUS附近带健身房空调studio」等语义检索。
     """
     parts = []
-    # 公寓维度
-    if institute.name: parts.append(institute.name)
-    if institute.name_cn: parts.append(institute.name_cn)
-    if institute.district: parts.append(f"区域: {institute.district}")
-    if institute.city: parts.append(f"城市: {institute.city}")
-    if institute.country: parts.append(f"国家: {institute.country}")
-    if institute.amenities: parts.append(f"公寓配套: {', '.join(institute.amenities)}")
-    if institute.description: parts.append(institute.description[:300])
-    # 户型维度
-    if unit_type.name: parts.append(f"户型: {unit_type.name}")
-    if unit_type.bedrooms: parts.append(f"{unit_type.bedrooms}室")
-    if unit_type.bathrooms: parts.append(f"{unit_type.bathrooms}卫")
-    if unit_type.area_sqm: parts.append(f"{unit_type.area_sqm}平米")
-    if unit_type.hall_count: parts.append(f"{unit_type.hall_count}厅")
-    if unit_type.base_rent: parts.append(f"标准月租: {unit_type.currency or '¥'}{float(unit_type.base_rent):.0f}")
-    if unit_type.special_offer: parts.append(f"优惠: {unit_type.special_offer}")
-    if unit_type.amenities: parts.append(f"户型配套: {', '.join(unit_type.amenities)}")
-    if unit_type.description: parts.append(unit_type.description[:300])
-    return " | ".join(p for p in parts if p)
+
+    # ── 公寓名 + 位置 ──
+    name = institute.name_cn or institute.name or "公寓"
+    district = institute.district or ""
+    city = institute.city or ""
+    country = "英国伦敦" if institute.country == "GB" else "新加坡"
+    location = " ".join(p for p in [city, district] if p)
+    parts.append(f"{name}位于{country} {location}".strip())
+
+    # ── 户型 + 价格 ──
+    ut_name = unit_type.name or ""
+    bedrooms = f"{unit_type.bedrooms}室" if unit_type.bedrooms else ""
+    bathrooms = f"{unit_type.bathrooms}卫" if unit_type.bathrooms else ""
+    area = f"{float(unit_type.area_sqm):.0f}平米" if unit_type.area_sqm else ""
+    currency_sym = "£" if getattr(institute, 'country', None) == "GB" else "S$"
+    period = "周" if getattr(institute, 'country', None) == "GB" else "月"
+    rent = f"{currency_sym}{float(unit_type.base_rent):.0f}/{period}" if unit_type.base_rent else ""
+    parts.append(f"户型是{ut_name}，{bedrooms}{bathrooms}，{area}，租金{rent}")
+
+    # ── 房内配套 ──
+    ut_amenities = unit_type.amenities or []
+    if ut_amenities:
+        parts.append(f"房内配套：{'、'.join(ut_amenities)}")
+
+    # ── 楼栋配套 ──
+    bld_amenities = getattr(institute, 'amenities', None) or []
+    if bld_amenities:
+        parts.append(f"楼栋配套：{'、'.join(bld_amenities)}")
+
+    # ── 社区阶层（数据驱动）──
+    neighborhood = _describe_neighborhood(institute, unit_type, safety_info=safety_data)
+    if neighborhood:
+        parts.append(neighborhood)
+
+    # ── 治安（真实评分）──
+    safety = _describe_safety(safety_data)
+    if safety:
+        parts.append(safety)
+
+    # ── 周边 POI（按数量和距离分档，自然语言描述） ──
+    if poi_map:
+        def _nearest_m(cat_keys: list[str]) -> int | None:
+            best = None
+            for k in cat_keys:
+                for p in poi_map.get(k, []):
+                    d = p.get("distance_m", 99999)
+                    if best is None or d < best:
+                        best = d
+            return best
+
+        # 距离描述词
+        def _dist_word(d_m: int | None) -> str:
+            if d_m is None or d_m > 1500:
+                return "周边有"
+            if d_m <= 300:
+                return "楼下就是"
+            if d_m <= 600:
+                return "步行几分钟到"
+            return "步行可达"
+
+        def _count(cat_keys: list[str]) -> int:
+            return sum(len(poi_map.get(k, [])) for k in cat_keys)
+
+        # 交通
+        n_tr = _count(["subway_station", "bus_station"])
+        d_tr = _nearest_m(["subway_station", "bus_station"])
+        w_tr = _dist_word(d_tr)
+        if d_tr is not None and d_tr <= 300 and n_tr >= 2:
+            parts.append(f"{w_tr}地铁站和公交站，出行很方便")
+        elif n_tr >= 2:
+            parts.append(f"{w_tr}地铁站，通勤方便")
+        elif n_tr >= 1:
+            parts.append(f"{w_tr}公交站")
+
+        # 购物
+        n_sh = _count(["supermarket", "mall", "market"])
+        d_sh = _nearest_m(["supermarket", "mall", "market"])
+        w_sh = _dist_word(d_sh)
+        if n_sh >= 3:
+            parts.append(f"{w_sh}超市和商场，日常购物方便")
+        elif n_sh >= 1:
+            parts.append(f"{w_sh}超市，满足日常采购")
+
+        # 餐饮
+        n_fd = _count(["restaurant", "cafe", "hawker_centre", "fast_food"])
+        d_fd = _nearest_m(["restaurant", "hawker_centre", "fast_food"])
+        w_fd = _dist_word(d_fd)
+        if n_fd >= 6:
+            parts.append(f"{w_fd}多家餐厅、食阁和咖啡厅，吃饭选择丰富")
+        elif n_fd >= 3:
+            parts.append(f"{w_fd}几家餐厅和食阁，解决吃饭没问题")
+        elif n_fd >= 1:
+            parts.append(f"{w_fd}餐厅和食阁")
+
+        # 医院
+        d_hp = _nearest_m(["hospital"])
+        if d_hp is not None and d_hp <= 500:
+            parts.append("紧邻医院，就医很方便")
+        elif d_hp is not None and d_hp <= 1000:
+            parts.append("步行可达医院")
+        elif d_hp is not None and d_hp <= 3000:
+            parts.append("周边有医院")
+
+        # 药店
+        n_ph = _count(["pharmacy"])
+        d_ph = _nearest_m(["pharmacy"])
+        w_ph = _dist_word(d_ph)
+        if n_ph >= 2:
+            parts.append(f"{w_ph}多家药店")
+        elif n_ph >= 1:
+            parts.append(f"{w_ph}药店")
+
+        # 健身
+        if _count(["gym"]) >= 1:
+            parts.append("附近有健身房")
+
+    # ── 通勤信息 ──
+    if commute_text:
+        parts.append(commute_text)
+
+    # ── 公寓描述 ──
+    desc = getattr(institute, 'description', None) or ""
+    if desc:
+        parts.append(desc[:200])
+
+    return "。".join(p for p in parts if p) + "。"
 
 
 async def generate_unit_type_embedding(session, unit_type_id: int) -> str | None:

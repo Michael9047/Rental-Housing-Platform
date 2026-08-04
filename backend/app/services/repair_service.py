@@ -5,7 +5,8 @@ from sqlalchemy.orm import selectinload
 
 from app.models.repair import RepairRequest, RepairStatus, RepairIssueType
 from app.models.notification import NotificationType
-from app.models.property import Property
+from app.models.unit_type import UnitType
+from app.models.institute import Institute
 from app.schemas.repair import RepairCreate, RepairUpdate
 from app.services.notification_service import NotificationService
 
@@ -18,17 +19,23 @@ class RepairService:
         self, tenant_id: int, repair_in: RepairCreate
     ) -> RepairRequest:
         """租客创建报修申请（自动检测房东是否有维修工）"""
-        # 查找房源和房东
-        stmt = select(Property).where(Property.id == repair_in.property_id)
+        # 查找户型及所属公寓的 BM（原 landlord）
+        stmt = (
+            select(UnitType, Institute)
+            .join(Institute, UnitType.institute_id == Institute.id)
+            .where(UnitType.id == repair_in.property_id)
+        )
         result = await self.session.execute(stmt)
-        property_obj = result.scalar_one_or_none()
-        if not property_obj:
-            raise ValueError("Property not found")
+        row = result.first()
+        if not row:
+            raise ValueError("UnitType not found")
+        unit_type, institute = row
+        bm_id = institute.bm_id or 0
 
         # 检测房东是否有自己的维修工
         from app.models.repair import RepairWorker, WorkerScope
         worker_stmt = select(RepairWorker).where(
-            (RepairWorker.manager_id == property_obj.landlord_id) &
+            (RepairWorker.manager_id == bm_id) &
             (RepairWorker.scope == WorkerScope.apartment)
         )
         worker_result = await self.session.execute(worker_stmt)
@@ -38,9 +45,9 @@ class RepairService:
         initial_status = RepairStatus.pending if has_workers else RepairStatus.pending_escalated
 
         repair = RepairRequest(
-            property_id=repair_in.property_id,
+            unit_type_id=repair_in.property_id,
             tenant_id=tenant_id,
-            landlord_id=property_obj.landlord_id,
+            bm_id=bm_id,
             issue_type=repair_in.issue_type,
             description=repair_in.description,
             images=repair_in.images,
@@ -55,10 +62,10 @@ class RepairService:
         if has_workers:
             # 通知房东
             await notif_svc.create_notification(
-                user_id=property_obj.landlord_id,
+                user_id=bm_id,
                 type=NotificationType.repair_created,
                 title="新报修申请",
-                content=f"租客对房源「{property_obj.title}」提交了报修：{repair_in.description[:50]}",
+                content=f"租客对户型「{unit_type.name}」提交了报修：{repair_in.description[:50]}",
             )
         else:
             # 通知所有Admin：有新工单待派单
@@ -71,7 +78,7 @@ class RepairService:
                     user_id=admin.id,
                     type=NotificationType.repair_created,
                     title="新报修待派单（房东无维修工）",
-                    content=f"租客对房源「{property_obj.title}」提交了报修，房东无维修工，请分配平台工人：{repair_in.description[:50]}",
+                    content=f"租客对户型「{unit_type.name}」提交了报修，房东无维修工，请分配平台工人：{repair_in.description[:50]}",
                 )
 
         # Reload with relationships
@@ -92,9 +99,9 @@ class RepairService:
             select(RepairRequest)
             .options(
                 selectinload(RepairRequest.tenant),
-                selectinload(RepairRequest.landlord),
+                selectinload(RepairRequest.bm),
                 selectinload(RepairRequest.assigned_worker),
-                selectinload(RepairRequest.property),
+                selectinload(RepairRequest.unit_type),
             )
             .order_by(RepairRequest.created_at.desc())
             .offset(skip)
@@ -104,7 +111,7 @@ class RepairService:
         if tenant_id is not None:
             stmt = stmt.where(RepairRequest.tenant_id == tenant_id)
         if landlord_id is not None:
-            stmt = stmt.where(RepairRequest.landlord_id == landlord_id)
+            stmt = stmt.where(RepairRequest.bm_id == landlord_id)  # 兼容旧参数名
         if worker_id is not None:
             stmt = stmt.where(RepairRequest.assigned_worker_id == worker_id)
         if status is not None:
@@ -119,9 +126,9 @@ class RepairService:
             .where(RepairRequest.id == repair_id)
             .options(
                 selectinload(RepairRequest.tenant),
-                selectinload(RepairRequest.landlord),
+                selectinload(RepairRequest.bm),
                 selectinload(RepairRequest.assigned_worker),
-                selectinload(RepairRequest.property),
+                selectinload(RepairRequest.unit_type),
             )
         )
         result = await self.session.execute(stmt)
@@ -281,7 +288,7 @@ class RepairService:
         # 通知房东
         notif_svc = NotificationService(self.session)
         await notif_svc.create_notification(
-            user_id=repair.landlord_id,
+            user_id=repair.bm_id,
             type=NotificationType.repair_completed,
             title="维修已确认",
             content=f"租客已确认维修完成，工单#{repair.id}已关闭",

@@ -18,7 +18,7 @@ from app.schemas.payment import (
     PaymentCreate, PaymentEligibilityResponse, PaymentMethodAvailability,
     PaymentResponse, PaymentResultResponse, TenantOrderDetail, TenantOrderListResponse,
 )
-from app.models._compat import PropertyImage
+from app.models.building_image import BuildingImage
 from app.services.payment_provider import (
     AlipayProvider, CardCheckoutProvider, MockHostedPaymentProvider,
     ProviderUnavailableError, WeChatPayProvider, provider_availability,
@@ -133,7 +133,11 @@ async def get_payment_result(booking_id: int, session: AsyncSession = Depends(ge
     if not payment: raise HTTPException(404, "支付订单不存在")
     if not _can_view_payment(payment, current_user): raise HTTPException(403, "无权查看该订单")
     booking = payment.booking
-    image = await session.scalar(select(PropertyImage).where(PropertyImage.property_id == booking.property_id).order_by(PropertyImage.is_primary.desc(), PropertyImage.sort_order, PropertyImage.id))
+    image = await session.scalar(
+        select(BuildingImage)
+        .where(BuildingImage.institute_id == booking.institute_id)
+        .order_by(BuildingImage.is_primary.desc(), BuildingImage.sort_order, BuildingImage.id)
+    )
     data = PaymentResponse.model_validate(payment).model_dump()
     data.update({
         "property_image_url": f"/api/v1/uploads/{image.filename}" if image else None,

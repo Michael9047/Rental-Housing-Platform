@@ -638,10 +638,9 @@ async def delete_building(
     session: AsyncSession = Depends(get_db_session),
     current_user: User = Depends(require_landlord),
 ) -> dict:
-    """级联软删除：公寓 → 户型 → 房间 全部进回收站"""
+    """级联软删除：公寓 → 户型 全部进回收站"""
     from datetime import datetime
     from app.models.unit_type import UnitType
-    from app.models._compat import Room
 
     b = await session.get(Institute, building_id)
     if not b:
@@ -650,17 +649,8 @@ async def delete_building(
         raise HTTPException(status_code=403, detail="无权删除此楼栋")
 
     now = datetime.utcnow()
-    # 1. 软删除所有下属房间
-    room_result = await session.execute(
-        select(Room).join(UnitType, Room.unit_type_id == UnitType.id)
-        .where(UnitType.institute_id == building_id, Room.deleted_at.is_(None))
-    )
-    rooms = room_result.scalars().all()
-    for r in rooms:
-        r.deleted_at = now
-        r.status = "offline"
 
-    # 2. 软删除所有下属户型
+    # 1. 软删除所有下属户型（Room 表已在三层改两层重构中移除）
     ut_result = await session.execute(
         select(UnitType).where(UnitType.institute_id == building_id, UnitType.deleted_at.is_(None))
     )
@@ -668,17 +658,17 @@ async def delete_building(
     for ut in unit_types:
         ut.deleted_at = now
 
-    # 3. 停用公寓本身
+    # 2. 停用公寓本身
     b.status = InstituteStatus.suspended
     await session.commit()
 
     try:
         from app.models.audit_log import AuditLog
         log = AuditLog(action="删除公寓", resource_type="building", resource_id=building_id,
-                       details={"公寓名": b.name, "级联删除户型": len(unit_types), "级联删除房间": len(rooms)})
+                       details={"公寓名": b.name, "级联删除户型": len(unit_types)})
         session.add(log); await session.commit()
     except Exception: pass
-    return {"ok": True, "cascaded_unit_types": len(unit_types), "cascaded_rooms": len(rooms)}
+    return {"ok": True, "cascaded_unit_types": len(unit_types)}
 
 
 @router.post("/{building_id}/restore")
@@ -687,9 +677,8 @@ async def restore_building(
     session: AsyncSession = Depends(get_db_session),
     current_user: User = Depends(require_landlord),
 ) -> dict:
-    """级联恢复：公寓 → 户型 → 房间 全部恢复"""
+    """级联恢复：公寓 → 户型 全部恢复"""
     from app.models.unit_type import UnitType
-    from app.models._compat import Room
 
     b = await session.get(Institute, building_id)
     if not b:
@@ -701,7 +690,7 @@ async def restore_building(
 
     b.status = InstituteStatus.active
 
-    # 恢复下属户型
+    # 恢复下属户型（Room 表已在三层改两层重构中移除）
     ut_result = await session.execute(
         select(UnitType).where(UnitType.institute_id == building_id, UnitType.deleted_at.isnot(None))
     )
@@ -709,24 +698,14 @@ async def restore_building(
     for ut in unit_types:
         ut.deleted_at = None
 
-    # 恢复下属房间
-    room_result = await session.execute(
-        select(Room).join(UnitType, Room.unit_type_id == UnitType.id)
-        .where(UnitType.institute_id == building_id, Room.deleted_at.isnot(None))
-    )
-    rooms = room_result.scalars().all()
-    for r in rooms:
-        r.deleted_at = None
-        r.status = "available"
-
     await session.commit()
     try:
         from app.models.audit_log import AuditLog
         log = AuditLog(action="恢复公寓", resource_type="building", resource_id=building_id,
-                       details={"公寓名": b.name, "恢复户型": len(unit_types), "恢复房间": len(rooms)})
+                       details={"公寓名": b.name, "恢复户型": len(unit_types)})
         session.add(log); await session.commit()
     except Exception: pass
-    return {"ok": True, "id": b.id, "name": b.name, "restored_unit_types": len(unit_types), "restored_rooms": len(rooms)}
+    return {"ok": True, "id": b.id, "name": b.name, "restored_unit_types": len(unit_types)}
 
 
 @router.delete("/{building_id}/hard", status_code=204)
@@ -735,9 +714,8 @@ async def hard_delete_building(
     session: AsyncSession = Depends(get_db_session),
     current_user: User = Depends(require_landlord),
 ):
-    """硬删除公寓及所有下属户型、房间（不可恢复）"""
+    """硬删除公寓及所有下属户型（不可恢复）"""
     from app.models.unit_type import UnitType
-    from app.models._compat import Room
 
     b = await session.get(Institute, building_id)
     if not b:
@@ -745,15 +723,7 @@ async def hard_delete_building(
     if b.status != InstituteStatus.suspended:
         raise HTTPException(status_code=400, detail="请先将公寓移入回收站再硬删除")
 
-    # 硬删除下属房间
-    room_result = await session.execute(
-        select(Room).join(UnitType, Room.unit_type_id == UnitType.id)
-        .where(UnitType.institute_id == building_id)
-    )
-    for r in room_result.scalars().all():
-        await session.delete(r)
-
-    # 硬删除下属户型
+    # 硬删除下属户型（Room 表已在三层改两层重构中移除）
     ut_result = await session.execute(
         select(UnitType).where(UnitType.institute_id == building_id)
     )
@@ -767,7 +737,7 @@ async def hard_delete_building(
     try:
         from app.models.audit_log import AuditLog
         log = AuditLog(action="硬删除公寓", resource_type="building", resource_id=building_id,
-                       details={"公寓名": name, "级联删除": f"户型+房间"})
+                       details={"公寓名": name, "级联删除": "户型"})
         session.add(log); await session.commit()
     except Exception: pass
 
@@ -827,19 +797,16 @@ async def get_public_building(
 ):
     """租客端公寓详情 — 含图集、配套、户型列表"""
     from app.models.unit_type import UnitType
-    from app.models._compat import Room, RoomStatus
     b = await session.get(Institute, building_id, options=[
         selectinload(Institute.images),
-        selectinload(Institute.unit_types).selectinload(UnitType.rooms),
+        selectinload(Institute.unit_types),  # Room 关系已移除（三层改两层重构）
     ])
     if not b or b.status != InstituteStatus.active:
         raise HTTPException(404, "公寓不存在")
     images = [{"id": img.id, "filename": img.filename, "original_name": img.original_name, "sort_order": img.sort_order, "is_primary": img.is_primary} for img in sorted(b.images or [], key=lambda x: x.sort_order)]
     unit_types = []
     for ut in (b.unit_types or []):
-        rooms = []
-        for r in (ut.rooms or []):
-            if r.deleted_at is None and r.status != RoomStatus.offline:
-                rooms.append({"id": r.id, "room_number": r.room_number, "floor": r.floor, "special_discount": r.special_discount, "available_from": r.available_from, "status": r.status.value if hasattr(r.status, 'value') else r.status})
-        unit_types.append({"id": ut.id, "name": ut.name, "bedrooms": ut.bedrooms, "bathrooms": ut.bathrooms, "hall_count": ut.hall_count, "area_sqm": ut.area_sqm, "base_rent": ut.base_rent, "deposit_amount": ut.deposit_amount, "deposit_type": ut.deposit_type.value if ut.deposit_type and hasattr(ut.deposit_type, 'value') else ut.deposit_type, "amenities": ut.amenities, "image_urls": ut.image_urls, "description": ut.description, "min_stay_months": ut.min_stay_months, "status": ut.status.value if hasattr(ut.status, 'value') else ut.status, "room_count": len(rooms), "rooms": rooms})
+        if ut.deleted_at is not None:
+            continue
+        unit_types.append({"id": ut.id, "name": ut.name, "bedrooms": ut.bedrooms, "bathrooms": ut.bathrooms, "hall_count": ut.hall_count, "area_sqm": ut.area_sqm, "base_rent": ut.base_rent, "deposit_amount": ut.deposit_amount, "deposit_type": ut.deposit_type.value if ut.deposit_type and hasattr(ut.deposit_type, 'value') else ut.deposit_type, "amenities": ut.amenities, "image_urls": ut.image_urls, "description": ut.description, "min_stay_months": ut.min_stay_months, "status": ut.status.value if hasattr(ut.status, 'value') else ut.status})
     return {"id": b.id, "name": b.name, "address": b.address, "country": b.country, "city": b.city, "district": b.district, "street": b.street, "postal_code": b.postal_code, "latitude": float(b.latitude) if b.latitude else None, "longitude": float(b.longitude) if b.longitude else None, "description": b.description, "amenities": b.amenities, "contact_phone": b.contact_phone, "images": images, "unit_types": unit_types, "female_only": bool(b.female_only) if b.female_only is not None else False, "couples_allowed": bool(b.couples_allowed) if b.couples_allowed is not None else False}

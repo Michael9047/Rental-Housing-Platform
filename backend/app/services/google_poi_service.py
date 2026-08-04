@@ -205,21 +205,31 @@ class GooglePOIService:
         self, kw: str, lat: float, lng: float, _radius_m: int, sem: asyncio.Semaphore,
     ) -> tuple[str, list[POIItem]]:
         async with sem:
-            # 路径A：小贩中心（2km 单次）
+            # 路径A：小贩中心（2km 单次 searchText + includedType:food_court）
             if kw == "小贩中心":
                 pois = await self._search_hawker_centre(lat, lng, FACILITY_RADIUS_M)
-            # 路径B：searchText 1×1 网格（1km）
+                fb_radius = FACILITY_RADIUS_M
+            # 路径B：searchText 1×1 网格（日常消费关键词，1km）
             elif kw in GM_ST:
                 en = GM_ST[kw]
                 queries = en if isinstance(en, list) else [en]
                 max_pages = ST_PAGES.get(kw, 2)
                 pois = await self._search_text_grid(lat, lng, queries, FOOD_RADIUS_M, max_pages, grid=1)
-            # 路径C：searchNearby（2km 圆形）
+                fb_radius = FOOD_RADIUS_M
+            # 路径C：searchNearby（低密度结构化类型，2km 圆形）
             elif kw in GM_NS:
                 types = GM_NS[kw]
                 pois = await self._search_nearby_circle(lat, lng, types, FACILITY_RADIUS_M) if types else []
+                fb_radius = FACILITY_RADIUS_M
             else:
                 pois = []
+                fb_radius = FACILITY_RADIUS_M
+
+            # GM 无结果 → Overpass 降级（国内无 VPN 时 GM 不可达）
+            if not pois:
+                logger.info("GM 无结果: 关键词=%s, 尝试 Overpass 降级 (radius=%dm)", kw, fb_radius)
+                pois = await self._overpass_fallback(kw, lat, lng, fb_radius)
+
             return (kw, pois)
 
     # ─── 路径A：小贩中心 ──────────────────────
@@ -429,6 +439,63 @@ class GooglePOIService:
                 return mapping[t]
         return types[0] if types else ""
 
+    # ─── Overpass 降级 ──────────────────────────
+
+    async def _overpass_fallback(
+        self, kw: str, lat: float, lng: float, radius_m: int,
+    ) -> list[POIItem]:
+        """GM 返回空结果时，尝试 Overpass API 降级检索。
+
+        Overpass 基于 OpenStreetMap，无需 API Key，全球可用，
+        在 GM API 不可达时（如国内无 VPN）提供兜底数据。
+        """
+        from app.services.geocoding_service import (
+            OverpassGeocodingService,
+            _OVERPASS_CATEGORY_QUERIES,
+        )
+
+        if kw not in _OVERPASS_CATEGORY_QUERIES:
+            logger.debug("Overpass: 关键词 '%s' 无查询映射，跳过降级", kw)
+            return []
+
+        try:
+            overpass = OverpassGeocodingService()
+            location = f"{lng},{lat}"  # Overpass 接受 "lng,lat" 格式
+            nearby_items = await overpass.search_nearby(
+                location=location,
+                keyword=kw,
+                radius=radius_m,
+            )
+        except Exception:
+            logger.warning("Overpass 降级异常: 关键词=%s", kw, exc_info=True)
+            return []
+
+        if not nearby_items:
+            logger.debug("Overpass 降级返回空: 关键词=%s", kw)
+            return []
+
+        # 转换 NearbyPoiItem → POIItem（统一返回类型）
+        pois: list[POIItem] = []
+        for item in nearby_items:
+            pois.append(POIItem(
+                name=item.name,
+                lat=item.lat or lat,
+                lng=item.lng or lng,
+                distance_m=item.distance_meters or round(
+                    _hav_distance(lat, lng, item.lat or lat, item.lng or lng)
+                ),
+                keyword=kw,
+                vicinity=item.address,
+                rating=None,          # Overpass 无评分数据
+                place_id="",          # Overpass 无 place_id
+            ))
+
+        logger.info(
+            "Overpass 降级成功: 关键词=%s, 结果数=%d (radius=%dm)",
+            kw, len(pois), radius_m,
+        )
+        return pois
+
     # ─── 去重（post-search）───────────────────
 
     @staticmethod
@@ -487,6 +554,16 @@ class GooglePOIService:
             result_map = await self.search_all(lat, lng, radius_m=2000)
             item_map = {kw: [POIItem(**p) for p in pois] for kw, pois in result_map.items()}
             item_map = self.apply_all_dedup(item_map)
+
+            # 检查是否所有关键词均无结果（GM + Overpass 均失败）
+            total_pois = sum(len(pois) for pois in item_map.values())
+            if total_pois == 0:
+                logger.warning(
+                    "generate_and_save: 所有关键词搜索均无结果（GM + Overpass），"
+                    "property=%s (lat=%.4f, lng=%.4f)，不写入空 POI 记录",
+                    prop.id, lat, lng,
+                )
+                return None
 
             # 组装 map_poi_data
             map_categories: dict[str, list[dict]] = {}

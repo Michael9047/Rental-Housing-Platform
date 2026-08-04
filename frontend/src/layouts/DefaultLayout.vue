@@ -140,8 +140,7 @@
           <el-tag v-if="authStore.isAdmin" type="danger" size="small" effect="dark">管理员</el-tag>
           <el-tag v-else-if="authStore.isLandlord" type="warning" size="small" effect="dark">公寓运营商</el-tag>
           <el-tag v-else-if="authStore.isMaintenance" type="success" size="small" effect="dark">维修师傅</el-tag>
-          <el-tag v-else-if="authStore.isBdManager" type="" size="small" effect="dark" style="background-color: #8b5cf6; border-color: #8b5cf6; color: #fff;">商务拓展</el-tag>
-          <el-tag v-else type="info" size="small" effect="plain">租客</el-tag>
+<el-tag v-else type="info" size="small" effect="plain">租客</el-tag>
 
           <el-badge :value="unreadCount" :hidden="unreadCount === 0" :max="99">
             <el-button :icon="Bell" circle @click="router.push('/notifications')" />
@@ -156,7 +155,7 @@
             <template #dropdown>
               <el-dropdown-menu>
                 <!-- 租客菜单 -->
-                <template v-if="!authStore.isLandlord && !authStore.isAdmin && !authStore.isMaintenance && !authStore.isBdManager">
+                <template v-if="!authStore.isLandlord && !authStore.isAdmin && !authStore.isMaintenance">
                   <el-dropdown-item @click="router.push('/profile')">
                     <el-icon><User /></el-icon> 个人中心
                   </el-dropdown-item>
@@ -164,19 +163,19 @@
                     <el-icon><List /></el-icon> 我的预订
                   </el-dropdown-item>
                 </template>
-                <!-- 房东/管理员菜单 -->
-                <template v-if="authStore.isLandlord || authStore.isAdmin">
+                <!-- 房东菜单 -->
+                <template v-if="authStore.isLandlord">
                   <el-dropdown-item @click="router.push('/workspace')">
                     <el-icon><DataAnalysis /></el-icon> 运营工作台
                   </el-dropdown-item>
                   <el-dropdown-item @click="router.push('/bookings/landlord')">
                     <el-icon><Tickets /></el-icon> 预约管理
                   </el-dropdown-item>
-                  <el-dropdown-item @click="router.push('/property/manage')">
-                    <el-icon><Setting /></el-icon> 房源管理
+                  <el-dropdown-item @click="router.push('/buildings')">
+                    <el-icon><Setting /></el-icon> 公寓管理
                   </el-dropdown-item>
-                  <el-dropdown-item @click="router.push('/property/create')">
-                    <el-icon><Plus /></el-icon> 发布房源
+                  <el-dropdown-item @click="router.push('/unit-type/manage')">
+                    <el-icon><Grid /></el-icon> 户型管理
                   </el-dropdown-item>
                 </template>
                 <!-- 维修师傅菜单 -->
@@ -185,27 +184,15 @@
                     <el-icon><DataAnalysis /></el-icon> 工单中心
                   </el-dropdown-item>
                 </template>
-                <!-- BD经理菜单 -->
-                <template v-if="authStore.isBdManager">
-                  <el-dropdown-item @click="router.push('/bd/dashboard')">
-                    <el-icon><DataAnalysis /></el-icon> 数据台
+                <!-- 管理员菜单 -->
+                <template v-if="authStore.isAdmin">
+                  <el-dropdown-item @click="router.push('/admin/users')">
+                    <el-icon><User /></el-icon> 用户管理
                   </el-dropdown-item>
-                  <el-dropdown-item @click="router.push('/property/manage')">
-                    <el-icon><Setting /></el-icon> 房源管理
-                  </el-dropdown-item>
-                  <el-dropdown-item @click="router.push('/property/create')">
-                    <el-icon><Plus /></el-icon> 发布房源
+                  <el-dropdown-item @click="router.push('/admin/logs')">
+                    <el-icon><Document /></el-icon> 审计日志
                   </el-dropdown-item>
                 </template>
-                <el-dropdown-item v-if="authStore.isAdmin" @click="router.push('/admin')">
-                  <el-icon><DataAnalysis /></el-icon> 系统管理
-                </el-dropdown-item>
-                <el-dropdown-item v-if="authStore.isAdmin" @click="router.push('/admin/escalated-repairs')">
-                  <el-icon><Tickets /></el-icon> 待派单工单
-                </el-dropdown-item>
-                <el-dropdown-item v-if="authStore.isAdmin" @click="router.push('/admin/landlord-workers')">
-                  <el-icon><List /></el-icon> 房东维修工看板
-                </el-dropdown-item>
                 <el-dropdown-item divided @click="authStore.logout()">
                   <el-icon><SwitchButton /></el-icon> 退出登录
                 </el-dropdown-item>
@@ -222,7 +209,7 @@
 
     <el-container class="layout-body">
       <!-- 全局侧边栏 -->
-      <GlobalSidebar v-if="authStore.isLandlord || authStore.isAdmin || authStore.isMaintenance || authStore.isBdManager" />
+      <GlobalSidebar v-if="authStore.isLandlord || authStore.isAdmin || authStore.isMaintenance" />
       <el-main class="layout-main">
         <div class="back-bar" v-if="route.path !== '/'">
           <el-button text :icon="ArrowLeft" @click="router.back()">返回上一页</el-button>
@@ -240,7 +227,7 @@ import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import {
   Search, User, UserFilled, ArrowDown, ArrowLeft, Setting, SwitchButton,
-  Plus, List, Bell, ChatDotRound, DataAnalysis, Tickets, Loading, ShoppingCart,} from '@element-plus/icons-vue'
+  List, Bell, ChatDotRound, DataAnalysis, Tickets, Loading, ShoppingCart, Grid,} from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 import { useAgentChatStore } from '@/stores/agentChat'
 import { useCartStore } from '@/stores/cart'

@@ -1,13 +1,14 @@
-"""已废弃 — Room 表已删除。保留兼容导入，业务逻辑请迁移到 UnitType。"""
-from app.models._compat import (
-    DepositType,
-    Property,
-    PropertyImage,
-    PropertyStatus,
+"""兼容桥接 — Room 表已删除，重定向到 UnitType / Institute / BuildingImage。"""
+from app.models.unit_type import (
+    UnitType as Property,
+    UnitType as Room,
+    UnitTypeStatus as PropertyStatus,
+    UnitTypeStatus as RoomStatus,
     PropertyType,
-    Room,
-    RoomImage,
-    RoomStatus,
-    VALID_ROOM_STATUS_TRANSITIONS,
-    VALID_STATUS_TRANSITIONS,
+    DepositType,
 )
+from app.models.building_image import BuildingImage as PropertyImage, BuildingImage as RoomImage
+
+# 状态流转表已废弃，保留空字典兼容旧引用
+VALID_ROOM_STATUS_TRANSITIONS: dict = {}
+VALID_STATUS_TRANSITIONS: dict = {}

@@ -284,8 +284,7 @@ async def hard_delete_unit_type(
     session: AsyncSession = Depends(get_db_session),
     _current_user: User = Depends(require_landlord),
 ):
-    """硬删除户型及所有下属房间（不可恢复）"""
-    from app.models._compat import Room
+    """硬删除户型（Room 表已在三层改两层重构中移除）"""
     ut = await UnitTypeService(session).get(unit_type_id)
     if not ut:
         from fastapi import HTTPException
@@ -293,12 +292,6 @@ async def hard_delete_unit_type(
     if ut.deleted_at is None:
         from fastapi import HTTPException
         raise HTTPException(400, "请先将户型移入回收站再硬删除")
-    # 硬删除下属房间
-    room_result = await session.execute(
-        select(Room).where(Room.unit_type_id == unit_type_id)
-    )
-    for r in room_result.scalars().all():
-        await session.delete(r)
     # 硬删除户型
     ut_name = ut.name
     await session.delete(ut)

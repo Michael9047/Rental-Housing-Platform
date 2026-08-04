@@ -42,6 +42,7 @@ class CommuteResult:
     drive_min: int
     transit_min: int
     source: str = "api"  # "api" | "haversine_fallback"
+    fallback_reason: str | None = None  # 降级原因（仅 fallback 时有值）
 
 
 @dataclass
@@ -49,6 +50,7 @@ class BatchCommuteResult:
     """批量通勤计算结果"""
     results: list[CommuteResult] = field(default_factory=list)
     source: str = "api"
+    error_reason: str | None = None  # 批量降级原因，如 "所有引擎不可达: amap → gm → ors"
 
 
 @dataclass
@@ -95,7 +97,10 @@ def _haversine_km(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
     return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
 
 
-def _haversine_estimate(lat1: float, lng1: float, lat2: float, lng2: float) -> CommuteResult:
+def _haversine_estimate(
+    lat1: float, lng1: float, lat2: float, lng2: float,
+    reason: str | None = None,
+) -> CommuteResult:
     """Haversine 直线距离估算（API 不可用时的兜底方案）"""
     dist = _haversine_km(lat1, lng1, lat2, lng2)
     road = dist * _DETOUR_FACTOR
@@ -107,6 +112,7 @@ def _haversine_estimate(lat1: float, lng1: float, lat2: float, lng2: float) -> C
         drive_min=max(1, round(road / _DRIVE_SPEED * 60)),
         transit_min=max(1, round(road / _TRANSIT_SPEED * 60)),
         source="haversine_fallback",
+        fallback_reason=reason,
     )
 
 
@@ -244,11 +250,11 @@ class AmapCommuteService:
             resp.raise_for_status()
             data = resp.json()
         except Exception as exc:
-            logger.debug("高德 direction API 调用失败 (%s): %s", url, exc)
+            logger.warning("高德 direction API 调用失败 (%s): %s", url, exc)
             return None
 
         if data.get("status") != "1":
-            logger.debug("高德 direction API 返回错误 (%s): %s", url, data.get("info", ""))
+            logger.warning("高德 direction API 返回错误 (%s): %s", url, data.get("info", ""))
             return None
 
         route = data.get("route", {})
@@ -328,11 +334,11 @@ class AmapCommuteService:
                 resp.raise_for_status()
                 data = resp.json()
             if data.get("status") != "1":
-                logger.debug("高德 direction API 返回错误 (%s): %s", url, data.get("info", ""))
+                logger.warning("高德 direction API 返回错误 (%s): %s", url, data.get("info", ""))
                 return None
             return data
         except Exception as exc:
-            logger.debug("高德 direction API 调用失败 (%s): %s", url, exc)
+            logger.warning("高德 direction API 调用失败 (%s): %s", url, exc)
             return None
 
     async def get_route_detail(
@@ -497,11 +503,11 @@ class GoogleCommuteService:
             resp.raise_for_status()
             data = resp.json()
         except Exception as exc:
-            logger.debug("Google Distance Matrix API 调用失败 (mode=%s): %s", mode, exc)
+            logger.warning("Google Distance Matrix API 调用失败 (mode=%s): %s", mode, exc)
             return []
 
         if data.get("status") != "OK":
-            logger.debug("Google Distance Matrix API 返回错误 (mode=%s): %s", mode, data.get("status", ""))
+            logger.warning("Google Distance Matrix API 返回错误 (mode=%s): %s", mode, data.get("status", ""))
             return []
 
         results: list[tuple[int, float] | None] = []
@@ -610,11 +616,11 @@ class GoogleCommuteService:
                 resp.raise_for_status()
                 data = resp.json()
         except Exception as exc:
-            logger.debug("Google Directions API 调用失败 (mode=%s): %s", mode, exc)
+            logger.warning("Google Directions API 调用失败 (mode=%s): %s", mode, exc)
             return _route_fallback(origin_lat, origin_lng, dest_lat, dest_lng, mode)
 
         if data.get("status") != "OK":
-            logger.debug("Google Directions API 返回错误 (mode=%s): %s", mode, data.get("status", ""))
+            logger.warning("Google Directions API 返回错误 (mode=%s): %s", mode, data.get("status", ""))
             return _route_fallback(origin_lat, origin_lng, dest_lat, dest_lng, mode)
 
         routes = data.get("routes") or []
@@ -730,7 +736,7 @@ class ORSCommuteService:
             dur, dist = int(s["duration"]), float(s["distance"])
             return (dur, dist) if dur > 0 else None
         except Exception as exc:
-            logger.debug("ORS API 失败 (mode=%s): %s", mode, exc)
+            logger.warning("ORS API 失败 (mode=%s): %s", mode, exc)
             return None
 
     async def get_one(
@@ -860,14 +866,17 @@ def _fallback_batch(
     origin_lat: float,
     origin_lng: float,
     destinations: list[CommuteDestination],
+    reason: str | None = None,
 ) -> BatchCommuteResult:
     """全部降级为 Haversine 估算"""
     results = []
     for d in destinations:
-        r = _haversine_estimate(origin_lat, origin_lng, d.lat, d.lng)
+        r = _haversine_estimate(origin_lat, origin_lng, d.lat, d.lng, reason=reason)
         r.dest_id = d.dest_id
         results.append(r)
-    return BatchCommuteResult(results=results, source="haversine_fallback")
+    return BatchCommuteResult(
+        results=results, source="haversine_fallback", error_reason=reason,
+    )
 
 
 def _route_fallback(
@@ -929,7 +938,7 @@ async def get_route_detail(
 # ── 网络环境探测 + 弹性批量通勤计算 ─────────────────────────────────
 
 _amap_reachable_cache: bool | None = None
-_AMAP_PROBE_TIMEOUT = 2.0
+_AMAP_PROBE_TIMEOUT = 3.0  # 比默认 direction 超时短，快速判断网络环境
 
 
 async def _probe_amap_reachable() -> bool:
@@ -949,10 +958,19 @@ async def _probe_amap_reachable() -> bool:
 
     try:
         async with httpx.AsyncClient(timeout=_AMAP_PROBE_TIMEOUT) as client:
-            await client.get(
+            resp = await client.get(
                 "https://restapi.amap.com/v3/geocode/geo",
                 params={"key": settings.amap_web_key, "address": "北京"},
             )
+            resp.raise_for_status()
+            data = resp.json()
+            if data.get("status") != "1":
+                logger.warning(
+                    "高德 API 探测返回异常: status=%s (info=%s)",
+                    data.get("status"), data.get("info", ""),
+                )
+                _amap_reachable_cache = False
+                return False
         _amap_reachable_cache = True
         logger.info("高德 API 可达 → 国内网络环境")
         return True
@@ -1036,5 +1054,6 @@ async def calculate_commute_batch_resilient(
             return result
 
     # 全部失败 → Haversine 兜底
-    logger.warning("所有路线引擎均失败，使用 Haversine 估算")
-    return _fallback_batch(origin_lat, origin_lng, destinations)
+    reason = f"所有引擎不可达: {' → '.join(chain)}"
+    logger.warning("所有路线引擎均失败（%s），使用 Haversine 估算", reason)
+    return _fallback_batch(origin_lat, origin_lng, destinations, reason=reason)

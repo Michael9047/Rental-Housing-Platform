@@ -258,7 +258,7 @@ const routes: RouteRecordRaw[] = [
       {
         path: 'workspace',
         name: 'landlord-workspace',
-        component: () => import('@/views/landlord/LandlordDashboard.vue'),
+        component: () => import('@/views/admin/AdminWorkspace.vue'),
         meta: { requiresAuth: true, requiresLandlord: true },
       },
       // ---- 报修详情（通用）----
@@ -300,60 +300,24 @@ const routes: RouteRecordRaw[] = [
         component: () => import('@/views/maintenance/WorkerOrders.vue'),
         meta: { requiresAuth: true, requiresMaintenance: true },
       },
-      // ---- BD经理 ----
+      // ---- 管理员（共用主布局）----
       {
-        path: 'bd/dashboard',
-        name: 'bd-dashboard',
-        component: () => import('@/views/bd-manager/BdDashboard.vue'),
-        meta: { requiresAuth: true, requiresBdManager: true },
-      },
-    ],
-  },
-  // ── 管理后台（独立布局）──
-  {
-    path: '/admin',
-    component: () => import('@/layouts/AdminLayout.vue'),
-    meta: { requiresAuth: true, requiresAdmin: true },
-    children: [
-      {
-        path: '',
+        path: 'admin',
         name: 'admin-dashboard',
         component: () => import('@/views/admin/AdminWorkspace.vue'),
+        meta: { requiresAuth: true, requiresAdmin: true },
       },
       {
-        path: 'users',
+        path: 'admin/users',
         name: 'admin-users',
         component: () => import('@/views/admin/AdminUsers.vue'),
+        meta: { requiresAuth: true, requiresAdmin: true },
       },
       {
-        path: 'properties',
-        name: 'admin-properties',
-        component: () => import('@/views/admin/AdminProperties.vue'),
-      },
-      {
-        path: 'logs',
+        path: 'admin/logs',
         name: 'admin-logs',
         component: () => import('@/views/admin/AdminLogs.vue'),
-      },
-      {
-        path: 'embeddings',
-        name: 'admin-embeddings',
-        component: () => import('@/views/admin/AdminEmbeddings.vue'),
-      },
-      {
-        path: 'import',
-        name: 'admin-import',
-        component: () => import('@/views/admin/AdminImport.vue'),
-      },
-      {
-        path: 'escalated-repairs',
-        name: 'admin-escalated-repairs',
-        component: () => import('@/views/admin/EscalatedRepairs.vue'),
-      },
-      {
-        path: 'landlord-workers',
-        name: 'admin-landlord-workers',
-        component: () => import('@/views/admin/LandlordWorkersStatus.vue'),
+        meta: { requiresAuth: true, requiresAdmin: true },
       },
     ],
   },

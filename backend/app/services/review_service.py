@@ -43,23 +43,14 @@ class ReviewService:
         if existing.scalars().first():
             raise ValueError("该租赁已评价过，每个 booking 只能评价一次")
 
-        # 获取房源信息，判断房东类型
-        property_obj = await self.session.get(Property, booking.property_id)
-        if not property_obj:
-            raise ValueError("Property not found")
-
-        is_institute = property_obj.institute_id is not None
-
-        # 个人房东必须填写 landlord 评分
-        if not is_institute:
-            if review_in.landlord_rating is None:
-                raise ValueError("个人房东房源需要填写房东评分")
-            if review_in.landlord_rating < 1 or review_in.landlord_rating > 5:
-                raise ValueError("房东评分需在 1-5 之间")
+        # 获取房源信息（Review.institute_id 对应 Institute）
+        institute_id = booking.institute_id
+        if not institute_id:
+            raise ValueError("Booking has no associated institute")
 
         review = Review(
             tenant_id=tenant_id,
-            property_id=booking.property_id,
+            institute_id=institute_id,
             landlord_id=booking.bm_id,
             booking_id=review_in.booking_id,
             property_rating=review_in.property_rating,
@@ -83,7 +74,7 @@ class ReviewService:
             select(Review, User.username)
             .join(User, Review.tenant_id == User.id)
             .where(
-                Review.property_id == property_id,
+                Review.institute_id == property_id,
                 Review.status == ReviewStatus.approved,
             )
             .order_by(Review.created_at.desc())
@@ -130,9 +121,10 @@ class ReviewService:
         self, tenant_id: int, skip: int = 0, limit: int = 50
     ) -> list[dict[str, Any]]:
         """获取我的评价历史"""
+        # Property 已桥接为 UnitType；Review.institute_id 关联 Institute
         stmt = (
-            select(Review, Property.title)
-            .join(Property, Review.property_id == Property.id)
+            select(Review, Property.name)
+            .join(Property, Property.institute_id == Review.institute_id)
             .where(Review.tenant_id == tenant_id)
             .order_by(Review.created_at.desc())
             .offset(skip)
@@ -168,7 +160,7 @@ class ReviewService:
                 func.count(Review.id).label("cnt"),
             )
             .where(
-                Review.property_id == property_id,
+                Review.institute_id == property_id,
                 Review.status == ReviewStatus.approved,
             )
         )

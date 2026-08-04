@@ -3,10 +3,10 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user, get_db_session, require_landlord, require_bd_manager, require_maintenance
+from app.api.deps import get_current_user, get_db_session, require_landlord, require_maintenance
 from app.models.booking import Booking, BookingStatus
 from app.models.institute import Institute
-from app.models._compat import Property, PropertyStatus
+from app.models.unit_type import UnitType, UnitTypeStatus
 from app.models.repair import RepairRequest, RepairStatus, RepairWorker, WorkerStatus
 from app.models.user import User, UserRole
 
@@ -18,25 +18,27 @@ async def landlord_dashboard(
     session: AsyncSession = Depends(get_db_session),
     current_user: User = Depends(require_landlord),
 ):
-    """房东/Manager 数据台"""
-    # 房源统计
+    """房东/Manager 数据台（已修复 landlord_id → bm_id）"""
+    # 房源统计（UnitType JOIN Institute，通过 Institute.bm_id 关联房东）
     total_props = await session.scalar(
-        select(func.count(Property.id)).where(Property.landlord_id == current_user.id)
+        select(func.count(UnitType.id))
+        .join(Institute, UnitType.institute_id == Institute.id)
+        .where(Institute.bm_id == current_user.id)
     )
     available_props = await session.scalar(
-        select(func.count(Property.id)).where(
-            Property.landlord_id == current_user.id, Property.status == PropertyStatus.available
-        )
+        select(func.count(UnitType.id))
+        .join(Institute, UnitType.institute_id == Institute.id)
+        .where(Institute.bm_id == current_user.id, UnitType.status == UnitTypeStatus.available)
     )
     rented_props = await session.scalar(
-        select(func.count(Property.id)).where(
-            Property.landlord_id == current_user.id, Property.status == PropertyStatus.rented
-        )
+        select(func.count(UnitType.id))
+        .join(Institute, UnitType.institute_id == Institute.id)
+        .where(Institute.bm_id == current_user.id, UnitType.status == UnitTypeStatus.rented)
     )
     maintenance_props = await session.scalar(
-        select(func.count(Property.id)).where(
-            Property.landlord_id == current_user.id, Property.status == PropertyStatus.maintenance
-        )
+        select(func.count(UnitType.id))
+        .join(Institute, UnitType.institute_id == Institute.id)
+        .where(Institute.bm_id == current_user.id, UnitType.status == UnitTypeStatus.maintenance)
     )
 
     # 预约统计
@@ -49,13 +51,13 @@ async def landlord_dashboard(
     # 报修统计
     pending_repairs = await session.scalar(
         select(func.count(RepairRequest.id)).where(
-            RepairRequest.landlord_id == current_user.id,
+            RepairRequest.bm_id == current_user.id,
             RepairRequest.status == RepairStatus.pending,
         )
     )
     in_progress_repairs = await session.scalar(
         select(func.count(RepairRequest.id)).where(
-            RepairRequest.landlord_id == current_user.id,
+            RepairRequest.bm_id == current_user.id,
             RepairRequest.status == RepairStatus.in_progress,
         )
     )
@@ -88,25 +90,6 @@ async def landlord_dashboard(
             "total": total_workers or 0,
             "available": available_workers or 0,
         },
-    }
-
-
-@router.get("/bd/dashboard")
-async def bd_dashboard(
-    session: AsyncSession = Depends(get_db_session),
-    current_user: User = Depends(require_bd_manager),
-):
-    """BD经理数据台"""
-    total_institutes = await session.scalar(select(func.count(Institute.id)))
-    total_properties = await session.scalar(select(func.count(Property.id)))
-    pending_bookings = await session.scalar(
-        select(func.count(Booking.id)).where(Booking.status == BookingStatus.pending)
-    )
-
-    return {
-        "institutes": total_institutes or 0,
-        "total_properties": total_properties or 0,
-        "pending_bookings": pending_bookings or 0,
     }
 
 

@@ -19,19 +19,18 @@ router = APIRouter()
 
 
 async def _repair_to_read(repair) -> RepairRead:
-    """将 RepairRequest ORM 对象转为 Read 响应（async-safe）"""
-    # 用 awaitable_attrs 安全获取关联对象
+    """将 RepairRequest ORM 对象转为 Read 响应"""
     from sqlalchemy.ext.asyncio import AsyncAttrs
     tenant = await repair.awaitable_attrs.tenant if hasattr(repair, 'awaitable_attrs') and repair.tenant_id else None
-    landlord = await repair.awaitable_attrs.landlord if hasattr(repair, 'awaitable_attrs') and repair.landlord_id else None
+    bm = await repair.awaitable_attrs.bm if hasattr(repair, 'awaitable_attrs') and repair.bm_id else None
     worker = await repair.awaitable_attrs.assigned_worker if hasattr(repair, 'awaitable_attrs') and repair.assigned_worker_id else None
-    prop = await repair.awaitable_attrs.property if hasattr(repair, 'awaitable_attrs') and repair.property_id else None
+    unit_type = await repair.awaitable_attrs.unit_type if hasattr(repair, 'awaitable_attrs') and repair.unit_type_id else None
 
     return RepairRead(
         id=repair.id,
-        property_id=repair.property_id,
+        property_id=repair.unit_type_id,      # 兼容旧字段名
         tenant_id=repair.tenant_id,
-        landlord_id=repair.landlord_id,
+        landlord_id=repair.bm_id,              # 兼容旧字段名（原 landlord_id → bm_id）
         assigned_worker_id=repair.assigned_worker_id,
         issue_type=repair.issue_type,
         description=repair.description,
@@ -44,9 +43,9 @@ async def _repair_to_read(repair) -> RepairRead:
         created_at=repair.created_at.isoformat(),
         updated_at=repair.updated_at.isoformat(),
         tenant_name=tenant.username if tenant else None,
-        landlord_name=landlord.username if landlord else None,
+        landlord_name=bm.username if bm else None,
         worker_name=worker.username if worker else None,
-        property_title=prop.title if prop else None,
+        property_title=unit_type.name if unit_type else None,
     )
 
 
@@ -128,7 +127,7 @@ async def get_repair(
     role = current_user.role
     if role == UserRole.tenant and repair.tenant_id != current_user.id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
-    if role == UserRole.landlord and repair.landlord_id != current_user.id:
+    if role == UserRole.landlord and repair.bm_id != current_user.id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
     if role == UserRole.maintenance_worker and repair.assigned_worker_id != current_user.id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
@@ -155,7 +154,7 @@ async def update_repair_status(
     repair = await svc.get_repair(repair_id)
     if not repair:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repair not found")
-    if repair.landlord_id != current_user.id:
+    if repair.bm_id != current_user.id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
 
     status_enum = RepairStatus.approved if new_status == "approved" else RepairStatus.rejected
@@ -175,7 +174,7 @@ async def assign_worker(
     repair = await svc.get_repair(repair_id)
     if not repair:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repair not found")
-    if repair.landlord_id != current_user.id and current_user.role != UserRole.admin:
+    if repair.bm_id != current_user.id and current_user.role != UserRole.admin:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
 
     try:

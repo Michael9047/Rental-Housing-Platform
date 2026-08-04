@@ -64,12 +64,3 @@ async def require_maintenance(current_user: User = Depends(get_current_user)) ->
             detail="Maintenance worker or admin role required",
         )
     return current_user
-
-
-async def require_bd_manager(current_user: User = Depends(get_current_user)) -> User:
-    if current_user.role not in {UserRole.bd_manager, UserRole.admin}:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="BD manager or admin role required",
-        )
-    return current_user

@@ -461,6 +461,23 @@ _OVERPASS_CATEGORY_QUERIES: dict[str, str] = {
     "洗衣店": """
         node["shop"="laundry"](around:{{radius}},{{lat}},{{lng}});
     """,
+    # ── 以下为 GM POI 关键词补充映射（google_poi_service.py 降级用） ──
+    "食阁": """
+        node["amenity"="food_court"](around:{{radius}},{{lat}},{{lng}});
+        way["amenity"="food_court"](around:{{radius}},{{lat}},{{lng}});
+    """,
+    "小贩中心": """
+        node["amenity"="food_court"](around:{{radius}},{{lat}},{{lng}});
+        way["amenity"="food_court"](around:{{radius}},{{lat}},{{lng}});
+    """,
+    "市场": """
+        node["amenity"="marketplace"](around:{{radius}},{{lat}},{{lng}});
+        way["amenity"="marketplace"](around:{{radius}},{{lat}},{{lng}});
+    """,
+    "健身房": """
+        node["leisure"="fitness_centre"](around:{{radius}},{{lat}},{{lng}});
+        node["amenity"="gym"](around:{{radius}},{{lat}},{{lng}});
+    """,
 }
 
 # Overpass 镜像列表（按优先级依次尝试）
