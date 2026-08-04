@@ -158,11 +158,13 @@
       <el-form :model="newBuilding" label-width="100px">
         <el-form-item label="公寓名称" required><el-input v-model="newBuilding.name" placeholder="中/英文均可" maxlength="200" /></el-form-item>
         <el-divider>📍 地址与定位</el-divider>
+        <template :key="bldFormKey">
         <el-form-item label="国家"><el-autocomplete v-model="newBuilding.country" :fetch-suggestions="filterCountries" placeholder="输入或选择国家" clearable style="width:100%" /></el-form-item>
         <el-form-item label="城市"><el-input v-model="newBuilding.city" placeholder="如：伦敦、上海" maxlength="100" /></el-form-item>
         <el-form-item label="区域"><el-input v-model="newBuilding.district" placeholder="如：肯辛顿、浦东" maxlength="100" /></el-form-item>
         <el-form-item label="街道/门牌号"><el-input v-model="newBuilding.street" placeholder="如：105 Cheyne Walk" maxlength="200" /></el-form-item>
         <el-form-item label="邮编"><el-input v-model="newBuilding.postalCode" placeholder="选填" maxlength="20" style="width:200px" /></el-form-item>
+        </template>
         <el-form-item label="地图定位">
           <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
             <el-button type="primary" @click="geocodeStructured" :loading="geoLoading" :disabled="!(newBuilding.country || newBuilding.city)">📍 检索定位</el-button>
@@ -320,6 +322,8 @@ const newBuilding = reactive({
   country: '', city: '', district: '', street: '', postalCode: '',
   lat: null as number|null, lng: null as number|null,
 })
+// 强制表单重渲染的 key——每次逆地理编码后 +1，Vue 销毁并重建整个表单
+const bldFormKey = ref(0)
 
 const securityAmenitiesBld = ['24小时安保','监控系统(CCTV)','智能门禁','电子门锁','前台/礼宾','消防系统','夜间巡逻']
 const serviceAmenitiesBld = ['代收包裹','维修服务','公共区域保洁','定期社交活动','接机服务','班车接驳','入住礼包','管家服务']
@@ -327,25 +331,6 @@ const facilityAmenitiesBld = ['电梯','洗衣房','自行车库','停车场','�
 const sportAmenitiesBld = ['健身房','游泳池','篮球场','瑜伽室','游戏室','BBQ区','乒乓球/台球']
 
 let bldMapInst:any=null, bldMarkerInst:any=null
-// 用 watch 桥接 Leaflet 异步回调和 Vue 响应式
-const _geoTrigger = ref(0)
-let _pendingGeoData: Record<string, string> | null = null
-watch(_geoTrigger, async (val) => {
-  console.log('[geo-watch] fired, tick=', val, 'data=', _pendingGeoData)
-  if (!_pendingGeoData) return
-  // 先清空所有地址字段
-  newBuilding.country = ''
-  newBuilding.city = ''
-  newBuilding.district = ''
-  newBuilding.street = ''
-  newBuilding.postalCode = ''
-  await import('vue').then(m => m.nextTick())
-  console.log('[geo-watch] cleared, filling:', _pendingGeoData)
-  // 再填入新值
-  Object.assign(newBuilding, _pendingGeoData)
-  console.log('[geo-watch] newBuilding after:', JSON.parse(JSON.stringify(newBuilding)))
-  _pendingGeoData = null
-})
 
 function getL(){ return (window as any).L }
 async function ensureLeaflet(){
@@ -419,16 +404,13 @@ async function reverseBldGeocode(lat:number,lng:number){
     const a = d.address
     const road = a.road || a.pedestrian || a.path || a.footway || ''
     const hn = a.house_number || ''
-    _pendingGeoData = {
-      country: a.country || newBuilding.country,
-      city: a.city || a.town || a.municipality || a.village || a.hamlet || '',
-      district: a.suburb || a.borough || a.city_district || a.county || a.state_district || '',
-      street: hn ? `${hn} ${road}`.trim() : road,
-      postalCode: a.postcode || newBuilding.postalCode,
-    }
-    console.log('[reverseGeocode] triggering watch with:', _pendingGeoData)
-    _geoTrigger.value++
-    console.log('[reverseGeocode] _geoTrigger =', _geoTrigger.value)
+    if (a.country) newBuilding.country = a.country
+    newBuilding.city = a.city || a.town || a.municipality || a.village || a.hamlet || ''
+    newBuilding.district = a.suburb || a.borough || a.city_district || a.county || a.state_district || ''
+    newBuilding.street = hn ? `${hn} ${road}`.trim() : road
+    if (a.postcode) newBuilding.postalCode = a.postcode
+    // 强制表单重渲染，确保 el-input 显示最新值
+    bldFormKey.value++
     ElMessage.success('已从地图反向定位，地址字段已自动填充')
   }catch(e){
     console.error('[reverseGeocode]', e)
