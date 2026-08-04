@@ -1,7 +1,7 @@
 """用户模型 - 租客、房东、BD经理、系统管理员"""
 import enum
 
-from sqlalchemy import Boolean, Date, Enum, String, Text
+from sqlalchemy import Enum, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.mixins import TimestampMixin
@@ -12,7 +12,10 @@ class UserRole(str, enum.Enum):
     tenant = "tenant"
     landlord = "landlord"
     bd_manager = "bd_manager"
+    appointment_staff = "appointment_staff"
+    property_manager = "property_manager"
     maintenance_worker = "maintenance_worker"
+    repair_worker = "repair_worker"
     admin = "admin"
 
 
@@ -41,28 +44,4 @@ class User(TimestampMixin, Base):
         default=UserStatus.active,
         nullable=False,
     )
-<<<<<<< HEAD
-    rooms: Mapped[list["Room"]] = relationship(
-        back_populates="landlord",
-        cascade="all, delete-orphan",
-    )
-
-    # ── 学生档案（StarRez 对照）──
-    enrollment_level: Mapped[str | None] = mapped_column(String(20), nullable=True)  # undergraduate / graduate / phd / language / other
-    enrollment_class: Mapped[str | None] = mapped_column(String(30), nullable=True)  # 大一～大四 / 研一～研三
-    enrollment_term: Mapped[str | None] = mapped_column(String(20), nullable=True)  # Fall / Spring / Summer
-    school_name: Mapped[str | None] = mapped_column(String(200), nullable=True)
-    major: Mapped[str | None] = mapped_column(String(200), nullable=True)
-    student_classification: Mapped[str | None] = mapped_column(String(30), nullable=True)  # freshman / returning / transfer / exchange
-    is_international: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-    visa_type: Mapped[str | None] = mapped_column(String(50), nullable=True)
-    visa_expiry: Mapped[str | None] = mapped_column(Date, nullable=True)
-    nationality: Mapped[str | None] = mapped_column(String(100), nullable=True)
-    citizenship_country: Mapped[str | None] = mapped_column(String(100), nullable=True)
-    disability_needs: Mapped[str | None] = mapped_column(Text, nullable=True)
-    dietary_needs: Mapped[str | None] = mapped_column(Text, nullable=True)
-    gender_identity: Mapped[str | None] = mapped_column(String(30), nullable=True)  # 用于室友匹配
-    preferred_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
-=======
     # rooms 关系已删除（Room 表已废弃），BM 通过 institutes.bm_id 关联
->>>>>>> merge/pr33-pr35

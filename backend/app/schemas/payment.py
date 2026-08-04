@@ -1,7 +1,9 @@
 """支付订单请求和只读响应模型。"""
 from datetime import datetime
 from decimal import Decimal
-from pydantic import BaseModel, ConfigDict, Field
+from typing import Any
+
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 from app.services.payment_provider import PaymentMethod
 
 
@@ -9,6 +11,15 @@ class PaymentCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
     booking_id: int
     payment_method: PaymentMethod = PaymentMethod.CARD_CHECKOUT
+
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_payment_method(cls, data: Any) -> Any:
+        if isinstance(data, dict) and isinstance(data.get("payment_method"), str):
+            value = data["payment_method"].upper()
+            if value in {"CARD_CHECKOUT", "WECHAT_PAY", "ALIPAY"}:
+                return {**data, "payment_method": value}
+        return data
 
 
 class PaymentMethodAvailability(BaseModel):

@@ -4,6 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.models.booking import Booking, BookingStatus
+from app.models.institute import Institute
 from app.models.notification import NotificationType
 from app.models.unit_type import UnitType
 from app.schemas.booking import BookingCreate
@@ -37,28 +38,23 @@ class BookingService:
         if existing.scalars().first():
             raise ValueError("You already have a pending booking for this unit type")
 
-<<<<<<< HEAD
-        # Fetch property for deposit/fee calculation
-        property_obj = await self.session.get(Property, property_id)
-        deposit_amount = (property_obj.deposit_amount or 1000) if property_obj else 1000
-        service_fee_rate = (property_obj.service_fee_rate or 0.0) if property_obj else 0.0
-        monthly_price = float(property_obj.price_monthly or 0) if property_obj else 0.0
-        service_fee = int(monthly_price * service_fee_rate) if property_obj else 0
-=======
         # 获取 UnitType 获取定价信息
         unit_type = await self.session.get(UnitType, unit_type_id)
         deposit_amount = unit_type.deposit_amount if unit_type else 1000
         base_rent = int(unit_type.base_rent) if unit_type and unit_type.base_rent else 0
         service_fee = int(base_rent * 0.10) if base_rent else 0
         institute_id = unit_type.institute_id if unit_type else None
->>>>>>> merge/pr33-pr35
+        institute = await self.session.get(Institute, institute_id) if institute_id else None
+        resolved_bm_id = bm_id or (institute.bm_id if institute else None) or 1
 
         booking = Booking(
             user_id=user_id,
-            tenant_id=tenant_id,
+            tenant_id=tenant_id or user_id,
+            property_id=unit_type_id,
+            landlord_id=resolved_bm_id,
             unit_type_id=unit_type_id,
             institute_id=institute_id,
-            bm_id=bm_id if bm_id else None,
+            bm_id=resolved_bm_id,
             message=booking_in.message if booking_in else None,
             scheduled_date=booking_in.scheduled_date if booking_in else None,
             deposit_amount=booking_in.deposit_amount if booking_in and booking_in.deposit_amount else deposit_amount,
@@ -80,21 +76,8 @@ class BookingService:
                 type=NotificationType.booking_created,
                 title="新的预约请求",
                 content=f"有租客预约了户型 #{unit_type_id}（{unit_type.name if unit_type else ''}）",
-                channels=["email"],
+                channels=[],
             )
-
-        # 微信确认通知
-        try:
-            from app.tasks.notification_tasks import send_booking_confirm_message
-            booking_info = {
-                "property_title": unit_type.name if unit_type else str(unit_type_id),
-                "booking_time": booking_in.scheduled_date if booking_in else "TBD",
-                "landlord_phone": "",
-                "remark": "请支付押金以确认预约。",
-            }
-            send_booking_confirm_message.delay(user_id, booking_info)
-        except Exception:
-            pass
 
         return booking
 
@@ -114,28 +97,28 @@ class BookingService:
                 "预约已通过",
                 "您的预约已被批准",
                 booking.user_id,
-                ["email"],
+                [],
             ),
             BookingStatus.rejected: (
                 NotificationType.booking_rejected,
                 "预约已拒绝",
                 "您的预约已被拒绝",
                 booking.user_id,
-                ["email"],
+                [],
             ),
             BookingStatus.cancelled: (
                 NotificationType.booking_cancelled,
                 "预约已取消",
                 "一个预约已被取消",
                 booking.bm_id,
-                ["email"],
+                [],
             ),
             BookingStatus.completed: (
                 NotificationType.booking_completed,
                 "预约已完成",
                 "预约流程已完成",
                 booking.user_id,
-                ["email"],
+                [],
             ),
         }
         if status in nt_map:
@@ -155,7 +138,7 @@ class BookingService:
                     type=NotificationType.booking_completed,
                     title="预约已完成",
                     content=f"预约 #{booking.id} 已完成",
-                    channels=["email"],
+                    channels=[],
                 )
 
         return booking

@@ -70,7 +70,7 @@ class OrderNotificationService:
         )
 
         notification = Notification(
-            user_id=booking.tenant_id,
+            user_id=booking.user_id,
             type=NotificationType.system,
             title=template["title"],
             content=content,

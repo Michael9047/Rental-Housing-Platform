@@ -1,30 +1,29 @@
 // 匹配后端 schemas/unit_type.py UnitTypeRead（两层层结构：Institute → UnitType）
-export type PropertyType = 'studio' | 'ensuite' | '1bed' | '2bed' | '3bed' | '4bed' | '5bed+' | 'shared'
-export type PropertyStatus = 'available' | 'rented' | 'maintenance'
+export type PropertyType =
+  | 'studio' | 'ensuite' | '1bed' | '2bed' | '3bed' | '4bed' | '5bed+' | 'shared'
+  | 'apartment' | 'house' | '1-bed' | '2-bed'
+  | string
+export type PropertyStatus = 'available' | 'rented' | 'maintenance' | 'pending_review' | 'offline'
 export type DepositType = 'one_month' | 'one_three' | 'two_month' | 'three_month' | 'half_month' | 'free' | 'custom'
 
-<<<<<<< HEAD
-/** 租房规则（前端展示用） */
 export interface RentalRules {
-  cancellation_policy?: string
-  check_out_rules?: string
-  pet_policy?: string
-  payment_rules?: string
-  check_in_rules?: string
-  room_change_rules?: string
-  sublet_rules?: string
-  early_termination_rules?: string
-  renewal_rules?: string
-  guest_policy?: string
-  quiet_hours?: string
-  smoking_policy?: string
-  common_area_rules?: string
-  maintenance_rules?: string
+  cancellation_policy?: string | null
+  check_out_rules?: string | null
+  pet_policy?: string | null
+  payment_rules?: string | null
+  check_in_rules?: string | null
+  room_change_rules?: string | null
+  sublet_rules?: string | null
+  early_termination_rules?: string | null
+  renewal_rules?: string | null
+  guest_policy?: string | null
+  quiet_hours?: string | null
+  smoking_policy?: string | null
+  common_area_rules?: string | null
+  maintenance_rules?: string | null
 }
 
-=======
 /** 房源实体 = UnitType + Institute 继承字段（代替旧 Property） */
->>>>>>> merge/pr33-pr35
 export interface Property {
   // UnitType 自身
   id: number
@@ -34,7 +33,7 @@ export interface Property {
   name: string
   /** @deprecated 兼容旧代码 — 等同于 name */
   title: string
-  property_type?: PropertyType | null
+  property_type: PropertyType
   bedrooms: number
   bathrooms: number
   hall_count: number
@@ -48,10 +47,6 @@ export interface Property {
   room_number?: string | null
   deposit_amount?: number | null
   deposit_type?: DepositType | null
-<<<<<<< HEAD
-  rental_rules?: RentalRules | null
-  version: number
-=======
   lease_start?: string | null
   lease_end?: string | null
   lease_start_date?: string | null
@@ -70,11 +65,12 @@ export interface Property {
   max_lease_months?: number | null
   /** 兼容旧 booking 组件 — 默认为 0 */
   service_fee_rate?: number | null
+  floor?: number | null
+  rental_rules?: RentalRules | null
   has_vacancy: boolean
   total_count: number
   available_count: number
   status: PropertyStatus
->>>>>>> merge/pr33-pr35
   deleted_at?: string | null
   created_at: string
   updated_at: string
@@ -89,8 +85,6 @@ export interface Property {
   district?: string | null
   country?: string | null
   city?: string | null
-  district?: string | null
-  district?: string | null
   latitude?: number | null
   longitude?: number | null
   contact_phone?: string | null
@@ -132,12 +126,6 @@ export interface PropertySearchParams {
   sort_by?: string
   limit?: number
   status?: string
-  /** 近距搜索：中心点纬度 */
-  near_lat?: number
-  /** 近距搜索：中心点经度 */
-  near_lng?: number
-  /** 近距搜索：半径(km) */
-  near_distance_km?: number
 }
 
 export interface PropertyListResponse {
@@ -146,6 +134,34 @@ export interface PropertyListResponse {
   page: number
   page_size: number
   total_pages: number
+}
+
+export type PropertyCreate = Partial<Omit<Property, 'id' | 'created_at' | 'updated_at' | 'deleted_at' | 'images'>>
+
+export type PropertyUpdate = Partial<PropertyCreate>
+
+export interface RoomType {
+  id: number
+  property_id?: number
+  institute_id?: number
+  name: string
+  room_type?: PropertyType | string
+  bedrooms: number
+  bathrooms: number
+  price_monthly?: number
+  base_rent?: number
+  area_sqm?: number | null
+  floor?: number | null
+  available_count?: number
+  available_from?: string | null
+  min_stay_months?: number
+  deposit_amount?: number | null
+  deposit_type?: DepositType | string | null
+  amenities?: string[] | null
+  description?: string | null
+  status?: PropertyStatus | string
+  created_at?: string
+  updated_at?: string
 }
 
 export interface PropertyImage {
@@ -171,4 +187,8 @@ export const propertyTypeLabels: Record<string, string> = {
   '4bed': '四室',
   '5bed+': '五室及以上',
   shared: '合租单间',
+  apartment: '公寓',
+  house: '独栋/别墅',
+  '1-bed': '一室',
+  '2-bed': '两室',
 }

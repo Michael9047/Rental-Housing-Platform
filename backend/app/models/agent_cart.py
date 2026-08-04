@@ -32,13 +32,8 @@ class AgentCartItem(TimestampMixin, Base):
     cart_id: Mapped[int] = mapped_column(
         ForeignKey("agent_carts.id", ondelete="CASCADE"), index=True
     )
-<<<<<<< HEAD
-    property_id: Mapped[int] = mapped_column(
-        ForeignKey("rooms.id", ondelete="CASCADE"), index=True
-=======
     unit_type_id: Mapped[int] = mapped_column(
         ForeignKey("unit_types.id", ondelete="CASCADE"), index=True
->>>>>>> merge/pr33-pr35
     )
     reason: Mapped[str | None] = mapped_column(SAText, nullable=True)
 

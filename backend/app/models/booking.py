@@ -41,13 +41,10 @@ class Booking(TimestampMixin, Base):
     tenant_id: Mapped[int] = mapped_column(
         ForeignKey("tenants.id", ondelete="SET NULL"), index=True, nullable=True
     )
-<<<<<<< HEAD
-    property_id: Mapped[int] = mapped_column(
-        ForeignKey("rooms.id", ondelete="CASCADE"), index=True
-=======
+    property_id: Mapped[int] = mapped_column(Integer, index=True, nullable=False)
+    landlord_id: Mapped[int] = mapped_column(Integer, index=True, nullable=False)
     unit_type_id: Mapped[int] = mapped_column(
         ForeignKey("unit_types.id", ondelete="SET NULL"), index=True, nullable=True
->>>>>>> merge/pr33-pr35
     )
     institute_id: Mapped[int | None] = mapped_column(
         ForeignKey("institutes.id", ondelete="SET NULL"), index=True, nullable=True
@@ -82,11 +79,6 @@ class Booking(TimestampMixin, Base):
     payment_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     inventory_reserved: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
-<<<<<<< HEAD
-    tenant: Mapped["User"] = relationship(foreign_keys=[tenant_id])
-    property: Mapped["Room"] = relationship()
-    landlord: Mapped["User"] = relationship(foreign_keys=[landlord_id])
-=======
     # ── 快照 ──
     application_data: Mapped[dict | None] = mapped_column(JSONB, nullable=True, comment="{pricing_snapshot}")
 
@@ -96,4 +88,3 @@ class Booking(TimestampMixin, Base):
     unit_type: Mapped["UnitType | None"] = relationship(foreign_keys=[unit_type_id])
     institute: Mapped["Institute | None"] = relationship(foreign_keys=[institute_id])
     bm:        Mapped["User | None"] = relationship(foreign_keys=[bm_id])
->>>>>>> merge/pr33-pr35

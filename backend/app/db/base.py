@@ -8,14 +8,7 @@ from app.models.embedding_job import EmbeddingJob
 from app.models.institute import Institute
 from app.models.notification import Notification
 from app.models.payment import Payment
-<<<<<<< HEAD
-from app.models.institute_commute import InstituteCommute
 from app.models.poi import InstitutePOI
-from app.models.property import Property
-from app.models.property_image import PropertyImage
-=======
-from app.models.poi import InstitutePOI
->>>>>>> merge/pr33-pr35
 from app.models.review import Review
 from app.models.saved_search import SavedSearch
 from app.models.tenant import Tenant

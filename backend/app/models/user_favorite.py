@@ -16,14 +16,12 @@ class UserFavorite(TimestampMixin, Base):
     user_id: Mapped[int] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False
     )
-<<<<<<< HEAD
     property_id: Mapped[int] = mapped_column(
-        ForeignKey("rooms.id", ondelete="CASCADE"), index=True, nullable=False
-=======
-    unit_type_id: Mapped[int] = mapped_column(
         ForeignKey("unit_types.id", ondelete="CASCADE"), index=True, nullable=False
->>>>>>> merge/pr33-pr35
+    )
+    unit_type_id: Mapped[int | None] = mapped_column(
+        ForeignKey("unit_types.id", ondelete="CASCADE"), index=True, nullable=True
     )
 
     user: Mapped["User"] = relationship()
-    unit_type: Mapped["UnitType"] = relationship()
+    unit_type: Mapped["UnitType"] = relationship(foreign_keys=[property_id])

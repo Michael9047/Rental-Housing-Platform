@@ -24,14 +24,7 @@ from app.models.notification import (
 from app.models.payment import Payment, PaymentStatus
 from app.models.pms_connection import PMSConnection, PMSSyncStatus, PMSType
 from app.models.policy_consent import PolicyConsent
-<<<<<<< HEAD
-from app.models.institute_commute import InstituteCommute
-from app.models.poi import InstitutePOI, PropertyPOI
-from app.models.property import Room, RoomStatus, Property, PropertyStatus
-from app.models.property_image import RoomImage, PropertyImage
-=======
 from app.models.poi import InstitutePOI
->>>>>>> merge/pr33-pr35
 from app.models.repair import (
     RepairIssueType,
     RepairRequest,

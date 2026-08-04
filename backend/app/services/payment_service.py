@@ -13,7 +13,7 @@ from app.models.booking import Booking, BookingStatus
 from app.models.audit_log import AuditLog
 from app.models.contract import Contract, ContractSignature
 from app.models.payment import Payment, PaymentStatus, PaymentWebhookEvent
-from app.models.property import Property, PropertyStatus
+from app.models.unit_type import UnitType, UnitTypeStatus
 from app.models.notification import Notification, NotificationType
 from app.models.user import User, UserRole
 from app.services.payment_provider import MockHostedPaymentProvider, PaymentMethod, PaymentRequest, get_test_provider
@@ -50,8 +50,13 @@ class PaymentOrderService:
         self.session.add(Notification(user_id=user_id, type=kind, title=title, content=content))
 
     @staticmethod
+    def _aware(value: datetime) -> datetime:
+        return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+
+    @staticmethod
     def webhook_target(status: BookingStatus, event_status: str, now: datetime, expires_at: datetime) -> BookingStatus:
         """将验签后的服务商结果映射为订单状态，便于独立测试边界时间。"""
+        expires_at = PaymentOrderService._aware(expires_at)
         if event_status == "succeeded":
             if status == BookingStatus.payment_expired or now >= expires_at:
                 return BookingStatus.payment_review
@@ -72,36 +77,59 @@ class PaymentOrderService:
         booking.inventory_reserved = False
 
     @staticmethod
-    def _price_snapshot(booking: Booking, contract: Contract, property_obj: Property, tenant_name: str) -> tuple[dict, dict]:
-        pricing = (booking.application_data or {}).get("pricing_snapshot") or {}
+    def _price_snapshot(booking: Booking, contract: Contract, unit_type: UnitType, tenant_name: str) -> tuple[dict, dict]:
+        pricing = (contract.snapshot or {}).get("pricing_snapshot") or (booking.application_data or {}).get("pricing_snapshot") or {}
         option = next((x for x in pricing.get("options", []) if x.get("months") == booking.lease_months), None)
+        monthly = int(unit_type.base_rent or 0)
+        deposit = int(booking.deposit_amount or unit_type.deposit_amount or monthly)
+        service_fee = int(booking.service_fee or monthly * (booking.lease_months or 1) * 0.05)
+        rent_total = int(booking.total_rent or monthly * (booking.lease_months or 1))
+        amount_due_now = deposit + service_fee
+        currency = pricing.get("local_currency") or unit_type.currency or "CNY"
         if not option:
-            # 自定义月数：基于首选项实时计算
-            base = next((x for x in pricing.get("options", [])), None)
-            if not base:
-                raise ValueError("订单缺少不可变价格快照")
-            bp = base["prices"]
-            monthly = int(bp["monthly_rent"]["local"]["minor_units"]) // (10 ** bp["monthly_rent"]["local"]["minor_unit_exponent"])
-            deposit = int(bp["deposit"]["local"]["minor_units"]) // (10 ** bp["deposit"]["local"]["minor_unit_exponent"])
-            svc = int(bp["service_fee"]["local"]["minor_units"]) // (10 ** bp["service_fee"]["local"]["minor_unit_exponent"])
-            m = booking.lease_months
-            from datetime import date as _d
-            move_in = _d.fromisoformat(booking.scheduled_date)
-            end = LeasePricingService.add_calendar_months(move_in, m)
             option = {
-                "months": m, "end_date": end.isoformat(),
-                "prices": {
-                    "monthly_rent": bp["monthly_rent"], "deposit": bp["deposit"], "service_fee": bp["service_fee"],
-                    "amount_due_now": {"local": {"currency": bp["monthly_rent"]["local"]["currency"], "minor_units": (deposit + svc) * 100, "minor_unit_exponent": 2, "decimal": f"{deposit + svc}.00"}, "cny": {"currency": bp["monthly_rent"]["cny"]["currency"], "minor_units": (deposit + svc) * 100, "minor_unit_exponent": 2, "decimal": f"{deposit + svc}.00"}},
-                    "rent_total": {"local": {"currency": bp["monthly_rent"]["local"]["currency"], "minor_units": monthly * m * 100, "minor_unit_exponent": 2, "decimal": f"{monthly * m}.00"}, "cny": {"currency": bp["monthly_rent"]["cny"]["currency"], "minor_units": monthly * m * 100, "minor_unit_exponent": 2, "decimal": f"{monthly * m}.00"}},
-                }
+                "months": booking.lease_months,
+                "end_date": booking.contract_end.isoformat() if booking.contract_end else None,
+                "prices": {},
             }
+        pricing.setdefault("local_currency", currency)
+        pricing.setdefault("exchange_rate_to_cny", "1")
+        pricing.setdefault("exchange_rate_at", datetime.now(timezone.utc).isoformat())
+        pricing.setdefault("exchange_rate_source", "local unit type snapshot")
+        pricing["options"] = [option]
+
+        def _money_pair(key: str, fallback: int) -> dict:
+            values = (option.setdefault("prices", {}).get(key) or {})
+            local = dict(values.get("local") or {})
+            minor_units = int(local.get("minor_units") if local.get("minor_units") is not None else fallback)
+            exponent = int(local.get("minor_unit_exponent") if local.get("minor_unit_exponent") is not None else 0)
+            local.update({
+                "currency": local.get("currency") or currency,
+                "minor_units": minor_units,
+                "minor_unit_exponent": exponent,
+                "decimal": local.get("decimal") or str(minor_units / (10 ** exponent) if exponent else minor_units),
+            })
+            cny = dict(values.get("cny") or local)
+            cny.update({
+                "currency": cny.get("currency") or "CNY",
+                "minor_units": int(cny.get("minor_units") if cny.get("minor_units") is not None else minor_units),
+                "minor_unit_exponent": int(cny.get("minor_unit_exponent") if cny.get("minor_unit_exponent") is not None else exponent),
+            })
+            cny.setdefault("decimal", str(cny["minor_units"] / (10 ** cny["minor_unit_exponent"]) if cny["minor_unit_exponent"] else cny["minor_units"]))
+            values = {"local": local, "cny": cny}
+            option["prices"][key] = values
+            return values
+
+        option["end_date"] = option.get("end_date") or (booking.contract_end.isoformat() if booking.contract_end else None)
+        _money_pair("monthly_rent", monthly)
+        _money_pair("deposit", deposit)
+        _money_pair("service_fee", service_fee)
+        _money_pair("rent_total", rent_total)
+        _money_pair("amount_due_now", amount_due_now)
         prices = option["prices"]
-        ut = getattr(property_obj, 'unit_type', None)
-        inst = getattr(ut, 'institute', None) if ut else None
         snapshot = {
             "order_number": str(booking.id), "property_id": booking.property_id,
-            "property_name": getattr(ut, 'name', property_obj.room_number or ''), "property_address": getattr(inst, 'address', ''),
+            "property_name": unit_type.name, "property_address": (contract.snapshot or {}).get("property_address", ""),
             "commencement_date": booking.scheduled_date, "expiry_date": option["end_date"],
             "tenancy_months": booking.lease_months, "tenant_name": tenant_name,
             "agreement_id": contract.id, "agreement_number": contract.agreement_number,
@@ -139,33 +167,24 @@ class PaymentOrderService:
             return by_key
         booking = await self.session.scalar(select(Booking).where(Booking.id == booking_id).with_for_update())
         if not booking: raise LookupError("订单不存在")
-        if booking.tenant_id != user_id: raise PermissionError("只能支付本人的订单")
+        if booking.user_id != user_id: raise PermissionError("只能支付本人的订单")
         active = await self.session.scalar(select(Payment).where(Payment.booking_id == booking_id, Payment.status.in_([PaymentStatus.pending, PaymentStatus.processing])).order_by(Payment.created_at.desc()))
         if active:
             active.booking = booking
             return active
         now = datetime.now(timezone.utc)
-        if booking.payment_expires_at and booking.payment_expires_at <= now: raise TimeoutError("支付订单已超过24小时有效期")
+        if booking.payment_expires_at and self._aware(booking.payment_expires_at) <= now: raise TimeoutError("支付订单已超过24小时有效期")
         if booking.status == BookingStatus.payment_expired: raise RuntimeError("订单支付已过期，请重新发起预订")
         if booking.status not in {BookingStatus.contract_signed, BookingStatus.payment_pending, BookingStatus.payment_failed}: raise RuntimeError("必须先签署当前版本合同，且订单处于可付款状态")
         contract = await self.session.scalar(select(Contract).where(Contract.booking_id == booking.id, Contract.status == "signed").order_by(Contract.version.desc()))
         if not contract or not await self.session.scalar(select(ContractSignature).where(ContractSignature.agreement_id == contract.id, ContractSignature.tenant_user_id == user_id)):
             raise RuntimeError("未找到当前合同的有效租客签名")
-        property_obj = await self.session.get(Property, booking.property_id)
-        if not property_obj or property_obj.status != PropertyStatus.available: raise RuntimeError("房源当前不可支付预订")
+        unit_type = await self.session.get(UnitType, booking.unit_type_id or booking.property_id)
+        if not unit_type or unit_type.status not in {UnitTypeStatus.available, UnitTypeStatus.rented}: raise RuntimeError("房源当前不可支付预订")
         await self._ensure_availability(booking)
-        pricing, snapshot = self._price_snapshot(booking, contract, property_obj, tenant_name)
+        pricing, snapshot = self._price_snapshot(booking, contract, unit_type, tenant_name)
         local = snapshot["fees"]["current_total"]
-        cny_option = next((x for x in pricing["options"] if x.get("months") == booking.lease_months), None)
-        if cny_option:
-            cny = cny_option["prices"]["amount_due_now"]["cny"]
-        else:
-            # 自定义月数：用首选项 CNH 金额同比例换算
-            base = pricing["options"][0]["prices"]
-            cny = {"currency": base["amount_due_now"]["cny"]["currency"],
-                   "minor_units": int(int(base["amount_due_now"]["cny"]["minor_units"]) * booking.lease_months / base["months"]),
-                   "minor_unit_exponent": base["amount_due_now"]["cny"]["minor_unit_exponent"],
-                   "decimal": f"{int(int(base['amount_due_now']['cny']['minor_units'])) * booking.lease_months // base['months'] / 100:.2f}"}
+        cny = next(x for x in pricing["options"] if x.get("months") == booking.lease_months)["prices"]["amount_due_now"]["cny"]
         expires = booking.payment_expires_at or now + timedelta(hours=24)
         payment_attempt_id = str(uuid.uuid4())
         order_id = f"PAY-{datetime.now(timezone.utc):%Y%m%d}-{uuid.uuid4().hex[:20].upper()}"
@@ -204,12 +223,13 @@ class PaymentOrderService:
                     self._notify(admin.id, NotificationType.system, "迟到付款待处理", f"订单 #{booking.id} 已过期后收到付款，请人工核对或退款。")
                 await self.session.commit(); await self.session.refresh(payment)
                 return payment
-            property_obj = await self.session.scalar(select(Property).where(Property.id == booking.property_id).with_for_update())
+            unit_type = await self.session.scalar(select(UnitType).where(UnitType.id == (booking.unit_type_id or booking.property_id)).with_for_update())
             payment.status, payment.paid_at, payment.transaction_id, payment.trade_state = PaymentStatus.success, datetime.now(timezone.utc), event.get("transaction_id"), "SUCCESS"
             booking.deposit_status, booking.payment_transaction_id = "paid", payment.transaction_id
             self._transition(booking, BookingStatus.paid, reason="支付服务商有效成功 webhook", payment_id=payment.id)
             booking.inventory_reserved = False
-            property_obj.status = PropertyStatus.rented
+            if unit_type:
+                unit_type.status = UnitTypeStatus.rented
             await OrderNotificationService(self.session).enqueue("payment_succeeded", booking, payment=payment, discriminator=payment.id)
             await OrderNotificationService(self.session).enqueue_landlord_booking_confirmed(booking, payment)
         else:
@@ -239,7 +259,7 @@ class PaymentOrderService:
     async def expire_one(self, booking_id: int, now: datetime | None = None) -> bool:
         now = now or datetime.now(timezone.utc)
         booking = await self.session.scalar(select(Booking).where(Booking.id == booking_id).with_for_update())
-        if not booking or not booking.payment_expires_at or booking.payment_expires_at > now:
+        if not booking or not booking.payment_expires_at or self._aware(booking.payment_expires_at) > now:
             return False
         payment = await self.session.scalar(select(Payment).where(Payment.booking_id == booking.id).order_by(Payment.created_at.desc()).with_for_update())
         payment_succeeded = bool(payment and payment.status == PaymentStatus.success)

@@ -16,14 +16,8 @@ from sqlalchemy import func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-<<<<<<< HEAD
-from app.models.property import VALID_STATUS_TRANSITIONS, Property, PropertyStatus, PropertyType
-from app.models.unit_type import DepositType
-from app.services.poi_service import POIService
-=======
 from app.models.unit_type import UnitType, UnitTypeStatus, PropertyType, DepositType
 from app.models.institute import Institute, InstituteStatus
->>>>>>> merge/pr33-pr35
 from app.schemas.property import PropertyCreate, PropertyUpdate
 
 logger = logging.getLogger(__name__)
@@ -110,90 +104,9 @@ class PropertyService:
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
 
-<<<<<<< HEAD
-    async def create(self, property_in: PropertyCreate) -> Property:
-        dumped = property_in.model_dump()
-        image_urls = dumped.pop("image_urls", None) or []
-        logger.info("Creating property: keys=%s", list(dumped.keys()))
-
-        # AI风险评估
-        from app.services.risk_evaluator import RiskEvaluator
-        evaluator = RiskEvaluator()
-        risk = evaluator.evaluate_single(dumped)
-        if risk.should_set_pending:
-            dumped["status"] = "pending_review"
-            logger.info("Property flagged for review: %s", risk.warnings)
-
-        property_obj = Property(**dumped)
-        self.session.add(property_obj)
-        await self.session.commit()
-        await self.session.refresh(property_obj)
-
-        # 绑定临时上传的图片到房源
-        if image_urls:
-            await self._attach_temp_images(property_obj.id, image_urls)
-            await self.session.refresh(property_obj, attribute_names=['images'])
-
-        # 加载关联的户型+公寓以获取 institute_name
-        if property_obj.unit_type_id:
-            from sqlalchemy.orm import selectinload
-            from app.models.unit_type import UnitType
-            stmt = select(Property).where(Property.id == property_obj.id).options(
-                selectinload(Property.unit_type).selectinload(UnitType.institute)
-            )
-            result = await self.session.execute(stmt)
-            loaded = result.scalars().first()
-            if loaded and loaded.institute:
-                object.__setattr__(property_obj, 'institute_name', loaded.institute.name)
-
-        # 异步派发 Google Maps 全量 POI 检索（不阻塞创建流程）
-        try:
-            from app.tasks.poi_tasks import generate_full_poi_for_property
-            generate_full_poi_for_property.delay(property_obj.id)
-        except Exception:
-            logger.exception("Failed to dispatch POI task for property %s", property_obj.id)
-
-        await self._ensure_embedding(property_obj)
-        await _bump_search_cache_version()
-
-        # 审计日志
-        await self._audit(property_obj.landlord_id, "property_create", property_obj.id,
-                          {"title": property_obj.title, "district": property_obj.district,
-                           "property_title": property_obj.title,
-                           "property_address": property_obj.address,
-                           "institute_name": getattr(property_obj, "institute_name", None)})
-
-        return property_obj
-
-    async def get(self, property_id: int) -> Property | None:
-        from sqlalchemy.orm import selectinload
-        from app.models.poi import InstitutePOI
-        stmt = (select(Property)
-                .where(Property.id == property_id, Property.deleted_at.is_(None))
-                .options(
-                    selectinload(Property.institute),
-                    selectinload(Property.images),
-                ))
-        result = await self.session.execute(stmt)
-        property_obj = result.scalars().first()
-        if property_obj is not None:
-            if property_obj.institute:
-                object.__setattr__(property_obj, 'institute_name', property_obj.institute.name)
-            if property_obj.institute_id:
-                poi_result = await self.session.execute(
-                    select(InstitutePOI).where(InstitutePOI.institute_id == property_obj.institute_id)
-                )
-                poi = poi_result.scalars().first()
-                if poi:
-                    property_obj.poi = poi
-        return property_obj
-
-    def _build_filters(
-=======
     # ── search ──────────────────────────────────────────────────────────
 
     async def search(  # noqa: C901
->>>>>>> merge/pr33-pr35
         self,
         *,
         query: str | None = None,
@@ -206,63 +119,7 @@ class PropertyService:
         bedrooms: int | None = None,
         bathrooms: int | None = None,
         property_type: str | None = None,
-<<<<<<< HEAD
-        price_min: float | None = None,
-        price_max: float | None = None,
-        institute_id: int | None = None,
-        near_lat: float | None = None,
-        near_lng: float | None = None,
-        near_distance_km: float | None = None,
-        include_deleted: bool = False,
-    ) -> list:
-        """构建公共 WHERE 条件列表，供 list() 的 count 和 data 查询复用。"""
-        from sqlalchemy import or_
-        clauses = []
-
-        if not include_deleted:
-            clauses.append(Property.deleted_at.is_(None))
-
-        if district:
-            clauses.append(Property.district.ilike(f"%{district}%"))
-        if near_lat is not None and near_lng is not None and near_distance_km is not None:
-            # Bounding box 近似预筛选（~111km/度纬度, ~111*cos(lat)km/度经度）
-            import math
-            lat_delta = near_distance_km / 111.0
-            lng_delta = near_distance_km / (111.0 * math.cos(math.radians(near_lat)))
-            clauses.append(Property.latitude >= near_lat - lat_delta)
-            clauses.append(Property.latitude <= near_lat + lat_delta)
-            clauses.append(Property.longitude >= near_lng - lng_delta)
-            clauses.append(Property.longitude <= near_lng + lng_delta)
-        if status:
-            clauses.append(Property.status == status)
-        elif landlord_id is None and not include_deleted:
-            clauses.append(Property.status == "available")
-        if landlord_id is not None:
-            clauses.append(Property.landlord_id == landlord_id)
-        if keyword and keyword.strip():
-            kw = f"%{keyword.strip()}%"
-            clauses.append(or_(
-                Property.room_number.ilike(kw),
-                Property.title.ilike(kw),
-                Property.address.ilike(kw),
-            ))
-        if property_type:
-            clauses.append(Property.property_type == property_type)
-        if price_min is not None:
-            clauses.append(Property.price_monthly >= price_min)
-        if price_max is not None:
-            clauses.append(Property.price_monthly <= price_max)
-        # institute_id 过滤通过调用方 JOIN UnitType 处理
-
-        return clauses
-
-    async def list(
-        self,
-        *,
-        skip: int = 0,
-=======
         status: str | None = None,
->>>>>>> merge/pr33-pr35
         limit: int = 20,
         institute_id: int | None = None,
         room_type: str | None = None,
@@ -485,13 +342,8 @@ class PropertyService:
             select(UnitType, Institute)
             .join(Institute, UnitType.institute_id == Institute.id)
             .where(
-<<<<<<< HEAD
-                UnitType.status == UnitTypeStatus.available.value,
-                Institute.status == InstituteStatus.active.value,
-=======
                 UnitType.status == UnitTypeStatus.available,
                 Institute.status == InstituteStatus.active,
->>>>>>> merge/pr33-pr35
                 UnitType.deleted_at.is_(None),
             )
             .options(selectinload(UnitType.institute))
@@ -562,36 +414,6 @@ class PropertyService:
             clauses.append(UnitType.deleted_at.is_(None))
 
         if institute_id is not None:
-<<<<<<< HEAD
-            stmt = stmt.where(Property.institute_id == institute_id)
-        if female_only is not None:
-            from app.models.institute import Institute
-            stmt = stmt.join(Institute, Property.institute_id == Institute.id).where(
-                Institute.female_only == female_only
-            )
-        if amenities:
-            stmt = stmt.where(Property.amenities.op("&&")(amenities))
-        # P0 大学距离约束 — bounding box 预筛选
-        if near_lat is not None and near_lng is not None and near_distance_km is not None:
-            import math as _math
-            lat_d = near_distance_km / 111.0
-            lng_d = near_distance_km / (111.0 * _math.cos(_math.radians(near_lat)))
-            stmt = stmt.where(Property.latitude >= near_lat - lat_d,
-                              Property.latitude <= near_lat + lat_d,
-                              Property.longitude >= near_lng - lng_d,
-                              Property.longitude <= near_lng + lng_d)
-        if available_from:
-            # 入住月份：YYYYMM → 当月及之前可入住的房源
-            year = int(available_from[:4])
-            month = int(available_from[4:6])
-            if month == 12:
-                end_date = date(year + 1, 1, 1)
-            else:
-                end_date = date(year, month + 1, 1)
-            stmt = stmt.where(
-                Property.available_from.isnot(None),
-                Property.available_from < end_date,
-=======
             clauses.append(UnitType.institute_id == institute_id)
         if status:
             clauses.append(UnitType.status == status)
@@ -608,7 +430,6 @@ class PropertyService:
                     UnitType.name.ilike(kw),
                     UnitType.description.ilike(kw),
                 )
->>>>>>> merge/pr33-pr35
             )
 
         # Count
@@ -655,52 +476,8 @@ class PropertyService:
 
     # ── create ──────────────────────────────────────────────────────────
 
-<<<<<<< HEAD
-            # ── 新增筛选条件（回退路径）──
-            if institute_id is not None:
-                from app.models.unit_type import UnitType
-                fallback_stmt = fallback_stmt.join(
-                    UnitType, Property.unit_type_id == UnitType.id
-                ).where(UnitType.institute_id == institute_id)
-            if amenities:
-                fallback_stmt = fallback_stmt.where(Property.amenities.op("&&")(amenities))
-            if available_from:
-                year = int(available_from[:4])
-                month = int(available_from[4:6])
-                if month == 12:
-                    end_date = date(year + 1, 1, 1)
-                else:
-                    end_date = date(year, month + 1, 1)
-                fallback_stmt = fallback_stmt.where(
-                    Property.available_from.isnot(None),
-                    Property.available_from < end_date,
-                )
-            if room_type:
-                mapped_type = PropertyService._ROOM_TYPE_MAP.get(room_type, room_type)
-                # 使用子查询避免 JOIN 产生重复行
-                room_fb_sub = select(RoomType.property_id).where(
-                    RoomType.room_type == mapped_type
-                ).subquery()
-                fallback_stmt = fallback_stmt.where(Property.id.in_(select(room_fb_sub)))
-            if min_lease_months is not None:
-                fallback_stmt = fallback_stmt.where(Property.max_lease_months >= min_lease_months)
-            if max_lease_months is not None:
-                fallback_stmt = fallback_stmt.where(Property.min_lease_months <= max_lease_months)
-            if bathrooms is not None:
-                fallback_stmt = fallback_stmt.where(Property.bathrooms >= bathrooms)
-            if area_min is not None:
-                fallback_stmt = fallback_stmt.where(Property.area_sqm >= area_min)
-            if area_max is not None:
-                fallback_stmt = fallback_stmt.where(Property.area_sqm <= area_max)
-            fallback_stmt = fallback_stmt.where(Property.status == "available")
-            fallback_stmt = fallback_stmt.order_by(Property.created_at.desc())
-            fallback_stmt = fallback_stmt.limit(limit)
-            fallback_result = await self.session.execute(fallback_stmt)
-            results = [(row[0], row[1]) for row in fallback_result.all()]
-=======
     async def create(self, property_in: PropertyCreate) -> UnitType:
         """从 PropertyCreate schema 创建 UnitType。
->>>>>>> merge/pr33-pr35
 
         注意：schema 中的旧字段名会透传（PropertyCreate 设置了 extra="allow"），
         方法内部将其映射到 UnitType 字段。
@@ -1066,162 +843,10 @@ class PropertyService:
             for log in logs
         ]
 
-<<<<<<< HEAD
-    async def _get_property_any(self, property_id: int) -> Property | None:
-        """查询房源，不过滤 deleted_at（用于撤销已删除房源的操作）"""
-        from sqlalchemy.orm import selectinload
-        stmt = select(Property).where(Property.id == property_id).options(
-            selectinload(Property.institute),
-            selectinload(Property.images),
-        )
-        result = await self.session.execute(stmt)
-        return result.scalars().first()
-
-    REVERTABLE_ACTIONS = {"property_create", "property_update", "property_delete", "property_restore"}
-
-    async def revert_audit(
-        self,
-        property_id: int,
-        audit_log_id: int,
-        current_user_id: int,
-    ) -> dict:
-        """撤销某条审计日志对应的房源操作"""
-        from datetime import date as date_type
-        from app.services.audit_service import AuditService
-
-        # 1. 获取并校验审计日志
-        audit_log = await AuditService(self.session).get_log(audit_log_id)
-        if not audit_log:
-            raise ValueError("审计记录不存在")
-        if audit_log.resource_type != "property" or audit_log.resource_id != property_id:
-            raise ValueError("审计记录与房源不匹配")
-
-        action = audit_log.action
-
-        # 2. 检查是否可撤销
-        if action not in self.REVERTABLE_ACTIONS:
-            if action == "property_hard_delete":
-                raise ValueError("硬删除操作无法撤销，房源已物理删除")
-            if action.startswith("property_batch_"):
-                raise ValueError("批量操作不支持单次撤销，请手动处理")
-            raise ValueError(f"不支持撤销此操作类型：{action}")
-
-        # 3. 获取房源（不过滤删除状态）
-        property_obj = await self._get_property_any(property_id)
-        if not property_obj:
-            raise ValueError("房源不存在")
-
-        # 4. 校验所有权
-        if current_user_id != property_obj.landlord_id:
-            # admin 可以操作任意房源
-            from app.services.user_service import UserService
-            user = await UserService(self.session).get(current_user_id)
-            if not user or user.role.value != "admin":
-                raise ValueError("无权操作此房源")
-
-        message = ""
-
-        # 5. 按操作类型执行撤销
-        if action == "property_create":
-            if property_obj.deleted_at is not None:
-                raise ValueError("该房源已被删除，无法撤销创建操作")
-            self._apply_delete(property_obj)
-            message = "已撤销房源创建，房源已被软删除"
-
-        elif action == "property_update":
-            if property_obj.deleted_at is not None:
-                raise ValueError("该房源已被删除，无法撤销修改操作")
-            old_values = (audit_log.details or {}).get("old_values")
-            if not old_values or not isinstance(old_values, dict):
-                raise ValueError("该审计记录中没有旧值数据，无法撤销")
-
-            for key, value in old_values.items():
-                try:
-                    converted = self._convert_old_value(key, value)
-                    setattr(property_obj, key, converted)
-                except Exception:
-                    logger.warning("Failed to revert field %s to value %s, skipping", key, value)
-
-            property_obj.version = (property_obj.version or 0) + 1
-            property_obj.updated_at = datetime.now(timezone.utc)
-            message = "已撤销房源修改，已恢复至修改前的值"
-
-        elif action == "property_delete":
-            if property_obj.deleted_at is None:
-                raise ValueError("该房源未被删除，无法撤销删除操作")
-            property_obj.deleted_at = None
-            property_obj.status = PropertyStatus.available
-            message = "已撤销房源删除，房源已恢复"
-
-        elif action == "property_restore":
-            if property_obj.deleted_at is not None:
-                raise ValueError("该房源已被删除，无法撤销恢复操作")
-            self._apply_delete(property_obj)
-            message = "已撤销房源恢复，房源已被重新软删除"
-
-        await self.session.commit()
-
-        # 6. 记录撤销审计
-        await self._audit(
-            current_user_id,
-            "property_revert",
-            property_id,
-            {
-                "reverted_action": action,
-                "reverted_audit_log_id": audit_log_id,
-                "message": message,
-                "property_title": property_obj.title,
-                "property_address": property_obj.address,
-                "institute_name": getattr(property_obj, "institute_name", None),
-            },
-        )
-
-        return {
-            "message": message,
-            "property_id": property_id,
-            "reverted_action": action,
-        }
-
-    @staticmethod
-    def _convert_old_value(key: str, value):
-        """将审计日志中序列化的旧值还原为 Python 类型"""
-        if value is None:
-            return None
-        # 枚举
-        if key == "property_type":
-            return PropertyType(value)
-        if key == "status":
-            return PropertyStatus(value)
-        if key == "deposit_type":
-            return DepositType(value) if value else None
-        # Decimal
-        if key in ("price_monthly", "area_sqm", "latitude", "longitude"):
-            return Decimal(str(value)) if value is not None else None
-        # Date
-        if key == "available_from":
-            from datetime import date as date_type
-            if isinstance(value, str):
-                return date_type.fromisoformat(value)
-            return value
-        # Int
-        if key in ("bedrooms", "bathrooms", "deposit_amount", "floor", "min_stay_months"):
-            return int(value) if value is not None else None
-        # Float
-        if key == "service_fee_rate":
-            return float(value) if value is not None else None
-        # List
-        if key == "amenities":
-            return list(value) if isinstance(value, list) else value
-        return value
-
-    async def _audit(self, user_id: int, action: str, resource_id: int, details: dict) -> bool:
-        """写入审计日志，返回是否成功。失败不阻塞主流程但会输出可见警告。"""
-=======
     async def _audit(
         self, user_id: int, action: str, resource_id: int, details: dict
     ) -> bool:
         """写入审计日志，不阻塞主流程。"""
->>>>>>> merge/pr33-pr35
         try:
             from app.services.audit_service import AuditService
             await AuditService(self.session).create_log(

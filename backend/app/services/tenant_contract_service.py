@@ -1,19 +1,16 @@
-"""租客端合同列表与详情查询服务。"""
+﻿"""租客端合同列表与详情查询服务。"""
 from datetime import datetime, timezone
 
 from sqlalchemy import select
-from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.models.booking import Booking, BookingStatus
 from app.models.contract import Contract, ContractSignature
 from app.models.payment import Payment, PaymentStatus
-from app.models.property import Room
-from app.models.unit_type import UnitType
-from app.models.property_image import RoomImage
+from app.models.unit_type import UnitType, UnitTypeImage
 from app.schemas.contract import TenantContractDetail, TenantContractListItem
 from app.services.order_state_policy import booking_is_confirmed, payment_status_can_pay, payment_status_value
-from app.services.lease_pricing_service import LeasePricingService
 
 
 STATUS_LABELS = {
@@ -57,9 +54,11 @@ class TenantContractService:
             select(Payment).where(Payment.booking_id == booking_id).order_by(Payment.created_at.desc())
         )
 
-    async def _build_item(self, booking, contract, payment, room, image):
-        ut = getattr(room, 'unit_type', None)
-        inst = getattr(ut, 'institute', None) if ut else None
+    @staticmethod
+    def _aware(value: datetime) -> datetime:
+        return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+
+    async def _build_item(self, booking, contract, payment, unit_type, image):
         payment_status = payment_status_value(
             payment.status if payment else None, booking.status
         )
@@ -67,7 +66,7 @@ class TenantContractService:
         expires_at = payment.expires_at if payment else booking.payment_expires_at
         remaining_seconds = 0
         if expires_at:
-            remaining_seconds = max(0, int((expires_at - datetime.now(timezone.utc)).total_seconds()))
+            remaining_seconds = max(0, int((self._aware(expires_at) - datetime.now(timezone.utc)).total_seconds()))
         remaining_contract_days = None
         if booking.scheduled_date and contract.status == "signed":
             try:
@@ -80,6 +79,15 @@ class TenantContractService:
             amounts_verified=bool(payment and payment.status == PaymentStatus.success),
             webhook_confirmed=bool(payment and payment.status == PaymentStatus.success and payment.paid_at),
         )
+        pricing_snapshot = (contract.snapshot or {}).get("pricing_snapshot") or {}
+        pricing_options = pricing_snapshot.get("options") or []
+        primary_option = pricing_options[0] if pricing_options else {}
+        lease_end_date = (
+            booking.contract_end.isoformat()
+            if booking.contract_end
+            else primary_option.get("end_date")
+        )
+
         return TenantContractListItem(
             agreement_id=contract.id,
             agreement_number=contract.agreement_number or contract.id,
@@ -87,15 +95,15 @@ class TenantContractService:
             agreement_content_hash=contract.content_hash or "",
             order_id=payment.order_id if payment else f"BOOKING-{booking.id}",
             booking_id=booking.id,
-            property_id=room.id,
-            tenant_user_id=booking.tenant_id,
+            property_id=unit_type.id,
+            tenant_user_id=booking.user_id,
             signed_at=contract.signed_at,
             lease_start_date=booking.scheduled_date,
-            lease_end_date=LeasePricingService.add_calendar_months(datetime.fromisoformat(booking.scheduled_date).date(), booking.lease_months).isoformat() if booking.scheduled_date and booking.lease_months else None,
+            lease_end_date=lease_end_date,
             lease_months=booking.lease_months,
             property_timezone="Asia/Shanghai",
-            property_name=getattr(ut, 'name', None) or room.room_number or f"Room #{room.id}",
-            property_address=getattr(inst, 'address', None) or "",
+            property_name=unit_type.name or f"Unit type #{unit_type.id}",
+            property_address=(unit_type.institute.address if unit_type.institute else "") or "",
             property_image_url=f"/api/v1/uploads/{image.filename}" if image else None,
             payment_status=payment_status,
             booking_status="confirmed" if confirmed else "not_confirmed",
@@ -117,7 +125,7 @@ class TenantContractService:
 
     async def list_for_tenant(self, user_id: int):
         bookings = list(await self.session.scalars(
-            select(Booking).where(Booking.tenant_id == user_id).order_by(Booking.created_at.desc())
+            select(Booking).where(Booking.user_id == user_id).order_by(Booking.created_at.desc())
         ))
         result = []
         for booking in bookings:
@@ -126,17 +134,18 @@ class TenantContractService:
             )
             if not contract:
                 continue
-            room = (await self.session.scalars(
-                select(Room).where(Room.id == booking.property_id).options(selectinload(Room.unit_type).selectinload(UnitType.institute))
-            )).unique().first()
-            if not room:
+            unit_type_id = booking.unit_type_id or booking.property_id
+            unit_type = await self.session.get(
+                UnitType, unit_type_id, options=[selectinload(UnitType.institute)]
+            )
+            if not unit_type:
                 continue
             payment = await self._latest_payment(booking.id)
             image = await self.session.scalar(
-                select(RoomImage).where(RoomImage.room_id == room.id)
-                .order_by(RoomImage.is_primary.desc(), RoomImage.sort_order, RoomImage.id)
+                select(UnitTypeImage).where(UnitTypeImage.unit_type_id == unit_type.id)
+                .order_by(UnitTypeImage.is_primary.desc(), UnitTypeImage.sort_order, UnitTypeImage.id)
             )
-            item = await self._build_item(booking, contract, payment, room, image)
+            item = await self._build_item(booking, contract, payment, unit_type, image)
             if item:
                 result.append(item)
         return result
@@ -150,15 +159,18 @@ class TenantContractService:
         booking = await self.session.get(Booking, contract.booking_id)
         if not booking:
             raise LookupError("订单不存在")
-        room = await self.session.get(Room, booking.property_id)
-        if not room:
+        unit_type_id = booking.unit_type_id or booking.property_id
+        unit_type = await self.session.get(
+            UnitType, unit_type_id, options=[selectinload(UnitType.institute)]
+        )
+        if not unit_type:
             raise LookupError("房源不存在")
         payment = await self._latest_payment(booking.id)
         image = await self.session.scalar(
-            select(RoomImage).where(RoomImage.room_id == room.id)
-            .order_by(RoomImage.is_primary.desc(), RoomImage.sort_order, RoomImage.id)
+            select(UnitTypeImage).where(UnitTypeImage.unit_type_id == unit_type.id)
+            .order_by(UnitTypeImage.is_primary.desc(), UnitTypeImage.sort_order, UnitTypeImage.id)
         )
-        item = await self._build_item(booking, contract, payment, room, image)
+        item = await self._build_item(booking, contract, payment, unit_type, image)
         if not item:
             raise LookupError("合同数据不完整")
         signature = await self.session.scalar(

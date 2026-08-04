@@ -31,12 +31,12 @@ const routes: RouteRecordRaw[] = [
       {
         path: 'room/:id',
         name: 'property-detail',
-        component: () => import('@/views/BuildingRedirect.vue'),
+        component: () => import('@/views/PropertyDetail.vue'),
       },
       // 兼容旧版 /property/:id 链接
       {
         path: 'property/:id',
-        redirect: (to: any) => ({ path: `/building/${to.params.id}` }),
+        redirect: (to: any) => ({ name: 'property-detail', params: { id: to.params.id } }),
       },
       {
         path: 'profile',
@@ -135,15 +135,6 @@ const routes: RouteRecordRaw[] = [
         meta: { requiresAuth: true, requiresLandlord: true },
       },
       {
-<<<<<<< HEAD
-        path: 'rooms/manage',
-        name: 'rooms-manage',
-        component: () => import('@/views/RoomManagement.vue'),
-        meta: { requiresAuth: true, requiresLandlord: true },
-      },
-      {
-=======
->>>>>>> merge/pr33-pr35
         path: 'property/history',
         name: 'property-history',
         component: () => import('@/views/PropertyHistory.vue'),

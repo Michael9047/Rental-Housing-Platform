@@ -3,7 +3,6 @@
 import hashlib
 import json
 from datetime import datetime, timezone
-from decimal import Decimal
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -11,9 +10,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.booking import Booking, BookingStatus
 from app.models.contract import Contract
 from app.models.policy_consent import PolicyConsent
-from app.models.property import Property, PropertyType
+from app.models.institute import Institute
+from app.models.unit_type import UnitType
 from app.models.user import User
-from app.services.lease_pricing_service import LeasePricingService
 
 
 TEMPLATE_VERSION = "2026.1"
@@ -22,11 +21,14 @@ PLATFORM_NAME = "Rental Housing Platform / 租房平台"
 PLATFORM_ROLE = "预订信息与交易流程中介平台 / booking intermediary and process facilitator"
 
 PROPERTY_TYPE_LABELS = {
-    PropertyType.one_bed: "一室公寓 / 1-Bed Apartment",
-    PropertyType.two_bed: "两室公寓 / 2-Bed Apartment",
-    PropertyType.house: "住宅 / House",
-    PropertyType.studio: "单间公寓 / Studio",
-    PropertyType.shared: "合租房间 / Shared accommodation",
+    "studio": "单间公寓 / Studio",
+    "ensuite": "独卫套间 / Ensuite",
+    "1bed": "一室一厅 / 1-Bed Apartment",
+    "2bed": "两室一厅 / 2-Bed Apartment",
+    "3bed": "三室 / 3-Bed Apartment",
+    "4bed": "四室 / 4-Bed Apartment",
+    "5bed+": "五室及以上 / 5+ Bed Apartment",
+    "shared": "合租房间 / Shared accommodation",
 }
 
 
@@ -41,61 +43,40 @@ class ContractService:
         self.session = session
 
     async def _build_source_snapshot(self, booking: Booking) -> dict:
-        tenant = await self.session.get(User, booking.tenant_id)
-        landlord = await self.session.get(User, booking.bm_id)
-        property_obj = await self.session.get(Property, booking.property_id)
-        if not property_obj:
-            raise ValueError("Property not found")
+        tenant = await self.session.get(User, booking.user_id)
+        manager = await self.session.get(User, booking.bm_id or booking.landlord_id)
+        unit_type = await self.session.get(UnitType, booking.unit_type_id or booking.property_id)
+        if not unit_type:
+            raise ValueError("Unit type not found")
+        institute = await self.session.get(Institute, unit_type.institute_id)
 
         application = booking.application_data or {}
         personal = application.get("personal_info") or {}
-        pricing = application.get("pricing_snapshot") or {}
-        option = next(
-            (item for item in pricing.get("options", []) if item.get("months") == booking.lease_months),
-            None,
-        )
-        if option is None and booking.scheduled_date:
-            calculated = LeasePricingService.calculate(
-                property_obj, datetime.fromisoformat(booking.scheduled_date).date()
-            ).model_dump(mode="json")
-            pricing = calculated
-            option = next(
-                (item for item in pricing["options"] if item["months"] == booking.lease_months),
-                None,
-            )
-        if option is None:
-            # 自定义月数：基于首选项月租/押金/服务费公式实时计算
-            base = next((item for item in pricing.get("options", [])), None)
-            if base:
-                p = base["prices"]
-                monthly = int(p["monthly_rent"]["local"]["minor_units"]) // (10 ** p["monthly_rent"]["local"]["minor_unit_exponent"])
-                deposit = int(p["deposit"]["local"]["minor_units"]) // (10 ** p["deposit"]["local"]["minor_unit_exponent"])
-                svc = int(p["service_fee"]["local"]["minor_units"]) // (10 ** p["service_fee"]["local"]["minor_unit_exponent"])
-                m = booking.lease_months
-                from datetime import date as _date
-                move_in = _date.fromisoformat(booking.scheduled_date)
-                end = LeasePricingService.add_calendar_months(move_in, m)
-                option = {
-                    "months": m,
-                    "end_date": end.isoformat(),
-                    "prices": {
-                        "monthly_rent": p["monthly_rent"],
-                        "deposit": p["deposit"],
-                        "service_fee": p["service_fee"],
-                        "amount_due_now": {"local": {"currency": p["monthly_rent"]["local"]["currency"], "minor_units": (deposit + svc) * 100, "minor_unit_exponent": 2, "decimal": f"{deposit + svc}.00"}, "cny": {"currency": p["monthly_rent"]["cny"]["currency"], "minor_units": (deposit + svc) * 100, "minor_unit_exponent": 2, "decimal": f"{deposit + svc}.00"}},
-                        "rent_total": {"local": {"currency": p["monthly_rent"]["local"]["currency"], "minor_units": monthly * m * 100, "minor_unit_exponent": 2, "decimal": f"{monthly * m}.00"}, "cny": {"currency": p["monthly_rent"]["cny"]["currency"], "minor_units": monthly * m * 100, "minor_unit_exponent": 2, "decimal": f"{monthly * m}.00"}},
-                    }
-                }
-            else:
-                snapshot_months = [item.get("months") for item in pricing.get("options", [])] if pricing else []
-                raise ValueError(
-                    f"The booking has no valid pricing snapshot: "
-                    f"lease_months={booking.lease_months}, "
-                    f"snapshot_options={snapshot_months}, "
-                    f"has_snapshot={bool(application.get('pricing_snapshot'))}, "
-                    f"scheduled_date={booking.scheduled_date}"
-                )
-
+        lease_months = booking.lease_months or max(int(getattr(unit_type, "min_stay_months", 1) or 1), 1)
+        monthly = int(unit_type.base_rent or 0)
+        deposit = int(booking.deposit_amount or unit_type.deposit_amount or monthly)
+        service_fee = int(booking.service_fee or monthly * lease_months * 0.05)
+        rent_total = int(booking.total_rent or monthly * lease_months)
+        amount_due_now = deposit + service_fee
+        currency = unit_type.currency or "CNY"
+        pricing = {
+            "local_currency": currency,
+            "exchange_rate_to_cny": "1",
+            "exchange_rate_at": datetime.now(timezone.utc).isoformat(),
+            "exchange_rate_source": "local unit type snapshot",
+            "options": [{
+                "months": lease_months,
+                "end_date": booking.contract_end.isoformat() if booking.contract_end else "待确认",
+                "prices": {
+                    "monthly_rent": {"local": {"currency": currency, "minor_units": monthly, "minor_unit_exponent": 0, "decimal": str(monthly)}, "cny": {"currency": "CNY", "minor_units": monthly, "minor_unit_exponent": 0, "decimal": str(monthly)}},
+                    "deposit": {"local": {"currency": currency, "minor_units": deposit, "minor_unit_exponent": 0, "decimal": str(deposit)}, "cny": {"currency": "CNY", "minor_units": deposit, "minor_unit_exponent": 0, "decimal": str(deposit)}},
+                    "service_fee": {"local": {"currency": currency, "minor_units": service_fee, "minor_unit_exponent": 0, "decimal": str(service_fee)}, "cny": {"currency": "CNY", "minor_units": service_fee, "minor_unit_exponent": 0, "decimal": str(service_fee)}},
+                    "amount_due_now": {"local": {"currency": currency, "minor_units": amount_due_now, "minor_unit_exponent": 0, "decimal": str(amount_due_now)}, "cny": {"currency": "CNY", "minor_units": amount_due_now, "minor_unit_exponent": 0, "decimal": str(amount_due_now)}},
+                    "rent_total": {"local": {"currency": currency, "minor_units": rent_total, "minor_unit_exponent": 0, "decimal": str(rent_total)}, "cny": {"currency": "CNY", "minor_units": rent_total, "minor_unit_exponent": 0, "decimal": str(rent_total)}},
+                },
+            }],
+        }
+        option = pricing["options"][0]
         prices = option["prices"]
         policy_rows = await self.session.scalars(
             select(PolicyConsent).where(PolicyConsent.booking_id == booking.id)
@@ -108,22 +89,22 @@ class ContractService:
             "zh": f"已包含：{'、'.join(included) if included else '房源记录未配置'}；不包含：{'、'.join(excluded) if excluded else '房源记录未配置'}。未列明费用以订单和房源规则为准。",
             "en": f"Included: {', '.join(included) if included else 'not configured in the property record'}; excluded: {', '.join(excluded) if excluded else 'not configured in the property record'}. Unlisted charges are governed by the booking and property rules.",
         }
-        tenant_cn = personal.get("chinese_name") or (tenant.username if tenant else "待确认")
+        tenant_cn = personal.get("chinese_name") or application.get("applicant", {}).get("name") or (tenant.username if tenant else "待确认")
         tenant_en = " ".join(filter(None, [personal.get("given_name_pinyin"), personal.get("surname_pinyin")])) or "To be confirmed"
         commencement = booking.scheduled_date or "待确认"
         return {
             "development_notice": DEVELOPMENT_NOTICE,
             "order_number": str(booking.id),
-            "provider_name": landlord.username if landlord else f"Provider account #{booking.bm_id}",
+            "provider_name": manager.username if manager else f"Provider account #{booking.bm_id or booking.landlord_id}",
             "platform_name": PLATFORM_NAME,
             "platform_role": PLATFORM_ROLE,
             "tenant_name_cn": tenant_cn,
             "tenant_name_en": tenant_en,
-            "property_name": getattr(getattr(property_obj, 'unit_type', None), 'name', property_obj.room_number or ''),
-            "property_address": getattr(getattr(getattr(property_obj, 'unit_type', None), 'institute', None), 'address', ''),
-            "property_id": property_obj.id,
-            "room_type": getattr(getattr(property_obj, 'unit_type', None), 'name', '') or '',
-            "occupancy_limit": property_rules.get("occupancy_limit") or max(1, getattr(getattr(property_obj, 'unit_type', None), 'bedrooms', 0) or 1),
+            "property_name": unit_type.name,
+            "property_address": institute.address if institute else "",
+            "property_id": unit_type.id,
+            "room_type": PROPERTY_TYPE_LABELS.get(str(unit_type.property_type or ""), str(unit_type.property_type or unit_type.name)),
+            "occupancy_limit": property_rules.get("occupancy_limit") or max(1, unit_type.bedrooms or 1),
             "commencement_date": commencement,
             "expiry_date": option["end_date"],
             "tenancy_months": booking.lease_months,
@@ -204,7 +185,8 @@ class ContractService:
         ).hexdigest()
         snapshot["content_hash"] = content_hash
         contract = Contract(
-            booking_id=booking.id, tenant_id=booking.tenant_id, property_id=booking.property_id,
+            booking_id=booking.id, tenant_id=booking.user_id, property_id=booking.property_id,
+            unit_type_id=booking.unit_type_id or booking.property_id,
             template_name="housing_reservation_tenancy_bilingual", agreement_number=agreement_number,
             version=version, template_version=TEMPLATE_VERSION, content_hash=content_hash,
             snapshot=snapshot, generated_at=generated_at, content=content, status="generated",

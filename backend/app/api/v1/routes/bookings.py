@@ -1,7 +1,9 @@
+from datetime import date
+
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from starlette.responses import JSONResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.api.deps import get_current_user, get_db_session, require_landlord, require_tenant
 from app.models.booking import BookingStatus
@@ -13,53 +15,140 @@ from app.schemas.policy import BookingConfirmationCreate, BookingConfirmationRea
 from app.models.booking import Booking
 from app.models.policy_consent import PolicyConsent
 from app.models.booking_flow_draft import BookingFlowDraft
+from app.models.tenant import Tenant
 from app.schemas.booking_flow_draft import BookingFlowDraftRead, BookingFlowDraftUpdate
 from app.services.booking_availability_service import BookingAvailabilityService
 from app.services.lease_pricing_service import LeasePricingService
 from app.services.policy_service import POLICIES
 from app.services.booking_service import BookingService
 from app.services.property_service import PropertyService
+from app.services.unit_type_service import UnitTypeService
 
 router = APIRouter()
 
 
-@router.get("/drafts/{unit_type_id}", response_model=BookingFlowDraftRead)
+def _parse_date(value: str | None) -> date | None:
+    return date.fromisoformat(value) if value else None
+
+
+async def _ensure_draft_tenant(
+    session: AsyncSession,
+    draft: BookingFlowDraft,
+    current_user: User,
+) -> Tenant:
+    if draft.tenant:
+        return draft.tenant
+    tenant = await session.get(Tenant, draft.tenant_id) if draft.tenant_id else None
+    if tenant is None:
+        tenant = Tenant(user_id=current_user.id, label=current_user.username)
+        session.add(tenant)
+        await session.flush()
+        draft.tenant_id = tenant.id
+    draft.tenant = tenant
+    return tenant
+
+
+async def _ensure_user_tenant(session: AsyncSession, current_user: User) -> Tenant:
+    tenant = await session.scalar(
+        select(Tenant)
+        .where(Tenant.user_id == current_user.id)
+        .order_by(Tenant.id.desc())
+    )
+    if tenant:
+        return tenant
+    tenant = Tenant(user_id=current_user.id, label=current_user.username)
+    session.add(tenant)
+    await session.flush()
+    return tenant
+
+
+async def _apply_personal_info(
+    session: AsyncSession,
+    draft: BookingFlowDraft,
+    current_user: User,
+    data,
+) -> None:
+    tenant = await _ensure_draft_tenant(session, draft, current_user)
+    payload = data.model_dump(mode="json", exclude_unset=True)
+    for field, value in payload.items():
+        setattr(tenant, field, _parse_date(value) if field == "birth_date" else value)
+    if payload.get("chinese_name"):
+        tenant.label = payload["chinese_name"]
+
+
+async def _apply_emergency_contact(
+    session: AsyncSession,
+    draft: BookingFlowDraft,
+    current_user: User,
+    data,
+) -> None:
+    tenant = await _ensure_draft_tenant(session, draft, current_user)
+    mapping = {
+        "chinese_name": "emergency_chinese_name",
+        "given_name_pinyin": "emergency_given_name_pinyin",
+        "surname_pinyin": "emergency_surname_pinyin",
+        "relation": "emergency_relation",
+        "birth_date": "emergency_birth_date",
+        "phone": "emergency_phone",
+        "email": "emergency_email",
+        "gender": "emergency_gender",
+        "region": "emergency_region",
+        "address_detail": "emergency_address_detail",
+        "postal_code": "emergency_postal_code",
+        "consultant_id": "emergency_consultant_id",
+    }
+    payload = data.model_dump(mode="json", exclude_unset=True)
+    for field, value in payload.items():
+        target = mapping[field]
+        setattr(tenant, target, _parse_date(value) if field == "birth_date" else value)
+
+
+@router.get("/drafts/{property_id}", response_model=BookingFlowDraftRead)
 async def get_booking_flow_draft(
-    unit_type_id: int,
+    property_id: int,
     session: AsyncSession = Depends(get_db_session),
     current_user: User = Depends(require_tenant),
 ) -> BookingFlowDraftRead:
-    draft = await session.scalar(select(BookingFlowDraft).where(
-        BookingFlowDraft.user_id == current_user.id,
-        BookingFlowDraft.unit_type_id == unit_type_id,
-    ))
+    draft = await session.scalar(
+        select(BookingFlowDraft)
+        .options(selectinload(BookingFlowDraft.tenant))
+        .where(
+            BookingFlowDraft.user_id == current_user.id,
+            BookingFlowDraft.unit_type_id == property_id,
+        )
+    )
     if not draft:
-        return JSONResponse(content=None, status_code=200)
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Booking draft not found")
     return draft
 
 
-@router.put("/drafts/{unit_type_id}", response_model=BookingFlowDraftRead)
+@router.put("/drafts/{property_id}", response_model=BookingFlowDraftRead)
 async def save_booking_flow_draft(
-    unit_type_id: int,
+    property_id: int,
     update: BookingFlowDraftUpdate,
     session: AsyncSession = Depends(get_db_session),
     current_user: User = Depends(require_tenant),
 ) -> BookingFlowDraftRead:
-    property_obj = await PropertyService(session).get(unit_type_id)
+    property_obj = await PropertyService(session).get(property_id)
     if not property_obj:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Property not found")
-    draft = await session.scalar(select(BookingFlowDraft).where(
-        BookingFlowDraft.user_id == current_user.id,
-        BookingFlowDraft.unit_type_id == unit_type_id,
-    ))
+    draft = await session.scalar(
+        select(BookingFlowDraft)
+        .options(selectinload(BookingFlowDraft.tenant))
+        .where(
+            BookingFlowDraft.user_id == current_user.id,
+            BookingFlowDraft.unit_type_id == property_id,
+        )
+    )
     if not draft:
-        draft = BookingFlowDraft(user_id=current_user.id, unit_type_id=unit_type_id)
+        draft = BookingFlowDraft(user_id=current_user.id, unit_type_id=property_id)
         session.add(draft)
-    payload = update.model_dump(exclude_unset=True)
+        await session.flush()
+    payload = update.model_dump(exclude_unset=True, exclude={"personal_info", "emergency_contact"})
     if update.personal_info is not None:
-        payload["personal_info"] = update.personal_info.model_dump(mode="json")
+        await _apply_personal_info(session, draft, current_user, update.personal_info)
     if update.emergency_contact is not None:
-        payload["emergency_contact"] = update.emergency_contact.model_dump(mode="json")
+        await _apply_emergency_contact(session, draft, current_user, update.emergency_contact)
     for field, value in payload.items():
         setattr(draft, field, value)
     if draft.current_step in {"lease_term", "personal_info", "emergency_contact", "review"}:
@@ -72,10 +161,9 @@ async def save_booking_flow_draft(
     if draft.current_step in {"personal_info", "emergency_contact", "review"}:
         if not draft.lease_months:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Lease term step is incomplete")
-        # 租期 >= 最短要求即可（含自定义月数）
-        min_stay = int(getattr(getattr(property_obj, 'unit_type', None), 'min_stay_months', 3) or 3)
-        if draft.lease_months < max(1, min_stay):
-            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"Lease term must be at least {max(1, min_stay)} month(s)")
+        pricing = LeasePricingService.calculate(property_obj, draft.move_in_date)
+        if not any(option.months == draft.lease_months for option in pricing.options):
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Lease term is unavailable")
     if draft.current_step in {"emergency_contact", "review"} and not draft.personal_info:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Personal information step is incomplete")
     if draft.current_step == "review" and not draft.emergency_contact:
@@ -92,10 +180,14 @@ async def confirm_booking_with_policies(
     session: AsyncSession = Depends(get_db_session),
     current_user: User = Depends(require_tenant),
 ) -> BookingConfirmationRead:
-    flow_draft = await session.scalar(select(BookingFlowDraft).where(
-        BookingFlowDraft.user_id == current_user.id,
-        BookingFlowDraft.unit_type_id == confirmation.unit_type_id,
-    ))
+    flow_draft = await session.scalar(
+        select(BookingFlowDraft)
+        .options(selectinload(BookingFlowDraft.tenant))
+        .where(
+            BookingFlowDraft.user_id == current_user.id,
+            BookingFlowDraft.unit_type_id == confirmation.property_id,
+        )
+    )
     if not flow_draft:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Booking flow steps are incomplete: draft not found")
     if flow_draft.current_step != "review":
@@ -120,55 +212,45 @@ async def confirm_booking_with_policies(
                 detail=f"Policy {key} has changed; please review the latest version",
             )
 
-    # 获取 UnitType（不再使用旧的 Property/Room）
-    unit_type_id = getattr(confirmation, 'unit_type_id', None) or getattr(confirmation, 'unit_type_id', None)
-    if not unit_type_id:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing unit_type_id")
-
     availability_service = BookingAvailabilityService(session)
-    unit_type = await availability_service.get_unit_type(unit_type_id)
-    if not unit_type:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="UnitType not found")
-    valid, reason, _ = await availability_service.validate(unit_type, confirmation.move_in_date)
+    property_obj = await availability_service.get_property(confirmation.property_id)
+    if not property_obj:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Property not found")
+    valid, reason, _ = await availability_service.validate(property_obj, confirmation.move_in_date)
     if not valid:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=reason)
 
-    # 租期 >= 最短要求
-    min_stay = getattr(unit_type, 'min_stay_months', 3) or 3
-    if confirmation.lease_months < max(1, min_stay):
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=f"Lease term must be at least {max(1, min_stay)} month(s)")
-
-    # 生成价格快照
-    pricing = LeasePricingService.calculate(unit_type, confirmation.move_in_date)
-    base = pricing.options[0]
-    mon_minor = base.prices.monthly_rent.local.minor_units
-    mon_exp = base.prices.monthly_rent.local.minor_unit_exponent
-    monthly = mon_minor // (10 ** mon_exp)
-    deposit = base.prices.deposit.local.minor_units // (10 ** base.prices.deposit.local.minor_unit_exponent)
-    svc_fee = base.prices.service_fee.local.minor_units // (10 ** base.prices.service_fee.local.minor_unit_exponent)
-    m = confirmation.lease_months
+    pricing = LeasePricingService.calculate(property_obj, confirmation.move_in_date)
+    option = next((item for item in pricing.options if item.months == confirmation.lease_months), None)
+    if not option:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Lease term is unavailable")
+    bm_id = (property_obj.institute.bm_id if property_obj.institute else None) or 1
 
     duplicate = await session.scalar(select(Booking).where(
         Booking.user_id == current_user.id,
-        Booking.unit_type_id == unit_type_id,
+        Booking.unit_type_id == property_obj.id,
         Booking.status == BookingStatus.pending,
     ))
     if duplicate:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="You already have a pending booking for this unit type")
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="You already have a pending booking for this property")
 
     booking = Booking(
         user_id=current_user.id,
-        tenant_id=current_user.id,
-        unit_type_id=unit_type_id,
-        institute_id=unit_type.institute_id,
-        bm_id=getattr(getattr(unit_type, 'institute', None), 'bm_id', None),
+        tenant_id=flow_draft.tenant_id,
+        property_id=property_obj.id,
+        landlord_id=bm_id,
+        unit_type_id=property_obj.id,
+        institute_id=property_obj.institute_id,
+        bm_id=bm_id,
         status=BookingStatus.pending,
         scheduled_date=confirmation.move_in_date.isoformat(),
-        deposit_amount=getattr(unit_type, 'deposit_amount', None) or 0,
-        service_fee=svc_fee,
+        contract_start=confirmation.move_in_date,
+        contract_end=LeasePricingService.add_calendar_months(confirmation.move_in_date, confirmation.lease_months),
+        deposit_amount=property_obj.deposit_amount or 0,
+        service_fee=option.prices.service_fee.local.minor_units // (10 ** option.prices.service_fee.local.minor_unit_exponent),
         deposit_status="unpaid",
-        lease_months=m,
-        total_rent=monthly * m,
+        lease_months=confirmation.lease_months,
+        total_rent=option.prices.rent_total.local.minor_units // (10 ** option.prices.rent_total.local.minor_unit_exponent),
         application_data={
             "pricing_snapshot": pricing.model_dump(mode="json"),
             "personal_info": flow_draft.personal_info,
@@ -215,18 +297,18 @@ async def create_booking(
     session: AsyncSession = Depends(get_db_session),
     current_user: User = Depends(require_tenant),
 ) -> BookingRead:
-    unit_type_id = booking_in.unit_type_id
-    unit_type = await PropertyService(session).get(unit_type_id)
+    unit_type = await UnitTypeService(session).get(booking_in.unit_type_id)
     if not unit_type:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="UnitType not found")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Unit type not found")
 
     booking_service = BookingService(session)
     try:
+        tenant = await _ensure_user_tenant(session, current_user)
         booking = await booking_service.create_booking(
             user_id=current_user.id,
-            unit_type_id=unit_type_id,
-            bm_id=getattr(getattr(unit_type, 'institute', None), 'bm_id', 0) or 0,
-            tenant_id=current_user.id,
+            unit_type_id=booking_in.unit_type_id,
+            bm_id=unit_type.institute.bm_id if unit_type.institute else 0,
+            tenant_id=tenant.id,
             booking_in=booking_in,
         )
     except ValueError as e:
@@ -271,7 +353,7 @@ async def get_booking(
     if not booking:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Booking not found")
 
-    if current_user.id not in {booking.tenant_id, booking.bm_id} and current_user.role != UserRole.admin:
+    if current_user.id not in {booking.user_id, booking.landlord_id} and current_user.role != UserRole.admin:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
 
     return booking
@@ -295,7 +377,7 @@ async def update_booking_status(
     if not booking:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Booking not found")
 
-    if current_user.id != booking.bm_id and current_user.role != UserRole.admin:
+    if current_user.id != booking.landlord_id and current_user.role != UserRole.admin:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only the landlord can update this booking")
 
     updated = await booking_service.update_status(booking_id, update_in.status)
@@ -313,7 +395,7 @@ async def cancel_booking(
     if not booking:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Booking not found")
 
-    if current_user.id != booking.tenant_id and current_user.role != UserRole.admin:
+    if current_user.id != booking.user_id and current_user.role != UserRole.admin:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only the tenant can cancel this booking")
 
     updated = await booking_service.update_status(booking_id, BookingStatus.cancelled)

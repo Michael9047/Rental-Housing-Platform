@@ -11,7 +11,7 @@ from sqlalchemy import (
     Text as SAText,
     Float,
 )
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.orm import Mapped, mapped_column, relationship, synonym
 
 from app.models.mixins import TimestampMixin
 from app.db.session import Base
@@ -54,13 +54,8 @@ class RepairRequest(TimestampMixin, Base):
     __tablename__ = "repair_requests"
 
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
-<<<<<<< HEAD
-    property_id: Mapped[int] = mapped_column(
-        ForeignKey("rooms.id", ondelete="CASCADE"), index=True
-=======
     unit_type_id: Mapped[int] = mapped_column(
         ForeignKey("unit_types.id", ondelete="CASCADE"), index=True
->>>>>>> merge/pr33-pr35
     )
     tenant_id: Mapped[int] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE"), index=True
@@ -95,6 +90,11 @@ class RepairRequest(TimestampMixin, Base):
     tenant: Mapped["User"] = relationship(foreign_keys=[tenant_id])
     bm: Mapped["User"] = relationship(foreign_keys=[bm_id])
     assigned_worker: Mapped["User | None"] = relationship(foreign_keys=[assigned_worker_id])
+
+    property_id = synonym("unit_type_id")
+    landlord_id = synonym("bm_id")
+    property = synonym("unit_type")
+    landlord = synonym("bm")
 
 
 class RepairWorker(TimestampMixin, Base):

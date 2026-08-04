@@ -1,13 +1,8 @@
 """公寓模型 — 三层架构顶层，管理机构/大学公寓"""
 import enum
 from decimal import Decimal
-<<<<<<< HEAD
-from sqlalchemy import Boolean, Enum, ForeignKey, Numeric, String, Text as SAText, text
-from sqlalchemy.dialects.postgresql import JSON
-=======
 from sqlalchemy import Boolean, Enum, ForeignKey, Integer, Numeric, String, Text as SAText, text
 from sqlalchemy.dialects.postgresql import ARRAY, JSON
->>>>>>> merge/pr33-pr35
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.models.mixins import TimestampMixin
 from app.db.session import Base
@@ -24,35 +19,24 @@ class Institute(TimestampMixin, Base):
     __tablename__ = "institutes"
 
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
-    business_id: Mapped[str | None] = mapped_column(String(24), unique=True, index=True)
-    uuid: Mapped[str | None] = mapped_column(String(36), unique=True, nullable=True)
+    business_id: Mapped[str | None] = mapped_column(String(20), unique=True, index=True)
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     name_cn: Mapped[str | None] = mapped_column(String(200), nullable=True)
     abbreviation: Mapped[str | None] = mapped_column(String(50), nullable=True)
     address: Mapped[str | None] = mapped_column(String(300))
     # 结构化地址字段
-<<<<<<< HEAD
-    country: Mapped[str | None] = mapped_column(String(100), nullable=True)
-=======
     country: Mapped[str | None] = mapped_column(String(10), nullable=True)
->>>>>>> merge/pr33-pr35
     city: Mapped[str | None] = mapped_column(String(100), nullable=True)
     district: Mapped[str | None] = mapped_column(String(100), nullable=True)
     street: Mapped[str | None] = mapped_column(String(200), nullable=True)
     postal_code: Mapped[str | None] = mapped_column(String(20), nullable=True)
-<<<<<<< HEAD
-=======
     npc: Mapped[str | None] = mapped_column(String(100), nullable=True)  # 新加坡 NPC 辖区简称（如 CL-NPC）
->>>>>>> merge/pr33-pr35
     latitude: Mapped[Decimal | None] = mapped_column(Numeric(9, 6), nullable=True)
     longitude: Mapped[Decimal | None] = mapped_column(Numeric(9, 6), nullable=True)
     contact_phone: Mapped[str | None] = mapped_column(String(32))
     contact_email: Mapped[str | None] = mapped_column(String(255))
     logo_url: Mapped[str | None] = mapped_column(String(500))
-<<<<<<< HEAD
-=======
     website_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
->>>>>>> merge/pr33-pr35
     amenities: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
     female_only: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, server_default=text("false"))
     couples_allowed: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, server_default=text("false"))

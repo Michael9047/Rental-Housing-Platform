@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 
 
 def _can_access(current_user: User, booking) -> bool:
-    return current_user.id in {booking.tenant_id, booking.bm_id} or current_user.role == UserRole.admin
+    return current_user.id in {booking.user_id, booking.landlord_id} or current_user.role == UserRole.admin
 
 
 @router.post("/{booking_id}/generate", response_model=ContractResponse, status_code=status.HTTP_201_CREATED)
@@ -30,20 +30,11 @@ async def generate_contract(
     session: AsyncSession = Depends(get_db_session),
     current_user: User = Depends(get_current_user),
 ) -> ContractResponse:
-    from sqlalchemy.orm import selectinload
-    from app.models.booking import Booking
-    from app.models.property import Room
-    from app.models.unit_type import UnitType
-    booking = (await session.scalars(
-        select(Booking).where(Booking.id == booking_id).options(
-            selectinload(Booking.property).selectinload(Room.unit_type).selectinload(UnitType.institute),
-            selectinload(Booking.tenant),
-        )
-    )).unique().first()
+    booking = await BookingService(session).get(booking_id)
     if not booking:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Booking not found")
 
-    if current_user.id not in {booking.tenant_id, booking.bm_id} and current_user.role != UserRole.admin:
+    if current_user.id not in {booking.user_id, booking.landlord_id} and current_user.role != UserRole.admin:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
 
     contract_service = ContractService(session)
@@ -167,7 +158,7 @@ async def get_contract(
 
     if current_user.id not in {contract.tenant_id, booking := None} and current_user.role != UserRole.admin:
         booking = await BookingService(session).get(contract.booking_id)
-        if booking and current_user.id not in {booking.tenant_id, booking.bm_id}:
+        if booking and current_user.id not in {booking.user_id, booking.landlord_id}:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
 
     return contract
@@ -257,7 +248,7 @@ async def download_contract(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Contract not found")
 
     booking = await BookingService(session).get(contract.booking_id)
-    if booking and current_user.id not in {booking.tenant_id, booking.bm_id} and current_user.role != UserRole.admin:
+    if booking and current_user.id not in {booking.user_id, booking.landlord_id} and current_user.role != UserRole.admin:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
 
     from app.services.contract_pdf_service import ContractPdfService
