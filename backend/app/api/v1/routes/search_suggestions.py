@@ -76,27 +76,30 @@ async def get_search_suggestions(
     }
 
     if not q or not q.strip():
-        # 无关键词：热门城市（按 Institute 数量排序）
+        # 无关键词：热门城市（按 city 分组，排除空值）
         city_query = (
             select(
-                Institute.district,
+                Institute.city,
                 Institute.country,
                 func.count(UnitType.id).label("property_count"),
             )
             .join(UnitType, UnitType.institute_id == Institute.id)
-            .where(UnitType.status == "available", UnitType.deleted_at.is_(None))
-            .group_by(Institute.district, Institute.country)
+            .where(
+                UnitType.status == "available", UnitType.deleted_at.is_(None),
+                Institute.city.isnot(None), Institute.city != "",
+            )
+            .group_by(Institute.city, Institute.country)
             .order_by(func.count(UnitType.id).desc())
-            .limit(limit)
+            .limit(limit * 2)  # 多取一些供前端过滤
         )
         city_results = await db.execute(city_query)
         result["popular_cities"] = [
             {
                 "type": "city",
-                "name": row.district,
+                "name": row.city,
                 "country": row.country,
                 "count": row.property_count,
-                "query": {"district": row.district, "country": row.country},
+                "query": {"city": row.city, "country": row.country},
             }
             for row in city_results.all()
         ]
@@ -132,14 +135,14 @@ async def get_search_suggestions(
             for r in school_results.all()
         ]
 
-        # 热门大学（按 is_hot 排序）
+        # 热门大学（全部 active 大学，is_hot 优先）
         uni_query = (
             select(University.id, University.name, University.name_cn,
                    University.abbreviation, University.city, University.country,
                    University.latitude, University.longitude)
-            .where(University.is_hot.is_(True), University.is_active.is_(True))
-            .order_by(University.name.asc())
-            .limit(limit)
+            .where(University.is_active.is_(True))
+            .order_by(University.is_hot.desc(), University.name.asc())
+            .limit(limit * 3)  # 多取以支持国家筛选
         )
         uni_results = await db.execute(uni_query)
         result["popular_universities"] = [
@@ -159,24 +162,25 @@ async def get_search_suggestions(
         # 匹配的城市
         city_query = (
             select(
-                Institute.district, Institute.country,
+                Institute.city, Institute.country,
                 func.count(UnitType.id).label("property_count"),
             )
             .join(UnitType, UnitType.institute_id == Institute.id)
             .where(
                 UnitType.status == "available", UnitType.deleted_at.is_(None),
-                or_(Institute.district.ilike(search_term), Institute.country.ilike(search_term)),
+                Institute.city.isnot(None), Institute.city != "",
+                or_(Institute.city.ilike(search_term), Institute.country.ilike(search_term)),
             )
-            .group_by(Institute.district, Institute.country)
+            .group_by(Institute.city, Institute.country)
             .order_by(func.count(UnitType.id).desc())
             .limit(limit)
         )
         city_results = await db.execute(city_query)
         result["matching_cities"] = [
             {
-                "type": "city", "name": r.district, "country": r.country,
+                "type": "city", "name": r.city, "country": r.country,
                 "count": r.property_count,
-                "query": {"district": r.district, "country": r.country},
+                "query": {"city": r.city, "country": r.country},
             }
             for r in city_results.all()
         ]

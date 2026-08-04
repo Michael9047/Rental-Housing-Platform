@@ -308,7 +308,7 @@ const hasAnySuggestions = computed(() =>
 async function fetchSuggestions(q: string) {
   suggestionsLoading.value = true
   try {
-    const params: Record<string, string | number> = { limit: 6 }
+    const params: Record<string, string | number> = { limit: 30 }
     if (q.trim()) params.q = q.trim()
     const resp = await api.get('/search/suggestions', { params })
     const data = resp.data
@@ -393,7 +393,7 @@ const filteredCities = computed(() => {
 
 async function fetchPopularUniversities() {
   try {
-    const resp = await api.get('/search/suggestions', { params: { limit: 10 } })
+    const resp = await api.get('/search/suggestions', { params: { limit: 30 } })
     popularUniversities.value = resp.data.popular_universities || []
   } catch { /* 静默失败 */ }
 }
