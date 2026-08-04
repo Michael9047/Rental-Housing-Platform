@@ -351,16 +351,31 @@ def _safe_enum(val):
 
 def _to_read(ut) -> UnitTypeRead:
     images = []
-    for img in sorted(ut.images or [], key=lambda x: x.sort_order):
-        images.append({
-            "id": img.id, "filename": img.filename, "original_name": img.original_name,
-            "sort_order": img.sort_order, "is_primary": img.is_primary,
-        })
+    try:
+        for img in sorted(ut.images or [], key=lambda x: x.sort_order):
+            images.append({
+                "id": img.id, "filename": img.filename, "original_name": img.original_name,
+                "sort_order": img.sort_order, "is_primary": img.is_primary,
+            })
+    except Exception:
+        pass  # 关系未加载时跳过
+    inst_name = getattr(ut, '_institute_name', None)
+    if not inst_name:
+        try:
+            inst_name = ut.institute.name if ut.institute else None
+        except Exception:
+            inst_name = None
+    inst_biz = getattr(ut, '_institute_business_id', None)
+    if not inst_biz:
+        try:
+            inst_biz = ut.institute.business_id if ut.institute else None
+        except Exception:
+            inst_biz = None
     return UnitTypeRead(
         id=ut.id, business_id=ut.business_id, uuid=ut.uuid,
         institute_id=ut.institute_id,
-        institute_name=getattr(ut, '_institute_name', None) or (ut.institute.name if ut.institute else None),
-        institute_business_id=getattr(ut, '_institute_business_id', None) or (ut.institute.business_id if ut.institute else None),
+        institute_name=inst_name,
+        institute_business_id=inst_biz,
         name=ut.name, bedrooms=ut.bedrooms, bathrooms=ut.bathrooms, hall_count=ut.hall_count,
         area_sqm=ut.area_sqm, base_rent=ut.base_rent,
         deposit_amount=ut.deposit_amount, deposit_type=_safe_enum(ut.deposit_type),
