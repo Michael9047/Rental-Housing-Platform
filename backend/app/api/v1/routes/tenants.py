@@ -38,13 +38,14 @@ async def create_tenant(
     await _adjust_inventory(session, data.current_unit_type_id, -1)
     await session.commit()
 
-    # 重新加载以获取 unit_type 关系
+    # 重新加载以获取 unit_type 关系（含 institute 链）
     result = await session.execute(
         select(Tenant).where(Tenant.id == t.id).options(
             selectinload(Tenant.unit_type).selectinload(UnitType.institute)
         )
     )
-    t = result.scalars().first()
+    t_loaded = result.scalars().first()
+    if t_loaded: t = t_loaded
     return _to_read(t)
 
 
@@ -128,7 +129,13 @@ async def update_tenant(
         await _adjust_inventory(session, new_unit_type_id, -1)  # 占用新户型
 
     await session.commit()
-    await session.refresh(t, ["unit_type"])
+    # 重新查询以加载 unit_type.institute 链
+    fresh = await session.execute(
+        select(Tenant).where(Tenant.id == t.id).options(
+            selectinload(Tenant.unit_type).selectinload(UnitType.institute)
+        )
+    )
+    t = fresh.scalars().first() or t
     return _to_read(t)
 
 
@@ -153,7 +160,12 @@ def _to_read(t: Tenant) -> TenantRead:
     """转换为响应模型，附加 unit_type_name + institute_name"""
     ut = t.unit_type
     ut_name = ut.name if ut else None
-    inst_name = ut.institute.name if (ut and ut.institute) else None
+    inst_name = None
+    if ut:
+        try:
+            inst_name = ut.institute.name if ut.institute else None
+        except Exception:
+            pass
     hs = getattr(t.housing_status, 'value', t.housing_status) if t.housing_status else None
     return TenantRead(
         id=t.id, surname_pinyin=t.surname_pinyin, given_name_pinyin=t.given_name_pinyin,
