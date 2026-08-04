@@ -106,7 +106,7 @@ const qrPreview = computed(() => {
 
 async function loadProfile() {
   try {
-    const r = await api.get('/me')
+    const r = await api.get('/users/me')
     const u = r.data
     profile.username = u.username || ''
     profile.phone = u.phone || ''
@@ -164,7 +164,7 @@ async function saveProfile() {
       email: editForm.email.trim() || undefined,
       wechat_qr: editForm.wechat_qr || undefined,
     }
-    await api.patch('/me', body)
+    await api.patch('/users/me', body)
 
     // 同步到本地状态
     profile.username = editForm.username

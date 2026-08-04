@@ -410,12 +410,12 @@ async function geocodeStructured(){
 async function reverseBldGeocode(lat:number,lng:number){
   try{
     const r=await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&accept-language=zh`,{headers:{'User-Agent':'RH/1.0'}})
+    if(!r.ok) { ElMessage.warning('逆地理编码请求失败，请检查网络'); return }
     const d=await r.json()
-    if(!d?.address) return
+    if(!d?.address) { ElMessage.warning('该位置无地址信息，请尝试其他位置'); return }
     const a = d.address
     const road = a.road || a.pedestrian || a.path || a.footway || ''
     const hn = a.house_number || ''
-    // 通过 watch 桥接写入 reactive，保证响应式可靠
     _pendingGeoData = {
       country: a.country || newBuilding.country,
       city: a.city || a.town || a.municipality || a.village || a.hamlet || '',
@@ -427,6 +427,7 @@ async function reverseBldGeocode(lat:number,lng:number){
     ElMessage.success('已从地图反向定位，地址字段已自动填充')
   }catch(e){
     console.error('[reverseGeocode]', e)
+    ElMessage.error('逆地理编码失败: ' + (e instanceof Error ? e.message : '网络异常，请稍后重试'))
   }
 }
 
