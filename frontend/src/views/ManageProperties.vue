@@ -161,7 +161,7 @@
       <el-form :model="newBuilding" label-width="100px">
         <el-form-item label="公寓名称" required><el-input v-model="newBuilding.name" placeholder="中/英文均可" maxlength="200" /></el-form-item>
         <el-divider>📍 地址与定位</el-divider>
-        <div :key="bldFormKey">
+        <div v-if="bldFormVisible">
         <el-form-item label="国家"><el-autocomplete v-model="newBuilding.country" :fetch-suggestions="filterCountries" placeholder="输入或选择国家" clearable style="width:100%" /></el-form-item>
         <el-form-item label="城市"><el-input v-model="newBuilding.city" placeholder="如：伦敦、上海" maxlength="100" /></el-form-item>
         <el-form-item label="区域"><el-input v-model="newBuilding.district" placeholder="如：肯辛顿、浦东" maxlength="100" /></el-form-item>
@@ -325,8 +325,7 @@ const newBuilding = reactive({
   country: '', city: '', district: '', street: '', postalCode: '',
   lat: null as number|null, lng: null as number|null,
 })
-// 强制表单重渲染的 key——每次逆地理编码后 +1，Vue 销毁并重建整个表单
-const bldFormKey = ref(0)
+const bldFormVisible = ref(true)
 
 const securityAmenitiesBld = ['24小时安保','监控系统(CCTV)','智能门禁','电子门锁','前台/礼宾','消防系统','夜间巡逻']
 const serviceAmenitiesBld = ['代收包裹','维修服务','公共区域保洁','定期社交活动','接机服务','班车接驳','入住礼包','管家服务']
@@ -412,8 +411,10 @@ async function reverseBldGeocode(lat:number,lng:number){
     newBuilding.district = a.suburb || a.borough || a.city_district || a.county || a.state_district || ''
     newBuilding.street = hn ? `${hn} ${road}`.trim() : road
     if (a.postcode) newBuilding.postalCode = a.postcode
-    // 强制表单重渲染，确保 el-input 显示最新值
-    bldFormKey.value++
+    // v-if 开关强制重建地址输入区
+    bldFormVisible.value = false
+    await import('vue').then(m => m.nextTick())
+    bldFormVisible.value = true
     ElMessage.success('已从地图反向定位，地址字段已自动填充')
   }catch(e){
     console.error('[reverseGeocode]', e)
