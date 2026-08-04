@@ -248,7 +248,14 @@ async def update_unit_type(
     if not ut:
         from fastapi import HTTPException
         raise HTTPException(404, "户型不存在")
-    return _to_read(ut)
+    # 重新从 DB 加载，带 eager load，确保返回值正确
+    from app.models.unit_type import UnitType
+    from sqlalchemy.orm import selectinload
+    fresh = await session.get(UnitType, unit_type_id, options=[
+        selectinload(UnitType.institute),
+        selectinload(UnitType.images),
+    ])
+    return _to_read(fresh) if fresh else _to_read(ut)
 
 
 @router.delete("/{unit_type_id}", status_code=204)
@@ -386,6 +393,8 @@ def _to_read(ut) -> UnitTypeRead:
         floor_pricing=ut.floor_pricing, amenities=ut.amenities,
         description=ut.description, available_from=ut.available_from,
         min_stay_months=ut.min_stay_months, status=_safe_enum(ut.status),
+        total_count=ut.total_count, available_count=ut.available_count,
+        has_vacancy=ut.has_vacancy,
         room_count=getattr(ut, '_room_count', 0),
         images=images,
         deleted_at=ut.deleted_at, created_at=ut.created_at, updated_at=ut.updated_at,
@@ -417,13 +426,6 @@ async def list_deleted_unit_types(session: AsyncSession = Depends(get_db_session
 @router.get("/{unit_type_id}", response_model=UnitTypeRead)
 async def get_unit_type(unit_type_id: int, session: AsyncSession = Depends(get_db_session)):
     ut = await UnitTypeService(session).get(unit_type_id)
-    if not ut: raise HTTPException(404, "户型不存在")
-    return _to_read(ut)
-
-
-@router.patch("/{unit_type_id}", response_model=UnitTypeRead)
-async def update_unit_type(unit_type_id: int, data: UnitTypeUpdate, session: AsyncSession = Depends(get_db_session), _current_user: User = Depends(require_landlord)):
-    ut = await UnitTypeService(session).update(unit_type_id, data)
     if not ut: raise HTTPException(404, "户型不存在")
     return _to_read(ut)
 
