@@ -1,16 +1,23 @@
-"""当前租客个人中心汇总接口。"""
+"""当前用户个人中心接口。"""
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_db_session, require_tenant
+from app.api.deps import get_current_user, get_db_session, require_tenant
 from app.models.user import User
+from app.schemas.user import UserRead
 from app.services.favorite_service import FavoriteService
 from app.services.tenant_contract_service import TenantContractService
 from app.services.tenant_order_service import TenantOrderService
 
 router = APIRouter()
+
+
+@router.get("", response_model=UserRead)
+async def get_me(current_user: User = Depends(get_current_user)) -> User:
+    """获取当前登录用户信息"""
+    return current_user
 
 
 class DashboardSummary(BaseModel):
