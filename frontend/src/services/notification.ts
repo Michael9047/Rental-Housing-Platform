@@ -2,7 +2,7 @@
 import type { Notification, UnreadCount } from '@/types/booking'
 
 export const notificationService = {
-  list(params: { page?: number; page_size?: number } = {}): Promise<{ items: Notification[]; total: number; page: number; page_size: number }> {
+  list(params: { page?: number; page_size?: number; unread_only?: boolean; business_only?: boolean } = {}): Promise<{ items: Notification[]; total: number; page: number; page_size: number }> {
     return api.get('/notifications', { params }).then((r) => r.data)
   },
 

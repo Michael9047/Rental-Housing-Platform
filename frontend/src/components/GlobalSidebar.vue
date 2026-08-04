@@ -66,6 +66,14 @@
           <el-icon><User /></el-icon>
           <span>用户管理</span>
         </el-menu-item>
+        <el-menu-item index="/admin/alerts">
+          <el-icon><Warning /></el-icon>
+          <span>异常处理</span>
+        </el-menu-item>
+        <el-menu-item index="/admin/notifications">
+          <el-icon><Bell /></el-icon>
+          <span>信息通知</span>
+        </el-menu-item>
         <el-menu-item index="/admin/logs">
           <el-icon><Document /></el-icon>
           <span>审计日志</span>
@@ -79,7 +87,7 @@
 import { ref, computed, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import {
-  HomeFilled, Bell, DataAnalysis, User, Document,
+  HomeFilled, Bell, DataAnalysis, User, Document, Warning,
   Tickets, Fold, Expand, Grid, Clock,
 } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'

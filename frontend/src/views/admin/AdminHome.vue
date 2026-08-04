@@ -2,7 +2,7 @@
   <div class="admin-home" v-loading="loading">
     <div class="page-head">
       <div>
-        <h2>管理员控制台</h2>
+        <h2>仪表盘</h2>
         <span>{{ authStore.user?.username }}</span>
       </div>
       <el-button :icon="Refresh" @click="loadData">刷新</el-button>
@@ -33,63 +33,73 @@
       </div>
     </section>
 
-    <section class="section">
-      <div class="section-head">
-        <h3>信息中心</h3>
-        <el-tag :type="systemAlerts.length ? 'warning' : 'success'" size="small">
-          {{ systemAlerts.length ? `${systemAlerts.length} 条异常` : '正常' }}
-        </el-tag>
-      </div>
-      <div v-if="systemAlerts.length" class="alert-grid">
-        <article
-          v-for="alert in systemAlerts"
-          :key="alert.id"
-          class="alert-card"
-          :class="`alert-${alert.severity}`"
-        >
-          <div class="alert-top">
-            <el-tag :type="severityTag(alert.severity)" size="small">{{ severityLabel(alert.severity) }}</el-tag>
-            <span>{{ alert.category }}</span>
+    <div class="ops-grid">
+      <section class="section ops-panel">
+        <div class="section-head">
+          <h3>异常中心</h3>
+          <div class="head-actions">
+            <el-tag :type="systemAlerts.length ? 'warning' : 'success'" size="small">
+              {{ systemAlerts.length ? `${systemAlerts.length} 条异常` : '正常' }}
+            </el-tag>
+            <el-button text type="primary" @click="router.push('/admin/alerts')">打开</el-button>
           </div>
-          <h4>{{ alert.title }}</h4>
-          <p class="alert-summary">{{ alert.summary }}</p>
-          <p class="alert-detail">{{ alert.detail }}</p>
-          <div class="alert-foot">
-            <span>{{ formatDateTime(alert.updated_at) }}</span>
-            <el-button
-              v-if="alert.action"
-              size="small"
-              type="primary"
-              @click="runAlertAction(alert)"
-            >
-              {{ alert.action.label }}
-            </el-button>
-          </div>
-        </article>
-      </div>
-      <el-empty v-else description="暂无系统异常" />
-    </section>
+        </div>
+        <div v-if="systemAlerts.length" class="alert-list">
+          <article
+            v-for="alert in systemAlerts"
+            :key="alert.id"
+            class="alert-card"
+            :class="`alert-${alert.severity}`"
+          >
+            <div class="alert-top">
+              <el-tag :type="severityTag(alert.severity)" size="small">{{ severityLabel(alert.severity) }}</el-tag>
+              <span>{{ alert.category }}</span>
+            </div>
+            <h4>{{ alert.title }}</h4>
+            <p class="alert-summary">{{ alert.summary }}</p>
+            <p class="alert-detail">{{ alert.detail }}</p>
+            <div class="alert-foot">
+              <span>{{ formatDateTime(alert.updated_at) }}</span>
+              <el-button
+                v-if="alert.action"
+                size="small"
+                type="primary"
+                @click="runAlertAction(alert)"
+              >
+                {{ alert.action.label }}
+              </el-button>
+            </div>
+          </article>
+        </div>
+        <el-empty v-else description="暂无系统异常" />
+      </section>
 
-    <section class="section">
-      <div class="section-head">
-        <h3>审计日志</h3>
-        <el-button text type="primary" @click="router.push('/admin/logs')">打开</el-button>
-      </div>
-      <el-table :data="overview?.recent_logs || []" stripe>
-        <el-table-column prop="action" label="操作" width="160" />
-        <el-table-column prop="user_id" label="用户ID" width="90" />
-        <el-table-column prop="resource_type" label="对象" width="110" />
-        <el-table-column prop="resource_id" label="对象ID" width="90" />
-        <el-table-column label="时间" width="170">
-          <template #default="{ row }">{{ formatDateTime(row.created_at) }}</template>
-        </el-table-column>
-        <el-table-column label="详情" min-width="220">
-          <template #default="{ row }">
-            <span class="details">{{ formatDetails(row.details) }}</span>
-          </template>
-        </el-table-column>
-      </el-table>
-    </section>
+      <section class="section ops-panel">
+        <div class="section-head">
+          <h3>信息通知</h3>
+          <div class="head-actions">
+            <el-tag :type="unreadCount ? 'warning' : 'info'" size="small">
+              {{ unreadCount ? `${unreadCount} 条未读` : '无未读' }}
+            </el-tag>
+            <el-button text type="primary" @click="router.push('/admin/notifications')">打开</el-button>
+          </div>
+        </div>
+        <div v-if="notifications.length" class="notice-list">
+          <button
+            v-for="notice in notifications"
+            :key="notice.id"
+            class="notice-card"
+            :class="{ unread: !notice.is_read }"
+            @click="markNoticeRead(notice.id)"
+          >
+            <span class="notice-title">{{ notice.title }}</span>
+            <span class="notice-time">{{ formatDateTime(notice.created_at) }}</span>
+            <span class="notice-content">{{ notice.content || notice.body || '-' }}</span>
+          </button>
+        </div>
+        <el-empty v-else description="暂无通知" />
+      </section>
+    </div>
   </div>
 </template>
 
@@ -99,7 +109,9 @@ import { useRouter } from 'vue-router'
 import { Refresh } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { adminService } from '@/services/admin'
+import { notificationService } from '@/services/notification'
 import { useAuthStore } from '@/stores/auth'
+import type { Notification } from '@/types/booking'
 import type { AdminOverview, SystemAlert, SystemAlertSeverity } from '@/types/admin'
 
 const router = useRouter()
@@ -107,15 +119,12 @@ const authStore = useAuthStore()
 const loading = ref(false)
 const overview = ref<AdminOverview | null>(null)
 const systemAlerts = ref<SystemAlert[]>([])
+const notifications = ref<Notification[]>([])
+const unreadCount = ref(0)
 
 function formatDateTime(value: string) {
   if (!value) return '-'
   return new Date(value).toLocaleString('zh-CN')
-}
-
-function formatDetails(details: Record<string, unknown> | null) {
-  if (!details) return '-'
-  return Object.entries(details).map(([key, value]) => `${key}: ${String(value)}`).join('，')
 }
 
 function openUsers(role: string) {
@@ -154,15 +163,25 @@ async function runAlertAction(alert: SystemAlert) {
   }
 }
 
+async function markNoticeRead(id: number) {
+  const notice = notifications.value.find((item) => item.id === id)
+  if (!notice || notice.is_read) return
+  await notificationService.markRead(id)
+  await loadData()
+}
+
 async function loadData() {
   loading.value = true
   try {
-    const [overviewData, alerts] = await Promise.all([
+    const [overviewData, alerts, noticeData] = await Promise.all([
       adminService.getOverview(),
       adminService.getSystemAlerts(),
+      notificationService.list({ page: 1, page_size: 30, unread_only: true, business_only: true }),
     ])
     overview.value = overviewData
     systemAlerts.value = alerts
+    notifications.value = noticeData.items
+    unreadCount.value = noticeData.total
   } finally {
     loading.value = false
   }
@@ -173,8 +192,8 @@ onMounted(loadData)
 
 <style scoped>
 .admin-home {
-  max-width: 1160px;
-  margin: 0 auto;
+  box-sizing: border-box;
+  width: 100%;
 }
 
 .page-head,
@@ -183,6 +202,13 @@ onMounted(loadData)
   align-items: center;
   justify-content: space-between;
   gap: 16px;
+  min-width: 0;
+}
+
+.head-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .page-head {
@@ -204,13 +230,15 @@ h3 {
   background: #fff;
   border: 1px solid #ebeef5;
   border-radius: 8px;
+  box-sizing: border-box;
   padding: 18px;
   margin-bottom: 16px;
+  min-width: 0;
 }
 
 .role-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr));
   gap: 12px;
   margin: 14px 0;
 }
@@ -218,9 +246,11 @@ h3 {
 .role-card {
   border: 1px solid #ebeef5;
   border-radius: 8px;
+  box-sizing: border-box;
   background: #fafafa;
   padding: 16px;
   text-align: left;
+  min-width: 0;
 }
 
 .role-card {
@@ -243,19 +273,39 @@ h3 {
   color: #303133;
 }
 
-.alert-grid {
+.ops-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr));
+  gap: 16px;
+  align-items: stretch;
+}
+
+.ops-panel {
+  display: flex;
+  flex-direction: column;
+  height: clamp(360px, calc(100vh - 330px), 620px);
+  min-height: 0;
+}
+
+.alert-list {
+  display: grid;
+  align-content: start;
   gap: 12px;
+  flex: 1;
   margin-top: 14px;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 4px;
 }
 
 .alert-card {
   border: 1px solid #ebeef5;
   border-left-width: 4px;
   border-radius: 8px;
+  box-sizing: border-box;
   padding: 14px;
   background: #fff;
+  min-width: 0;
 }
 
 .alert-high {
@@ -306,17 +356,71 @@ h3 {
   margin-top: 6px;
 }
 
-.details {
-  color: #606266;
+.notice-list {
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  flex: 1;
+  margin-top: 14px;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.notice-card {
+  border: 1px solid #ebeef5;
+  border-radius: 8px;
+  background: #fff;
+  box-sizing: border-box;
+  cursor: pointer;
+  display: grid;
+  gap: 6px;
+  padding: 12px;
+  text-align: left;
+  width: 100%;
+  min-width: 0;
+}
+
+.notice-card:hover {
+  border-color: #f06f3d;
+}
+
+.notice-card.unread {
+  background: #fff7f2;
+  border-color: #f3c3aa;
+}
+
+.notice-title {
+  color: #303133;
+  font-weight: 600;
+}
+
+.notice-time,
+.notice-content {
+  color: #909399;
   font-size: 12px;
 }
 
+.notice-content {
+  color: #606266;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
 @media (max-width: 900px) {
-  .role-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+  .page-head,
+  .section-head {
+    align-items: flex-start;
+    flex-wrap: wrap;
   }
 
-  .alert-grid {
+  .ops-panel {
+    height: clamp(340px, 55vh, 520px);
+  }
+}
+
+@media (max-width: 520px) {
+  .role-grid {
     grid-template-columns: 1fr;
   }
 }

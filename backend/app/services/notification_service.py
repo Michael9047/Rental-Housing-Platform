@@ -1,7 +1,7 @@
 import logging
 from typing import Optional
 
-from sqlalchemy import func, select, update
+from sqlalchemy import func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.notification import Notification, NotificationType
@@ -117,13 +117,31 @@ class NotificationService:
 
         return notification
 
-    async def list_by_user(self, user_id: int, page: int = 1, page_size: int = 50) -> tuple[list[Notification], int]:
+    async def list_by_user(
+        self,
+        user_id: int,
+        page: int = 1,
+        page_size: int = 50,
+        unread_only: bool = False,
+        business_only: bool = False,
+    ) -> tuple[list[Notification], int]:
+        conditions = [Notification.user_id == user_id]
+        if unread_only:
+            conditions.append(Notification.is_read == False)
+        if business_only:
+            conditions.append(or_(
+                Notification.entity_type.is_not(None),
+                Notification.entity_id.is_not(None),
+                Notification.order_id.is_not(None),
+                Notification.agreement_id.is_not(None),
+                Notification.unit_type_id.is_not(None),
+            ))
         stmt = (
             select(Notification)
-            .where(Notification.user_id == user_id)
+            .where(*conditions)
             .order_by(Notification.created_at.desc())
         )
-        total = await self.session.scalar(select(func.count()).select_from(Notification).where(Notification.user_id == user_id)) or 0
+        total = await self.session.scalar(select(func.count()).select_from(Notification).where(*conditions)) or 0
         result = await self.session.scalars(stmt.offset((page - 1) * page_size).limit(page_size))
         return list(result), int(total)
 

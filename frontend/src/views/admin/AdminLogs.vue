@@ -10,27 +10,29 @@
       </el-select>
     </div>
 
-    <el-table :data="logs" stripe style="width: 100%; margin-top: 16px">
-      <el-table-column prop="id" label="ID" width="60" />
-      <el-table-column prop="action" label="操作" width="130">
-        <template #default="{ row }">
-          <el-tag size="small">{{ actionLabel(row.action) }}</el-tag>
-        </template>
-      </el-table-column>
-      <el-table-column prop="user_id" label="操作用户 ID" width="100" />
-      <el-table-column prop="resource_type" label="资源类型" width="100" />
-      <el-table-column prop="resource_id" label="资源 ID" width="80" />
-      <el-table-column label="详情" min-width="160">
-        <template #default="{ row }">
-          <span class="details-text">{{ JSON.stringify(row.details) }}</span>
-        </template>
-      </el-table-column>
-      <el-table-column label="时间" width="170">
-        <template #default="{ row }">
-          {{ new Date(row.created_at).toLocaleString('zh-CN') }}
-        </template>
-      </el-table-column>
-    </el-table>
+    <div class="table-wrap">
+      <el-table :data="logs" stripe class="data-table">
+        <el-table-column prop="id" label="ID" width="60" />
+        <el-table-column prop="action" label="操作" width="130">
+          <template #default="{ row }">
+            <el-tag size="small">{{ actionLabel(row.action) }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="user_id" label="操作用户 ID" width="110" />
+        <el-table-column prop="resource_type" label="资源类型" width="110" />
+        <el-table-column prop="resource_id" label="资源 ID" width="90" />
+        <el-table-column label="详情" min-width="220" show-overflow-tooltip>
+          <template #default="{ row }">
+            <span class="details-text">{{ JSON.stringify(row.details) }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="时间" width="170">
+          <template #default="{ row }">
+            {{ new Date(row.created_at).toLocaleString('zh-CN') }}
+          </template>
+        </el-table-column>
+      </el-table>
+    </div>
 
     <el-pagination
       v-if="total > pageSize"
@@ -88,8 +90,8 @@ onMounted(fetchLogs)
 
 <style scoped>
 .admin-logs {
-  max-width: 1100px;
-  margin: 0 auto;
+  box-sizing: border-box;
+  width: 100%;
 }
 
 .admin-logs h2 {
@@ -100,11 +102,28 @@ onMounted(fetchLogs)
 
 .filters {
   display: flex;
+  flex-wrap: wrap;
   gap: 12px;
+}
+
+.table-wrap {
+  background: #fff;
+  border: 1px solid #ebeef5;
+  border-radius: 8px;
+  box-sizing: border-box;
+  margin-top: 16px;
+  overflow-x: auto;
+  width: 100%;
+}
+
+.data-table {
+  min-width: 900px;
+  width: 100%;
 }
 
 .details-text {
   font-size: 12px;
   color: #909399;
+  overflow-wrap: anywhere;
 }
 </style>

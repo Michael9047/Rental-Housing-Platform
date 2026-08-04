@@ -32,10 +32,18 @@ async def retry_outbox(outbox_id: str, session: AsyncSession = Depends(get_db_se
 async def list_notifications(
     page: int = 1,
     page_size: int = 50,
+    unread_only: bool = False,
+    business_only: bool = False,
     session: AsyncSession = Depends(get_db_session),
     current_user: User = Depends(get_current_user),
 ) -> NotificationListResponse:
-    rows, total = await NotificationService(session).list_by_user(current_user.id, max(1, page), min(max(1, page_size), 100))
+    rows, total = await NotificationService(session).list_by_user(
+        current_user.id,
+        max(1, page),
+        min(max(1, page_size), 100),
+        unread_only=unread_only,
+        business_only=business_only,
+    )
     items: list[NotificationRead] = []
     order_service = TenantOrderService(session)
     for row in rows:

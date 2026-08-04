@@ -32,6 +32,16 @@
           <span>用户管理</span>
         </el-menu-item>
 
+        <el-menu-item index="/admin/alerts">
+          <el-icon><Warning /></el-icon>
+          <span>异常处理</span>
+        </el-menu-item>
+
+        <el-menu-item index="/admin/notifications">
+          <el-icon><Bell /></el-icon>
+          <span>信息通知</span>
+        </el-menu-item>
+
         <el-menu-item index="/admin/import">
           <el-icon><Upload /></el-icon>
           <span>批量导入</span>
@@ -96,7 +106,7 @@
 import { computed } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import {
-  DataAnalysis, House, User, Upload, Tools, Monitor,
+  DataAnalysis, House, User, Upload, Tools, Monitor, Warning, Bell,
   ArrowLeft, SwitchButton,
 } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
@@ -112,6 +122,8 @@ const pageTitle = computed(() => {
     '/admin': '控制台',
     '/admin/properties': '房源审核',
     '/admin/users': '用户管理',
+    '/admin/alerts': '异常处理',
+    '/admin/notifications': '信息通知',
     '/admin/import': '批量导入',
     '/admin/logs': '审计日志',
     '/admin/embeddings': '向量索引',

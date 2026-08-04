@@ -24,36 +24,38 @@
       <el-tab-pane label="维修工" name="maintenance_worker" />
     </el-tabs>
 
-    <el-table :data="users" stripe style="width: 100%">
-      <el-table-column prop="id" label="ID" width="60" />
-      <el-table-column prop="username" label="用户名" />
-      <el-table-column prop="email" label="邮箱" />
-      <el-table-column prop="phone" label="手机号" />
-      <el-table-column label="角色" width="120">
-        <template #default="{ row }">
-          <el-select
-            :model-value="row.role"
-            size="small"
-            @change="(val: string) => handleRoleChange(row.id, val)"
-          >
-            <el-option label="管理员" value="admin" />
-            <el-option label="租客" value="tenant" />
-            <el-option label="房东" value="landlord" />
-            <el-option label="维修工" value="maintenance_worker" />
-          </el-select>
-        </template>
-      </el-table-column>
-      <el-table-column label="状态" width="100">
-        <template #default="{ row }">
-          <el-tag :type="row.status === 'active' ? 'success' : 'info'" size="small">
-            {{ row.status === 'active' ? '正常' : row.status }}
-          </el-tag>
-        </template>
-      </el-table-column>
-      <el-table-column label="注册时间" width="170">
-        <template #default="{ row }">{{ formatDate(row.created_at) }}</template>
-      </el-table-column>
-    </el-table>
+    <div class="table-wrap">
+      <el-table :data="users" stripe class="data-table">
+        <el-table-column prop="id" label="ID" width="60" />
+        <el-table-column prop="username" label="用户名" min-width="120" show-overflow-tooltip />
+        <el-table-column prop="email" label="邮箱" min-width="180" show-overflow-tooltip />
+        <el-table-column prop="phone" label="手机号" min-width="130" show-overflow-tooltip />
+        <el-table-column label="角色" width="130">
+          <template #default="{ row }">
+            <el-select
+              :model-value="row.role"
+              size="small"
+              @change="(val: string) => handleRoleChange(row.id, val)"
+            >
+              <el-option label="管理员" value="admin" />
+              <el-option label="租客" value="tenant" />
+              <el-option label="房东" value="landlord" />
+              <el-option label="维修工" value="maintenance_worker" />
+            </el-select>
+          </template>
+        </el-table-column>
+        <el-table-column label="状态" width="100">
+          <template #default="{ row }">
+            <el-tag :type="row.status === 'active' ? 'success' : 'info'" size="small">
+              {{ row.status === 'active' ? '正常' : row.status }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="注册时间" width="170">
+          <template #default="{ row }">{{ formatDate(row.created_at) }}</template>
+        </el-table-column>
+      </el-table>
+    </div>
   </div>
 </template>
 
@@ -135,27 +137,59 @@ onMounted(fetchUsers)
 
 <style scoped>
 .admin-users {
-  max-width: 1100px;
-  margin: 0 auto;
+  box-sizing: border-box;
+  width: 100%;
 }
 
 .page-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 16px;
   margin-bottom: 12px;
 }
 
 .query-bar {
   display: flex;
+  align-items: center;
   gap: 10px;
-  max-width: 520px;
+  width: min(100%, 680px);
   margin-bottom: 12px;
+}
+
+.query-bar .el-input {
+  min-width: 180px;
+}
+
+.table-wrap {
+  background: #fff;
+  border: 1px solid #ebeef5;
+  border-radius: 8px;
+  box-sizing: border-box;
+  overflow-x: auto;
+  width: 100%;
+}
+
+.data-table {
+  min-width: 900px;
+  width: 100%;
 }
 
 .admin-users h2 {
   font-size: 22px;
   color: #303133;
   margin: 0;
+}
+
+@media (max-width: 640px) {
+  .page-head,
+  .query-bar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .query-bar {
+    width: 100%;
+  }
 }
 </style>

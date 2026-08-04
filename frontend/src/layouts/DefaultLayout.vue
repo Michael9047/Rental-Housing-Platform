@@ -723,6 +723,7 @@ watch(
 
 .layout-body {
   flex: 1;
+  min-width: 0;
 }
 
 /* ── Main ─────────────────────────── */
@@ -734,6 +735,7 @@ watch(
   padding: 24px;
   display: flex;
   flex-direction: column;
+  min-width: 0;
 }
 
 .back-bar {
