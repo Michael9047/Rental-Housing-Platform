@@ -69,6 +69,28 @@ export interface NotificationOutboxItem {
   updated_at: string
 }
 
+export type SystemAlertSeverity = 'high' | 'medium' | 'low'
+
+export interface SystemAlertAction {
+  type: 'retry_notification' | 'retry_pms_sync'
+  label: string
+  resource_id: string | number
+}
+
+export interface SystemAlert {
+  id: string
+  category: string
+  severity: SystemAlertSeverity
+  title: string
+  summary: string
+  detail: string
+  source: string
+  source_id: string | number
+  status: string
+  updated_at: string
+  action: SystemAlertAction | null
+}
+
 export interface ImportTask {
   id: number
   admin_id: number

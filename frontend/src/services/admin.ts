@@ -9,6 +9,7 @@ import type {
   ImportTaskDetail,
   NotificationOutboxItem,
   RowResult,
+  SystemAlert,
 } from '@/types/admin'
 import type { Property } from '@/types/property'
 import type { User } from '@/types/user'
@@ -52,8 +53,16 @@ export const adminService = {
     return api.get('/notifications/admin/outbox').then((r) => r.data)
   },
 
+  getSystemAlerts(): Promise<SystemAlert[]> {
+    return api.get('/admin/system-alerts').then((r) => r.data)
+  },
+
   retryNotification(outboxId: string): Promise<{ id: string; status: string }> {
     return api.post(`/notifications/admin/outbox/${outboxId}/retry`).then((r) => r.data)
+  },
+
+  triggerPmsSync(connectionId: number): Promise<Record<string, unknown>> {
+    return api.post(`/pms/connections/${connectionId}/sync`).then((r) => r.data)
   },
 
   getEmbeddingStats(): Promise<EmbeddingStats> {

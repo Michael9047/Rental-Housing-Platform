@@ -36,23 +36,38 @@
     <section class="section">
       <div class="section-head">
         <h3>信息中心</h3>
+        <el-tag :type="systemAlerts.length ? 'warning' : 'success'" size="small">
+          {{ systemAlerts.length ? `${systemAlerts.length} 条异常` : '正常' }}
+        </el-tag>
       </div>
-      <el-table :data="failedNotifications" stripe>
-        <el-table-column prop="event_type" label="类型" width="140" />
-        <el-table-column prop="user_id" label="用户ID" width="90" />
-        <el-table-column prop="booking_id" label="预约ID" width="90" />
-        <el-table-column prop="attempts" label="次数" width="80" />
-        <el-table-column prop="last_error" label="错误" min-width="220" show-overflow-tooltip />
-        <el-table-column label="更新时间" width="170">
-          <template #default="{ row }">{{ formatDateTime(row.updated_at) }}</template>
-        </el-table-column>
-        <el-table-column label="操作" width="90">
-          <template #default="{ row }">
-            <el-button size="small" type="primary" @click="retryOutbox(row.id)">重试</el-button>
-          </template>
-        </el-table-column>
-      </el-table>
-      <el-empty v-if="!failedNotifications.length" description="暂无失败通知" />
+      <div v-if="systemAlerts.length" class="alert-grid">
+        <article
+          v-for="alert in systemAlerts"
+          :key="alert.id"
+          class="alert-card"
+          :class="`alert-${alert.severity}`"
+        >
+          <div class="alert-top">
+            <el-tag :type="severityTag(alert.severity)" size="small">{{ severityLabel(alert.severity) }}</el-tag>
+            <span>{{ alert.category }}</span>
+          </div>
+          <h4>{{ alert.title }}</h4>
+          <p class="alert-summary">{{ alert.summary }}</p>
+          <p class="alert-detail">{{ alert.detail }}</p>
+          <div class="alert-foot">
+            <span>{{ formatDateTime(alert.updated_at) }}</span>
+            <el-button
+              v-if="alert.action"
+              size="small"
+              type="primary"
+              @click="runAlertAction(alert)"
+            >
+              {{ alert.action.label }}
+            </el-button>
+          </div>
+        </article>
+      </div>
+      <el-empty v-else description="暂无系统异常" />
     </section>
 
     <section class="section">
@@ -85,13 +100,13 @@ import { Refresh } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { adminService } from '@/services/admin'
 import { useAuthStore } from '@/stores/auth'
-import type { AdminOverview, NotificationOutboxItem } from '@/types/admin'
+import type { AdminOverview, SystemAlert, SystemAlertSeverity } from '@/types/admin'
 
 const router = useRouter()
 const authStore = useAuthStore()
 const loading = ref(false)
 const overview = ref<AdminOverview | null>(null)
-const failedNotifications = ref<NotificationOutboxItem[]>([])
+const systemAlerts = ref<SystemAlert[]>([])
 
 function formatDateTime(value: string) {
   if (!value) return '-'
@@ -113,15 +128,36 @@ async function retryOutbox(id: string) {
   await loadData()
 }
 
+function severityTag(severity: SystemAlertSeverity) {
+  return ({ high: 'danger', medium: 'warning', low: 'info' }[severity] || 'info') as 'danger' | 'warning' | 'info'
+}
+
+function severityLabel(severity: SystemAlertSeverity) {
+  return ({ high: '紧急', medium: '提醒', low: '关注' }[severity] || '关注')
+}
+
+async function runAlertAction(alert: SystemAlert) {
+  if (!alert.action) return
+  if (alert.action.type === 'retry_notification') {
+    await retryOutbox(String(alert.action.resource_id))
+    return
+  }
+  if (alert.action.type === 'retry_pms_sync') {
+    await adminService.triggerPmsSync(Number(alert.action.resource_id))
+    ElMessage.success('已触发 PMS 重新同步')
+    await loadData()
+  }
+}
+
 async function loadData() {
   loading.value = true
   try {
-    const [overviewData, failed] = await Promise.all([
+    const [overviewData, alerts] = await Promise.all([
       adminService.getOverview(),
-      adminService.getFailedNotifications(),
+      adminService.getSystemAlerts(),
     ])
     overview.value = overviewData
-    failedNotifications.value = failed
+    systemAlerts.value = alerts
   } finally {
     loading.value = false
   }
@@ -202,6 +238,69 @@ h3 {
   color: #303133;
 }
 
+.alert-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.alert-card {
+  border: 1px solid #ebeef5;
+  border-left-width: 4px;
+  border-radius: 8px;
+  padding: 14px;
+  background: #fff;
+}
+
+.alert-high {
+  border-left-color: #f56c6c;
+}
+
+.alert-medium {
+  border-left-color: #e6a23c;
+}
+
+.alert-low {
+  border-left-color: #909399;
+}
+
+.alert-top,
+.alert-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.alert-top span,
+.alert-foot span {
+  color: #909399;
+  font-size: 12px;
+}
+
+.alert-card h4 {
+  margin: 10px 0 6px;
+  color: #303133;
+  font-size: 16px;
+}
+
+.alert-summary,
+.alert-detail {
+  margin: 0;
+  line-height: 1.6;
+}
+
+.alert-summary {
+  color: #303133;
+}
+
+.alert-detail {
+  color: #606266;
+  font-size: 13px;
+  margin-top: 6px;
+}
+
 .details {
   color: #606266;
   font-size: 12px;
@@ -210,6 +309,10 @@ h3 {
 @media (max-width: 900px) {
   .role-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .alert-grid {
+    grid-template-columns: 1fr;
   }
 }
 </style>

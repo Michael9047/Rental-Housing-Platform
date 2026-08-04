@@ -1,3 +1,5 @@
+from datetime import datetime, timedelta, timezone
+
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -7,9 +9,11 @@ from app.models.audit_log import AuditLog
 from app.models.booking import Booking, BookingStatus
 from app.models.notification import NotificationOutbox, NotificationOutboxStatus
 from app.models.payment import Payment, PaymentStatus
+from app.models.pms_connection import PMSConnection, PMSSyncStatus
 from app.models.user import User, UserRole
 from app.schemas.user import UserRead
 from app.services.audit_service import AuditService
+from app.services.payment_provider import provider_availability
 from app.services.property_service import PropertyService
 from app.services.stats_service import StatsService
 from app.services.user_service import UserService
@@ -99,6 +103,155 @@ async def get_admin_overview(
             for log in recent_logs
         ],
     }
+
+
+@router.get("/system-alerts")
+async def list_system_alerts(
+    session: AsyncSession = Depends(get_db_session),
+    _: User = Depends(require_admin),
+) -> list[dict]:
+    now = datetime.now(timezone.utc)
+    alerts: list[dict] = []
+
+    failed_outbox_rows = await session.scalars(
+        select(NotificationOutbox)
+        .where(NotificationOutbox.status == NotificationOutboxStatus.failed)
+        .order_by(NotificationOutbox.updated_at.desc())
+        .limit(20)
+    )
+    for row in failed_outbox_rows:
+        alerts.append({
+            "id": f"notification:{row.id}",
+            "category": "通知",
+            "severity": "high" if row.attempts >= 3 else "medium",
+            "title": "通知发送失败",
+            "summary": f"{row.event_type} 发送失败，已尝试 {row.attempts} 次",
+            "detail": row.last_error or "通知投递失败，等待管理员检查或重试。",
+            "source": "notification_outbox",
+            "source_id": row.id,
+            "status": row.status.value,
+            "updated_at": row.updated_at.isoformat(),
+            "action": {
+                "type": "retry_notification",
+                "label": "重新发送",
+                "resource_id": row.id,
+            },
+        })
+
+    pms_rows = await session.scalars(
+        select(PMSConnection).order_by(PMSConnection.updated_at.desc()).limit(50)
+    )
+    for conn in pms_rows:
+        updated_at = conn.updated_at.isoformat()
+        base = {
+            "category": "对接",
+            "source": "pms_connection",
+            "source_id": conn.id,
+            "updated_at": updated_at,
+        }
+        if conn.sync_status == PMSSyncStatus.failed:
+            alerts.append({
+                **base,
+                "id": f"pms_failed:{conn.id}",
+                "severity": "high",
+                "title": "PMS 对接同步失败",
+                "summary": f"{conn.label} 上次同步失败",
+                "detail": conn.last_sync_error or "外部 PMS 接口同步失败。",
+                "status": conn.sync_status.value,
+                "action": {
+                    "type": "retry_pms_sync",
+                    "label": "重新同步",
+                    "resource_id": conn.id,
+                },
+            })
+        if conn.sync_status == PMSSyncStatus.pending_review:
+            alerts.append({
+                **base,
+                "id": f"pms_review:{conn.id}",
+                "severity": "medium",
+                "title": "PMS 映射待确认",
+                "summary": f"{conn.label} 有字段映射需要人工确认",
+                "detail": "对接字段或房型映射需要确认后再同步入库。",
+                "status": conn.sync_status.value,
+                "action": None,
+            })
+        if not conn.is_active:
+            alerts.append({
+                **base,
+                "id": f"pms_inactive:{conn.id}",
+                "severity": "low",
+                "title": "PMS 对接已停用",
+                "summary": f"{conn.label} 当前未启用",
+                "detail": "该公寓不会继续从 PMS 自动同步房源。",
+                "status": "inactive",
+                "action": None,
+            })
+        if conn.is_active and not conn.base_url.startswith("mock://") and not conn.api_key:
+            alerts.append({
+                **base,
+                "id": f"pms_api_key:{conn.id}",
+                "severity": "high",
+                "title": "PMS API Key 缺失或已失效",
+                "summary": f"{conn.label} 未配置有效 API Key",
+                "detail": "外部 PMS API 凭证缺失，可能是未配置、过期或被平台撤销。",
+                "status": "credential_missing",
+                "action": None,
+            })
+        if conn.is_active:
+            if conn.last_synced_at is None:
+                alerts.append({
+                    **base,
+                    "id": f"pms_never_synced:{conn.id}",
+                    "severity": "medium",
+                    "title": "PMS 从未完成同步",
+                    "summary": f"{conn.label} 尚无成功同步记录",
+                    "detail": "该对接创建后还没有完成过一次同步。",
+                    "status": "never_synced",
+                    "action": {
+                        "type": "retry_pms_sync",
+                        "label": "立即同步",
+                        "resource_id": conn.id,
+                    },
+                })
+            else:
+                synced_at = conn.last_synced_at
+                if synced_at.tzinfo is None:
+                    synced_at = synced_at.replace(tzinfo=timezone.utc)
+                if now - synced_at > timedelta(hours=24):
+                    alerts.append({
+                        **base,
+                        "id": f"pms_stale:{conn.id}",
+                        "severity": "medium",
+                        "title": "PMS 同步超时",
+                        "summary": f"{conn.label} 超过 24 小时未同步",
+                        "detail": f"上次同步时间：{conn.last_synced_at.isoformat()}",
+                        "status": "stale",
+                        "action": {
+                            "type": "retry_pms_sync",
+                            "label": "重新同步",
+                            "resource_id": conn.id,
+                        },
+                    })
+
+    for item in provider_availability():
+        if not item.available and not item.test_mode:
+            alerts.append({
+                "id": f"payment_provider:{item.method.value}",
+                "category": "支付",
+                "severity": "medium",
+                "title": "支付接口未开通",
+                "summary": f"{item.method.value} 当前不可用",
+                "detail": item.reason or "支付服务商配置缺失或尚未完成联调。",
+                "source": "payment_provider",
+                "source_id": item.method.value,
+                "status": "unavailable",
+                "updated_at": now.isoformat(),
+                "action": None,
+            })
+
+    severity_order = {"high": 0, "medium": 1, "low": 2}
+    alerts.sort(key=lambda item: (severity_order.get(item["severity"], 9), item["updated_at"]), reverse=False)
+    return alerts[:60]
 
 
 @router.get("/stats")
