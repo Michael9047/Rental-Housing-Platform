@@ -45,6 +45,7 @@ class TenantRead(BaseModel):
     school_name: str | None = None
     current_unit_type_id: int | None = None
     unit_type_name: str | None = None
+    institute_name: str | None = None
     room_number: str | None = None
     housing_status: str | None = None
     move_in_date: date | None = None

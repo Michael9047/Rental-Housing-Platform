@@ -24,6 +24,7 @@
           <span v-else>-</span>
         </template>
       </el-table-column>
+      <el-table-column prop="institute_name" label="所租公寓" min-width="140" />
       <el-table-column prop="unit_type_name" label="所租户型" min-width="140" />
       <el-table-column prop="room_number" label="房间号" width="100" />
       <el-table-column prop="housing_status" label="状态" width="100">

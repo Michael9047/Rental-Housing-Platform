@@ -40,7 +40,9 @@ async def create_tenant(
 
     # 重新加载以获取 unit_type 关系
     result = await session.execute(
-        select(Tenant).where(Tenant.id == t.id).options(selectinload(Tenant.unit_type))
+        select(Tenant).where(Tenant.id == t.id).options(
+            selectinload(Tenant.unit_type).selectinload(UnitType.institute)
+        )
     )
     t = result.scalars().first()
     return _to_read(t)
@@ -71,7 +73,7 @@ async def list_tenants(
     skip = (page - 1) * page_size
     stmt = (
         select(Tenant)
-        .options(selectinload(Tenant.unit_type))
+        .options(selectinload(Tenant.unit_type).selectinload(UnitType.institute))
         .order_by(Tenant.created_at.desc())
         .offset(skip).limit(page_size)
     )
@@ -89,7 +91,9 @@ async def list_tenants(
 @router.get("/{tenant_id}", response_model=TenantRead)
 async def get_tenant(tenant_id: int, session: AsyncSession = Depends(get_db_session)):
     result = await session.execute(
-        select(Tenant).where(Tenant.id == tenant_id).options(selectinload(Tenant.unit_type))
+        select(Tenant).where(Tenant.id == tenant_id).options(
+            selectinload(Tenant.unit_type).selectinload(UnitType.institute)
+        )
     )
     t = result.scalars().first()
     if not t:
@@ -146,14 +150,16 @@ async def delete_tenant(
 
 
 def _to_read(t: Tenant) -> TenantRead:
-    """转换为响应模型，附加 unit_type_name"""
-    ut_name = t.unit_type.name if t.unit_type else None
+    """转换为响应模型，附加 unit_type_name + institute_name"""
+    ut = t.unit_type
+    ut_name = ut.name if ut else None
+    inst_name = ut.institute.name if (ut and ut.institute) else None
     hs = getattr(t.housing_status, 'value', t.housing_status) if t.housing_status else None
     return TenantRead(
         id=t.id, surname_pinyin=t.surname_pinyin, given_name_pinyin=t.given_name_pinyin,
         chinese_name=t.chinese_name, phone=t.phone, email=t.email,
         school_name=t.school_name, current_unit_type_id=t.current_unit_type_id,
-        unit_type_name=ut_name, room_number=t.room_number,
+        unit_type_name=ut_name, institute_name=inst_name, room_number=t.room_number,
         housing_status=hs,
         move_in_date=t.move_in_date, move_out_date=t.move_out_date,
         label=t.label,
