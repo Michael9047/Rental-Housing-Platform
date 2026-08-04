@@ -8,15 +8,15 @@
       </div>
     </div>
 
-    <el-table :data="items" v-loading="loading" stripe empty-text="暂无租客">
-      <el-table-column label="姓名" min-width="120">
+    <el-table :data="items" v-loading="loading" stripe empty-text="暂无租客" table-layout="auto">
+      <el-table-column label="姓名" width="110">
         <template #default="{ row }">
           {{ (row.surname_pinyin || '') + (row.given_name_pinyin ? ' ' + row.given_name_pinyin : '') }}
         </template>
       </el-table-column>
-      <el-table-column prop="phone" label="电话" width="140" />
-      <el-table-column prop="school_name" label="学校" min-width="140" />
-      <el-table-column label="租期" width="200">
+      <el-table-column prop="phone" label="电话" width="120" />
+      <el-table-column prop="school_name" label="学校" width="110" show-overflow-tooltip />
+      <el-table-column label="租期" width="150">
         <template #default="{ row }">
           <span v-if="row.move_in_date || row.move_out_date">
             {{ row.move_in_date || '?' }} ~ {{ row.move_out_date || '?' }}
@@ -24,18 +24,18 @@
           <span v-else>-</span>
         </template>
       </el-table-column>
-      <el-table-column prop="institute_name" label="所租公寓" min-width="140" />
-      <el-table-column prop="unit_type_name" label="所租户型" min-width="140" />
-      <el-table-column prop="room_number" label="房间号" width="100" />
-      <el-table-column prop="housing_status" label="状态" width="100">
+      <el-table-column prop="institute_name" label="公寓" width="110" show-overflow-tooltip />
+      <el-table-column prop="unit_type_name" label="户型" width="100" show-overflow-tooltip />
+      <el-table-column prop="room_number" label="房号" width="70" />
+      <el-table-column prop="housing_status" label="状态" width="90">
         <template #default="{ row }">
           <el-tag v-if="row.housing_status === 'active'" type="success" size="small">在住</el-tag>
-          <el-tag v-else-if="row.housing_status === 'notice_given'" type="warning" size="small">已通知退租</el-tag>
+          <el-tag v-else-if="row.housing_status === 'notice_given'" type="warning" size="small">通知退租</el-tag>
           <el-tag v-else-if="row.housing_status === 'moved_out'" type="info" size="small">已搬出</el-tag>
           <span v-else>-</span>
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="140" fixed="right">
+      <el-table-column label="操作" width="100">
         <template #default="{ row }">
           <el-button size="small" text type="primary" @click="openDialog(row)">编辑</el-button>
           <el-button size="small" text type="danger" @click="handleDelete(row)">删除</el-button>
