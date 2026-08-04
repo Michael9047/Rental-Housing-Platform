@@ -40,10 +40,10 @@
       </el-table-column>
       <el-table-column prop="area_sqm" label="面积(㎡)" width="90" />
       <el-table-column label="标准租金" width="110">
-        <template #default="{ row }">¥{{ Number(row.base_rent).toLocaleString() }}/月</template>
+        <template #default="{ row }">{{ formatPrice(row.base_rent, row.currency) }}/月</template>
       </el-table-column>
       <el-table-column prop="deposit_amount" label="押金" width="100">
-        <template #default="{ row }">¥{{ row.deposit_amount ? Number(row.deposit_amount).toLocaleString() : '-' }}</template>
+        <template #default="{ row }">{{ row.deposit_amount ? formatPrice(row.deposit_amount, row.currency) : '-' }}</template>
       </el-table-column>
       <el-table-column prop="room_count" label="绑定房间" width="90" align="center" />
       <el-table-column prop="status" label="状态" width="80">
@@ -72,6 +72,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import api from '@/services/api'
+import { formatPrice } from '@/data/currency'
 
 const route = useRoute()
 const buildingId = Number(route.params.id)

@@ -120,7 +120,7 @@
                       @mousedown.prevent="selectProperty(prop)"
                     >
                       <span class="card-name">{{ prop.title }}</span>
-                      <span class="card-sub">{{ prop.district }} · ¥{{ prop.price_monthly }}/月</span>
+                      <span class="card-sub">{{ prop.district }} · {{ formatPrice(prop.price_monthly, prop.currency) }}/月</span>
                     </div>
                   </div>
                 </div>
@@ -235,6 +235,7 @@ import { notificationService } from '@/services/notification'
 import api from '@/services/api'
 import GlobalFooter from '@/components/GlobalFooter.vue'
 import GlobalSidebar from '@/components/GlobalSidebar.vue'
+import { formatPrice } from '@/data/currency'
 
 interface SuggestionSchool {
   type: string

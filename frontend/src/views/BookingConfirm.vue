@@ -94,8 +94,8 @@
 
             <el-divider />
             <div class="mini-fees">
-              <div class="mini-row"><span>月租</span><span>¥{{ propertyInfo?.price_monthly || 0 }}</span></div>
-              <div class="mini-row"><span>押金</span><span>¥{{ propertyInfo?.deposit_amount || propertyInfo?.price_monthly || 0 }}</span></div>
+              <div class="mini-row"><span>月租</span><span>{{ formatPrice(propertyInfo?.price_monthly || 0, propertyInfo?.currency) }}</span></div>
+              <div class="mini-row"><span>押金</span><span>{{ formatPrice(propertyInfo?.deposit_amount || propertyInfo?.price_monthly || 0, propertyInfo?.currency) }}</span></div>
             </div>
           </div>
         </el-card>
@@ -111,6 +111,7 @@ import { ArrowLeft } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
 import { getImageUrl } from '@/utils/image'
+import { formatPrice } from '@/data/currency'
 import { usePropertyStore } from '@/stores/property'
 import { bookingService } from '@/services/booking'
 import { contractService } from '@/services/contract'
