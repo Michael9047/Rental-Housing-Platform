@@ -60,7 +60,7 @@
       <template v-if="authStore.isAdmin">
         <el-menu-item index="/admin">
           <el-icon><DataAnalysis /></el-icon>
-          <span>管理员后台</span>
+          <span>仪表盘</span>
         </el-menu-item>
         <el-menu-item index="/admin/users">
           <el-icon><User /></el-icon>
