@@ -42,12 +42,38 @@
             <template v-else>
               <!-- 无搜索词时展示热门 -->
               <template v-if="!searchQuery.trim()">
-                <!-- 热门大学：从 API 获取 -->
+                <!-- 国家 Tab -->
+                <div class="suggestions-tabs">
+                  <span
+                    v-for="ct in countryTabs"
+                    :key="ct.key"
+                    :class="['suggestions-tab', { active: popularCountry === ct.key }]"
+                    @mousedown.prevent="popularCountry = ct.key"
+                  >{{ ct.label }}</span>
+                </div>
+
+                <!-- 城市（非 SG 时展示） -->
+                <div v-if="popularCountry !== 'SG' && filteredCities.length > 0" class="suggestions-group">
+                  <div class="suggestions-group-title">城市</div>
+                  <div class="suggestion-grid">
+                    <div
+                      v-for="city in filteredCities"
+                      :key="'city-' + city.name"
+                      class="suggestion-card"
+                      @mousedown.prevent="selectCity(city)"
+                    >
+                      <span class="card-name">{{ cityLabel(city) }}</span>
+                      <span class="card-sub">{{ city.count }} 套房源</span>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- 大学 -->
                 <div class="suggestions-group">
-                  <div class="suggestions-group-title">热门大学（5km 内搜房）</div>
+                  <div class="suggestions-group-title">大学</div>
                   <div class="suggestion-grid school-grid">
                     <div
-                      v-for="uni in popularUniversities"
+                      v-for="uni in filteredUniversities"
                       :key="uni.id"
                       class="suggestion-card"
                       @mousedown.prevent="selectPopularUniversity(uni)"
@@ -56,21 +82,8 @@
                       <span class="card-sub">{{ uni.city || '' }}</span>
                     </div>
                   </div>
-                </div>
-
-                <!-- 热门城市 -->
-                <div v-if="matchingCities.length > 0" class="suggestions-group">
-                  <div class="suggestions-group-title">热门城市</div>
-                  <div class="suggestion-grid">
-                    <div
-                      v-for="city in matchingCities"
-                      :key="'city-' + city.name"
-                      class="suggestion-card"
-                      @mousedown.prevent="selectCity(city)"
-                    >
-                      <span class="card-name">{{ cityLabel(city) }}</span>
-                      <span class="card-sub">{{ city.count }} 套房源</span>
-                    </div>
+                  <div v-if="filteredUniversities.length === 0" class="suggestions-empty">
+                    暂无数据
                   </div>
                 </div>
               </template>
@@ -298,7 +311,7 @@ const hasAnySuggestions = computed(() =>
 async function fetchSuggestions(q: string) {
   suggestionsLoading.value = true
   try {
-    const params: Record<string, string | number> = { limit: 6 }
+    const params: Record<string, string | number> = { limit: 30 }
     if (q.trim()) params.q = q.trim()
     const resp = await api.get('/search/suggestions', { params })
     const data = resp.data
@@ -361,9 +374,29 @@ interface PopularUniversity {
 
 const popularUniversities = ref<PopularUniversity[]>([])
 
+// 国家筛选 Tab
+const countryTabs = [
+  { key: 'all', label: '全部' },
+  { key: 'SG', label: '新加坡' },
+  { key: 'GB', label: '英国' },
+] as const
+const popularCountry = ref<string>('all')
+
+const filteredUniversities = computed(() => {
+  const unis = popularUniversities.value
+  if (popularCountry.value === 'all') return unis
+  return unis.filter(u => (u.country || '').toUpperCase() === popularCountry.value)
+})
+
+const filteredCities = computed(() => {
+  const cities = matchingCities.value
+  if (popularCountry.value === 'all') return cities
+  return cities.filter(c => (c.country || '').toUpperCase() === popularCountry.value)
+})
+
 async function fetchPopularUniversities() {
   try {
-    const resp = await api.get('/search/suggestions', { params: { limit: 10 } })
+    const resp = await api.get('/search/suggestions', { params: { limit: 30 } })
     popularUniversities.value = resp.data.popular_universities || []
   } catch { /* 静默失败 */ }
 }
@@ -630,6 +663,30 @@ watch(
 .suggestions-group + .suggestions-group {
   border-top: 1px solid var(--border-light, #f0f0f0);
   padding-top: 16px;
+}
+
+.suggestions-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 0 0 12px 0;
+  border-bottom: 1px solid var(--border-light);
+  margin-bottom: 8px;
+}
+.suggestions-tab {
+  padding: 4px 14px;
+  border-radius: 14px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all 0.2s;
+  background: transparent;
+}
+.suggestions-tab:hover { color: var(--primary); background: var(--primary-light); }
+.suggestions-tab.active {
+  color: #fff;
+  background: var(--primary);
+  font-weight: 600;
 }
 
 .suggestions-group-title {
