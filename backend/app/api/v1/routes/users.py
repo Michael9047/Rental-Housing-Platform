@@ -3,7 +3,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, get_db_session, require_admin
-from app.models.user import User
+from app.models.user import User, UserRole
 from app.schemas.user import UserCreate, UserProfileUpdate, UserRead, UserUpdate
 from app.services.user_service import UserService
 
@@ -30,8 +30,18 @@ async def list_users(
     _: User = Depends(require_admin),
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=20, ge=1, le=100),
+    q: str | None = Query(default=None, max_length=80),
+    role: str | None = Query(default=None),
 ) -> list[UserRead]:
-    return await UserService(session).list(skip=skip, limit=limit)
+    selected_role: UserRole | None = None
+    if role:
+        if role not in {"tenant", "landlord", "maintenance_worker", "admin"}:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid role. Must be: tenant, landlord, maintenance_worker, or admin",
+            )
+        selected_role = UserRole(role)
+    return await UserService(session).list(skip=skip, limit=limit, q=q, role=selected_role)
 
 
 @router.get("/me", response_model=UserRead)

@@ -58,6 +58,10 @@
 
       <!-- 管理员：系统管理（不含仪表盘，仪表盘归房东） -->
       <template v-if="authStore.isAdmin">
+        <el-menu-item index="/admin">
+          <el-icon><DataAnalysis /></el-icon>
+          <span>管理员后台</span>
+        </el-menu-item>
         <el-menu-item index="/admin/users">
           <el-icon><User /></el-icon>
           <span>用户管理</span>

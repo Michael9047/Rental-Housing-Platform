@@ -186,6 +186,9 @@
                 </template>
                 <!-- 管理员菜单 -->
                 <template v-if="authStore.isAdmin">
+                  <el-dropdown-item @click="router.push('/admin')">
+                    <el-icon><DataAnalysis /></el-icon> 管理员后台
+                  </el-dropdown-item>
                   <el-dropdown-item @click="router.push('/admin/users')">
                     <el-icon><User /></el-icon> 用户管理
                   </el-dropdown-item>

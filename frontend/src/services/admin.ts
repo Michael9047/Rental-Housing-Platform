@@ -1,9 +1,23 @@
 ﻿import api from './api'
-import type { AdminStats, AuditLog, EmbeddingStats, ImportResult, ImportTask, ImportTaskDetail, RowResult } from '@/types/admin'
+import type {
+  AdminOverview,
+  AdminStats,
+  AuditLog,
+  EmbeddingStats,
+  ImportResult,
+  ImportTask,
+  ImportTaskDetail,
+  NotificationOutboxItem,
+  RowResult,
+} from '@/types/admin'
 import type { Property } from '@/types/property'
 import type { User } from '@/types/user'
 
 export const adminService = {
+  getOverview(): Promise<AdminOverview> {
+    return api.get('/admin/overview').then((r) => r.data)
+  },
+
   getStats(): Promise<AdminStats> {
     return api.get('/admin/stats').then((r) => r.data)
   },
@@ -32,6 +46,14 @@ export const adminService = {
     return api.patch(`/admin/users/${userId}/role`, null, {
       params: { new_role },
     }).then((r) => r.data)
+  },
+
+  getFailedNotifications(): Promise<NotificationOutboxItem[]> {
+    return api.get('/notifications/admin/outbox').then((r) => r.data)
+  },
+
+  retryNotification(outboxId: string): Promise<{ id: string; status: string }> {
+    return api.post(`/notifications/admin/outbox/${outboxId}/retry`).then((r) => r.data)
   },
 
   getEmbeddingStats(): Promise<EmbeddingStats> {

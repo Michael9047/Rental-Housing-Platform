@@ -10,7 +10,7 @@ export const userService = {
     return api.patch('/users/me', data).then((r) => r.data)
   },
 
-  list(params?: { skip?: number; limit?: number }): Promise<User[]> {
+  list(params?: { skip?: number; limit?: number; q?: string; role?: string }): Promise<User[]> {
     return api.get('/users', { params }).then((r) => r.data)
   },
 }

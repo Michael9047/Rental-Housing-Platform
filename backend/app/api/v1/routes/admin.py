@@ -3,6 +3,10 @@ from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, get_db_session, require_admin, require_landlord
+from app.models.audit_log import AuditLog
+from app.models.booking import Booking, BookingStatus
+from app.models.notification import NotificationOutbox, NotificationOutboxStatus
+from app.models.payment import Payment, PaymentStatus
 from app.models.user import User, UserRole
 from app.schemas.user import UserRead
 from app.services.audit_service import AuditService
@@ -11,6 +15,90 @@ from app.services.stats_service import StatsService
 from app.services.user_service import UserService
 
 router = APIRouter()
+
+
+@router.get("/overview")
+async def get_admin_overview(
+    session: AsyncSession = Depends(get_db_session),
+    _: User = Depends(require_admin),
+) -> dict:
+    role_rows = await session.execute(
+        select(User.role, func.count(User.id)).group_by(User.role)
+    )
+    users_by_role = {
+        (role.value if hasattr(role, "value") else str(role)): count
+        for role, count in role_rows.all()
+    }
+
+    booking_rows = await session.execute(
+        select(Booking.status, func.count(Booking.id)).group_by(Booking.status)
+    )
+    bookings_by_status = {
+        (status.value if hasattr(status, "value") else str(status)): count
+        for status, count in booking_rows.all()
+    }
+
+    payment_rows = await session.execute(
+        select(Payment.status, func.count(Payment.id), func.coalesce(func.sum(Payment.settlement_amount_minor), 0))
+        .group_by(Payment.status)
+    )
+    payments_by_status = [
+        {
+            "status": status.value if hasattr(status, "value") else str(status),
+            "count": count,
+            "settlement_amount_minor": int(amount or 0),
+        }
+        for status, count, amount in payment_rows.all()
+    ]
+
+    failed_notifications = await session.scalar(
+        select(func.count(NotificationOutbox.id)).where(
+            NotificationOutbox.status == NotificationOutboxStatus.failed
+        )
+    )
+    recent_logs = await session.scalars(
+        select(AuditLog).order_by(AuditLog.created_at.desc()).limit(8)
+    )
+
+    return {
+        "users": {
+            "total": sum(users_by_role.values()),
+            "by_role": {
+                "admin": users_by_role.get(UserRole.admin.value, 0),
+                "tenant": users_by_role.get(UserRole.tenant.value, 0),
+                "landlord": users_by_role.get(UserRole.landlord.value, 0),
+                "maintenance_worker": users_by_role.get(UserRole.maintenance_worker.value, 0),
+            },
+        },
+        "bookings": {
+            "total": sum(bookings_by_status.values()),
+            "pending": bookings_by_status.get(BookingStatus.pending.value, 0),
+            "paid": bookings_by_status.get(BookingStatus.paid.value, 0),
+            "payment_review": bookings_by_status.get(BookingStatus.payment_review.value, 0),
+        },
+        "payments": {
+            "total_count": sum(item["count"] for item in payments_by_status),
+            "success_count": next((item["count"] for item in payments_by_status if item["status"] == PaymentStatus.success.value), 0),
+            "success_amount_minor": next((item["settlement_amount_minor"] for item in payments_by_status if item["status"] == PaymentStatus.success.value), 0),
+            "by_status": payments_by_status,
+        },
+        "notifications": {
+            "failed_outbox": failed_notifications or 0,
+        },
+        "recent_logs": [
+            {
+                "id": log.id,
+                "user_id": log.user_id,
+                "action": log.action,
+                "resource_type": log.resource_type,
+                "resource_id": log.resource_id,
+                "details": log.details,
+                "ip_address": log.ip_address,
+                "created_at": log.created_at.isoformat(),
+            }
+            for log in recent_logs
+        ],
+    }
 
 
 @router.get("/stats")

@@ -24,6 +24,51 @@ export interface AuditLog {
   created_at: string
 }
 
+export interface AdminOverview {
+  users: {
+    total: number
+    by_role: {
+      admin: number
+      tenant: number
+      landlord: number
+      maintenance_worker: number
+    }
+  }
+  bookings: {
+    total: number
+    pending: number
+    paid: number
+    payment_review: number
+  }
+  payments: {
+    total_count: number
+    success_count: number
+    success_amount_minor: number
+    by_status: {
+      status: string
+      count: number
+      settlement_amount_minor: number
+    }[]
+  }
+  notifications: {
+    failed_outbox: number
+  }
+  recent_logs: AuditLog[]
+}
+
+export interface NotificationOutboxItem {
+  id: string
+  event_key: string
+  event_type: string
+  user_id: number | null
+  booking_id: number | null
+  template_version: string | null
+  status: string
+  attempts: number
+  last_error: string | null
+  updated_at: string
+}
+
 export interface ImportTask {
   id: number
   admin_id: number
