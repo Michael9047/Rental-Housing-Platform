@@ -330,7 +330,8 @@ let bldMapInst:any=null, bldMarkerInst:any=null
 // 用 watch 桥接 Leaflet 异步回调和 Vue 响应式
 const _geoTrigger = ref(0)
 let _pendingGeoData: Record<string, string> | null = null
-watch(_geoTrigger, async () => {
+watch(_geoTrigger, async (val) => {
+  console.log('[geo-watch] fired, tick=', val, 'data=', _pendingGeoData)
   if (!_pendingGeoData) return
   // 先清空所有地址字段
   newBuilding.country = ''
@@ -339,8 +340,10 @@ watch(_geoTrigger, async () => {
   newBuilding.street = ''
   newBuilding.postalCode = ''
   await import('vue').then(m => m.nextTick())
+  console.log('[geo-watch] cleared, filling:', _pendingGeoData)
   // 再填入新值
   Object.assign(newBuilding, _pendingGeoData)
+  console.log('[geo-watch] newBuilding after:', JSON.parse(JSON.stringify(newBuilding)))
   _pendingGeoData = null
 })
 
@@ -423,7 +426,9 @@ async function reverseBldGeocode(lat:number,lng:number){
       street: hn ? `${hn} ${road}`.trim() : road,
       postalCode: a.postcode || newBuilding.postalCode,
     }
+    console.log('[reverseGeocode] triggering watch with:', _pendingGeoData)
     _geoTrigger.value++
+    console.log('[reverseGeocode] _geoTrigger =', _geoTrigger.value)
     ElMessage.success('已从地图反向定位，地址字段已自动填充')
   }catch(e){
     console.error('[reverseGeocode]', e)
