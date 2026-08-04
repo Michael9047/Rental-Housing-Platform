@@ -34,8 +34,10 @@ export const repairService = {
   },
 
   /** 维修师傅完成工单 */
-  completeWork(id: number, workRecord: string): Promise<RepairRead> {
-    return api.patch(`/repairs/${id}/complete`, null, { params: { work_record: workRecord } }).then((r) => r.data)
+  completeWork(id: number, workRecord: string, workImages?: string[]): Promise<RepairRead> {
+    const params: Record<string, unknown> = { work_record: workRecord }
+    if (workImages && workImages.length) params.work_images = JSON.stringify(workImages)
+    return api.patch(`/repairs/${id}/complete`, null, { params }).then((r) => r.data)
   },
 
   /** 租客取消报修 */
@@ -46,6 +48,11 @@ export const repairService = {
   /** 租客确认维修完成 */
   confirm(id: number): Promise<RepairRead> {
     return api.patch(`/repairs/${id}/confirm`).then((r) => r.data)
+  },
+
+  /** 租客驳回维修（必填原因） */
+  reject(id: number, reason: string): Promise<RepairRead> {
+    return api.patch(`/repairs/${id}/reject`, null, { params: { reason } }).then((r) => r.data)
   },
 }
 

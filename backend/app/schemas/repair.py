@@ -3,7 +3,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, Field
 
-from app.models.repair import RepairIssueType, RepairStatus, WorkerScope, WorkerStatus
+from app.models.repair import RepairIssueType, RepairSeverity, RepairStatus, WorkerScope, WorkerStatus
 
 
 # ── 报修工单 ──────────────────────────────────────
@@ -12,6 +12,7 @@ class RepairCreate(BaseModel):
     """租客创建报修"""
     property_id: int
     issue_type: RepairIssueType
+    severity: RepairSeverity = RepairSeverity.medium  # 低/中/高
     description: str = Field(min_length=1, max_length=2000)
     images: list[str] | None = None
     scheduled_time: str | None = None  # 格式: "YYYY-MM-DD AM/PM"
@@ -33,6 +34,7 @@ class RepairRead(BaseModel):
     landlord_id: int
     assigned_worker_id: int | None = None
     issue_type: RepairIssueType
+    severity: RepairSeverity = RepairSeverity.medium
     description: str
     images: list[str] | None = None
     status: RepairStatus
@@ -40,6 +42,7 @@ class RepairRead(BaseModel):
     completed_at: str | None = None
     work_record: str | None = None
     work_images: list[str] | None = None
+    reject_reason: str | None = None
     created_at: str
     updated_at: str
 

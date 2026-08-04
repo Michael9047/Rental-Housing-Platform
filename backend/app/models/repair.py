@@ -26,6 +26,12 @@ class RepairIssueType(str, enum.Enum):
     other = "other"
 
 
+class RepairSeverity(str, enum.Enum):
+    low = "low"                      # 低
+    medium = "medium"                # 中
+    high = "high"                    # 高
+
+
 class RepairStatus(str, enum.Enum):
     pending = "pending"              # 待处理
     pending_escalated = "pending_escalated"  # 待后台派单（房东无维修工时跳过）
@@ -70,6 +76,11 @@ class RepairRequest(TimestampMixin, Base):
     issue_type: Mapped[RepairIssueType] = mapped_column(
         Enum(RepairIssueType, name="repair_issue_type"), nullable=False
     )
+    severity: Mapped[RepairSeverity] = mapped_column(
+        Enum(RepairSeverity, name="repair_severity"),
+        default=RepairSeverity.medium,
+        nullable=False,
+    )
     description: Mapped[str] = mapped_column(SAText, nullable=False)
     images: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
@@ -84,6 +95,7 @@ class RepairRequest(TimestampMixin, Base):
     completed_at: Mapped[str | None] = mapped_column(String(32), nullable=True)
     work_record: Mapped[str | None] = mapped_column(SAText, nullable=True)
     work_images: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    reject_reason: Mapped[str | None] = mapped_column(SAText, nullable=True)
 
     # 关系
     property: Mapped["Room"] = relationship()

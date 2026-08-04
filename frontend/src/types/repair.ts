@@ -18,11 +18,14 @@ export type RepairStatus =
   | 'rejected'
   | 'cancelled'
 
+export type RepairSeverity = 'low' | 'medium' | 'high'
+
 export type WorkerStatus = 'available' | 'working' | 'on_leave'
 
 export interface RepairCreate {
   property_id: number
   issue_type: RepairIssueType
+  severity?: RepairSeverity
   description: string
   images?: string[]
   scheduled_time?: string
@@ -35,6 +38,7 @@ export interface RepairRead {
   landlord_id: number
   assigned_worker_id: number | null
   issue_type: RepairIssueType
+  severity: RepairSeverity
   description: string
   images: string[] | null
   status: RepairStatus
@@ -42,12 +46,25 @@ export interface RepairRead {
   completed_at: string | null
   work_record: string | null
   work_images: string[] | null
+  reject_reason: string | null
   created_at: string
   updated_at: string
   tenant_name: string | null
   landlord_name: string | null
   worker_name: string | null
   property_title: string | null
+}
+
+export const SEVERITY_LABELS: Record<RepairSeverity, string> = {
+  low: '低',
+  medium: '中',
+  high: '高',
+}
+
+export const SEVERITY_TAGS: Record<RepairSeverity, string> = {
+  low: 'info',
+  medium: 'warning',
+  high: 'danger',
 }
 
 export type WorkerScope = 'platform' | 'apartment'

@@ -34,6 +34,7 @@ async def _repair_to_read(repair) -> RepairRead:
         landlord_id=repair.landlord_id,
         assigned_worker_id=repair.assigned_worker_id,
         issue_type=repair.issue_type,
+        severity=repair.severity,
         description=repair.description,
         images=repair.images,
         status=repair.status,
@@ -41,6 +42,7 @@ async def _repair_to_read(repair) -> RepairRead:
         completed_at=repair.completed_at,
         work_record=repair.work_record,
         work_images=repair.work_images,
+        reject_reason=repair.reject_reason,
         created_at=repair.created_at.isoformat(),
         updated_at=repair.updated_at.isoformat(),
         tenant_name=tenant.username if tenant else None,
@@ -207,10 +209,11 @@ async def start_repair(
 async def complete_repair(
     repair_id: int,
     work_record: str = Query(...),
+    work_images: str | None = Query(default=None),
     session: AsyncSession = Depends(get_db_session),
     current_user: User = Depends(require_maintenance),
 ):
-    """维修师傅完成工单，填写维修记录"""
+    """维修师傅完成工单，填写维修记录，可附维修照片"""
     svc = RepairService(session)
     repair = await svc.get_repair(repair_id)
     if not repair:
@@ -218,7 +221,15 @@ async def complete_repair(
     if repair.assigned_worker_id != current_user.id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
 
-    repair = await svc.complete_work(repair_id, work_record)
+    import json as _json
+    images = None
+    if work_images:
+        try:
+            images = _json.loads(work_images)
+        except Exception:
+            images = [work_images]
+
+    repair = await svc.complete_work(repair_id, work_record, work_images=images)
     return await _repair_to_read(repair)
 
 
@@ -255,6 +266,27 @@ async def confirm_repair(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
     try:
         repair = await svc.confirm_repair(repair_id, current_user.id)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    return await _repair_to_read(repair)
+
+
+@router.patch("/repairs/{repair_id}/reject", response_model=RepairRead)
+async def reject_repair(
+    repair_id: int,
+    reason: str = Query(...),
+    session: AsyncSession = Depends(get_db_session),
+    current_user: User = Depends(require_tenant),
+):
+    """租客驳回维修，必填原因"""
+    svc = RepairService(session)
+    repair = await svc.get_repair(repair_id)
+    if not repair:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repair not found")
+    if repair.tenant_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+    try:
+        repair = await svc.reject_repair(repair_id, current_user.id, reason)
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     return await _repair_to_read(repair)

@@ -34,10 +34,13 @@
     </el-table>
 
     <!-- 完成工单弹窗 -->
-    <el-dialog v-model="completeVisible" title="填写维修记录" width="420px">
+    <el-dialog v-model="completeVisible" title="填写维修记录" width="480px">
       <el-form label-width="70px">
         <el-form-item label="维修记录">
           <el-input v-model="workRecord" type="textarea" :rows="4" placeholder="记录维修过程、更换了哪些配件等..." />
+        </el-form-item>
+        <el-form-item label="维修照片">
+          <ImageUploader v-model="workImages" :max-files="6" title="📸 上传维修完成照片" hint="拍摄维修完成后的画面，最多6张" />
         </el-form-item>
       </el-form>
       <template #footer>
@@ -54,6 +57,7 @@ import { ElMessage } from 'element-plus'
 import { repairService } from '@/services/repair'
 import { ISSUE_TYPE_LABELS, REPAIR_STATUS_LABELS, REPAIR_STATUS_TAGS } from '@/types/repair'
 import type { RepairRead } from '@/types/repair'
+import ImageUploader from '@/components/ImageUploader.vue'
 
 const orders = ref<RepairRead[]>([])
 const loading = ref(false)
@@ -62,6 +66,7 @@ const completeVisible = ref(false)
 const completeLoading = ref(false)
 const currentOrder = ref<RepairRead | null>(null)
 const workRecord = ref('')
+const workImages = ref<string[]>([])
 
 const labels = REPAIR_STATUS_LABELS as Record<string, string>
 const tagsRec = REPAIR_STATUS_TAGS as Record<string, string>
@@ -93,6 +98,7 @@ async function doStart(row: RepairRead) {
 function showComplete(row: RepairRead) {
   currentOrder.value = row
   workRecord.value = ''
+  workImages.value = []
   completeVisible.value = true
 }
 
@@ -102,7 +108,7 @@ async function doComplete() {
   }
   completeLoading.value = true
   try {
-    await repairService.completeWork(currentOrder.value.id, workRecord.value.trim())
+    await repairService.completeWork(currentOrder.value.id, workRecord.value.trim(), workImages.value)
     ElMessage.success('工单已完成，你已恢复可调度状态')
     completeVisible.value = false
     await fetchData()

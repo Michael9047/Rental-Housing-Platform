@@ -360,6 +360,13 @@
             <el-option v-for="(label, key) in ISSUE_TYPE_LABELS" :key="key" :label="label" :value="key" />
           </el-select>
         </el-form-item>
+        <el-form-item label="严重程度">
+          <el-select v-model="repairForm.severity" style="width:100%" placeholder="选择严重程度">
+            <el-option label="🔴 高（紧急）" value="high" />
+            <el-option label="🟡 中" value="medium" />
+            <el-option label="🔵 低" value="low" />
+          </el-select>
+        </el-form-item>
         <el-form-item label="描述一下">
           <el-input v-model="repairForm.description" type="textarea" :rows="3" placeholder="简单说说哪里出了问题..." />
         </el-form-item>
@@ -403,7 +410,7 @@ import { storeToRefs } from 'pinia'
 import { favoriteService } from '@/services/favorite'
 import type { Booking } from '@/types/booking'
 import type { Property } from '@/types/property'
-import type { RepairRead, RepairIssueType } from '@/types/repair'
+import type { RepairRead, RepairIssueType, RepairSeverity } from '@/types/repair'
 import { ISSUE_TYPE_LABELS, REPAIR_STATUS_LABELS, REPAIR_STATUS_TAGS } from '@/types/repair'
 
 const route = useRoute()
@@ -431,7 +438,7 @@ const ordersError = ref(false)
 let orderTimer = 0
 const favorites = ref<Property[]>([])
 const repairs = ref<RepairRead[]>([])
-const repairForm = ref({ property_id: 0, issue_type: 'other' as RepairIssueType, description: '', scheduled_time: '' })
+const repairForm = ref({ property_id: 0, issue_type: 'other' as RepairIssueType, severity: 'medium' as RepairSeverity, description: '', scheduled_time: '' })
 
 // ── 个人信息表单（预订流程预填数据源）──
 const nationalityOptions = ['中国大陆','中国香港','中国澳门','中国台湾','英国','美国','加拿大','澳大利亚','新加坡','日本','韩国','德国','法国','其他']
@@ -623,12 +630,13 @@ async function submitRepair() {
     await repairService.create({
       property_id: repairForm.value.property_id,
       issue_type: repairForm.value.issue_type,
+      severity: repairForm.value.severity,
       description: repairForm.value.description,
       scheduled_time: repairForm.value.scheduled_time || undefined,
     })
     ElMessage.success('报修已提交，房东会尽快处理')
     showNewRepair.value = false
-    repairForm.value = { property_id: 0, issue_type: 'other', description: '', scheduled_time: '' }
+    repairForm.value = { property_id: 0, issue_type: 'other', severity: 'medium', description: '', scheduled_time: '' }
     await fetchRepairs()
   } catch { ElMessage.error('提交失败，请重试') }
   finally { showSubmitRepair.value = false }
