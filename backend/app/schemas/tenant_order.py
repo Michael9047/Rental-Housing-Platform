@@ -6,28 +6,50 @@ from pydantic import BaseModel, Field
 
 # ── 房客 ──
 class TenantCreate(BaseModel):
-    name: str = Field(..., min_length=1, max_length=100)
+    surname_pinyin: str = Field(..., min_length=1, max_length=100, description="姓")
+    given_name_pinyin: str = Field(..., min_length=1, max_length=100, description="名")
+    chinese_name: str | None = Field(default=None, max_length=100, description="中文全名（选填）")
     phone: str | None = None
     email: str | None = None
-    id_number: str | None = None
-    emergency_contact: str | None = None
+    school_name: str | None = None
+    current_unit_type_id: int | None = None
+    room_number: str | None = Field(default=None, max_length=50)
+    housing_status: str | None = Field(default="active")
+    move_in_date: date | None = None
+    move_out_date: date | None = None
+    label: str | None = Field(default=None, max_length=100)
 
 
 class TenantUpdate(BaseModel):
-    name: str | None = Field(default=None, min_length=1, max_length=100)
+    surname_pinyin: str | None = Field(default=None, min_length=1, max_length=100)
+    given_name_pinyin: str | None = Field(default=None, min_length=1, max_length=100)
+    chinese_name: str | None = Field(default=None, max_length=100)
     phone: str | None = None
     email: str | None = None
-    id_number: str | None = None
-    emergency_contact: str | None = None
+    school_name: str | None = None
+    current_unit_type_id: int | None = None
+    room_number: str | None = Field(default=None, max_length=50)
+    housing_status: str | None = None
+    move_in_date: date | None = None
+    move_out_date: date | None = None
+    label: str | None = Field(default=None, max_length=100)
 
 
 class TenantRead(BaseModel):
     id: int
-    name: str
+    surname_pinyin: str | None = None
+    given_name_pinyin: str | None = None
+    chinese_name: str | None = None
     phone: str | None = None
     email: str | None = None
-    id_number: str | None = None
-    emergency_contact: str | None = None
+    school_name: str | None = None
+    current_unit_type_id: int | None = None
+    unit_type_name: str | None = None
+    room_number: str | None = None
+    housing_status: str | None = None
+    move_in_date: date | None = None
+    move_out_date: date | None = None
+    label: str | None = None
     created_at: datetime
     updated_at: datetime
     model_config = {"from_attributes": True}

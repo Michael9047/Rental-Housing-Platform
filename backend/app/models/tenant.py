@@ -58,6 +58,8 @@ class Tenant(Base):
     current_unit_type_id: Mapped[int | None] = mapped_column(
         ForeignKey("unit_types.id", ondelete="SET NULL"), nullable=True, index=True
     )
+    room_number: Mapped[str | None] = mapped_column(String(50), nullable=True, comment="房间号")
+
     housing_status: Mapped[HousingStatus | None] = mapped_column(
         String(20), nullable=True, default="active"
     )

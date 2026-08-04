@@ -95,6 +95,20 @@
             </el-col>
           </el-row>
 
+          <el-divider content-position="left">库存信息</el-divider>
+          <el-row :gutter="16">
+            <el-col :span="8">
+              <el-form-item label="总套数">
+                <el-input-number v-model="f.total_count" :min="0" :max="999" controls-position="right" style="width:100%" />
+              </el-form-item>
+            </el-col>
+            <el-col :span="8">
+              <el-form-item label="可租套数">
+                <el-input-number v-model="f.available_count" :min="0" :max="999" controls-position="right" style="width:100%" />
+              </el-form-item>
+            </el-col>
+          </el-row>
+
           <el-form-item label="租房要求">
             <el-input v-model="f.rental_requirements" type="textarea" :rows="2" placeholder="选填：如 一年起租、仅限学生、无宠物、需提供担保人..." maxlength="500" show-word-limit />
           </el-form-item>
@@ -260,6 +274,8 @@ const f = reactive({
   area_sqm: undefined as number | undefined,
   base_rent: undefined as number | undefined,
   deposit_amount: undefined as number | undefined,
+  total_count: 1,
+  available_count: 1,
   deposit_type: undefined as string | undefined,
   rental_requirements: '' as string | undefined,
   currency: 'CNY' as string | undefined,
@@ -325,6 +341,8 @@ async function loadUnitType(id: number) {
     f.base_rent = ut.base_rent ? Number(ut.base_rent) : undefined
     f.deposit_amount = ut.deposit_amount ?? undefined
     f.deposit_type = ut.deposit_type ?? undefined
+    f.total_count = ut.total_count ?? 1
+    f.available_count = ut.available_count ?? 1
     f.rental_requirements = ut.rental_requirements ?? ''
     f.currency = ut.currency || 'CNY'
     f.special_offer = ut.special_offer ?? ''
@@ -359,6 +377,8 @@ async function handleSubmit() {
     area_sqm: f.area_sqm ?? null,
     base_rent: f.base_rent ?? 0,
     deposit_amount: f.deposit_amount ?? null,
+    total_count: f.total_count ?? 1,
+    available_count: f.available_count ?? 1,
     deposit_type: f.deposit_type || null,
     rental_requirements: f.rental_requirements?.trim() || null,
     currency: f.currency || null,

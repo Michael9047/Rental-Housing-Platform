@@ -7,7 +7,7 @@ from pydantic import ValidationError
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import Response, JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from app.api.deps import get_current_user, get_db_session, require_tenant
 from app.models.user import User, UserRole
@@ -155,6 +155,79 @@ async def create_my_signed_download_link(
     }
 
 
+# ── 房东合约列表 ──
+
+from pydantic import BaseModel as _PydanticBaseModel
+
+class _LandlordContractItem(_PydanticBaseModel):
+    id: str
+    agreement_number: str | None = None
+    tenant_name: str | None = None
+    unit_type_name: str | None = None
+    status: str | None = None
+    signed_at: datetime | None = None
+    generated_at: datetime | None = None
+
+
+class _LandlordContractList(_PydanticBaseModel):
+    items: list[_LandlordContractItem]
+    total: int
+    page: int
+    page_size: int
+    total_pages: int
+
+
+@router.get("/landlord", response_model=_LandlordContractList)
+async def list_landlord_contracts(
+    session: AsyncSession = Depends(get_db_session),
+    current_user: User = Depends(get_current_user),
+    page: int = 1, page_size: int = 20,
+):
+    """房东查看自己公寓下的所有合同"""
+    from sqlalchemy.orm import selectinload
+    from app.models.booking import Booking
+
+    booking_stmt = select(Booking.id).where(Booking.bm_id == current_user.id)
+    booking_result = await session.execute(booking_stmt)
+    booking_ids = [r[0] for r in booking_result.all()]
+
+    if not booking_ids:
+        return _LandlordContractList(items=[], total=0, page=page, page_size=page_size, total_pages=0)
+
+    count_stmt = select(func.count(Contract.id)).where(Contract.booking_id.in_(booking_ids))
+    total = (await session.scalar(count_stmt)) or 0
+
+    stmt = (
+        select(Contract)
+        .where(Contract.booking_id.in_(booking_ids))
+        .options(
+            selectinload(Contract.tenant),
+            selectinload(Contract.booking).selectinload(Booking.unit_type),
+        )
+        .order_by(Contract.created_at.desc())
+        .offset((page - 1) * page_size).limit(page_size)
+    )
+    result = await session.execute(stmt)
+    contracts = result.scalars().unique().all()
+
+    items = []
+    for c in contracts:
+        tenant = c.tenant
+        unit_type = c.booking.unit_type if c.booking else None
+        items.append(_LandlordContractItem(
+            id=c.id, agreement_number=c.agreement_number,
+            tenant_name=(tenant.surname_pinyin or '') + (' ' + tenant.given_name_pinyin if tenant.given_name_pinyin else '') if tenant else None,
+            unit_type_name=unit_type.name if unit_type else None,
+            status=c.status.value if c.status else None,
+            signed_at=c.signed_at, generated_at=c.created_at,
+        ))
+
+    return _LandlordContractList(
+        items=items, total=total, page=page, page_size=page_size,
+        total_pages=max(1, (total + page_size - 1) // page_size),
+    )
+
+
 @router.get("/{contract_id}", response_model=ContractResponse)
 async def get_contract(
     contract_id: str,
@@ -278,3 +351,5 @@ async def download_contract(
         media_type="application/pdf",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+

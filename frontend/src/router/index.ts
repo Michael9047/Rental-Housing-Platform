@@ -234,6 +234,27 @@ const routes: RouteRecordRaw[] = [
         component: () => import('@/views/BuildingList.vue'),
         meta: { requiresAuth: true, requiresLandlord: true },
       },
+      // 合约管理（房东视角）
+      {
+        path: 'contracts/landlord',
+        name: 'landlord-contracts',
+        component: () => import('@/views/LandlordContracts.vue'),
+        meta: { requiresAuth: true, requiresLandlord: true },
+      },
+      // 租客管理
+      {
+        path: 'tenants',
+        name: 'tenant-management',
+        component: () => import('@/views/TenantManagement.vue'),
+        meta: { requiresAuth: true, requiresLandlord: true },
+      },
+      // 维修工单（占位）
+      {
+        path: 'repairs/manage',
+        name: 'landlord-repairs-manage',
+        component: () => import('@/views/landlord/MaintenancePlaceholder.vue'),
+        meta: { requiresAuth: true, requiresLandlord: true },
+      },
       {
         path: 'customer-service',
         name: 'customer-service',

@@ -30,10 +30,6 @@
 
       <!-- ====== 房东侧边栏 ====== -->
       <template v-if="authStore.isLandlord">
-        <el-menu-item index="/workspace">
-          <el-icon><DataAnalysis /></el-icon>
-          <span>运营工作台</span>
-        </el-menu-item>
         <el-menu-item index="/buildings">
           <el-icon><HomeFilled /></el-icon>
           <span>公寓管理</span>
@@ -42,17 +38,21 @@
           <el-icon><Grid /></el-icon>
           <span>户型管理</span>
         </el-menu-item>
-        <el-menu-item index="/property/history">
-          <el-icon><Clock /></el-icon>
-          <span>修改记录</span>
-        </el-menu-item>
         <el-menu-item index="/bookings/landlord">
           <el-icon><Tickets /></el-icon>
           <span>预约管理</span>
         </el-menu-item>
-        <el-menu-item index="/notifications">
-          <el-icon><Bell /></el-icon>
-          <span>消息通知</span>
+        <el-menu-item index="/contracts/landlord">
+          <el-icon><Document /></el-icon>
+          <span>合约管理</span>
+        </el-menu-item>
+        <el-menu-item index="/tenants">
+          <el-icon><User /></el-icon>
+          <span>租客管理</span>
+        </el-menu-item>
+        <el-menu-item index="/repairs/manage">
+          <el-icon><Tools /></el-icon>
+          <span>维修工单</span>
         </el-menu-item>
       </template>
 
@@ -76,7 +76,7 @@ import { ref, computed, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import {
   HomeFilled, Bell, DataAnalysis, User, Document,
-  Tickets, Fold, Expand, Grid, Clock,
+  Tickets, Fold, Expand, Grid, Tools,
 } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 
@@ -93,18 +93,13 @@ watch(collapsed, (v) => localStorage.setItem(SIDEBAR_KEY, String(v)))
 const activeMenu = computed(() => {
   const path = route.path
   if (path.startsWith('/admin')) return path
-  if (path.startsWith('/notifications')) return '/notifications'
-  if (path.startsWith('/property/')) {
-    if (path === '/property/create') return '/property/create'
-    if (path === '/property/manage') return '/property/manage'
-    return '/search'
-  }
   if (path.startsWith('/bookings/')) return path
   if (path.startsWith('/buildings')) return '/buildings'
-  if (path.startsWith('/unit-type')) return path.startsWith('/unit-type/create') ? '/unit-type/create' : '/unit-type/manage'
+  if (path.startsWith('/unit-type')) return '/unit-type/manage'
+  if (path.startsWith('/contracts')) return '/contracts/landlord'
   if (path.startsWith('/tenants')) return '/tenants'
-  if (path.startsWith('/orders')) return '/orders'
-  if (path.startsWith('/workspace')) return '/workspace'
+  if (path.startsWith('/repairs')) return '/repairs/manage'
+  if (path.startsWith('/notifications')) return '/notifications'
   return path
 })
 </script>

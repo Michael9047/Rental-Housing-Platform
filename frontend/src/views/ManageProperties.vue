@@ -112,7 +112,9 @@
                   <div class="utc-meta">
                     <span class="utc-tag">{{ ut.bedrooms }}室{{ ut.hall_count }}厅{{ ut.bathrooms }}卫</span>
                     <span class="utc-tag">{{ ut.area_sqm }}㎡</span>
-                    <span class="utc-tag" v-if="ut.room_count > 0">{{ ut.room_count }}间房</span>
+                    <span class="utc-tag" :style="{ color: (ut.available_count > 0) ? 'var(--success)' : 'var(--danger)' }">
+                      {{ ut.available_count ?? 0 }} / {{ ut.total_count ?? 0 }} 可租
+                    </span>
                     <el-tag size="small" :type="ut.status==='available'?'success':'info'">{{ ut.status==='available'?'可租':'已租' }}</el-tag>
                   </div>
                   <div class="utc-amenities" v-if="ut.amenities?.length">
