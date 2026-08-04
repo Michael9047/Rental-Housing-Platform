@@ -359,10 +359,16 @@ async function placeBldMarker(lat:number, lng:number, rev:boolean){
   if(bldMarkerInst) bldMarkerInst.setLatLng([lat,lng])
   else {
     bldMarkerInst = L.marker([lat,lng],{draggable:true}).addTo(bldMapInst)
-    bldMarkerInst.on('dragend', ()=>{ const p=bldMarkerInst.getLatLng(); newBuilding.lat=p.lat; newBuilding.lng=p.lng })
+    bldMarkerInst.on('dragend', async ()=>{
+      const p=bldMarkerInst.getLatLng()
+      newBuilding.lat=p.lat; newBuilding.lng=p.lng
+      await reverseBldGeocode(p.lat, p.lng)
+    })
   }
   newBuilding.lat=lat; newBuilding.lng=lng
-  if(rev) await reverseBldGeocode(lat,lng)
+  if(rev) {
+    try { await reverseBldGeocode(lat,lng) } catch(e) { console.error(e) }
+  }
 }
 
 function destroyBldMap(){
