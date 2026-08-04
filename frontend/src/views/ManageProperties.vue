@@ -394,15 +394,19 @@ async function reverseBldGeocode(lat:number,lng:number){
   try{
     const r=await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&accept-language=zh`,{headers:{'User-Agent':'RH/1.0'}})
     const d=await r.json()
-    if(!d?.address) return
+    if(!d?.address) { console.warn('[reverseGeocode] no address in response', d); return }
     const a = d.address
-    if (a.country && !newBuilding.country) newBuilding.country = a.country
-    if (!newBuilding.city) newBuilding.city = a.city || a.town || a.municipality || a.village || a.hamlet || ''
-    if (!newBuilding.district) newBuilding.district = a.suburb || a.borough || a.city_district || a.county || a.state_district || ''
-    if (!newBuilding.street) { const road = a.road || a.pedestrian || a.path || a.footway || ''; const hn = a.house_number || ''; newBuilding.street = hn ? `${hn} ${road}`.trim() : road }
-    if (!newBuilding.postalCode) newBuilding.postalCode = a.postcode || ''
+    if (a.country) newBuilding.country = a.country
+    newBuilding.city = a.city || a.town || a.municipality || a.village || a.hamlet || ''
+    newBuilding.district = a.suburb || a.borough || a.city_district || a.county || a.state_district || ''
+    const road = a.road || a.pedestrian || a.path || a.footway || ''
+    const hn = a.house_number || ''
+    newBuilding.street = hn ? `${hn} ${road}`.trim() : road
+    if (a.postcode) newBuilding.postalCode = a.postcode
     ElMessage.success('已从地图反向定位，地址字段已自动填充')
-  }catch(e){}
+  }catch(e){
+    console.error('[reverseGeocode] error:', e)
+  }
 }
 
 function clearBldAddressFields(){
