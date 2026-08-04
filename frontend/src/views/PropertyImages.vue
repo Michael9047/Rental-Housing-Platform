@@ -50,7 +50,7 @@
 
           <div class="el-upload__tip">
 
-            仅支持 JPG/PNG/WebP 格式，单文件不超过 5MB，当前 {{ images.length }}/10 张
+            仅支持 JPG/PNG/WebP 格式，不限制文件大小，当前 {{ images.length }}/20 张
 
           </div>
 
@@ -205,7 +205,7 @@ const fileList = ref<UploadFile[]>([])
 
 const uploading = ref(false)
 
-const maxLimit = computed(() => Math.max(0, 10 - images.value.length))
+const maxLimit = computed(() => Math.max(0, 20 - images.value.length))
 
 
 
@@ -227,7 +227,7 @@ const sortedImages = computed(() =>
 
 function handleExceed() {
 
-  ElMessage.warning('最多上传 10 张图片')
+  ElMessage.warning('最多上传 20 张图片')
 
 }
 
@@ -240,16 +240,6 @@ function beforeUpload(file: UploadRawFile) {
   if (!isValidType) {
 
     ElMessage.error('仅支持 JPG、PNG、WebP 格式')
-
-    return false
-
-  }
-
-  const isValidSize = file.size <= 5 * 1024 * 1024
-
-  if (!isValidSize) {
-
-    ElMessage.error('图片大小不能超过 5MB')
 
     return false
 

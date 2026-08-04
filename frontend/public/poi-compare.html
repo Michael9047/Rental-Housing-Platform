@@ -62,8 +62,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 
 <div class="toolbar">
   <h1>Google Maps POI 搜索 · Clementi</h1>
-  <button id="btn1km" onclick="runTest(1000)">1km</button>
-  <button id="btn2km" class="primary" onclick="runTest(2000)">2km</button>
+  <button id="btnMix" class="primary" onclick="runTest(0)">🎯 混合半径</button>
+  <button id="btn2km" onclick="runTest(2000)">2km</button>
   <button id="btn5km" onclick="runTest(5000)">5km</button>
   <button onclick="resetAll()">↺ 重置</button>
   <button id="btnCopy" onclick="copyReport()" disabled style="background:#e9a23b20;border-color:#e9a23b40;color:#e9a23b">📋 报告</button>
@@ -95,24 +95,27 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 // ==================== 常量 ====================
 const Clementi_LAT=1.3153,Clementi_LNG=103.7648,Clementi=[Clementi_LAT,Clementi_LNG],GM_KEY='AIzaSyA2TFWRlLOG72sJLckOBa2zWq9L-rDotzc';
 // 关键词分类 + Tab 自定义顺序
-const CATEGORIES={交通:["地铁站","公交站"],医疗:["医院","药店"],购物:["超市","便利店","商场","酒吧"],美食:["餐厅","cafe","烘焙","快餐","食阁"],生活:["市场","健身房"],地标:["小贩中心"]};
-const KW_ORDER=["地铁站","公交站","医院","药店","超市","便利店","商场","酒吧","餐厅","cafe","烘焙","快餐","食阁","小贩中心","市场","健身房"];
+const CATEGORIES={交通:["地铁站","公交站"],医疗:["医院","药店"],购物:["超市","便利店","商场"],美食:["餐厅","快餐","食阁"],生活:["市场","健身房"],地标:["小贩中心"]};
+const KW_ORDER=["地铁站","公交站","医院","药店","超市","便利店","商场","餐厅","快餐","食阁","小贩中心","市场","健身房"];
 
 // searchNearby includedTypes（仅保留低密度结构化类型）
 const GM_NS={地铁站:["subway_station"],商场:["shopping_mall"],医院:["hospital"],小贩中心:[]};
 
 // searchText 英文搜索词（数组=双词取并集，小贩中心特殊处理不走此表）
-const GM_ST={餐厅:"restaurant",cafe:"cafe",烘焙:"bakery",快餐:"fast food",食阁:"food centre",超市:"supermarket",便利店:"convenience store",药店:"pharmacy",健身房:"gym",公交站:["bus stop","bus station"],市场:"market",酒吧:"bar"};
+const GM_ST={餐厅:"restaurant",快餐:"fast food",食阁:"food centre",超市:"supermarket",便利店:"convenience store",药店:"pharmacy",健身房:"gym",公交站:["bus stop","bus station"],市场:"market"};
 // 翻页数: L1美食3页, 其余2页
-const ST_PAGES={餐厅:3,cafe:3,烘焙:3,快餐:3,食阁:3,超市:2,便利店:2,药店:2,健身房:2,公交站:2,市场:2,酒吧:2};
+const ST_PAGES={餐厅:3,快餐:3,食阁:3,超市:2,便利店:2,药店:2,健身房:2,公交站:2,市场:2};
 
 // searchText 关键词集合（网格分割路径）
-const HIGH_DENSITY=new Set(["餐厅","cafe","烘焙","快餐","食阁","超市","便利店","药店","健身房","公交站","市场","酒吧"]);
+const HIGH_DENSITY=new Set(["餐厅","快餐","食阁","超市","便利店","药店","健身房","公交站","市场"]);
+// 混合半径：日常高频 1km，低频设施/交通/地标 2km
+const FOOD_RADIUS=1000,FACILITY_RADIUS=2000;
+const KW_RADIUS={餐厅:FOOD_RADIUS,快餐:FOOD_RADIUS,食阁:FOOD_RADIUS,超市:FOOD_RADIUS,便利店:FOOD_RADIUS,药店:FOOD_RADIUS,健身房:FOOD_RADIUS,公交站:FOOD_RADIUS,市场:FOOD_RADIUS,地铁站:FACILITY_RADIUS,医院:FACILITY_RADIUS,商场:FACILITY_RADIUS,小贩中心:FACILITY_RADIUS};
 
 function $(id){return document.getElementById(id)}
 
 // ==================== 地图 ====================
-let map,searchRect,currentRadius=0,currentCat='overview',running=false;
+let map,searchRects=[],currentRadius=0,currentCat='overview',running=false;
 let gmR={},_poiIndex=0,_poiMap={};
 let gmMarkers=[],clusterCircles=[],highlighted=null,lastGmTime=0;
 let osmTile,gmTile,tileIsOsm=true;
@@ -151,25 +154,16 @@ function splitRect(rect,grid){
 // 路径B：HIGH_DENSITY 关键词（2×2 网格 searchText + 翻页）
 // 路径C：其余（searchNearby 圆形，地铁站/商场/医院）
 async function searchGM(cnKw,radius){
-  // --- 路径A：小贩中心 ---
+  // --- 路径A：小贩中心（单次调用，数量少） ---
   if(cnKw==='小贩中心'){
-    const queries=["hawker centre","food centre"];
     const rect=circleToRect(Clementi_LAT,Clementi_LNG,radius);
-    const seen=new Set();const all=[];
-    for(const q of queries){
-      let pt=null,pc=0;
-      while(pc<3){
-        const body={textQuery:q,pageSize:20,includedType:"food_court",locationRestriction:{rectangle:rect}};
-        if(pt)body.pageToken=pt;
-        try{
-          const r=await fetch('https://places.googleapis.com/v1/places:searchText',{method:'POST',headers:{'Content-Type':'application/json','X-Goog-Api-Key':GM_KEY,'X-Goog-FieldMask':'places.displayName,places.location,places.formattedAddress,places.rating,places.id,nextPageToken'},body:JSON.stringify(body)});
-          if(!r.ok)break;const d=await r.json();const ps=d.places||[];pc++;
-          for(const p of ps){const pid=p.id;if(seen.has(pid))continue;seen.add(pid);const lat=p.location?.latitude,lng=p.location?.longitude;if(lat==null||lng==null)continue;all.push({name:p.displayName?.text||q,lat,lng,distance_m:Math.round(havDistance(Clementi_LAT,Clementi_LNG,lat,lng)),keyword:cnKw,source:'google',vicinity:p.formattedAddress||'',rating:p.rating||null,place_id:pid,transit_lines:[]})}
-          if(d.nextPageToken){pt=d.nextPageToken;await new Promise(r=>setTimeout(r,400))}else break;
-        }catch(e){break}
-      }
-    }
-    console.log(`[GM-ST] ${cnKw} → ${all.length} results (单矩形×双词)`);
+    const all=[];
+    try{
+      const r=await fetch('https://places.googleapis.com/v1/places:searchText',{method:'POST',headers:{'Content-Type':'application/json','X-Goog-Api-Key':GM_KEY,'X-Goog-FieldMask':'places.displayName,places.location,places.formattedAddress,places.rating,places.id'},body:JSON.stringify({textQuery:"hawker centre",pageSize:20,includedType:"food_court",locationRestriction:{rectangle:rect}})});
+      if(r.ok){const d=await r.json();const ps=d.places||[];
+      for(const p of ps){const lat=p.location?.latitude,lng=p.location?.longitude;if(lat==null||lng==null)continue;all.push({name:p.displayName?.text||'Hawker Centre',lat,lng,distance_m:Math.round(havDistance(Clementi_LAT,Clementi_LNG,lat,lng)),keyword:cnKw,source:'google',vicinity:p.formattedAddress||'',rating:p.rating||null,place_id:p.id,transit_lines:[]})}}
+    }catch(e){}
+    console.log(`[GM-ST] ${cnKw} → ${all.length} results (单次)`);
     return all;
   }
   // --- 路径B：2×2 网格 searchText ---
@@ -177,7 +171,8 @@ async function searchGM(cnKw,radius){
     const enKw=GM_ST[cnKw];const queries=Array.isArray(enKw)?enKw:[enKw];
     const maxPages=ST_PAGES[cnKw]||2;
     const fullRect=circleToRect(Clementi_LAT,Clementi_LNG,radius);
-    const cells=splitRect(fullRect,2);
+    const grid=radius<=1000?1:2;
+    const cells=splitRect(fullRect,grid);
     const seen=new Set();const all=[];
     for(const cell of cells){
       for(const q of queries){
@@ -270,7 +265,7 @@ function findClusters(pois){
   for(let i=0;i<pois.length;i++)for(let j=i+1;j<pois.length;j++)if(havDistance(pois[i].lat,pois[i].lng,pois[j].lat,pois[j].lng)<CLUSTER_DIST)union(i,j);
   const groups={};pois.forEach((p,i)=>{const r=find(i);if(!groups[r])groups[r]=[];groups[r].push(p)});
   // 配套索引
-  const pharmacies=gmR['药店']||[],gyms=gmR['健身房']||[],bars=gmR['酒吧']||[],markets=gmR['市场']||[],supermarkets=gmR['超市']||[];
+  const pharmacies=gmR['药店']||[],gyms=gmR['健身房']||[],markets=gmR['市场']||[],supermarkets=gmR['超市']||[];
   return Object.values(groups).filter(g=>g.length>=MIN_CLUSTER).map(g=>{
     const clat=g.reduce((s,p)=>s+p.lat,0)/g.length,clng=g.reduce((s,p)=>s+p.lng,0)/g.length;
     // 美食类型构成
@@ -281,7 +276,6 @@ function findClusters(pois){
     if(supermarkets.some(a=>havDistance(clat,clng,a.lat,a.lng)<AMENITY_RADIUS))nearAmenities.push('🛒超市');
     if(pharmacies.some(a=>havDistance(clat,clng,a.lat,a.lng)<AMENITY_RADIUS))nearAmenities.push('💊药房');
     if(gyms.some(a=>havDistance(clat,clng,a.lat,a.lng)<AMENITY_RADIUS))nearAmenities.push('🏋️健身房');
-    if(bars.some(a=>havDistance(clat,clng,a.lat,a.lng)<AMENITY_RADIUS))nearAmenities.push('🍸酒吧');
     if(markets.some(a=>havDistance(clat,clng,a.lat,a.lng)<AMENITY_RADIUS))nearAmenities.push('🛒市场');
     // 命名：商场 → 地铁站 → 小贩中心 → 兜底
     let name=null;
@@ -302,19 +296,41 @@ function findClusters(pois){
 
 // ==================== 主流程 ====================
 async function runTest(radius){
-  if(running)return;running=true;currentRadius=radius;
+  if(running)return;running=true;
+  const isMixed=(radius===0);
   document.querySelectorAll('.toolbar button[id^="btn"]').forEach(b=>{if(b.id!=='btnCopy'&&b.id!=='btnTile')b.disabled=true});
-  $('radiusLabel').textContent=`${radius/1000}km 矩形(2×2格)`;
   $('statusHint').innerHTML='<span class="badge loading"><span class="spinner"></span>搜索中…</span>';
-  const rrect=circleToRect(Clementi_LAT,Clementi_LNG,radius);
-  const rbounds=[[rrect.low.latitude,rrect.low.longitude],[rrect.high.latitude,rrect.high.longitude]];
-  if(searchRect)map.removeLayer(searchRect);
-  searchRect=L.rectangle(rbounds,{color:'#e94560',weight:2,fillColor:'#e9456033',fillOpacity:.12,dashArray:'6 3'}).addTo(map);
-  map.fitBounds(rbounds,{padding:[30,30]});
-  // 2×2 网格虚线
-  const dLat=(rrect.high.latitude-rrect.low.latitude)/2,dLng=(rrect.high.longitude-rrect.low.longitude)/2;
-  L.polyline([[rrect.low.latitude+dLat,rrect.low.longitude],[rrect.low.latitude+dLat,rrect.high.longitude]],{color:'#e9456040',weight:1,dashArray:'3 6'}).addTo(map);
-  L.polyline([[rrect.low.latitude,rrect.low.longitude+dLng],[rrect.high.latitude,rrect.low.longitude+dLng]],{color:'#e9456040',weight:1,dashArray:'3 6'}).addTo(map);
+
+  // 清除旧矩形
+  searchRects.forEach(r=>map.removeLayer(r));searchRects=[];
+
+  if(isMixed){
+    $('radiusLabel').textContent='食品1km (1×1) · 设施2km (2×2)';
+    // 2km 设施矩形（红色）
+    const fr=circleToRect(Clementi_LAT,Clementi_LNG,FACILITY_RADIUS);
+    const fb=[[fr.low.latitude,fr.low.longitude],[fr.high.latitude,fr.high.longitude]];
+    searchRects.push(L.rectangle(fb,{color:'#e94560',weight:2,fillColor:'#e9456033',fillOpacity:.12,dashArray:'6 3'}).addTo(map));
+    // 2×2 网格虚线
+    const fdLat=(fr.high.latitude-fr.low.latitude)/2,fdLng=(fr.high.longitude-fr.low.longitude)/2;
+    searchRects.push(L.polyline([[fr.low.latitude+fdLat,fr.low.longitude],[fr.low.latitude+fdLat,fr.high.longitude]],{color:'#e9456040',weight:1,dashArray:'3 6'}).addTo(map));
+    searchRects.push(L.polyline([[fr.low.latitude,fr.low.longitude+fdLng],[fr.high.latitude,fr.low.longitude+fdLng]],{color:'#e9456040',weight:1,dashArray:'3 6'}).addTo(map));
+    // 1km 食品矩形（绿色）
+    const nr=circleToRect(Clementi_LAT,Clementi_LNG,FOOD_RADIUS);
+    const nb=[[nr.low.latitude,nr.low.longitude],[nr.high.latitude,nr.high.longitude]];
+    searchRects.push(L.rectangle(nb,{color:'#22c55e',weight:2,fillColor:'#22c55e33',fillOpacity:.12,dashArray:'4 4'}).addTo(map));
+    map.fitBounds(fb,{padding:[30,30]});
+  }else{
+    currentRadius=radius;
+    $('radiusLabel').textContent=`${radius/1000}km 矩形(2×2格)`;
+    const rrect=circleToRect(Clementi_LAT,Clementi_LNG,radius);
+    const rbounds=[[rrect.low.latitude,rrect.low.longitude],[rrect.high.latitude,rrect.high.longitude]];
+    searchRects.push(L.rectangle(rbounds,{color:'#e94560',weight:2,fillColor:'#e9456033',fillOpacity:.12,dashArray:'6 3'}).addTo(map));
+    map.fitBounds(rbounds,{padding:[30,30]});
+    // 2×2 网格虚线
+    const dLat=(rrect.high.latitude-rrect.low.latitude)/2,dLng=(rrect.high.longitude-rrect.low.longitude)/2;
+    searchRects.push(L.polyline([[rrect.low.latitude+dLat,rrect.low.longitude],[rrect.low.latitude+dLat,rrect.high.longitude]],{color:'#e9456040',weight:1,dashArray:'3 6'}).addTo(map));
+    searchRects.push(L.polyline([[rrect.low.latitude,rrect.low.longitude+dLng],[rrect.high.latitude,rrect.low.longitude+dLng]],{color:'#e9456040',weight:1,dashArray:'3 6'}).addTo(map));
+  }
 
   gmR={};_poiIndex=0;for(const k of Object.keys(_poiMap))delete _poiMap[k];clearMarkers();clearGmErrors();renderResults();
 
@@ -322,7 +338,7 @@ async function runTest(radius){
   const t0=performance.now();
   // 并发 6 个
   const sem=new(class{constructor(l){this.l=l;this.r=0;this.q=[]}async run(f){while(this.r>=this.l)await new Promise(r=>this.q.push(r));this.r++;try{return await f()}finally{this.r--;const n=this.q.shift();if(n)n()}}})(6);
-  await Promise.all(tasks.map(kw=>sem.run(()=>searchGM(kw,radius).then(r=>{gmR[kw]=r;renderProgress()}))));
+  await Promise.all(tasks.map(kw=>sem.run(()=>searchGM(kw,KW_RADIUS[kw]||FACILITY_RADIUS).then(r=>{gmR[kw]=r;renderProgress()}))));
   lastGmTime=performance.now()-t0;
 
   dedupGm("医院",200);dedupGm("商场",150);dedupGm("市场",150);dedupGm("地铁站",150);dedupGm("公交站",80);
@@ -346,7 +362,7 @@ function renderProgress(){
 
 // ==================== 地图标记 ====================
 // 关键词颜色映射
-const KW_COLORS={餐厅:'#a855f7',cafe:'#92400e',烘焙:'#ea580c',快餐:'#dc2626',食阁:'#0d9488',地铁站:'#6366f1',公交站:'#3b82f6',医院:'#ef4444',药店:'#22c55e',超市:'#f59e0b',便利店:'#eab308',商场:'#ec4899',酒吧:'#c084fc',市场:'#84cc16',健身房:'#06b6d4',小贩中心:'#14b8a6'};
+const KW_COLORS={餐厅:'#a855f7',快餐:'#dc2626',食阁:'#0d9488',地铁站:'#6366f1',公交站:'#3b82f6',医院:'#ef4444',药店:'#22c55e',超市:'#f59e0b',便利店:'#eab308',商场:'#ec4899',市场:'#84cc16',健身房:'#06b6d4',小贩中心:'#14b8a6'};
 
 // 水滴图标工厂
 function pinIcon(color,size){const w=size||14,h=w*1.4;return L.divIcon({className:'',html:`<svg width="${w}" height="${h}" viewBox="0 0 20 28"><path d="M10 0C4.5 0 0 4.5 0 10c0 7 10 18 10 18s10-11 10-18C20 4.5 15.5 0 10 0z" fill="${color}" stroke="#fff" stroke-width="1"/><circle cx="10" cy="9" r="3" fill="rgba(255,255,255,.5)"/></svg>`,iconSize:[w,h],iconAnchor:[w/2,h],popupAnchor:[0,-h+2]})}
@@ -381,8 +397,8 @@ function addMarkers(){
     }
   }
   // 聚集圈
-  if(currentCat==='美食'||currentCat==='餐厅'||currentCat==='cafe'||currentCat==='烘焙'||currentCat==='快餐'||currentCat==='食阁'||currentCat==='clusters'){
-    const allR=[...(gmR['餐厅']||[]),...(gmR['cafe']||[]),...(gmR['烘焙']||[]),...(gmR['快餐']||[]),...(gmR['食阁']||[])];
+  if(currentCat==='美食'||currentCat==='餐厅'||currentCat==='快餐'||currentCat==='食阁'||currentCat==='clusters'){
+    const allR=[...(gmR['餐厅']||[]),...(gmR['快餐']||[]),...(gmR['食阁']||[])];
     if(allR.length>=MIN_CLUSTER){const cs=findClusters(allR);const colors={A:'#e94560',B:'#e9a23b',C:'#4285f4',D:'#7ebc89'};for(const c of cs){const r=Math.min(c.count*8,200);const circle=L.circle([c.lat,c.lng],{radius:r,color:colors[c.grade],weight:2,fillColor:colors[c.grade],fillOpacity:.15}).addTo(map);const amenityStr=c.nearAmenities?.join('')||'';const label=L.marker([c.lat,c.lng],{icon:L.divIcon({className:'',html:`<div style="background:${colors[c.grade]};color:#fff;padding:2px 7px;border-radius:8px;font-size:10px;font-weight:700;white-space:nowrap">${c.grade} ${c.name} (${c.count})${amenityStr?' '+amenityStr:''}</div>`,iconAnchor:[35,10]}),zIndexOffset:1000}).addTo(map);clusterCircles.push(circle,label);
     // 标注聚集地附近的商场/地铁站
     if(c._nearestMall){const m=L.marker([c._nearestMall.lat,c._nearestMall.lng],{icon:bigMallIcon,zIndexOffset:999});m.bindTooltip(`<b>${c._nearestMall.name}</b><br>商场 · ${c._nearestMall.distance_m}m`,{direction:'top'});m.addTo(map);clusterCircles.push(m)}
@@ -420,7 +436,7 @@ function renderResults(){
       h+=`<tr style="cursor:pointer" onclick="switchTab('${catName}')"><td style="padding:4px 4px;font-weight:600">${catName}</td><td style="padding:4px 4px;text-align:center;color:#4285f4;font-weight:600">${cnt}</td></tr>`;
     }
     h+=`<tr style="border-top:1px solid #0f3460"><td style="padding:4px 4px;font-weight:700">合计</td><td style="padding:4px 4px;text-align:center;color:#4285f4;font-weight:700">${total}</td></tr></tbody></table>`;
-    h+=`<div style="margin-top:8px;padding:6px;background:#1a1a2e;border-radius:5px;font-size:10px;color:#aaa">⏱ ${lastGmTime.toFixed(0)}ms<br><span style="color:#888;font-size:9px">searchText 2×2网格×3页: 餐厅/cafe/烘焙/快餐/食阁<br>searchText 2×2网格×2页: 超市/便利店/药店/健身房/公交站/市场/酒吧<br>searchNearby 20条: 地铁站/商场/医院 · 特殊: 小贩中心(单矩形×双词×3页)</span></div>`;
+    h+=`<div style="margin-top:8px;padding:6px;background:#1a1a2e;border-radius:5px;font-size:10px;color:#aaa">⏱ ${lastGmTime.toFixed(0)}ms<br><span style="color:#22c55e;font-size:9px">🟢 1km 1×1×3页: 餐厅/快餐/食阁<br>🟢 1km 1×1×2页: 超市/便利店/药店/健身房/市场/公交站(双词)</span><br><span style="color:#888;font-size:9px">searchNearby 20条(2km): 地铁站/商场/医院 · 小贩中心(2km 单次)</span><br><span style="color:#888;font-size:9px">searchNearby 20条(2km): 地铁站/商场/医院 · 小贩中心(2km 单次)</span></div>`;
     h+=`<div style="margin-top:6px;padding:6px;background:#1a1a2e;border-radius:5px;font-size:10px;color:#888;line-height:1.5"><b style="color:#aaa">searchText 搜索词对照</b><br>`;
     for(const[kw,q]of Object.entries(GM_ST))h+=`<span style="color:#ccc">${kw}</span> → <span style="color:#4285f4">${Array.isArray(q)?q.join(' + '):q}</span> &nbsp;`;
     h+=`<br><b style="color:#aaa">searchNearby includedTypes 对照</b><br>`;
@@ -428,7 +444,7 @@ function renderResults(){
     h+='</div>';
     scroll.innerHTML=h;
   }else if(cat==='clusters'){
-    const allR=[...(gmR['餐厅']||[]),...(gmR['cafe']||[]),...(gmR['烘焙']||[]),...(gmR['快餐']||[]),...(gmR['食阁']||[])];
+    const allR=[...(gmR['餐厅']||[]),...(gmR['快餐']||[]),...(gmR['食阁']||[])];
     if(!allR.length){scroll.innerHTML='<div class="empty-hint">🍽 暂无餐厅数据</div>'}
     else{const cs=findClusters(allR);if(!cs.length){scroll.innerHTML='<div class="empty-hint">📍 未发现有效聚集（需≥3家）</div>'}
     else{const colors={A:'#e94560',B:'#e9a23b',C:'#4285f4',D:'#7ebc89'};let h='<div style="font-size:11px;color:#aaa;margin-bottom:4px">🍽 美食聚集分析（150m聚类）</div>';h+='<div style="font-size:9px;color:#888;margin-bottom:4px">A 20+家 B 8-19家 C 3-7家</div>';
@@ -464,7 +480,7 @@ function updateActiveTab(){document.querySelectorAll('#catTabs button,#kwTabs bu
 
 // ==================== 报告 ====================
 function copyReport(){
-  let r=[];r.push('═══════════════════════');r.push(' Google Maps POI 测试报告');r.push('═══════════════════════');r.push(`位置: Clementi (${Clementi_LAT}, ${Clementi_LNG})`);r.push(`范围: ${currentRadius?currentRadius/1000+'km 矩形(2×2格)':'N/A'}`);r.push(`耗时: ${lastGmTime.toFixed(0)}ms`);r.push('');
+  let r=[];r.push('═══════════════════════');r.push(' Google Maps POI 测试报告');r.push('═══════════════════════');r.push(`位置: Clementi (${Clementi_LAT}, ${Clementi_LNG})`);r.push(`范围: ${currentRadius?currentRadius/1000+'km 矩形(2×2格)':'混合半径 (食品1km·设施2km)'}`);r.push(`耗时: ${lastGmTime.toFixed(0)}ms`);r.push('');
   for(const[cat,kws]of Object.entries(CATEGORIES)){r.push(`── ${cat} ──`);for(const kw of kws){const cnt=(gmR[kw]||[]).length;const q=GM_ST[kw]||GM_NS[kw];const qStr=q?(Array.isArray(q)?q.join(' + '):q):'';r.push(`  ${kw} (${qStr}): ${cnt}`)}}
   r.push('');r.push('═══════════════════════');
   navigator.clipboard.writeText(r.join('\n')).then(()=>{$('statusHint').innerHTML='<span class="badge done">✅ 已复制</span>';setTimeout(()=>{$('statusHint').innerHTML=`<span class="badge done">✓ ${lastGmTime.toFixed(0)}ms</span>`},2000)}).catch(()=>{const ta=document.createElement('textarea');ta.value=r.join('\n');document.body.appendChild(ta);ta.select();document.execCommand('copy');document.body.removeChild(ta)});
@@ -472,7 +488,7 @@ function copyReport(){
 
 function resetAll(){
   running=false;gmR={};lastGmTime=0;currentRadius=0;_poiIndex=0;for(const k of Object.keys(_poiMap))delete _poiMap[k];
-  clearMarkers();clearGmErrors();if(searchRect){map.removeLayer(searchRect);searchRect=null}
+  clearMarkers();clearGmErrors();searchRects.forEach(r=>map.removeLayer(r));searchRects=[];
   currentCat='overview';updateActiveTab();$('radiusLabel').textContent='—';
   $('resultsScroll').innerHTML='<div class="empty-hint">📍 选择搜索半径开始</div>';
   document.querySelectorAll('.toolbar button[id^="btn"]').forEach(b=>{if(b.id!=='btnCopy'&&b.id!=='btnTile')b.disabled=false});

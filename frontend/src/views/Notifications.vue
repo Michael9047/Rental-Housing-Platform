@@ -37,24 +37,11 @@ import type { Notification } from '@/types/booking'
 
 const router = useRouter(); const items = ref<Notification[]>([]); const unreadCount = ref(0); const loading = ref(true); const loadError = ref(false); const filter = ref('all')
 const filteredItems = computed(() => filter.value === 'unread' ? items.value.filter((item) => !item.is_read) : items.value)
-const orderRoute = (item: Notification) => {
-  if (item.entity_type === 'order' && item.entity_id) return `/my-orders/${item.entity_id}`
-  if (item.entity_type === 'visit_message') return `/workspace/visit-messages`
-  return null
-}
+const orderRoute = (item: Notification) => item.entity_type === 'order' && item.entity_id ? `/my-orders/${item.entity_id}` : null
 const formatDate = (value: string) => new Date(value).toLocaleString('zh-CN', { dateStyle: 'medium', timeStyle: 'short' })
-const statusText = (item: Notification) => {
-  if (item.entity_type === 'visit_message') return item.is_read ? '已读' : '新消息'
-  return ({ payment_pending: '待支付', payment_processing: '处理中', payment_failed: '支付失败', paid: '已支付', payment_expired: '已失效', payment_review: '退款核对', refunded: '已退款' }[item.payment_status || ''] || '订单通知')
-}
-const actionText = (item: Notification) => {
-  if (item.entity_type === 'visit_message') return '查看详情'
-  return ({ payment_pending: '查看并支付', payment_processing: '查看支付状态', payment_failed: '重新支付', paid: '查看预订', payment_expired: '查看取消详情', payment_review: '查看退款状态', refunded: '查看退款详情' }[item.payment_status || ''] || '查看订单')
-}
-const typeIcon = (item: Notification) => {
-  if (item.entity_type === 'visit_message') return '📅'
-  return item.payment_status === 'paid' ? '✓' : ['payment_failed', 'payment_expired'].includes(item.payment_status || '') ? '!' : item.payment_status === 'payment_processing' ? '…' : '●'
-}
+const statusText = (item: Notification) => ({ payment_pending: '待支付', payment_processing: '处理中', payment_failed: '支付失败', paid: '已支付', payment_expired: '已失效', payment_review: '退款核对', refunded: '已退款' }[item.payment_status || ''] || '订单通知')
+const actionText = (item: Notification) => ({ payment_pending: '查看并支付', payment_processing: '查看支付状态', payment_failed: '重新支付', paid: '查看预订', payment_expired: '查看取消详情', payment_review: '查看退款状态', refunded: '查看退款详情' }[item.payment_status || ''] || '查看订单')
+const typeIcon = (item: Notification) => item.payment_status === 'paid' ? '✓' : ['payment_failed', 'payment_expired'].includes(item.payment_status || '') ? '!' : item.payment_status === 'payment_processing' ? '…' : '●'
 const cardClasses = (item: Notification) => ({ unread: !item.is_read, danger: ['payment_failed', 'payment_expired'].includes(item.payment_status || ''), success: item.payment_status === 'paid' })
 const cardLabel = (item: Notification) => `${item.order_id ? `查看订单 ${item.order_id}` : '查看消息'}：${item.title}`
 async function load() { loading.value = true; loadError.value = false; try { const result = await notificationService.list({ page: 1, page_size: 50 }); items.value = result.items; unreadCount.value = (await notificationService.getUnreadCount()).count } catch { loadError.value = true } finally { loading.value = false } }

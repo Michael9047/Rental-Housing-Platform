@@ -23,7 +23,7 @@
             <dt>租期</dt><dd>{{ order.lease_months || '—' }}个月</dd><dt>简介</dt><dd>{{ order.property_description || '暂无简介' }}</dd>
           </dl>
         </div>
-        <el-button @click="router.push(`/room/${order.property_id}`)">查看房源详情</el-button>
+        <el-button @click="router.push(`/property/${order.property_id}`)">查看房源详情</el-button>
       </el-card>
       <el-card shadow="never">
         <template #header><b>订单与支付</b></template>
@@ -44,7 +44,7 @@
       <footer>
         <el-button @click="router.push(`/my-contracts/${order.agreement_id}`)">查看合同</el-button>
         <el-button :disabled="!order.agreement_id" @click="downloadContract">下载合同</el-button>
-        <el-button @click="router.push(`/room/${order.property_id}`)">查看房源</el-button>
+        <el-button @click="router.push(`/property/${order.property_id}`)">查看房源</el-button>
         <el-button v-if="order.booking_status !== 'confirmed'" :loading="refreshing" @click="load">刷新支付状态</el-button>
         <el-button v-if="['payment_expired','cancelled'].includes(order.payment_status)" @click="router.push(`/booking/${order.property_id}/move-in-date`)">重新预订该房源</el-button>
         <el-button v-if="order.can_pay" type="primary" :loading="validating" @click="enterPayment">{{ order.payment_action_label }}</el-button>
@@ -69,8 +69,8 @@ const propertyType=computed(()=>({apartment:'公寓',house:'独立屋',studio:'�
 const money=(minor:number,currency:string)=>new Intl.NumberFormat('zh-CN',{style:'currency',currency}).format(minor/100)
 const dateTime=(value:string)=>new Intl.DateTimeFormat('zh-CN',{dateStyle:'medium',timeStyle:'medium'}).format(new Date(value))
 const duration=(seconds:number)=>`${String(Math.floor(seconds/3600)).padStart(2,'0')}:${String(Math.floor(seconds%3600/60)).padStart(2,'0')}:${String(seconds%60).padStart(2,'0')}`
-async function load(){const oid=Number(route.params.id);if(!oid||Number.isNaN(oid)){error.value='无效的订单编号，请从个人中心重新进入';loading.value=false;return}refreshing.value=true;try{order.value=await paymentService.getMyOrder(oid);error.value=''}catch(e:any){error.value=e?.response?.status===404?'订单不存在或您无权查看。':'订单暂时无法加载，请稍后重试。'}finally{loading.value=false;refreshing.value=false}}
-async function enterPayment(){if(!order.value)return;const bid=order.value.booking_id;if(!bid||Number.isNaN(bid)){ElMessage.error('订单数据异常，请刷新后重试');return}validating.value=true;try{const result=await paymentService.validatePayment(bid);if(!result.can_pay){ElMessage.warning(result.reason||'当前订单暂不能支付');await load();return}await router.push(`/booking/payment/${bid}/deposit`)}catch(e:any){ElMessage.error(e?.response?.data?.detail||'支付资格校验失败')}finally{validating.value=false}}
+async function load(){refreshing.value=true;try{order.value=await paymentService.getMyOrder(Number(route.params.id));error.value=''}catch(e:any){error.value=e?.response?.status===404?'订单不存在或您无权查看。':'订单暂时无法加载，请稍后重试。'}finally{loading.value=false;refreshing.value=false}}
+async function enterPayment(){if(!order.value)return;validating.value=true;try{const result=await paymentService.validatePayment(order.value.booking_id);if(!result.can_pay){ElMessage.warning(result.reason||'当前订单暂不能支付');await load();return}await router.push(`/booking/payment/${order.value.booking_id}/deposit`)}catch(e:any){ElMessage.error(e?.response?.data?.detail||'支付资格校验失败')}finally{validating.value=false}}
 async function downloadContract(){if(!order.value)return;try{const link=await contractService.getSignedDownloadLink(order.value.agreement_id);if(!link.url){ElMessage.info(link.message||'签署版 PDF 正在生成');return}window.location.assign(link.url)}catch{ElMessage.error('合同下载失败，请稍后重试')}}
 onMounted(()=>{load();timer=window.setInterval(()=>now.value=Date.now(),1000)});onBeforeUnmount(()=>window.clearInterval(timer))
 </script>

@@ -105,51 +105,64 @@ export interface GeocodeResult {
 
 export const propertyService = {
   list(params?: { page?: number; page_size?: number; district?: string; status?: string; landlord_id?: number; keyword?: string; property_type?: string; price_min?: number; price_max?: number }): Promise<PropertyListResponse> {
-    return api.get('/properties', { params }).then((r) => r.data)
+    return api.get('/unit-types', { params }).then((r) => r.data)
   },
 
   listRecycleBin(params?: { page?: number; page_size?: number; landlord_id?: number }): Promise<PropertyListResponse> {
-    return api.get('/properties/recycle-bin', { params }).then((r) => r.data)
+    return api.get('/unit-types/recycle-bin', { params }).then((r) => r.data)
   },
 
   restore(id: number | string): Promise<Property> {
-    return api.post(`/properties/${id}/restore`).then((r) => r.data)
+    return api.post(`/unit-types/${id}/restore`).then((r) => r.data)
   },
 
   batchUpdateStatus(ids: number[], status: string): Promise<{ success: number; failed: number; errors?: any[] }> {
-    return api.post('/properties/batch/status', { ids, status }).then((r) => r.data)
+    return api.post('/unit-types/batch/status', { ids, status }).then((r) => r.data)
   },
 
   batchDelete(ids: number[]): Promise<{ success: number; failed: number }> {
-    return api.post('/properties/batch/delete', { ids }).then((r) => r.data)
+    return api.post('/unit-types/batch/delete', { ids }).then((r) => r.data)
   },
 
   hardDelete(id: number | string): Promise<void> {
-    return api.delete(`/properties/${id}/hard`)
+    return api.delete(`/unit-types/${id}/hard`)
   },
 
   batchRestore(ids: number[]): Promise<{ success: number; failed: number }> {
-    return api.post('/properties/batch/restore', { ids }).then((r) => r.data)
+    return api.post('/unit-types/batch/restore', { ids }).then((r) => r.data)
   },
 
   batchHardDelete(ids: number[]): Promise<{ success: number; failed: number }> {
-    return api.post('/properties/batch/hard-delete', { ids }).then((r) => r.data)
+    return api.post('/unit-types/batch/hard-delete', { ids }).then((r) => r.data)
   },
 
   search(params: PropertySearchParams): Promise<PropertySearchResult[]> {
-    return api.get('/properties/search', { params: { ...params, _t: Date.now() } }).then((r) => r.data)
+    const sp: Record<string,any> = {}
+    if (params.q) sp.q = params.q
+    if (params.district) sp.district = params.district
+    if (params.country) sp.country = params.country
+    if (params.city) sp.city = params.city
+    if (params.limit) sp.limit = params.limit
+    if (params.price_min != null) sp.price_min = params.price_min
+    if (params.price_max != null) sp.price_max = params.price_max
+    if (params.property_type) sp.property_type = params.property_type
+    if (params.sort_by) sp.sort_by = params.sort_by
+    if (params.near_lat != null) sp.near_lat = params.near_lat
+    if (params.near_lng != null) sp.near_lng = params.near_lng
+    if (params.near_distance_km != null) sp.near_distance_km = params.near_distance_km
+    return api.get('/buildings/public/search', { params: { ...sp, _t: Date.now() } }).then((r) => r.data)
   },
 
   getById(id: number | string): Promise<Property> {
-    return api.get(`/properties/${id}`).then((r) => r.data)
+    return api.get(`/unit-types/${id}`).then((r) => r.data)
   },
 
   create(data: PropertyCreate): Promise<Property> {
-    return api.post('/properties', data).then((r) => r.data)
+    return api.post('/unit-types', data).then((r) => r.data)
   },
 
   update(id: number | string, data: PropertyUpdate): Promise<Property> {
-    return api.patch(`/properties/${id}`, data).then((r) => r.data)
+    return api.patch(`/unit-types/${id}`, data).then((r) => r.data)
   },
 
   geocodeAddress(address: string, city?: string): Promise<GeocodeResult> {
@@ -161,28 +174,28 @@ export const propertyService = {
   },
 
   delete(id: number | string): Promise<void> {
-    return api.delete(`/properties/${id}`)
+    return api.delete(`/unit-types/${id}`)
   },
 
   // Image management
   listImages(propertyId: number | string): Promise<PropertyImage[]> {
-    return api.get(`/properties/${propertyId}/images`).then((r) => r.data)
+    return api.get(`/unit-types/${propertyId}/images`).then((r) => r.data)
   },
 
   uploadImages(propertyId: number | string, files: File[]): Promise<PropertyImage[]> {
     const formData = new FormData()
     files.forEach((f) => formData.append('files', f))
-    return api.post(`/properties/${propertyId}/images`, formData, {
+    return api.post(`/unit-types/${propertyId}/images`, formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
     }).then((r) => r.data)
   },
 
   deleteImage(propertyId: number | string, imageId: number | string): Promise<void> {
-    return api.delete(`/properties/${propertyId}/images/${imageId}`)
+    return api.delete(`/unit-types/${propertyId}/images/${imageId}`)
   },
 
   setPrimaryImage(propertyId: number | string, imageId: number | string): Promise<PropertyImage> {
-    return api.patch(`/properties/${propertyId}/images/${imageId}/primary`).then((r) => r.data)
+    return api.patch(`/unit-types/${propertyId}/images/${imageId}/primary`).then((r) => r.data)
   },
 
   // POI
@@ -216,38 +229,55 @@ export const propertyService = {
 
   /** 获取某个楼栋下的所有房型 */
   listRoomTypes(propertyId: number): Promise<RoomType[]> {
-    return api.get(`/properties/${propertyId}/room-types`).then((r) => r.data)
+    return api.get(`/unit-types/${propertyId}/room-types`).then((r) => r.data)
+  },
+
+  // ── 预订管线：日历可用性 + 日期校验 + 租期价格 ──
+
+  getBookingDateAvailability(unitTypeId: number, year: number, month: number): Promise<{
+    property_id: number; timezone: string; local_today: string;
+    available_from: string | null; blocked_dates: string[];
+  }> {
+    return api.get(`/unit-types/${unitTypeId}/booking-availability`, { params: { year, month } }).then((r) => r.data)
+  },
+
+  validateBookingDate(unitTypeId: number, moveInDate: string): Promise<{ available: boolean; reason?: string | null }> {
+    return api.post(`/unit-types/${unitTypeId}/validate-booking-date`, { move_in_date: moveInDate }).then((r) => r.data)
+  },
+
+  getLeasePricing(unitTypeId: number, moveInDate: string): Promise<any> {
+    return api.get(`/unit-types/${unitTypeId}/lease-pricing`, { params: { move_in_date: moveInDate } }).then((r) => r.data)
   },
 
   // ---- 修改历史 ----
   /** 获取房源操作审计日志（修改历史） */
   getHistory(propertyId: number | string, params?: { skip?: number; limit?: number }): Promise<PropertyHistoryItem[]> {
-    return api.get(`/properties/${propertyId}/history`, { params }).then((r) => r.data)
+    return api.get(`/unit-types/${propertyId}/history`, { params }).then((r) => r.data)
   },
 
   /** 获取当前房东所有房源的最新操作记录（按时间倒序） */
   getRecentAudit(limit = 20): Promise<PropertyHistoryItem[]> {
-    return api.get('/properties/audit/recent', { params: { limit } }).then((r) => r.data)
+    return api.get('/unit-types/audit/recent', { params: { limit } }).then((r) => r.data)
   },
 
   /** 撤销某条审计日志对应的房源操作 */
   revertAudit(propertyId: number, auditLogId: number): Promise<{ message: string; property_id: number; reverted_action: string }> {
-    return api.post(`/properties/${propertyId}/revert/${auditLogId}`).then((r) => r.data)
+    return api.post(`/unit-types/${propertyId}/revert/${auditLogId}`).then((r) => r.data)
   },
 
   /** 删除单条审计日志 */
   deleteAuditLog(auditLogId: number): Promise<void> {
-    return api.delete(`/properties/audit/${auditLogId}`)
+    return api.delete(`/unit-types/audit/${auditLogId}`)
   },
 
   /** 批量删除审计日志 */
   batchDeleteAuditLogs(ids: number[]): Promise<{ deleted: number }> {
-    return api.post('/properties/audit/batch-delete', { ids }).then((r) => r.data)
+    return api.post('/unit-types/audit/batch-delete', { ids }).then((r) => r.data)
   },
 
   /** 一键清空当前用户所有房源审计日志 */
   clearAuditLogs(): Promise<{ deleted: number }> {
-    return api.post('/properties/audit/clear').then((r) => r.data)
+    return api.post('/unit-types/audit/clear').then((r) => r.data)
   },
 
   // ── 预订流程相关 ──

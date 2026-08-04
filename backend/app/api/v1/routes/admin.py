@@ -2,11 +2,10 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user, get_db_session, require_admin
+from app.api.deps import get_current_user, get_db_session, require_admin, require_landlord
 from app.models.user import User, UserRole
 from app.schemas.user import UserRead
 from app.services.audit_service import AuditService
-from app.services.embedding_job_service import EmbeddingJobService
 from app.services.property_service import PropertyService
 from app.services.stats_service import StatsService
 from app.services.user_service import UserService
@@ -17,7 +16,7 @@ router = APIRouter()
 @router.get("/stats")
 async def get_stats(
     session: AsyncSession = Depends(get_db_session),
-    _: User = Depends(require_admin),
+    _: User = Depends(require_landlord),
 ) -> dict:
     return await StatsService(session).get_stats()
 
@@ -117,10 +116,10 @@ async def update_user_role(
     session: AsyncSession = Depends(get_db_session),
     current_user: User = Depends(require_admin),
 ) -> UserRead:
-    if new_role not in {"tenant", "landlord", "admin", "bd_manager", "maintenance_worker"}:
+    if new_role not in {"tenant", "landlord", "admin", "maintenance_worker"}:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid role. Must be: tenant, landlord, bd_manager, maintenance_worker, or admin",
+            detail="Invalid role. Must be: tenant, landlord, maintenance_worker, or admin",
         )
 
     from app.schemas.user import UserUpdate
@@ -139,68 +138,6 @@ async def update_user_role(
     return user
 
 
-@router.get("/embeddings/stats")
-async def get_embedding_stats(
-    session: AsyncSession = Depends(get_db_session),
-    _: User = Depends(require_admin),
-) -> dict:
-    return await EmbeddingJobService(session).get_stats()
-
-
-@router.post("/embeddings/reindex")
-async def trigger_reindex(
-    session: AsyncSession = Depends(get_db_session),
-    current_user: User = Depends(require_admin),
-    property_id: int | None = Query(default=None),
-) -> dict:
-    result = await EmbeddingJobService(session).trigger_reindex(property_id)
-    await AuditService(session).create_log(
-        user_id=current_user.id,
-        action="embedding_reindex",
-        details={"property_id": property_id},
-    )
-    return result
-
-
-@router.get("/properties/pending")
-async def list_pending_review_properties(
-    session: AsyncSession = Depends(get_db_session),
-    _: User = Depends(require_admin),
-    limit: int = Query(default=100, ge=1, le=500),
-) -> list[dict]:
-    """列出所有待人工审核的房源（status=pending_review）"""
-    from sqlalchemy import select
-
-    from app.models.property import Property, PropertyStatus
-    from app.models.property_image import PropertyImage
-
-    stmt = (
-        select(Property)
-        .where(Property.status == PropertyStatus.pending_review)
-        .order_by(Property.created_at.desc())
-        .limit(limit)
-    )
-    result = await session.scalars(stmt)
-    properties = list(result)
-
-    return [
-        {
-            "id": p.id,
-            "title": p.title,
-            "address": p.address,
-            "district": p.district,
-            "price_monthly": str(p.price_monthly),
-            "area_sqm": str(p.area_sqm) if p.area_sqm else None,
-            "bedrooms": p.bedrooms,
-            "bathrooms": p.bathrooms,
-            "property_type": p.property_type if isinstance(p.property_type, str) else (p.property_type.value if p.property_type and hasattr(p.property_type, "value") else None),
-            "status": p.status.value,
-            "description": p.description,
-            "created_at": p.created_at.isoformat(),
-            "landlord_id": p.landlord_id,
-        }
-        for p in properties
-    ]
 
 
 @router.get("/landlord-workers-status")

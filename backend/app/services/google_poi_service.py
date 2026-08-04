@@ -1,8 +1,9 @@
 # Google Maps POI 全量检索服务
 # 移植自 frontend/public/poi-compare.html 的三路径搜索逻辑
-# 路径A: 小贩中心（单矩形 searchText + includedType 过滤）
-# 路径B: 高密度关键词（2×2 网格 searchText + 翻页）
-# 路径C: 低密度关键词（searchNearby 圆形）
+# 路径A: 小贩中心（单次 searchText + includedType 过滤）
+# 路径B: 日常高频关键词（1×1 网格 searchText + 翻页，1km 半径）
+# 路径C: 低密度关键词（searchNearby 圆形，2km 半径）
+# 混合半径：日常消费关键词 1km，设施/地标 2km
 import asyncio
 import logging
 import math
@@ -17,22 +18,26 @@ logger = logging.getLogger(__name__)
 
 # ==================== 常量 ====================
 
+# 混合半径
+FOOD_RADIUS_M = 1000       # 日常消费关键词
+FACILITY_RADIUS_M = 2000   # 设施/交通/地标
+
 # 母类→子类分组
 CATEGORIES: dict[str, list[str]] = {
     "交通": ["地铁站", "公交站"],
     "医疗": ["医院", "药店"],
-    "购物": ["超市", "便利店", "商场", "酒吧"],
-    "美食": ["餐厅", "cafe", "烘焙", "快餐", "食阁"],
+    "购物": ["超市", "便利店", "商场"],
+    "美食": ["餐厅", "快餐", "食阁"],
     "生活": ["市场", "健身房"],
     "地标": ["小贩中心"],
 }
 
 KW_ORDER: list[str] = [
-    "地铁站", "公交站", "医院", "药店", "超市", "便利店", "商场", "酒吧",
-    "餐厅", "cafe", "烘焙", "快餐", "食阁", "小贩中心", "市场", "健身房",
+    "地铁站", "公交站", "医院", "药店", "超市", "便利店", "商场",
+    "餐厅", "快餐", "食阁", "小贩中心", "市场", "健身房",
 ]
 
-# searchNearby includedTypes（仅低密度结构化类型 + 小贩中心标记）
+# searchNearby includedTypes（低密度结构化类型 + 小贩中心标记）
 GM_NS: dict[str, list[str]] = {
     "地铁站": ["subway_station"],
     "商场": ["shopping_mall"],
@@ -43,8 +48,6 @@ GM_NS: dict[str, list[str]] = {
 # searchText 英文搜索词（数组=双词取并集）
 GM_ST: dict[str, str | list[str]] = {
     "餐厅": "restaurant",
-    "cafe": "cafe",
-    "烘焙": "bakery",
     "快餐": "fast food",
     "食阁": "food centre",
     "超市": "supermarket",
@@ -53,22 +56,21 @@ GM_ST: dict[str, str | list[str]] = {
     "健身房": "gym",
     "公交站": ["bus stop", "bus station"],
     "市场": "market",
-    "酒吧": "bar",
 }
 
-# 翻页数: L1 美食 3 页, 其余 2 页
+# 翻页数: 美食 3 页, 其余 2 页
 ST_PAGES: dict[str, int] = {
-    "餐厅": 3, "cafe": 3, "烘焙": 3, "快餐": 3, "食阁": 3,
+    "餐厅": 3, "快餐": 3, "食阁": 3,
     "超市": 2, "便利店": 2, "药店": 2, "健身房": 2,
-    "公交站": 2, "市场": 2, "酒吧": 2,
+    "公交站": 2, "市场": 2,
 }
 
 # 关键词颜色（与前端一致）
 KW_COLORS: dict[str, str] = {
-    "餐厅": "#a855f7", "cafe": "#92400e", "烘焙": "#ea580c", "快餐": "#dc2626",
+    "餐厅": "#a855f7", "快餐": "#dc2626",
     "食阁": "#0d9488", "地铁站": "#6366f1", "公交站": "#3b82f6", "医院": "#ef4444",
     "药店": "#22c55e", "超市": "#f59e0b", "便利店": "#eab308", "商场": "#ec4899",
-    "酒吧": "#c084fc", "市场": "#84cc16", "健身房": "#06b6d4", "小贩中心": "#14b8a6",
+    "市场": "#84cc16", "健身房": "#06b6d4", "小贩中心": "#14b8a6",
 }
 
 # proximity 去重阈值
@@ -200,24 +202,34 @@ class GooglePOIService:
         return result_map
 
     async def _search_one(
-        self, kw: str, lat: float, lng: float, radius_m: int, sem: asyncio.Semaphore,
+        self, kw: str, lat: float, lng: float, _radius_m: int, sem: asyncio.Semaphore,
     ) -> tuple[str, list[POIItem]]:
         async with sem:
-            # 路径A：小贩中心
+            # 路径A：小贩中心（2km 单次 searchText + includedType:food_court）
             if kw == "小贩中心":
-                pois = await self._search_hawker_centre(lat, lng, radius_m)
-            # 路径B：searchText 网格
+                pois = await self._search_hawker_centre(lat, lng, FACILITY_RADIUS_M)
+                fb_radius = FACILITY_RADIUS_M
+            # 路径B：searchText 1×1 网格（日常消费关键词，1km）
             elif kw in GM_ST:
                 en = GM_ST[kw]
                 queries = en if isinstance(en, list) else [en]
                 max_pages = ST_PAGES.get(kw, 2)
-                pois = await self._search_text_grid(lat, lng, queries, radius_m, max_pages)
-            # 路径C：searchNearby
+                pois = await self._search_text_grid(lat, lng, queries, FOOD_RADIUS_M, max_pages, grid=1)
+                fb_radius = FOOD_RADIUS_M
+            # 路径C：searchNearby（低密度结构化类型，2km 圆形）
             elif kw in GM_NS:
                 types = GM_NS[kw]
-                pois = await self._search_nearby_circle(lat, lng, types, radius_m) if types else []
+                pois = await self._search_nearby_circle(lat, lng, types, FACILITY_RADIUS_M) if types else []
+                fb_radius = FACILITY_RADIUS_M
             else:
                 pois = []
+                fb_radius = FACILITY_RADIUS_M
+
+            # GM 无结果 → Overpass 降级（国内无 VPN 时 GM 不可达）
+            if not pois:
+                logger.info("GM 无结果: 关键词=%s, 尝试 Overpass 降级 (radius=%dm)", kw, fb_radius)
+                pois = await self._overpass_fallback(kw, lat, lng, fb_radius)
+
             return (kw, pois)
 
     # ─── 路径A：小贩中心 ──────────────────────
@@ -225,80 +237,57 @@ class GooglePOIService:
     async def _search_hawker_centre(
         self, lat: float, lng: float, radius_m: int,
     ) -> list[POIItem]:
-        """单矩形 searchText + includedType:food_court 过滤，双词 × 3 页"""
-        queries = ["hawker centre", "food centre"]
+        """单矩形 searchText + includedType:food_court，单次调用不翻页"""
         rect = _circle_to_rect(lat, lng, radius_m)
         client = await self._get_client()
-        seen: set[str] = set()
         all_pois: list[POIItem] = []
 
-        for q in queries:
-            pt = None
-            pc = 0
-            while pc < 3:
-                body: dict = {
-                    "textQuery": q,
+        try:
+            r = await client.post(
+                GM_SEARCH_TEXT_URL,
+                json={
+                    "textQuery": "hawker centre",
                     "pageSize": 20,
                     "includedType": "food_court",
                     "locationRestriction": {"rectangle": rect},
-                }
-                if pt:
-                    body["pageToken"] = pt
-                try:
-                    r = await client.post(
-                        GM_SEARCH_TEXT_URL,
-                        json=body,
-                        headers={
-                            "Content-Type": "application/json",
-                            "X-Goog-Api-Key": self.api_key,
-                            "X-Goog-FieldMask": GM_FIELDMASK_ST,
-                        },
-                    )
-                    if r.status_code != 200:
-                        logger.warning("小贩中心→%s: HTTP %s", q, r.status_code)
-                        break
-                    data = r.json()
-                    ps = data.get("places") or []
-                    pc += 1
-                    for p in ps:
-                        pid = p.get("id", "")
-                        if pid in seen:
-                            continue
-                        seen.add(pid)
-                        loc = p.get("location", {})
-                        p_lat = loc.get("latitude")
-                        p_lng = loc.get("longitude")
-                        if p_lat is None or p_lng is None:
-                            continue
-                        all_pois.append(POIItem(
-                            name=p.get("displayName", {}).get("text", q),
-                            lat=p_lat, lng=p_lng,
-                            distance_m=round(_hav_distance(lat, lng, p_lat, p_lng)),
-                            keyword="小贩中心",
-                            vicinity=p.get("formattedAddress", ""),
-                            rating=p.get("rating"),
-                            place_id=pid,
-                        ))
-                    pt = data.get("nextPageToken")
-                    if pt:
-                        await asyncio.sleep(PAGE_DELAY)
-                    else:
-                        break
-                except Exception:
-                    logger.exception("小贩中心→%s 请求异常", q)
-                    break
-        logger.info("小贩中心: %d results (单矩形×双词)", len(all_pois))
+                },
+                headers={
+                    "Content-Type": "application/json",
+                    "X-Goog-Api-Key": self.api_key,
+                    "X-Goog-FieldMask": "places.displayName,places.location,places.formattedAddress,places.rating,places.id",
+                },
+            )
+            if r.status_code == 200:
+                data = r.json()
+                for p in (data.get("places") or []):
+                    loc = p.get("location", {})
+                    p_lat = loc.get("latitude")
+                    p_lng = loc.get("longitude")
+                    if p_lat is None or p_lng is None:
+                        continue
+                    all_pois.append(POIItem(
+                        name=p.get("displayName", {}).get("text", "Hawker Centre"),
+                        lat=p_lat, lng=p_lng,
+                        distance_m=round(_hav_distance(lat, lng, p_lat, p_lng)),
+                        keyword="小贩中心",
+                        vicinity=p.get("formattedAddress", ""),
+                        rating=p.get("rating"),
+                        place_id=p.get("id", ""),
+                    ))
+        except Exception:
+            logger.exception("小贩中心 请求异常")
+        logger.info("小贩中心: %d results (单次)", len(all_pois))
         return all_pois
 
     # ─── 路径B：searchText 2×2 网格 ─────────────
 
     async def _search_text_grid(
         self, lat: float, lng: float, queries: list[str],
-        radius_m: int, max_pages: int,
+        radius_m: int, max_pages: int, grid: int = 1,
     ) -> list[POIItem]:
-        """2×2 网格 searchText + 翻页"""
+        """网格 searchText + 翻页，grid=1 即不分割"""
         rect = _circle_to_rect(lat, lng, radius_m)
-        cells = _split_rect(rect, 2)
+        cells = _split_rect(rect, grid)
         client = await self._get_client()
         seen: set[str] = set()
         all_pois: list[POIItem] = []
@@ -428,12 +417,12 @@ class GooglePOIService:
     def _resolve_keyword(query: str) -> str:
         """把英文搜索词映射回中文 keyword（searchText 路径用）"""
         mapping = {
-            "restaurant": "餐厅", "cafe": "cafe", "bakery": "烘焙",
+            "restaurant": "餐厅",
             "fast food": "快餐", "food centre": "食阁",
             "supermarket": "超市", "convenience store": "便利店",
             "pharmacy": "药店", "gym": "健身房",
             "bus stop": "公交站", "bus station": "公交站",
-            "market": "市场", "bar": "酒吧",
+            "market": "市场",
         }
         return mapping.get(query, query)
 
@@ -449,6 +438,63 @@ class GooglePOIService:
             if t in mapping:
                 return mapping[t]
         return types[0] if types else ""
+
+    # ─── Overpass 降级 ──────────────────────────
+
+    async def _overpass_fallback(
+        self, kw: str, lat: float, lng: float, radius_m: int,
+    ) -> list[POIItem]:
+        """GM 返回空结果时，尝试 Overpass API 降级检索。
+
+        Overpass 基于 OpenStreetMap，无需 API Key，全球可用，
+        在 GM API 不可达时（如国内无 VPN）提供兜底数据。
+        """
+        from app.services.geocoding_service import (
+            OverpassGeocodingService,
+            _OVERPASS_CATEGORY_QUERIES,
+        )
+
+        if kw not in _OVERPASS_CATEGORY_QUERIES:
+            logger.debug("Overpass: 关键词 '%s' 无查询映射，跳过降级", kw)
+            return []
+
+        try:
+            overpass = OverpassGeocodingService()
+            location = f"{lng},{lat}"  # Overpass 接受 "lng,lat" 格式
+            nearby_items = await overpass.search_nearby(
+                location=location,
+                keyword=kw,
+                radius=radius_m,
+            )
+        except Exception:
+            logger.warning("Overpass 降级异常: 关键词=%s", kw, exc_info=True)
+            return []
+
+        if not nearby_items:
+            logger.debug("Overpass 降级返回空: 关键词=%s", kw)
+            return []
+
+        # 转换 NearbyPoiItem → POIItem（统一返回类型）
+        pois: list[POIItem] = []
+        for item in nearby_items:
+            pois.append(POIItem(
+                name=item.name,
+                lat=item.lat or lat,
+                lng=item.lng or lng,
+                distance_m=item.distance_meters or round(
+                    _hav_distance(lat, lng, item.lat or lat, item.lng or lng)
+                ),
+                keyword=kw,
+                vicinity=item.address,
+                rating=None,          # Overpass 无评分数据
+                place_id="",          # Overpass 无 place_id
+            ))
+
+        logger.info(
+            "Overpass 降级成功: 关键词=%s, 结果数=%d (radius=%dm)",
+            kw, len(pois), radius_m,
+        )
+        return pois
 
     # ─── 去重（post-search）───────────────────
 
@@ -508,6 +554,16 @@ class GooglePOIService:
             result_map = await self.search_all(lat, lng, radius_m=2000)
             item_map = {kw: [POIItem(**p) for p in pois] for kw, pois in result_map.items()}
             item_map = self.apply_all_dedup(item_map)
+
+            # 检查是否所有关键词均无结果（GM + Overpass 均失败）
+            total_pois = sum(len(pois) for pois in item_map.values())
+            if total_pois == 0:
+                logger.warning(
+                    "generate_and_save: 所有关键词搜索均无结果（GM + Overpass），"
+                    "property=%s (lat=%.4f, lng=%.4f)，不写入空 POI 记录",
+                    prop.id, lat, lng,
+                )
+                return None
 
             # 组装 map_poi_data
             map_categories: dict[str, list[dict]] = {}

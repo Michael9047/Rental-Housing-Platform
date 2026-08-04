@@ -43,6 +43,123 @@ def _validate_phone(phone: str | None) -> str | None:
     )
 
 
+def _build_card(b: Institute) -> dict:
+    """构建公寓卡片数据 — 含价格区间、图片等展示字段"""
+    uts = b.unit_types or []
+    available_uts = [ut for ut in uts if ut.deleted_at is None and ut.status.value == "available"]
+    prices = [float(ut.base_rent) for ut in available_uts if ut.base_rent]
+    min_rent = min(prices) if prices else None
+    max_rent = max(prices) if prices else None
+    primary = None
+    for img in sorted(b.images or [], key=lambda x: x.sort_order):
+        if img.is_primary:
+            primary = {"id": img.id, "filename": img.filename, "is_primary": True}
+            break
+    if not primary and b.images:
+        img = sorted(b.images, key=lambda x: x.sort_order)[0]
+        primary = {"id": img.id, "filename": img.filename, "is_primary": img.is_primary}
+    # 户型类型汇总
+    pt_set = set(getattr(ut, 'property_type', None) for ut in available_uts)
+    pt_vals = [v for v in pt_set if v]
+    property_type = pt_vals[0] if len(pt_vals) == 1 else None
+    # 户型标签列表（如 ["studio","1bed","2bed"]）
+    pt_labels: dict = {"studio":"Studio","ensuite":"Ensuite","1bed":"一室","2bed":"两室","3bed":"三室","4bed":"四室","5bed+":"五室+","shared":"合租"}
+    unit_type_tags = [pt_labels.get(v.value if hasattr(v,'value') else str(v), str(v)) for v in pt_set if v]
+    return {
+        "id": b.id, "name": b.name, "name_cn": b.name_cn, "address": b.address,
+        "country": b.country, "city": b.city, "district": b.district,
+        "logo_url": b.logo_url, "description": b.description,
+        "latitude": float(b.latitude) if b.latitude else None,
+        "longitude": float(b.longitude) if b.longitude else None,
+        "amenities": b.amenities,
+        "female_only": bool(b.female_only) if b.female_only is not None else False,
+        "couples_allowed": bool(b.couples_allowed) if b.couples_allowed is not None else False,
+        "unit_type_count": len(available_uts),
+        "unit_type_tags": unit_type_tags,
+        "min_rent": min_rent, "max_rent": max_rent,
+        "avg_bedrooms": 0,
+        "property_type": property_type.value if hasattr(property_type, 'value') else str(property_type) if property_type else None,
+        "primary_image": primary,
+        "images": [{"id": img.id, "filename": img.filename, "original_name": img.original_name,
+                     "sort_order": img.sort_order, "is_primary": img.is_primary}
+                   for img in sorted(b.images or [], key=lambda x: x.sort_order)],
+        "institute_id": b.id,
+        "institute_name": b.name,
+    }
+
+
+from math import radians, cos, sin, asin, sqrt as _sqrt
+
+def _haversine(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
+    """Haversine 距离（km）"""
+    dlat, dlng = radians(lat2 - lat1), radians(lng2 - lng1)
+    a = sin(dlat / 2) ** 2 + cos(radians(lat1)) * cos(radians(lat2)) * sin(dlng / 2) ** 2
+    return 6371 * 2 * asin(_sqrt(a))
+
+async def _search_buildings(
+    session: AsyncSession,
+    q: str | None = None,
+    district: str | None = None,
+    country: str | None = None,
+    city: str | None = None,
+    price_min: int | None = None,
+    price_max: int | None = None,
+    property_type: str | None = None,
+    sort_by: str | None = None,
+    near_lat: float | None = None,
+    near_lng: float | None = None,
+    near_distance_km: float | None = 5.0,
+    skip: int = 0,
+    limit: int = 50,
+) -> list[dict]:
+    stmt = (select(Institute)
+            .options(selectinload(Institute.images))
+            .options(selectinload(Institute.unit_types))
+            .where(Institute.status == InstituteStatus.active))
+    if q:
+        stmt = stmt.where(or_(
+            Institute.name.ilike(f"%{q}%"),
+            Institute.name_cn.ilike(f"%{q}%"),
+            Institute.address.ilike(f"%{q}%"),
+        ))
+    if district:
+        stmt = stmt.where(Institute.district.ilike(f"%{district}%"))
+    if country:
+        stmt = stmt.where(Institute.country == country)
+    if city:
+        stmt = stmt.where(Institute.city.ilike(f"%{city}%"))
+    if sort_by == 'price_asc':
+        stmt = stmt.order_by(Institute.id.asc())
+    elif sort_by == 'price_desc':
+        stmt = stmt.order_by(Institute.id.desc())
+    elif sort_by == 'created_at':
+        stmt = stmt.order_by(Institute.created_at.desc())
+    else:
+        stmt = stmt.order_by(Institute.id.desc())
+    stmt = stmt.offset(skip).limit(limit if limit <= 200 else 200)
+    result = await session.scalars(stmt)
+    cards = [_build_card(b) for b in result]
+
+    # 客户端过滤（价格 / 户型 / 地理位置）
+    if price_min is not None:
+        cards = [c for c in cards if c.get("min_rent") is not None and c["min_rent"] >= price_min]
+    if price_max is not None:
+        cards = [c for c in cards if c.get("min_rent") is not None and c["min_rent"] <= price_max]
+    if property_type:
+        cards = [c for c in cards if c.get("property_type") == property_type]
+    if near_lat is not None and near_lng is not None and near_distance_km:
+        cards = [c for c in cards if c.get("latitude") and c.get("longitude")
+                 and _haversine(near_lat, near_lng, float(c["latitude"]), float(c["longitude"])) <= near_distance_km]
+
+    # 按价格排序（需在过滤后）
+    if sort_by == 'price_asc':
+        cards.sort(key=lambda c: c.get("min_rent") or 0)
+    elif sort_by == 'price_desc':
+        cards.sort(key=lambda c: c.get("min_rent") or 0, reverse=True)
+
+    return cards
+
+
 @router.get("/public")
 async def list_public_buildings(
     session: AsyncSession = Depends(get_db_session),
@@ -50,30 +167,33 @@ async def list_public_buildings(
     limit: int = Query(default=50, ge=1, le=200),
 ) -> list[dict]:
     """公开端点——首页展示公寓列表，无需登录"""
-    stmt = (select(Institute)
-            .options(selectinload(Institute.images))
-            .options(selectinload(Institute.unit_types))
-            .where(Institute.status == InstituteStatus.active)
-            .order_by(Institute.id.desc())
-            .offset(skip).limit(limit))
-    result = await session.scalars(stmt)
-    buildings = []
-    for b in result:
-        buildings.append({
-            "id": b.id, "name": b.name, "name_cn": b.name_cn, "address": b.address,
-            "logo_url": b.logo_url, "description": b.description,
-            "latitude": float(b.latitude) if b.latitude else None,
-            "longitude": float(b.longitude) if b.longitude else None,
-            "amenities": b.amenities,
-            "female_only": bool(b.female_only) if b.female_only is not None else False,
-            "couples_allowed": bool(b.couples_allowed) if b.couples_allowed is not None else False,
-            "unit_type_count": len(b.unit_types) if b.unit_types else 0,
-            "primary_image": next(({
-                "id": img.id, "filename": img.filename,
-                "is_primary": img.is_primary,
-            } for img in sorted(b.images or [], key=lambda x: x.sort_order)), None),
-        })
-    return buildings
+    return await _search_buildings(session, skip=skip, limit=limit)
+
+
+@router.get("/public/search")
+async def search_public_buildings(
+    session: AsyncSession = Depends(get_db_session),
+    q: str | None = Query(default=None),
+    district: str | None = Query(default=None),
+    country: str | None = Query(default=None),
+    city: str | None = Query(default=None),
+    price_min: int | None = Query(default=None),
+    price_max: int | None = Query(default=None),
+    property_type: str | None = Query(default=None),
+    sort_by: str | None = Query(default=None),
+    near_lat: float | None = Query(default=None),
+    near_lng: float | None = Query(default=None),
+    near_distance_km: float | None = Query(default=5.0),
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=50, ge=1, le=200),
+) -> list[dict]:
+    """公开搜索——按名称/区域/价格/户型搜索公寓，返回卡片级数据"""
+    return await _search_buildings(
+        session, q=q, district=district, country=country, city=city,
+        price_min=price_min, price_max=price_max, property_type=property_type,
+        sort_by=sort_by, near_lat=near_lat, near_lng=near_lng,
+        near_distance_km=near_distance_km, skip=skip, limit=limit,
+    )
 
 
 @router.get("")
@@ -425,6 +545,75 @@ async def get_building(
     }
 
 
+def _ev(obj, attr):
+    """安全获取枚举值：如果是枚举返回 .value，否则返回字符串"""
+    v = getattr(obj, attr, None)
+    if v is None: return None
+    return v.value if hasattr(v, 'value') else str(v)
+
+
+@router.get("/{building_id}/tenant-detail")
+async def get_tenant_building_detail(
+    building_id: int,
+    session: AsyncSession = Depends(get_db_session),
+) -> dict:
+    """租客端公寓详情 — 返回楼栋 + 户型 + 图片"""
+    b = await session.get(Institute, building_id,
+        options=[selectinload(Institute.unit_types), selectinload(Institute.images)])
+    if not b or b.status != InstituteStatus.active:
+        raise HTTPException(status_code=404, detail="楼栋不存在")
+
+    uts = []
+    for ut in (b.unit_types or []):
+        if ut.deleted_at is not None: continue
+        uts.append({
+            "id": ut.id, "name": ut.name,
+            "property_type": _ev(ut, 'property_type'),
+            "bedrooms": ut.bedrooms, "bathrooms": ut.bathrooms,
+            "hall_count": ut.hall_count,
+            "area_sqm": float(ut.area_sqm) if ut.area_sqm else None,
+            "base_rent": float(ut.base_rent) if ut.base_rent else 0,
+            "deposit_amount": ut.deposit_amount,
+            "deposit_type": _ev(ut, 'deposit_type'),
+            "currency": ut.currency,
+            "amenities": ut.amenities,
+            "image_urls": ut.image_urls,
+            "description": ut.description,
+            "available_from": ut.available_from.isoformat() if ut.available_from else None,
+            "min_stay_months": ut.min_stay_months,
+            "has_vacancy": ut.has_vacancy,
+            "total_count": ut.total_count,
+            "available_count": ut.available_count,
+            "status": _ev(ut, 'status') or "available",
+            "created_at": ut.created_at.isoformat() if ut.created_at else None,
+        })
+
+    return {
+        "id": b.id, "name": b.name, "name_cn": b.name_cn,
+        "address": b.address,
+        "country": b.country, "city": b.city, "district": b.district,
+        "street": b.street, "postal_code": b.postal_code,
+        "latitude": float(b.latitude) if b.latitude else None,
+        "longitude": float(b.longitude) if b.longitude else None,
+        "contact_phone": b.contact_phone, "contact_email": b.contact_email,
+        "website_url": b.website_url,
+        "logo_url": b.logo_url, "description": b.description,
+        "amenities": b.amenities,
+        "female_only": bool(b.female_only),
+        "couples_allowed": bool(b.couples_allowed),
+        "building_type": b.building_type,
+        "total_floors": b.total_floors, "year_built": b.year_built,
+        "total_units": b.total_units, "has_elevator": bool(b.has_elevator),
+        "bm_wechat": b.bm_wechat, "bm_wechat_qr": b.bm_wechat_qr,
+        "status": b.status.value if hasattr(b.status, 'value') else str(b.status),
+        "business_id": b.business_id,
+        "images": [{"id": img.id, "filename": img.filename, "original_name": img.original_name,
+                     "sort_order": img.sort_order, "is_primary": img.is_primary}
+                   for img in sorted(b.images or [], key=lambda x: x.sort_order)],
+        "unit_types": uts,
+    }
+
+
 @router.patch("/{building_id}")
 async def update_building(
     building_id: int, body: InstituteUpdate,
@@ -571,10 +760,9 @@ async def delete_building(
     session: AsyncSession = Depends(get_db_session),
     current_user: User = Depends(require_landlord),
 ) -> dict:
-    """级联软删除：公寓 → 户型 → 房间 全部进回收站"""
+    """级联软删除：公寓 → 户型 全部进回收站"""
     from datetime import datetime
     from app.models.unit_type import UnitType
-    from app.models.property import Room
 
     b = await session.get(Institute, building_id)
     if not b:
@@ -583,17 +771,8 @@ async def delete_building(
         raise HTTPException(status_code=403, detail="无权删除此楼栋")
 
     now = datetime.utcnow()
-    # 1. 软删除所有下属房间
-    room_result = await session.execute(
-        select(Room).join(UnitType, Room.unit_type_id == UnitType.id)
-        .where(UnitType.institute_id == building_id, Room.deleted_at.is_(None))
-    )
-    rooms = room_result.scalars().all()
-    for r in rooms:
-        r.deleted_at = now
-        r.status = "offline"
 
-    # 2. 软删除所有下属户型
+    # 1. 软删除所有下属户型（Room 表已在三层改两层重构中移除）
     ut_result = await session.execute(
         select(UnitType).where(UnitType.institute_id == building_id, UnitType.deleted_at.is_(None))
     )
@@ -601,17 +780,17 @@ async def delete_building(
     for ut in unit_types:
         ut.deleted_at = now
 
-    # 3. 停用公寓本身
+    # 2. 停用公寓本身
     b.status = InstituteStatus.suspended
     await session.commit()
 
     try:
         from app.models.audit_log import AuditLog
         log = AuditLog(action="删除公寓", resource_type="building", resource_id=building_id,
-                       details={"公寓名": b.name, "级联删除户型": len(unit_types), "级联删除房间": len(rooms)})
+                       details={"公寓名": b.name, "级联删除户型": len(unit_types)})
         session.add(log); await session.commit()
     except Exception: pass
-    return {"ok": True, "cascaded_unit_types": len(unit_types), "cascaded_rooms": len(rooms)}
+    return {"ok": True, "cascaded_unit_types": len(unit_types)}
 
 
 @router.post("/{building_id}/restore")
@@ -620,9 +799,8 @@ async def restore_building(
     session: AsyncSession = Depends(get_db_session),
     current_user: User = Depends(require_landlord),
 ) -> dict:
-    """级联恢复：公寓 → 户型 → 房间 全部恢复"""
+    """级联恢复：公寓 → 户型 全部恢复"""
     from app.models.unit_type import UnitType
-    from app.models.property import Room
 
     b = await session.get(Institute, building_id)
     if not b:
@@ -634,7 +812,7 @@ async def restore_building(
 
     b.status = InstituteStatus.active
 
-    # 恢复下属户型
+    # 恢复下属户型（Room 表已在三层改两层重构中移除）
     ut_result = await session.execute(
         select(UnitType).where(UnitType.institute_id == building_id, UnitType.deleted_at.isnot(None))
     )
@@ -642,24 +820,14 @@ async def restore_building(
     for ut in unit_types:
         ut.deleted_at = None
 
-    # 恢复下属房间
-    room_result = await session.execute(
-        select(Room).join(UnitType, Room.unit_type_id == UnitType.id)
-        .where(UnitType.institute_id == building_id, Room.deleted_at.isnot(None))
-    )
-    rooms = room_result.scalars().all()
-    for r in rooms:
-        r.deleted_at = None
-        r.status = "available"
-
     await session.commit()
     try:
         from app.models.audit_log import AuditLog
         log = AuditLog(action="恢复公寓", resource_type="building", resource_id=building_id,
-                       details={"公寓名": b.name, "恢复户型": len(unit_types), "恢复房间": len(rooms)})
+                       details={"公寓名": b.name, "恢复户型": len(unit_types)})
         session.add(log); await session.commit()
     except Exception: pass
-    return {"ok": True, "id": b.id, "name": b.name, "restored_unit_types": len(unit_types), "restored_rooms": len(rooms)}
+    return {"ok": True, "id": b.id, "name": b.name, "restored_unit_types": len(unit_types)}
 
 
 @router.delete("/{building_id}/hard", status_code=204)
@@ -668,9 +836,8 @@ async def hard_delete_building(
     session: AsyncSession = Depends(get_db_session),
     current_user: User = Depends(require_landlord),
 ):
-    """硬删除公寓及所有下属户型、房间（不可恢复）"""
+    """硬删除公寓及所有下属户型（不可恢复）"""
     from app.models.unit_type import UnitType
-    from app.models.property import Room
 
     b = await session.get(Institute, building_id)
     if not b:
@@ -678,15 +845,7 @@ async def hard_delete_building(
     if b.status != InstituteStatus.suspended:
         raise HTTPException(status_code=400, detail="请先将公寓移入回收站再硬删除")
 
-    # 硬删除下属房间
-    room_result = await session.execute(
-        select(Room).join(UnitType, Room.unit_type_id == UnitType.id)
-        .where(UnitType.institute_id == building_id)
-    )
-    for r in room_result.scalars().all():
-        await session.delete(r)
-
-    # 硬删除下属户型
+    # 硬删除下属户型（Room 表已在三层改两层重构中移除）
     ut_result = await session.execute(
         select(UnitType).where(UnitType.institute_id == building_id)
     )
@@ -700,7 +859,7 @@ async def hard_delete_building(
     try:
         from app.models.audit_log import AuditLog
         log = AuditLog(action="硬删除公寓", resource_type="building", resource_id=building_id,
-                       details={"公寓名": name, "级联删除": f"户型+房间"})
+                       details={"公寓名": name, "级联删除": "户型"})
         session.add(log); await session.commit()
     except Exception: pass
 
@@ -760,19 +919,16 @@ async def get_public_building(
 ):
     """租客端公寓详情 — 含图集、配套、户型列表"""
     from app.models.unit_type import UnitType
-    from app.models.property import Room, RoomStatus
     b = await session.get(Institute, building_id, options=[
         selectinload(Institute.images),
-        selectinload(Institute.unit_types).selectinload(UnitType.rooms),
+        selectinload(Institute.unit_types),  # Room 关系已移除（三层改两层重构）
     ])
     if not b or b.status != InstituteStatus.active:
         raise HTTPException(404, "公寓不存在")
     images = [{"id": img.id, "filename": img.filename, "original_name": img.original_name, "sort_order": img.sort_order, "is_primary": img.is_primary} for img in sorted(b.images or [], key=lambda x: x.sort_order)]
     unit_types = []
     for ut in (b.unit_types or []):
-        rooms = []
-        for r in (ut.rooms or []):
-            if r.deleted_at is None and r.status != RoomStatus.offline:
-                rooms.append({"id": r.id, "room_number": r.room_number, "floor": r.floor, "special_discount": r.special_discount, "available_from": r.available_from, "status": r.status.value if hasattr(r.status, 'value') else r.status})
-        unit_types.append({"id": ut.id, "name": ut.name, "bedrooms": ut.bedrooms, "bathrooms": ut.bathrooms, "hall_count": ut.hall_count, "area_sqm": ut.area_sqm, "base_rent": ut.base_rent, "deposit_amount": ut.deposit_amount, "deposit_type": ut.deposit_type.value if ut.deposit_type and hasattr(ut.deposit_type, 'value') else ut.deposit_type, "amenities": ut.amenities, "image_urls": ut.image_urls, "description": ut.description, "min_stay_months": ut.min_stay_months, "status": ut.status.value if hasattr(ut.status, 'value') else ut.status, "room_count": len(rooms), "rooms": rooms})
+        if ut.deleted_at is not None:
+            continue
+        unit_types.append({"id": ut.id, "name": ut.name, "bedrooms": ut.bedrooms, "bathrooms": ut.bathrooms, "hall_count": ut.hall_count, "area_sqm": ut.area_sqm, "base_rent": ut.base_rent, "deposit_amount": ut.deposit_amount, "deposit_type": ut.deposit_type.value if ut.deposit_type and hasattr(ut.deposit_type, 'value') else ut.deposit_type, "amenities": ut.amenities, "image_urls": ut.image_urls, "description": ut.description, "min_stay_months": ut.min_stay_months, "status": ut.status.value if hasattr(ut.status, 'value') else ut.status})
     return {"id": b.id, "name": b.name, "address": b.address, "country": b.country, "city": b.city, "district": b.district, "street": b.street, "postal_code": b.postal_code, "latitude": float(b.latitude) if b.latitude else None, "longitude": float(b.longitude) if b.longitude else None, "description": b.description, "amenities": b.amenities, "contact_phone": b.contact_phone, "images": images, "unit_types": unit_types, "female_only": bool(b.female_only) if b.female_only is not None else False, "couples_allowed": bool(b.couples_allowed) if b.couples_allowed is not None else False}

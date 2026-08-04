@@ -20,10 +20,16 @@ async def generate_poi(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Property not found")
 
     poi_service = GooglePOIService()
-    poi = await poi_service.generate_and_save(prop, session)
-    if not poi:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="POI generation failed")
-    return poi
+    try:
+        poi = await poi_service.generate_and_save(prop, session)
+        if not poi:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="POI 生成失败：所有搜索引擎均无结果",
+            )
+        return poi
+    finally:
+        await poi_service.close()
 
 
 @router.get("/{property_id}", response_model=POIResponse | None)
@@ -37,15 +43,16 @@ async def get_poi(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Property not found")
 
     poi_service = GooglePOIService()
-    poi = await poi_service.get_or_generate_poi(property_id, session)
-
-    if poi:
-        return poi
-
-    raise HTTPException(
-        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-        detail="周边数据暂不可用，请稍后重试",
-    )
+    try:
+        poi = await poi_service.get_or_generate_poi(property_id, session)
+        if poi:
+            return poi
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="周边数据暂不可用，请稍后重试",
+        )
+    finally:
+        await poi_service.close()
 
 
 @router.get("/{property_id}/map", response_model=MapPOIResponse)
@@ -59,17 +66,18 @@ async def get_map_pois(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Property not found")
 
     poi_service = GooglePOIService()
-    data = await poi_service.get_or_generate_map_pois(property_id, session)
-
-    if not data:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="地图周边数据暂不可用，请稍后重试",
+    try:
+        data = await poi_service.get_or_generate_map_pois(property_id, session)
+        if not data:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="地图周边数据暂不可用，请稍后重试",
+            )
+        return MapPOIResponse(
+            property_id=property_id,
+            generated_at=None,
+            search_radius_m=data.get("search_radius_m", 2000),
+            categories=data.get("categories", {}),
         )
-
-    return MapPOIResponse(
-        property_id=property_id,
-        generated_at=None,
-        search_radius_m=data.get("search_radius_m", 2000),
-        categories=data.get("categories", {}),
-    )
+    finally:
+        await poi_service.close()

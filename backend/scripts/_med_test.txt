@@ -1,0 +1,4 @@
+Clementi Peak Residences  | hospital=2800m pharmacy=Nonem | ['周边有医院']
+South Ken Imperial Suites | hospital=500m pharmacy=Nonem | ['紧邻医院，就医很方便']
+Holborn Strand Studios    | hospital=600m pharmacy=Nonem | ['步行可达医院']
+Hammersmith Shared Living | hospital=Nonem pharmacy=Nonem | []

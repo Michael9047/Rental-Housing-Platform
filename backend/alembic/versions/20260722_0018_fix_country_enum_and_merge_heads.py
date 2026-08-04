@@ -25,19 +25,19 @@ def upgrade() -> None:
         "CREATE TYPE country_code AS ENUM "
         "('CN','HK','MO','TW','SG','GB','US','AU','DE','FR','NL','CA','JP','KR','OTHER')"
     )
-    op.execute("ALTER TABLE rooms ALTER COLUMN country DROP DEFAULT")
+    op.execute("ALTER TABLE properties ALTER COLUMN country DROP DEFAULT")
     op.execute(
-        "ALTER TABLE rooms ALTER COLUMN country TYPE country_code "
+        "ALTER TABLE properties ALTER COLUMN country TYPE country_code "
         "USING country::text::country_code"
     )
-    op.execute("ALTER TABLE rooms ALTER COLUMN country SET DEFAULT 'CN'::country_code")
+    op.execute("ALTER TABLE properties ALTER COLUMN country SET DEFAULT 'CN'::country_code")
 
 
 def downgrade() -> None:
-    op.execute("ALTER TABLE rooms ALTER COLUMN country DROP DEFAULT")
+    op.execute("ALTER TABLE properties ALTER COLUMN country DROP DEFAULT")
     op.execute(
-        "ALTER TABLE rooms ALTER COLUMN country TYPE varchar(2) "
+        "ALTER TABLE properties ALTER COLUMN country TYPE varchar(2) "
         "USING country::text"
     )
-    op.execute("ALTER TABLE rooms ALTER COLUMN country SET DEFAULT 'CN'")
+    op.execute("ALTER TABLE properties ALTER COLUMN country SET DEFAULT 'CN'")
     op.execute("DROP TYPE country_code")

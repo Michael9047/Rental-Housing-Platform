@@ -29,7 +29,7 @@ class CompareSession(TimestampMixin, Base):
     user_id: Mapped[int] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE"), index=True
     )
-    property_ids: Mapped[list[int] | None] = mapped_column(JSON, nullable=True)
+    unit_type_ids: Mapped[list[int] | None] = mapped_column(JSON, nullable=True)
     priority: Mapped[str] = mapped_column(String(20), default="balanced")
     status: Mapped[CompareSessionStatus] = mapped_column(
         Enum(CompareSessionStatus, name="compare_session_status"),

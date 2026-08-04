@@ -1,9 +1,8 @@
-"""租期价格计算服务 — 根据房源、入住日期、汇率生成不可变价格快照。"""
+"""租期价格计算服务 — 根据户型 UnitType、入住日期、汇率生成不可变价格快照。"""
 import calendar
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from pydantic import BaseModel
-from app.models.property import Room
 
 
 class Money(BaseModel):
@@ -56,20 +55,15 @@ class LeasePricingService:
         return date(year, month, day)
 
     @staticmethod
-    def calculate(room: Room, move_in_date_str: str) -> LeasePricing:
-        """为给定房源和入住日期生成价格选项。
-
-        价格从 Room 关联的 UnitType 获取（三层架构）。
-        租期选项基于户型 min_stay_months 动态生成。
-        """
+    def calculate(unit_type, move_in_date_str: str) -> LeasePricing:
+        """为指定 UnitType 和入住日期生成价格选项。"""
         move_in = date.fromisoformat(move_in_date_str) if isinstance(move_in_date_str, str) else move_in_date_str
 
-        # 从 UnitType 读取价格（Room 已无 price_monthly / deposit_amount 字段）
-        ut = getattr(room, "unit_type", None)
-        monthly = int(getattr(ut, "base_rent", 0) or 0) if ut else 0
-        deposit_raw = int(getattr(ut, "deposit_amount", 0) or 0) if ut else 0
-        currency = str(getattr(ut, "currency", None) or "CNY") if ut else "CNY"
-        min_stay = int(getattr(ut, "min_stay_months", 3) or 3) if ut else 3
+        # 直接从 UnitType 读取价格
+        monthly = int(getattr(unit_type, "base_rent", 0) or 0) if unit_type else 0
+        deposit_raw = int(getattr(unit_type, "deposit_amount", 0) or 0) if unit_type else 0
+        currency = str(getattr(unit_type, "currency", None) or "CNY") if unit_type else "CNY"
+        min_stay = int(getattr(unit_type, "min_stay_months", 3) or 3) if unit_type else 3
         # 默认服务费 0（UnitType 无 service_fee_rate 字段）
         service_rate = 0.0
 
@@ -109,7 +103,7 @@ class LeasePricingService:
             ))
 
         return LeasePricing(
-            property_id=room.id,
+            property_id=unit_type.id,
             calculation_date=datetime.now(timezone.utc).date().isoformat(),
             move_in_date=move_in.isoformat(),
             local_currency=currency,

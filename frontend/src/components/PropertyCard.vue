@@ -24,36 +24,25 @@
     <div class="card-body">
       <h3 class="card-title" :title="p.title">{{ p.title }}</h3>
 
-      <div class="card-tags">
-        <el-tag size="small" type="info">{{ typeLabels[p.property_type] || p.property_type }}</el-tag>
-        <el-tag size="small">{{ property.bedrooms }}室{{ property.bathrooms }}卫</el-tag>
-        <el-tag size="small" type="info" v-if="property.area_sqm">{{ property.area_sqm }}㎡</el-tag>
+      <!-- 户型类型标签 -->
+      <div class="card-tags" v-if="property.unit_type_tags?.length">
+        <el-tag v-for="t in property.unit_type_tags" :key="t" size="small" type="info" effect="plain">{{ t }}</el-tag>
+      </div>
+
+      <!-- 公寓配套 -->
+      <div class="card-amenities" v-if="property.amenities?.length">
+        <el-tag v-for="a in property.amenities.slice(0,4)" :key="a" size="small" effect="plain" round class="amenity-tag">{{ a }}</el-tag>
+        <el-tag v-if="property.amenities.length > 4" size="small" effect="plain" round class="amenity-tag">+{{ property.amenities.length - 4 }}</el-tag>
       </div>
 
       <!-- ── 通勤时间（仅学校模式） ── -->
       <div v-if="commute" class="commute-row">
-        <span class="commute-item" title="步行时间"><span class="commute-icon">🚶</span>{{ commute.walk_min }}分钟</span>
-        <span class="commute-sep">|</span>
-        <span class="commute-item" title="开车时间"><span class="commute-icon">🚗</span>{{ commute.drive_min }}分钟</span>
-        <span class="commute-sep">|</span>
-        <span class="commute-item" title="骑车时间"><span class="commute-icon">🚲</span>{{ commute.bike_min }}分钟</span>
-        <span class="commute-sep">|</span>
-        <span class="commute-item" title="公交地铁时间"><span class="commute-icon">🚌</span>{{ commute.transit_min }}分钟</span>
+        <span class="commute-item" title="步行"><span class="commute-icon">🚶</span>{{ commute.walk_min }}min</span>
+        <span class="commute-item" title="骑行"><span class="commute-icon">🚲</span>{{ commute.bike_min }}min</span>
+        <span class="commute-item" title="驾车"><span class="commute-icon">🚗</span>{{ commute.drive_min }}min</span>
+        <span class="commute-item" title="公交"><span class="commute-icon">🚌</span>{{ commute.transit_min }}min</span>
       </div>
-      <div v-if="commute" class="commute-dist">
-        📍 步行约 <strong>{{ commute.dist_km }}km</strong> 到学校
-      </div>
-
-      <div class="card-amenities" v-if="amenityTags.length > 0">
-        <el-tag
-          v-for="tag in amenityTags"
-          :key="tag"
-          size="small"
-          effect="plain"
-          round
-          class="amenity-tag"
-        >{{ tag }}</el-tag>
-      </div>
+      <div v-if="commute" class="commute-dist">📍 {{ commute.dist_km }}km 到学校</div>
 
       <p class="card-address" :title="p.address">
         <el-icon :size="14"><LocationFilled /></el-icon>
@@ -73,6 +62,12 @@
             @click="handleBook"
           >
             预约看房
+          </el-button>
+          <el-button
+            size="small"
+            @click="openDetail"
+          >
+            查看详情
           </el-button>
           <el-tooltip
             v-if="authStore.isLoggedIn"
@@ -119,6 +114,8 @@ const props = defineProps<{
   commute?: CommuteInfo | null
   /** 跳转详情页时附加的 query 参数（如 school 信息） */
   linkQuery?: Record<string, string>
+  /** 禁用点击跳转（仅用于地图卡片列表） */
+  noNavigate?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -130,14 +127,23 @@ const authStore = useAuthStore()
 const cartStore = useCartStore()
 
 const busy = ref(false)
-// 兼容新旧字段名 — 房间数据用 unit_type_name/base_rent，旧数据用 title/price_monthly
+// 兼容新旧字段名 — 公寓数据(Institute)用 min_rent/primary_image，户型数据(UnitType)用 base_rent/images
 const p = computed(() => ({
   ...props.property,
-  title: props.property.title || props.property.unit_type_name || props.property.room_number || '未命名',
-  price_monthly: props.property.price_monthly ?? props.property.base_rent ?? 0,
-  district: props.property.district || props.property.institute_name || '',
+  title: props.property.name || props.property.title || props.property.unit_type_name || '未命名',
+  price_monthly: props.property.min_rent ?? props.property.price_monthly ?? props.property.base_rent ?? 0,
+  district: props.property.district || props.property.institute_name || props.property.city || '',
   property_type: props.property.property_type || '1-bed',
+  bedrooms: props.property.avg_bedrooms ?? props.property.bedrooms ?? 0,
+  bathrooms: props.property.bathrooms ?? 1,
+  area_sqm: props.property.area_sqm ?? null,
   address: props.property.address || props.property.institute_address || '',
+  // 图片: 公寓用 primary_image，户型用 images[0]
+  primary_image_url: props.property.primary_image?.filename
+    ? (props.property.primary_image.filename.startsWith('http') ? props.property.primary_image.filename : `/api/v1/uploads/${props.property.primary_image.filename}`)
+    : props.property.images?.[0]?.filename
+      ? (props.property.images[0].filename.startsWith('http') ? props.property.images[0].filename : `/api/v1/uploads/${props.property.images[0].filename}`)
+      : null,
 }))
 const inCart = computed(() => cartStore.has(props.property.id))
 
@@ -169,6 +175,9 @@ const typeLabels: Record<PropertyType, string> = {
 }
 
 const primaryImageUrl = computed(() => {
+  // 公寓数据 (Institute): 使用 primary_image_url
+  if (p.value.primary_image_url) return p.value.primary_image_url
+  // 户型数据 (UnitType): 使用 images 数组
   const images = props.property.images
   if (!images || images.length === 0) return null
   const primary = images.find((img) => img.is_primary) || images[0]
@@ -230,18 +239,17 @@ const amenityTags = computed(() => {
 })
 
 function goDetail() {
-  if (props.property.property_type === 'apartment') {
-    router.push({ name: 'building-detail', params: { id: props.property.id } })
-    return
-  }
-  router.push({
-    path: `/room/${props.property.id}`,
-    query: props.linkQuery || {},
-  })
+  if (props.noNavigate) return
+  // 两层结构：始终导航到公寓详情页
+  router.push({ name: 'building-detail', params: { id: props.property.institute_id || props.property.id } })
 }
 
 function handleBook() {
   emit('book', props.property)
+}
+
+function openDetail() {
+  router.push({ name: 'building-detail', params: { id: props.property.institute_id || props.property.id } })
 }
 </script>
 

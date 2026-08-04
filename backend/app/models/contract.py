@@ -25,8 +25,8 @@ class Contract(TimestampMixin, Base):
     tenant_id: Mapped[int] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE"), index=True
     )
-    property_id: Mapped[int] = mapped_column(
-        ForeignKey("rooms.id", ondelete="CASCADE"), index=True
+    unit_type_id: Mapped[int] = mapped_column(
+        ForeignKey("unit_types.id", ondelete="SET NULL"), index=True, nullable=True
     )
     template_name: Mapped[str] = mapped_column(String(100), default="standard_lease")
     agreement_number: Mapped[str | None] = mapped_column(String(64), unique=True, index=True)
@@ -46,7 +46,7 @@ class Contract(TimestampMixin, Base):
 
     booking: Mapped["Booking"] = relationship()
     tenant: Mapped["User"] = relationship(foreign_keys=[tenant_id])
-    property: Mapped["Room"] = relationship()
+    unit_type: Mapped["UnitType"] = relationship()
 
 
 class ContractSignature(TimestampMixin, Base):

@@ -37,18 +37,10 @@ router = APIRouter()
 
 
 def _to_search_result(prop) -> PropertySearchResult:
-    """兼容 UnitType ORM、Property ORM 和 dict 三种输入。"""
-    from datetime import datetime
-
-    # dict 输入：直接 model_validate，缺省字段补默认值
-    if isinstance(prop, dict):
-        now = datetime.utcnow()
-        prop.setdefault("created_at", now)
-        prop.setdefault("updated_at", now)
-        return PropertySearchResult.model_validate(prop)
-
-    # UnitType 对象 → 映射到 PropertySearchResult 的字段
+    """兼容 UnitType 和 Property/Room 两种模型。"""
+    # UnitType 对象 → 转为 PropertySearchResult 兼容 dict
     if hasattr(prop, 'institute_id') and not hasattr(prop, 'landlord_id'):
+        # 这是 UnitType — 映射到 PropertySearchResult 的字段
         inst = getattr(prop, 'institute', None)
         return PropertySearchResult(
             id=prop.id,
@@ -119,7 +111,7 @@ async def send_agent_message(
 
     from app.services.agentic.dispatcher import dispatch
     filters = body.filters.model_dump(exclude_none=True) if body.filters else None
-    result = await dispatch(session=session, chat_session=chat_session, user_id=user_id,
+    result = await dispatch(session=session, chat_session=chat_session, user_id=current_user.id,
                             message=body.message, filters=filters,
                             compare_property_ids=body.compare_property_ids)
 
@@ -161,15 +153,14 @@ async def send_agent_message_stream(
     session_id: int,
     body: AgentMessageRequest,
     session: AsyncSession = Depends(get_db_session),
-    current_user: User | None = Depends(get_current_user_optional),
+    current_user: User = Depends(get_current_user),
 ):
     """流式 Agent 消息 —— SSE 逐 token 返回 AI 回复。"""
     from fastapi.responses import StreamingResponse
     from app.services.agentic.dispatcher import dispatch_stream
 
-    user_id = current_user.id if current_user else None
     chat_service = ChatService(session)
-    chat_session = await chat_service.get_session(session_id, user_id)
+    chat_session = await chat_service.get_session(session_id, current_user.id)
     if chat_session is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Agent 会话不存在")
 
@@ -179,7 +170,7 @@ async def send_agent_message_stream(
         full_reply = ""
         try:
             async for token, meta in dispatch_stream(
-                session=session, chat_session=chat_session, user_id=user_id,
+                session=session, chat_session=chat_session, user_id=current_user.id,
                 message=body.message, filters=filters,
                 compare_property_ids=body.compare_property_ids,
             ):
@@ -192,15 +183,7 @@ async def send_agent_message_stream(
             yield f"data: {json.dumps({'error': str(e)})}\n\n"
         yield f"data: [DONE]\n\n"
 
-    return StreamingResponse(
-        event_stream(),
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
-            "X-Accel-Buffering": "no",
-        },
-    )
+    return StreamingResponse(event_stream(), media_type="text/event-stream")
 
 
 @router.get("/faqs", response_model=list[FaqChip])

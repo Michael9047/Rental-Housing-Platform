@@ -170,16 +170,23 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
 
 
 def _build_error_response(status_code: int, detail: str | list[Any], error_type: str = "error") -> JSONResponse:
-    # Ensure detail is always JSON-serializable (Pydantic errors may contain raw exceptions)
     if isinstance(detail, str):
         safe_detail = detail
         safe_details = None
+    elif isinstance(detail, list):
+        # 验证错误列表 → 格式化为可读字符串
+        parts: list[str] = []
+        for e in detail:
+            if isinstance(e, dict):
+                loc = ".".join(str(p) for p in e.get("loc", []) if p not in ("body", "query", "path"))
+                parts.append(f"{loc}: {e.get('msg', '')}" if loc else str(e.get("msg", "")))
+            else:
+                parts.append(str(e))
+        safe_detail = "; ".join(parts) if parts else str(detail)
+        safe_details = [{"msg": str(d.get("msg", "")), "loc": d.get("loc", [])} for d in detail if isinstance(d, dict)]
     else:
         safe_detail = str(detail)
-        try:
-            safe_details = [{"msg": str(e.get("msg", "")), "loc": e.get("loc", [])} for e in detail if isinstance(e, dict)]
-        except Exception:
-            safe_details = None
+        safe_details = None
     return JSONResponse(
         status_code=status_code,
         content={
@@ -194,10 +201,10 @@ def _build_error_response(status_code: int, detail: str | list[Any], error_type:
 
 async def validation_exception_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
     logging.getLogger("app.error").warning(
-        "Validation error on %s %s: %s",
+        "⚠ Validation: %s %s → %s",
         request.method,
         request.url.path,
-        exc.errors(),
+        "; ".join(f"{'.'.join(str(p) for p in e['loc'] if p not in ('body','query','path'))}: {e['msg']}" for e in exc.errors()[:3]),
         extra={"request_id": getattr(request.state, "request_id", None)},
     )
     return _build_error_response(422, exc.errors(), "validation_error")
@@ -205,7 +212,7 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
 
 async def http_exception_handler(request: Request, exc: StarletteHTTPException) -> JSONResponse:
     logging.getLogger("app.error").warning(
-        "HTTP %d on %s %s: %s",
+        "⚠ HTTP %d: %s %s → %s",
         exc.status_code,
         request.method,
         request.url.path,
@@ -216,13 +223,25 @@ async def http_exception_handler(request: Request, exc: StarletteHTTPException) 
 
 
 async def generic_exception_handler(request: Request, exc: Exception) -> JSONResponse:
-    logging.getLogger("app.error").exception(
-        "Unhandled exception on %s %s",
-        request.method,
-        request.url.path,
-        extra={"request_id": getattr(request.state, "request_id", None)},
-    )
-    return _build_error_response(500, "Internal server error", "internal_error")
+    msg = str(exc) if settings.debug else "Internal server error"
+    error_type = type(exc).__name__
+
+    # 开发环境：打印简洁的错误摘要到控制台
+    if settings.debug:
+        import os as _os
+        _tb = traceback.extract_tb(exc.__traceback__)[-1] if exc.__traceback__ else None
+        _loc = f"{_os.path.basename(_tb.filename)}:{_tb.lineno}" if _tb else "?"
+        logging.getLogger("app.error").error(
+            "❌ %s → %s: %s [%s]", request.method, request.url.path, msg, _loc
+        )
+    else:
+        logging.getLogger("app.error").exception(
+            "Unhandled exception on %s %s",
+            request.method, request.url.path,
+            extra={"request_id": getattr(request.state, "request_id", None)},
+        )
+
+    return _build_error_response(500, msg, error_type)
 
 
 def register_exception_handlers(app: FastAPI) -> None:

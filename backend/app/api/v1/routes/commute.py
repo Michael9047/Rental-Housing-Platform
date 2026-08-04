@@ -11,7 +11,7 @@ POST /api/v1/commute/route
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, Response
 from pydantic import BaseModel, Field
 
 from app.services.commute_service import (
@@ -51,6 +51,7 @@ class CommuteItem(BaseModel):
     drive_min: int
     transit_min: int
     source: str
+    fallback_reason: str | None = None  # 降级原因（仅 Haversine 估算时有值）
 
 
 class CommuteCalculateResponse(BaseModel):
@@ -62,7 +63,7 @@ class CommuteCalculateResponse(BaseModel):
 
 
 @router.post("/calculate", response_model=CommuteCalculateResponse)
-async def calculate_commute(body: CommuteCalculateRequest):
+async def calculate_commute(body: CommuteCalculateRequest, response: Response):
     """批量计算通勤时间
 
     弹性四级降级链：
@@ -85,6 +86,13 @@ async def calculate_commute(body: CommuteCalculateRequest):
         city=body.city,
     )
 
+    # 降级告警：通过响应头告知客户端数据来源
+    response.headers["X-Commute-Source"] = result.source
+    if result.source == "haversine_fallback":
+        response.headers["X-Commute-Fallback"] = "true"
+    if result.error_reason:
+        response.headers["X-Commute-Fallback-Reason"] = result.error_reason
+
     return CommuteCalculateResponse(
         results=[
             CommuteItem(
@@ -95,6 +103,7 @@ async def calculate_commute(body: CommuteCalculateRequest):
                 drive_min=r.drive_min,
                 transit_min=r.transit_min,
                 source=r.source,
+                fallback_reason=r.fallback_reason,
             )
             for r in result.results
         ],

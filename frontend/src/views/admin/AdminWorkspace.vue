@@ -39,7 +39,7 @@
 
     <!-- ===== Tab 主体 ===== -->
     <el-card shadow="never" class="tabs-card">
-      <el-tabs v-model="activeTab" class="workspace-tabs" type="border-card">
+      <el-tabs v-model="activeTab" class="workspace-tabs">
         <!-- Tab1: 托管房源管理 -->
         <el-tab-pane label="🏠 房源管理" name="properties">
           <div class="tab-toolbar">
@@ -380,30 +380,53 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, reactive } from 'vue'
+import { ref, computed, reactive, onMounted } from 'vue'
 import { UserFilled } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { dashboardService } from '@/services/dashboard'
+import { adminService } from '@/services/admin'
+import type { Property } from '@/types/property'
+import { useAuthStore } from '@/stores/auth'
 
-// ── 管理员信息 ──
-const adminName = ref('张经理')
-const adminEmail = ref('zhang@rental.com')
-const adminPhone = ref('139****5678')
-const adminDistrict = ref('朝阳区·海淀区')
-const adminSince = ref('2025-03-15')
-const verified = ref(true)
+const authStore = useAuthStore()
+
+// ── 管理员信息（取真实用户数据）──
+const adminName = computed(() => authStore.user?.username || '房东')
+const adminEmail = computed(() => authStore.user?.email || '—')
+const adminPhone = computed(() => authStore.user?.phone || '—')
+const verified = ref(false)
 
 const showEditProfile = ref(false)
 const showUploadQualification = ref(false)
 
-// ── 统计卡片 ──
-const statsCards = [
-  { icon: '🏠', label: '管理房源', value: 48, sub: `空置12 · 已租32 · 待上架4`, tab: 'properties' },
-  { icon: '📅', label: '待处理预约', value: 8, sub: `今日看房 3 人次`, tab: 'bookings' },
-  { icon: '💰', label: '本月应收', value: '¥98,500', sub: `待确认定金5 · 逾期3户`, tab: 'finance' },
-  { icon: '📄', label: '合同统计', value: 35, sub: `30天内到期 6 份`, tab: 'contracts' },
-  { icon: '🔧', label: '待处理工单', value: 4, sub: `报修2 · 投诉1 · 换房1`, tab: 'repairs' },
-  { icon: '👁️', label: '今日访客', value: 156, sub: `咨询量 23 条`, tab: 'messages' },
-]
+// ── 真实数据 ──
+const loading = ref(false)
+const dashboard = reactive({
+  properties: { total: 0, available: 0, rented: 0, maintenance: 0 },
+  bookings: { pending: 0 },
+  repairs: { pending: 0, in_progress: 0 },
+  workers: { total: 0, available: 0 },
+})
+
+// ── 统计卡片（真实 API）──
+const statsCards = computed(() => [
+  { icon: '🏠', label: '管理房源', value: dashboard.properties.total, sub: `可用${dashboard.properties.available} · 已租${dashboard.properties.rented} · 维护${dashboard.properties.maintenance}`, tab: 'properties' },
+  { icon: '📅', label: '待处理预约', value: dashboard.bookings.pending, sub: '预约管理', tab: 'bookings' },
+  { icon: '🔧', label: '待处理报修', value: dashboard.repairs.pending, sub: `维修中 ${dashboard.repairs.in_progress}`, tab: 'repairs' },
+  { icon: '👷', label: '维修师傅', value: dashboard.workers.total, sub: `可用 ${dashboard.workers.available}`, tab: 'repairs' },
+  { icon: '📊', label: 'Mock 演示', value: 48, sub: '以下 Tab 为演示数据', tab: 'messages' },
+  { icon: '👁️', label: 'Mock 演示', value: 156, sub: '待接通真实 API', tab: 'messages' },
+])
+
+async function fetchData() {
+  loading.value = true
+  try {
+    Object.assign(dashboard, await dashboardService.getLandlord())
+  } catch { /* ignore */ }
+  finally { loading.value = false }
+}
+
+onMounted(fetchData)
 
 // ── Tab 状态 ──
 const activeTab = ref('properties')
@@ -524,10 +547,7 @@ function uploadRepairProof(row: any) { ElMessage.info(`上传维修凭证: ${row
 
 function replyMessage(m: any) { ElMessage.info(`回复 ${m.tenant} 的消息`) }
 
-// ── 房源审核（真实数据）───
-import { adminService } from '@/services/admin'
-import type { Property } from '@/types/property'
-
+// ── 房源审核（调用后端 API）───
 const reviewLoading = ref(false)
 const pendingReviews = ref<Property[]>([])
 
@@ -540,7 +560,7 @@ async function loadPendingReviews() {
   try {
     pendingReviews.value = await adminService.getPendingProperties()
   } catch {
-    ElMessage.error('加载待审核房源失败')
+    // 后端接口暂未接入，静默跳过
   } finally {
     reviewLoading.value = false
   }

@@ -3,12 +3,12 @@
 
 import L from 'leaflet'
 
-/** OSM 官方瓦片源（GeoDNS 自动路由，国内可能分配到莫斯科 Yandex 节点） */
+/** OSM 官方瓦片源 —— 国内使用 */
 const OSM_URL = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png'
-/** OSM 法国 Humanitarian（国内实测最快 OSM 镜像） */
+/** OSM 法国 Humanitarian（OSM 备用镜像） */
 const OSMFR_HOT_URL = 'https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png'
-/** 高德矢量瓦片 —— 国内极速，GCJ-02 坐标系，无需 Key */
-const AMAP_URL = 'https://webrd0{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}'
+/** Google Maps 瓦片 —— 海外使用（标准地图样式，含中文标注） */
+const GM_TILE_URL = 'https://mt{s}.google.com/vt/lyrs=m&hl=zh-CN&x={x}&y={y}&z={z}'
 /** 连续 tileerror 阈值 */
 const ERROR_THRESHOLD = 2
 
@@ -50,12 +50,11 @@ function clearRegionCache() {
 
 // ── 瓦片图层工厂 ──────────────────────────────────
 
-/** 高德瓦片（国内用户），带 tileerror 回退 OSM */
-function createAmapLayer(map: L.Map): TileHandle {
-  let currentLayer = L.tileLayer(AMAP_URL, {
-    maxZoom: 18,
-    subdomains: ['1', '2', '3', '4'],
-    crossOrigin: 'anonymous' as any,
+//** Google Maps 瓦片（海外用户），带 tileerror 回退 OSM */
+function createGMLayer(map: L.Map): TileHandle {
+  let currentLayer = L.tileLayer(GM_TILE_URL, {
+    maxZoom: 20,
+    subdomains: ['0', '1', '2', '3'],
   } as any)
 
   let errorCount = 0
@@ -66,12 +65,9 @@ function createAmapLayer(map: L.Map): TileHandle {
     errorCount++
     if (errorCount >= ERROR_THRESHOLD) {
       switched = true
-      // 高德连续失败 → 清缓存，下次刷新页面会重新检测
       clearRegionCache()
       map.removeLayer(currentLayer)
-      // 切到 OSM 主源 + HOT 回退
       const fallback = createOSMLayerWithFallback(map)
-      // 偷梁换柱：把 fallback 的 destroy 也挂上
       currentLayer = fallback as any
     }
   }
@@ -139,16 +135,16 @@ function createOSMLayerWithFallback(map: L.Map): TileHandle {
 
 /**
  * 根据用户地理位置加载最优瓦片源。
- * 每次调用实时检测 IP：国内 → 高德，海外 / IP 未知 → OSM 主源。
- * tileerror 自动切备用源。
+ * 国内 → OSM（GFW 屏蔽 Google），海外 → Google Maps。
+ * tileerror 自动切换到备用源。
  */
 export async function loadTiles(map: L.Map): Promise<TileHandle> {
   const region = await detectRegion()
 
   if (region === 'CN') {
-    return createAmapLayer(map)
+    return createOSMLayerWithFallback(map)
   }
-  return createOSMLayerWithFallback(map)
+  return createGMLayer(map)
 }
 
 /** @deprecated 使用 loadTiles 代替 */

@@ -206,7 +206,7 @@ async function submitBooking() {
     let booking
     try {
       booking = await bookingService.create({
-        property_id: propertyId,
+        unit_type_id: propertyId,
         message: fullMessage || undefined,
         scheduled_date: bookingForm.scheduled_date || undefined,
         lease_months: leaseMonths,

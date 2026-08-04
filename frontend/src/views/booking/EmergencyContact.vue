@@ -70,14 +70,12 @@
 <script setup lang="ts">
 import { computed, defineComponent, h, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
 import BookingFlowLayout from '@/components/booking/BookingFlowLayout.vue'
 import AddressSelector from '@/components/booking/AddressSelector.vue'
 import { useBookingEmergencyContactStore } from '@/stores/bookingEmergencyContact'
 import { useBookingPersonalInfoStore } from '@/stores/bookingPersonalInfo'
 import { bookingEmergencyContactService } from '@/services/bookingEmergencyContact'
 import { bookingDraftService } from '@/services/bookingDraft'
-import { extractErrorMessage } from '@/services/api'
 import { normalizePinyin, requiredContactFields, validateEmergencyContact, validateEmergencyContactField, type EmergencyContactField } from '@/utils/emergencyContactValidation'
 import { restoreLegacyAddress } from '@/types/address'
 
@@ -114,11 +112,7 @@ async function submitForm() {
   submitted.value = true
   Object.assign(errors, validateEmergencyContact(form))
   requiredContactFields.forEach((field) => touched.add(field))
-  if (requiredContactFields.some((field) => errors[field]) || errors.consultant_id) {
-    const firstError = requiredContactFields.find((f) => errors[f])
-    ElMessage.warning(`请检查：${firstError ? errors[firstError] : '有必填项未通过校验'}`)
-    return
-  }
+  if (requiredContactFields.some((field) => errors[field]) || errors.consultant_id) return
   submitting.value = true
   submitError.value = ''
   try {
@@ -129,7 +123,7 @@ async function submitForm() {
     })
     router.push({ name: 'booking-review', params: { propertyId: String(route.params.propertyId) } })
   } catch (error: any) {
-    submitError.value = extractErrorMessage(error) || '紧急联系人信息校验失败，请检查后重试'
+    submitError.value = error?.response?.data?.detail?.[0]?.msg || error?.response?.data?.detail || '紧急联系人信息校验失败，请检查后重试'
   } finally { submitting.value = false }
 }
 

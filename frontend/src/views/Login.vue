@@ -308,10 +308,12 @@ async function handlePasswordLogin() {
     const redirect = (route.query.redirect as string) ||
       (authStore.user?.role === 'admin' ? '/admin' : '/')
     router.push(redirect)
-  } catch (e: any) {
-    console.error('登录失败', e)
-    const msg = e?.response?.data?.error?.message || e?.response?.data?.detail || e?.message || '未知错误'
-    ElMessage.error('登录失败：' + (typeof msg === 'string' ? msg : JSON.stringify(msg)))
+  } catch (err: any) {
+    // error message handled by axios interceptor
+    // 兜底：interceptor 未捕获到的情况下显示通用错误
+    const msg = err?.response?.data?.error?.message || err?.response?.data?.detail || err?.message
+    if (msg) ElMessage.error(typeof msg === 'string' ? msg : '登录失败，请重试')
+    else ElMessage.error('登录失败，请检查网络连接后重试')
   } finally {
     loading.value = false
   }
@@ -333,8 +335,10 @@ async function handleSendSms() {
     await authService.sendSmsCode({ phone })
     ElMessage.success('验证码已发送')
     startCountdown()
-  } catch {
-    // error handled by interceptor
+  } catch (err: any) {
+    const msg = err?.response?.data?.error?.message || err?.response?.data?.detail || err?.message
+    if (msg) ElMessage.error(typeof msg === 'string' ? msg : '发送失败，请重试')
+    else ElMessage.error('发送失败，请检查网络连接后重试')
   } finally {
     sendingSms.value = false
   }
@@ -366,8 +370,10 @@ async function handlePhoneLogin() {
         (authStore.user?.role === 'admin' ? '/admin' : '/')
       router.push(redirect)
     }
-  } catch {
-    // error handled by interceptor
+  } catch (err: any) {
+    const msg = err?.response?.data?.error?.message || err?.response?.data?.detail || err?.message
+    if (msg) ElMessage.error(typeof msg === 'string' ? msg : '手机登录失败，请重试')
+    else ElMessage.error('登录失败，请检查网络连接后重试')
   } finally {
     loading.value = false
   }
@@ -393,8 +399,10 @@ async function handlePhoneRegister() {
     const redirect = (route.query.redirect as string) ||
       (authStore.user?.role === 'admin' ? '/admin' : '/')
     router.push(redirect)
-  } catch {
-    // error handled by interceptor
+  } catch (err: any) {
+    const msg = err?.response?.data?.error?.message || err?.response?.data?.detail || err?.message
+    if (msg) ElMessage.error(typeof msg === 'string' ? msg : '注册失败，请重试')
+    else ElMessage.error('注册失败，请检查网络连接后重试')
   } finally {
     loading.value = false
   }

@@ -31,16 +31,37 @@ api.interceptors.request.use(
 // Helper: extract error message from backend's {error:{message:"..."}} format
 // or standard {detail:"..."} format (both are used in this project)
 export function extractErrorMessage(error: any): string | null {
+  const data = error.response?.data
+
   // Backend format: { error: { message: "..." } }
-  const msg = error.response?.data?.error?.message
+  const msg = data?.error?.message
   if (msg && typeof msg === 'string') return msg
+
   // Standard FastAPI format: { detail: "..." }
-  const detail = error.response?.data?.detail
+  const detail = data?.detail
   if (detail && typeof detail === 'string') return detail
-  // Array of validation errors
-  if (Array.isArray(detail)) {
-    return detail.map((d: any) => d.msg || '').filter(Boolean).join('; ')
+
+  // FastAPI validation errors (array format)
+  if (Array.isArray(detail) && detail.length > 0) {
+    const locs = detail.map((d: any) => {
+      const field = (d.loc || []).filter((l: string) => l !== 'body' && l !== 'path' && l !== 'query').join('.')
+      return field ? `${field}: ${d.msg}` : d.msg
+    }).filter(Boolean)
+    if (locs.length > 0) return locs.join('; ')
   }
+
+  // Raw validation error list (non-array detail, e.g. direct list)
+  if (Array.isArray(data) && data.length > 0 && data[0].msg) {
+    const locs = data.map((d: any) => {
+      const field = (d.loc || []).filter((l: string) => l !== 'body' && l !== 'path' && l !== 'query').join('.')
+      return field ? `${field}: ${d.msg}` : d.msg
+    }).filter(Boolean)
+    if (locs.length > 0) return locs.join('; ')
+  }
+
+  // Plain string response
+  if (typeof data === 'string' && data) return data
+
   return null
 }
 

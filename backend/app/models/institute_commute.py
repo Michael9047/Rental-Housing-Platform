@@ -1,7 +1,7 @@
-"""公寓通勤预计算表 —— 公寓→大学 公交/步行/驾车时间"""
+"""公寓通勤预计算表 — 公寓→热门大学 公交/步行/驾车时间"""
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String
+from sqlalchemy import DateTime, ForeignKey, Integer, Numeric, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.session import Base
@@ -10,10 +10,16 @@ from app.db.session import Base
 class InstituteCommute(Base):
     __tablename__ = "institute_commutes"
 
-    institute_id: Mapped[int] = mapped_column(ForeignKey("institutes.id", ondelete="CASCADE"), primary_key=True)
-    university_id: Mapped[int] = mapped_column(ForeignKey("universities.id", ondelete="CASCADE"), primary_key=True)
+    institute_id: Mapped[int] = mapped_column(
+        ForeignKey("institutes.id", ondelete="CASCADE"), primary_key=True
+    )
+    university_id: Mapped[int] = mapped_column(
+        ForeignKey("universities.id", ondelete="CASCADE"), primary_key=True
+    )
     transit_min: Mapped[int | None] = mapped_column(Integer, nullable=True)
     walk_min: Mapped[int | None] = mapped_column(Integer, nullable=True)
     drive_min: Mapped[int | None] = mapped_column(Integer, nullable=True)
     source: Mapped[str | None] = mapped_column(String(20), nullable=True)
-    computed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+    computed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), default=datetime.utcnow
+    )

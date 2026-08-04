@@ -7,7 +7,7 @@
     <el-table v-else :data="bookings" stripe>
       <el-table-column label="房源" min-width="150">
         <template #default="{ row }">
-          <span class="link-text" @click="$router.push('/room/'+row.property_id)">房源 #{{ row.property_id }}</span>
+          <span class="link-text" @click="$router.push('/building/'+row.property_id)">房源 #{{ row.property_id }}</span>
         </template>
       </el-table-column>
       <el-table-column prop="status" label="状态" width="100">

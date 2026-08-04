@@ -1,24 +1,18 @@
 <template>
   <div class="bd-page" v-loading="loading">
     <template v-if="building && !loading">
-      <!-- ═══ 1. 头部：左70%标题+地址+简介 / 右30%评分+预约 ═══ -->
+      <!-- ═══ 1. 头部：左名称+地址 / 右安全评分+预约 ═══ -->
       <section class="bd-header">
         <div class="hd-split">
           <div class="hd-left">
             <h1 class="hd-title">{{ building.name }}</h1>
             <p class="hd-addr">{{ building.address || '地址未设置' }}</p>
-            <p class="hd-desc">{{ building.description || '暂无介绍' }}</p>
           </div>
           <div class="hd-right">
             <div class="score-card safety">
-              <div class="sc-label">安全综合评分</div>
-              <div class="sc-num">{{ building.safety_score ?? '--' }}</div>
-              <div class="sc-sub">/10</div>
-            </div>
-            <div class="score-card ai">
-              <div class="sc-label">AI综合评分</div>
-              <div class="sc-num">{{ building.ai_score ?? '--' }}</div>
-              <div class="sc-sub" v-if="building.ai_score">/10</div>
+              <span class="sc-label">安全评分</span>
+              <span class="sc-num">{{ building.safety_score ?? '--' }}</span>
+              <span class="sc-sub">/10</span>
             </div>
             <el-button type="primary" size="large" class="hd-book-btn" @click="showContactDialog = true">📅 预约看房</el-button>
           </div>
@@ -42,15 +36,26 @@
         <el-empty description="暂无图片" :image-size="60" />
       </section>
 
-      <!-- ═══ 3. 地理位置 + 地图 ═══ -->
-      <section class="bd-map">
-        <h2 class="sec-title">📍 地理位置</h2>
-        <p class="map-addr">{{ building.address || '地址未设置' }}</p>
-        <div v-if="building.latitude" ref="mapContainer" class="map-box"></div>
-        <p v-else class="map-empty">暂无地图坐标</p>
+      <!-- ═══ 3. 基础信息 ═══ -->
+      <section class="bd-info">
+        <h2 class="sec-title">📋 公寓信息</h2>
+        <div class="info-grid">
+          <div class="info-item" v-if="building.building_type"><span class="info-label">建筑类型</span><span class="info-val">{{ building.building_type === 'apartment' ? '公寓' : building.building_type === 'dormitory' ? '宿舍' : building.building_type === 'high-rise' ? '高层' : building.building_type === 'low-rise' ? '低层' : building.building_type }}</span></div>
+          <div class="info-item" v-if="building.total_floors"><span class="info-label">总楼层</span><span class="info-val">{{ building.total_floors }} 层</span></div>
+          <div class="info-item" v-if="building.year_built"><span class="info-label">建成年份</span><span class="info-val">{{ building.year_built }} 年</span></div>
+          <div class="info-item" v-if="building.total_units"><span class="info-label">总户数</span><span class="info-val">{{ building.total_units }} 户</span></div>
+          <div class="info-item" v-if="building.female_only"><span class="info-label">👩 女生独栋</span></div>
+          <div class="info-item" v-if="building.couples_allowed"><span class="info-label">💑 支持情侣入住</span></div>
+        </div>
+        <div v-if="building.description" class="desc-wrap">
+          <div class="desc-text" :class="{ collapsed: !descExpanded }">{{ building.description }}</div>
+          <el-button v-if="building.description && building.description.length > 200" text size="small" type="primary" @click="descExpanded = !descExpanded">
+            {{ descExpanded ? '收起 ▲' : '展开全文 ▼' }}
+          </el-button>
+        </div>
       </section>
 
-      <!-- ═══ 4. 配套设施（4栏卡片） ═══ -->
+      <!-- ═══ 4. 配套设施 ═══ -->
       <section class="bd-amenity" v-if="amenityCards.length">
         <h2 class="sec-title">配套设施与服务</h2>
         <div class="am-grid">
@@ -67,18 +72,20 @@
         </div>
       </section>
 
-      <!-- ═══ 5. 特殊标记（独立区块） ═══ -->
+      <!-- ═══ 5. 地理位置 ═══ -->
+      <section class="bd-map">
+        <h2 class="sec-title">📍 地理位置</h2>
+        <p class="map-addr">{{ building.address || '地址未设置' }}</p>
+        <div v-if="building.latitude" ref="mapContainer" class="map-box"></div>
+        <p v-else class="map-empty">暂无地图坐标</p>
+      </section>
+
+      <!-- ═══ 6. 特别说明 ═══ -->
       <section class="bd-special" v-if="specialMarkers.length">
         <h2 class="sec-title">特别说明</h2>
         <div class="sp-bar">
           <span v-for="m in specialMarkers" :key="m.label" class="sp-tag">{{ m.icon }} {{ m.label }}</span>
         </div>
-      </section>
-
-      <!-- ═══ 6. AI 占位 ═══ -->
-      <section class="bd-ai">
-        <h2 class="sec-title">🔍 地图周边检测</h2>
-        <div class="ai-box">🤖<p>AI 智能周边分析即将上线</p></div>
       </section>
 
       <!-- ═══ 7. 户型卡片 ═══ -->
@@ -170,6 +177,7 @@ L.Icon.Default.mergeOptions({
 const route = useRoute(); const router = useRouter()
 const loading = ref(true); const error = ref('')
 const building = ref<any>(null); const showContactDialog = ref(false)
+const descExpanded = ref(false)
 const mapContainer = ref<HTMLElement | null>(null); let mapInstance: L.Map | null = null
 
 // 预约看房表单
@@ -204,10 +212,10 @@ watch(building, async (val) => {
 })
 
 const CATS: Record<string, { name: string; icon: string; items: string[] }> = {
-  '安保': { name:'安保设施', icon:'🛡️', items:['24小时安保','监控系统(CCTV)','智能门禁','电子门锁','前台/礼宾','消防系统','夜间巡逻'] },
-  '服务': { name:'公寓服务', icon:'🛎️', items:['代收包裹','维修服务','公共区域保洁','定期社交活动','接机服务','班车接驳','入住礼包','管家服务'] },
-  '公用设施': { name:'公用设施', icon:'🏠', items:['电梯','洗衣房','自行车库','停车场','公共厨房','快递柜/信箱','自习室','影音室','公共休闲区','屋顶露台','庭院/花园','会议室'] },
-  '运动娱乐': { name:'运动&娱乐', icon:'⚽', items:['健身房','游泳池','篮球场','瑜伽室','游戏室','BBQ区','乒乓球/台球'] },
+  '安保': { name:'安保设施', icon:'🛡️', items:['24小时安保','监控系统(CCTV)','智能门禁','门禁系统','电子门锁','前台/礼宾','消防系统','夜间巡逻'] },
+  '服务': { name:'公寓服务', icon:'🛎️', items:['代收包裹','快递代收','维修服务','公共区域保洁','定期社交活动','接机服务','班车接驳','入住礼包','管家服务'] },
+  '公用设施': { name:'公用设施', icon:'🏠', items:['电梯','洗衣房','自行车库','停车场','停车位','公共厨房','快递柜/信箱','自习室','影音室','公共休闲区','屋顶露台','庭院/花园','会议室'] },
+  '运动娱乐': { name:'运动&娱乐', icon:'⚽', items:['健身房','游泳池','泳池','篮球场','网球场','瑜伽室','游戏室','BBQ区','乒乓球/台球'] },
 }
 
 const galleryImages  = computed(() => building.value?.images || [])
@@ -246,12 +254,12 @@ function openUnitGallery(ut: any) {
   c.onclick=(e)=>{e.stopPropagation();o.remove()}; o.appendChild(c); o.onclick=()=>o.remove(); document.body.appendChild(o)
 }
 
-function handleBook(unitTypeId: number) {
-  const ut = building.value?.unit_types?.find((u: any) => u.id === unitTypeId)
+function handleBook(id: number) {
+  // 两层结构：直接用 unit_type_id 预订
+  const ut = building.value?.unit_types?.find((u: any) => u.id === id)
   if (!ut) return ElMessage.warning('户型不存在')
-  const availableRoom = ut.rooms?.find((r: any) => r.status === 'available')
-  if (!availableRoom) return ElMessage.warning('该户型暂无可用房间')
-  router.push({ name: 'booking-move-in-date', params: { propertyId: String(availableRoom.id) } })
+  if (!ut.has_vacancy && ut.available_count <= 0) return ElMessage.warning('该户型暂无空房')
+  router.push({ name: 'booking-move-in-date', params: { propertyId: String(id) } })
 }
 
 let lIdx = 0
@@ -278,13 +286,13 @@ function initMap() {
 
 onMounted(async () => {
   try { const r = await api.get(`/buildings/${route.params.id}/tenant-detail`); building.value = r.data }
-  catch (e: any) { error.value = e?.response?.status === 404 ? '公寓不存在或已下架' : '加载失败' }
+  catch (e: any) { error.value = e?.response?.status === 404 ? '公寓不存在' : '加载失败' }
   finally { loading.value = false }
 })
 </script>
 
 <style scoped>
-.bd-page { max-width: 100%; margin: 0; padding: 0 48px 80px; background: #f5f6f8; min-height: 100vh }
+.bd-page { max-width: 1200px; margin: 0 auto; padding: 0 24px 80px; background: #f5f6f8; min-height: 100vh }
 .sec-title { font-size: 18px; font-weight: 700; margin: 0 0 16px; color: #1a1a2e; padding-left: 12px; position: relative }
 .sec-title::before { content:''; position:absolute; left:0; top:2px; bottom:2px; width:3px; border-radius:2px; background:#FF6B35 }
 
@@ -292,17 +300,14 @@ onMounted(async () => {
 .bd-header { padding: 28px 0 24px }
 .hd-split { display: flex; gap: 36px; align-items: flex-start }
 .hd-left { flex: 7; min-width: 0 }
-.hd-right { flex: 3; display: flex; flex-direction: column; gap: 14px; min-width: 260px }
+.hd-right { flex: 3; display: flex; align-items: center; gap: 16px; min-width: 260px; justify-content: flex-end }
 .hd-title { font-size: 32px; font-weight: 800; margin: 0 0 6px; color: #1a1a2e; letter-spacing: .5px; line-height: 1.2 }
-.hd-addr { font-size: 15px; color: #888; margin: 0 0 14px }
+.hd-addr { font-size: 15px; color: #888; margin: 0 }
 .hd-desc { color: #555; line-height: 1.7; font-size: 16px; margin: 0; white-space: pre-wrap; max-height: 180px; overflow: auto }
-.score-card { display:flex; flex-direction:column; align-items:center; justify-content:center; width:100%; height:86px; border-radius:14px; background:#fff; box-shadow:0 2px 12px rgba(0,0,0,.06); transition:transform .2s }
-.score-card:hover { transform:translateY(-2px) }
+.score-card { display:flex; flex-direction:column; align-items:center; justify-content:center;  border-radius:14px; background:#fff; box-shadow:0 2px 12px rgba(0,0,0,.06); transition:transform .2s }
 .score-card.safety { border:2px solid #e8f5e9; background:linear-gradient(135deg,#f1f8e9,#fff) }
-.score-card.ai { border:2px solid #e3f2fd; background:linear-gradient(135deg,#e8f0fe,#fff) }
-.sc-label { font-size:13px; color:#999; margin-bottom:4px }
 .sc-num { font-size:30px; font-weight:800; color:#1a1a2e; line-height:1 }
-.sc-sub { font-size:11px; color:#999; margin-top:2px }
+.sc-sub { font-size:11px; color:#999;  }
 .hd-book-btn { font-size: 16px; padding: 14px 0; border-radius: 10px; font-weight: 600; letter-spacing: 2px; width: 100% }
 
 /* ═══ 2. 图片轮播 ═══ */
@@ -324,6 +329,18 @@ onMounted(async () => {
 .map-box { width: 100%; height: 340px; min-height: 340px; border-radius: 10px; overflow: hidden; border: 1px solid #eee; z-index: 1; position: relative }
 :deep(.map-box .leaflet-tile) { visibility: visible !important }
 .map-empty { color: #999; text-align: center; padding: 50px }
+
+/* ═══ 描述 ═══ */
+.desc-wrap { margin-top: 16px; padding-top: 16px; border-top: 1px solid #eee }
+.desc-text { font-size: 14px; line-height: 1.8; color: #606266; white-space: pre-line }
+.desc-text.collapsed { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden }
+
+/* ═══ 3. 基础信息 ═══ */
+.bd-info { background: #fff; border-radius: 14px; padding: 24px 28px; margin-bottom: 24px; box-shadow: 0 2px 10px rgba(0,0,0,.03) }
+.info-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px }
+.info-item { display: flex; flex-direction: column; gap: 4px; padding: 12px; background: #fafbfc; border-radius: 8px }
+.info-label { font-size: 12px; color: #909399 }
+.info-val { font-size: 15px; font-weight: 600; color: #303133 }
 
 /* ═══ 4. 配套设施4栏 ═══ */
 .bd-amenity { background: #fff; border-radius: 14px; padding: 24px 28px; margin-bottom: 24px; box-shadow: 0 2px 10px rgba(0,0,0,.03) }

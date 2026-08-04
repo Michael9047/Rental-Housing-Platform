@@ -5,8 +5,8 @@ from sqlalchemy.orm import selectinload
 
 from app.api.deps import get_db_session
 from app.core.config import get_settings
-from app.models.property import Property
-from app.models.property_image import PropertyImage
+from app.models.unit_type import UnitType, UnitTypeStatus
+from app.models.institute import Institute
 
 router = APIRouter()
 
@@ -23,49 +23,51 @@ async def get_map_properties(
 ):
     """根据视口框选返回轻量房源列表，用于地图展示"""
     stmt = (
-        select(Property)
-        .options(selectinload(Property.images))
+        select(UnitType)
+        .join(Institute, UnitType.institute_id == Institute.id)
+        .options(selectinload(UnitType.institute).selectinload(Institute.images))
         .where(
-            Property.status == "available",
-            Property.latitude.isnot(None),
-            Property.longitude.isnot(None),
+            UnitType.status == UnitTypeStatus.available,
+            Institute.latitude.isnot(None),
+            Institute.longitude.isnot(None),
         )
     )
 
     if country:
-        stmt = stmt.where(Property.country == country.upper())
+        stmt = stmt.where(Institute.country == country.upper())
 
     if sw_lat is not None and sw_lng is not None and ne_lat is not None and ne_lng is not None:
         stmt = stmt.where(
-            Property.latitude.between(sw_lat, ne_lat),
-            Property.longitude.between(sw_lng, ne_lng),
+            Institute.latitude.between(sw_lat, ne_lat),
+            Institute.longitude.between(sw_lng, ne_lng),
         )
 
     stmt = stmt.limit(limit)
     result = await session.execute(stmt)
-    properties = result.scalars().all()
+    unit_types = result.unique().scalars().all()
 
     items = []
-    for p in properties:
+    for ut in unit_types:
+        inst = ut.institute
         primary_url = None
-        if p.images:
-            primary = next((img for img in p.images if img.is_primary), None)
-            chosen = primary or p.images[0]
+        if inst and inst.images:
+            primary = next((img for img in inst.images if img.is_primary), None)
+            chosen = primary or inst.images[0]
             primary_url = f"/api/v1/uploads/{chosen.filename}"
 
         items.append({
-            "id": p.id,
-            "title": p.title,
-            "district": p.district,
-            "country": p.country,
-            "address": p.address,
-            "price_monthly": p.price_monthly,
-            "bedrooms": p.bedrooms,
-            "bathrooms": p.bathrooms,
-            "property_type": p.property_type,
-            "latitude": float(p.latitude) if p.latitude else None,
-            "longitude": float(p.longitude) if p.longitude else None,
-            "area_sqm": p.area_sqm,
+            "id": ut.id,
+            "title": ut.name,
+            "district": inst.district if inst else None,
+            "country": inst.country if inst else None,
+            "address": inst.address if inst else None,
+            "price_monthly": ut.base_rent,
+            "bedrooms": ut.bedrooms,
+            "bathrooms": ut.bathrooms,
+            "property_type": ut.property_type.value if ut.property_type else None,
+            "latitude": float(inst.latitude) if inst and inst.latitude else None,
+            "longitude": float(inst.longitude) if inst and inst.longitude else None,
+            "area_sqm": ut.area_sqm,
             "primary_image_url": primary_url,
         })
 

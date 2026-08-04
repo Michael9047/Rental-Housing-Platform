@@ -77,6 +77,7 @@ function goNext() {
 }
 
 function goBack() {
+  // 退出流程：通过 BuildingRedirect 适配器自动转换 unit_type ID → building ID
   router.push({ name: 'property-detail', params: { id: routeParams().propertyId } })
 }
 </script>

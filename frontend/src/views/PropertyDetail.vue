@@ -75,11 +75,16 @@
         </div>
       </div>
 
-      <!-- ═══════ 地图 ═══════ -->
-      <div class="map-section" v-if="building.latitude && building.longitude">
-        <h2 class="section-heading">🗺️ 位置</h2>
-        <div id="detail-map" class="map-container"></div>
-      </div>
+      <!-- ═══════ 周边设施地图 ═══════ -->
+      <PropertyMapCard
+        v-if="building.latitude && building.longitude"
+        :property-id="building.id"
+        :property-lat="building.latitude"
+        :property-lng="building.longitude"
+        :property-title="building.name"
+        :property-address="displayAddress"
+        :country="building.country || undefined"
+      />
 
       <!-- ═══════ 第二层：可选户型 ═══════ -->
       <div class="unit-types-section">
@@ -193,6 +198,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Plus, Check } from '@element-plus/icons-vue'
 import api from '@/services/api'
+import PropertyMapCard from '@/components/PropertyMapCard.vue'
 import { useCartStore } from '@/stores/cart'
 import { useAuthStore } from '@/stores/auth'
 
@@ -242,11 +248,10 @@ async function toggleCart() {
 
 function goBook() {
   if (!building.value || !selectedUnitType.value) return
-  const availableRoom = selectedUnitType.value.rooms?.find((r: any) => r.status === 'available')
-  if (!availableRoom) { ElMessage.warning('该户型暂无可用房间'); return }
+  const propertyId = building.value.id
   router.push({
     name: 'booking-move-in-date',
-    params: { propertyId: String(availableRoom.id) },
+    params: { propertyId: String(propertyId) },
   })
 }
 
@@ -292,9 +297,7 @@ async function loadBuilding() {
       contact_phone: null, female_only: false, couples_allowed: false,
       unit_types: [],
     }
-    if (room.latitude && room.longitude) {
-      await nextTick(); initMap(room.latitude, room.longitude)
-    }
+    // 地图由 PropertyMapCard 组件自行渲染
     // 取户型信息
     if (room.unit_type_id) {
       try {
@@ -317,35 +320,7 @@ async function loadBuilding() {
   finally { loading.value = false }
 }
 
-function initMap(lat: number, lng: number) {
-  const el = document.getElementById('detail-map')
-  if (!el) return
-  const L = (window as any).L
-  if (!L) {
-    const s = document.createElement('script')
-    s.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js'
-    s.onload = () => {
-      const lib = (window as any).L
-      const m = lib.map('detail-map').setView([lat, lng], 15)
-      lib.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(m)
-      lib.marker([lat, lng]).addTo(m)
-      setTimeout(() => m.invalidateSize(), 300)
-    }
-    document.head.appendChild(s)
-  } else {
-    const m = L.map('detail-map').setView([lat, lng], 15)
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(m)
-    L.marker([lat, lng]).addTo(m)
-    setTimeout(() => m.invalidateSize(), 300)
-  }
-}
-
 onMounted(() => {
-  if (!document.getElementById('leaflet-css')) {
-    const c = document.createElement('link'); c.id = 'leaflet-css'; c.rel = 'stylesheet'
-    c.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css'
-    document.head.appendChild(c)
-  }
   loadBuilding()
 })
 </script>
@@ -590,20 +565,6 @@ onMounted(() => {
 }
 
 /* ═══════════════════════════════════════════════
-   地图
-   ═══════════════════════════════════════════════ */
-.map-section {
-  margin-bottom: 40px;
-}
-
-.map-container {
-  width: 100%;
-  height: 280px;
-  border-radius: 14px;
-  border: 1px solid #e4e7ed;
-  overflow: hidden;
-}
-
 /* ═══════════════════════════════════════════════
    户型卡片网格
    ═══════════════════════════════════════════════ */
