@@ -58,7 +58,7 @@ class RepairService:
                 user_id=property_obj.landlord_id,
                 type=NotificationType.repair_created,
                 title="新报修申请",
-                content=f"租客对房源「{property_obj.title}」提交了报修：{repair_in.description[:50]}",
+                content=f"租客对房源「{getattr(property_obj, 'title', getattr(property_obj, 'room_number', f'#{property_obj.id}'))}」提交了报修：{repair_in.description[:50]}",
             )
         else:
             # 通知所有Admin：有新工单待派单
@@ -71,7 +71,7 @@ class RepairService:
                     user_id=admin.id,
                     type=NotificationType.repair_created,
                     title="新报修待派单（房东无维修工）",
-                    content=f"租客对房源「{property_obj.title}」提交了报修，房东无维修工，请分配平台工人：{repair_in.description[:50]}",
+                    content=f"租客对房源「{getattr(property_obj, 'title', getattr(property_obj, 'room_number', f'#{property_obj.id}'))}」提交了报修，房东无维修工，请分配平台工人：{repair_in.description[:50]}",
                 )
 
         # Reload with relationships
