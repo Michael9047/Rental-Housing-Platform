@@ -92,7 +92,7 @@ const typeLabels: Record<string, string> = {
 const typeLabel = computed(() => typeLabels[props.property.property_type] || props.property.property_type)
 const fmtPrice = computed(() => {
   const p = props.property.price_monthly
-  return p ? formatPrice(p, props.property.currency) : '?'
+  return p ? formatPrice(p, props.property.currency, props.property.country) : '?'
 })
 const imageUrl = computed(() => {
   const imgs = props.property.images

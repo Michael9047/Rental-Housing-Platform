@@ -369,7 +369,7 @@ function renderMarkers() {
     const name = (p as any).name || (p as any).title || ''
     const rent = (p as any).min_rent ?? (p as any).base_rent ?? (p as any).price_monthly ?? 0
     const currency = (p as any).currency || 'CNY'
-    const sym = { CNY: '¥', GBP: '£', SGD: 'S$', USD: '$' }[currency] || '¥'
+    const sym = { CNY: '¥', GBP: '£', SGD: 'SG$', USD: '$' }[currency] || '¥'
     const content = `<div style="max-width:200px;font-size:13px">
       <strong>${name}</strong><br/>
       ${sym}${Number(rent).toLocaleString()}/月起
