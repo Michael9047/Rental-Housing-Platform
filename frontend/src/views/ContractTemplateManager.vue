@@ -69,12 +69,16 @@
               </el-tag>
             </div>
             <div ref="pdfContainer" style="border:1px solid #dcdfe6;min-height:600px;position:relative;overflow:auto;background:#f5f5f5"
-                 @click="onPdfClick">
-              <iframe v-if="pdfUrl" :src="pdfUrl" width="100%" height="800" style="border:none" />
+                 @mousedown="onMouseDown" @mousemove="onMouseMove" @mouseup="onMouseUp" @mouseleave="onMouseUp">
+              <iframe v-if="pdfUrl" :src="pdfUrl" width="100%" height="800" :style="{border:'none',pointerEvents:digMode?'none':'auto'}" />
+              <!-- 已保存的字段标记 -->
               <div v-for="(pos, key) in activeTpl.field_positions" :key="key" class="field-marker"
-                   :style="{left:pos.x+'px',top:pos.y+'px'}">
+                   :style="{left:pos.x+'px',top:pos.y+'px',width:(pos.w||80)+'px',height:(pos.h||20)+'px'}">
                 {{ fieldOptions.find(f=>f.key===key)?.label || key }}
               </div>
+              <!-- 拖动框选中的临时矩形 -->
+              <div v-if="dragRect" class="drag-rect"
+                   :style="{left:dragRect.x+'px',top:dragRect.y+'px',width:dragRect.w+'px',height:dragRect.h+'px'}" />
             </div>
           </el-card>
         </template>
@@ -112,6 +116,10 @@ const templates = ref<any[]>([])
 const activeTpl = ref<any>(null)
 const digMode = ref(false)
 const selectedField = ref('')
+// 框选状态
+const dragging = ref(false)
+const dragStart = ref({ x: 0, y: 0 })
+const dragRect = ref<{ x: number; y: number; w: number; h: number } | null>(null)
 const showUpload = ref(false)
 const uploading = ref(false)
 const saving = ref(false)
@@ -156,15 +164,42 @@ function selectBuilding(b: any) { selectedBld.value = b; activeTpl.value = null;
 function selectTemplate(tpl: any) { activeTpl.value = { ...tpl, field_positions: { ...tpl.field_positions } }; digMode.value = false; selectedField.value = '' }
 function removeField(key: string) { if (activeTpl.value?.field_positions) delete activeTpl.value.field_positions[key] }
 
-function onPdfClick(e: MouseEvent) {
+function getCoords(e: MouseEvent) {
+  const container = (e.currentTarget as HTMLElement) || (e.target as HTMLElement)
+  const r = container.getBoundingClientRect()
+  return { x: Math.round(e.clientX - r.left + container.scrollLeft), y: Math.round(e.clientY - r.top + container.scrollTop) }
+}
+function onMouseDown(e: MouseEvent) {
   if (!digMode.value || !selectedField.value || !activeTpl.value) return
-  const container = e.currentTarget as HTMLElement
-  const rect = container.getBoundingClientRect()
-  const x = Math.round(e.clientX - rect.left + container.scrollLeft)
-  const y = Math.round(e.clientY - rect.top + container.scrollTop)
-  if (!activeTpl.value.field_positions) activeTpl.value.field_positions = {}
-  activeTpl.value.field_positions[selectedField.value] = { page: 1, x, y, font_size: 12 }
-  ElMessage.success(`已标记「${fieldOptions.find(f=>f.key===selectedField.value)?.label}」`)
+  dragging.value = true
+  dragStart.value = getCoords(e)
+  dragRect.value = null
+}
+function onMouseMove(e: MouseEvent) {
+  if (!dragging.value) return
+  const p = getCoords(e)
+  dragRect.value = {
+    x: Math.min(dragStart.value.x, p.x),
+    y: Math.min(dragStart.value.y, p.y),
+    w: Math.abs(p.x - dragStart.value.x),
+    h: Math.abs(p.y - dragStart.value.y),
+  }
+}
+function onMouseUp(_e: MouseEvent) {
+  if (!dragging.value || !selectedField.value || !activeTpl.value) { dragging.value = false; return }
+  dragging.value = false
+  if (dragRect.value && dragRect.value.w > 5 && dragRect.value.h > 5) {
+    if (!activeTpl.value.field_positions) activeTpl.value.field_positions = {}
+    const label = fieldOptions.find(f => f.key === selectedField.value)?.label || selectedField.value
+    activeTpl.value.field_positions[selectedField.value] = {
+      page: 1,
+      x: dragRect.value.x, y: dragRect.value.y,
+      w: dragRect.value.w, h: dragRect.value.h,
+      font_size: Math.max(10, Math.round(dragRect.value.h * 0.6)),
+    }
+    ElMessage.success(`已框选「${label}」`)
+  }
+  dragRect.value = null
 }
 
 function onFileSelected(e: Event) { const file = (e.target as HTMLInputElement).files?.[0]; if (file) uploadForm.value.file = file }
@@ -216,5 +251,6 @@ async function deleteTemplate(tpl: any) {
 .tpl-row:hover { background: #f5f7fa }
 .tpl-row.active { background: var(--primary-light) }
 .tpl-name { font-weight: 600; flex: 1 }
-.field-marker { position: absolute; background: rgba(233,69,96,0.8); color: white; padding: 1px 6px; border-radius: 3px; font-size: 11px; pointer-events: none; white-space: nowrap; z-index: 10 }
+.field-marker { position: absolute; background: rgba(233,69,96,0.7); color: white; padding: 2px 6px; border-radius: 2px; font-size: 11px; pointer-events: none; white-space: nowrap; z-index: 10; border: 2px dashed rgba(255,255,255,0.7); display: flex; align-items: center; justify-content: center; overflow: hidden }
+.drag-rect { position: absolute; border: 2px dashed #e94560; background: rgba(233,69,96,0.15); pointer-events: none; z-index: 20 }
 </style>
