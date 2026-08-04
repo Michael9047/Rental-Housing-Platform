@@ -168,11 +168,12 @@ from fastapi import UploadFile, File, Form
 @router.post("/templates", response_model=TemplateRead, status_code=201)
 async def upload_template(
     name: str = Form(...),
+    institute_id: int = Form(...),
     file: UploadFile = File(...),
     session: AsyncSession = Depends(get_db_session),
     current_user: User = Depends(get_current_user),
 ):
-    """BM 上传合同 PDF 模板"""
+    """BM 上传合同 PDF 模板 — 绑定到指定公寓"""
     if current_user.role not in (UserRole.landlord, UserRole.admin):
         raise HTTPException(403, "仅房东可上传模板")
     if not file.filename or not file.filename.lower().endswith(".pdf"):
@@ -184,8 +185,8 @@ async def upload_template(
     PrivateObjectStorage().put(storage_key, pdf_bytes)
 
     tpl = ContractTemplate(
-        id=tpl_id, bm_id=current_user.id, name=name.strip(),
-        file_path=storage_key, field_positions={},
+        id=tpl_id, bm_id=current_user.id, institute_id=institute_id,
+        name=name.strip(), file_path=storage_key, field_positions={},
     )
     session.add(tpl)
     await session.commit()

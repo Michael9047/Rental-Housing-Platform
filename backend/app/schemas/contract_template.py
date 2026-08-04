@@ -13,8 +13,9 @@ class FieldPosition(BaseModel):
 
 
 class TemplateCreate(BaseModel):
-    """上传模板 — name 必填"""
+    """上传模板 — name + institute_id 必填"""
     name: str = Field(..., min_length=1, max_length=100)
+    institute_id: int = Field(..., description="所属公寓ID")
 
 
 class TemplateUpdate(BaseModel):
@@ -28,6 +29,7 @@ class TemplateRead(BaseModel):
     """模板响应"""
     id: str
     bm_id: int
+    institute_id: int
     name: str
     file_path: str
     field_positions: dict

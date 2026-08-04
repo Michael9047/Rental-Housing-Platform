@@ -19,6 +19,9 @@ class ContractTemplate(Base):
     bm_id: Mapped[int] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False
     )
+    institute_id: Mapped[int] = mapped_column(
+        ForeignKey("institutes.id", ondelete="CASCADE"), index=True, nullable=False
+    )
     name: Mapped[str] = mapped_column(String(100), nullable=False)
     file_path: Mapped[str] = mapped_column(String(500), nullable=False)
     field_positions: Mapped[dict] = mapped_column(
