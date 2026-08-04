@@ -118,7 +118,6 @@
                     <span class="utc-tag" :style="{ color: 'var(--primary)', fontWeight: 700 }">
                       {{ (ut.total_count ?? 0) - (ut.available_count ?? 0) }} / {{ ut.total_count ?? 0 }} 已租
                     </span>
-                    <el-tag size="small" :type="ut.status==='available'?'success':'info'">{{ ut.status==='available'?'可租':'已租' }}</el-tag>
                   </div>
                   <div class="utc-amenities" v-if="ut.amenities?.length">
                     <span v-for="a in ut.amenities.slice(0, 6)" :key="a" class="utc-amenity">{{ a }}</span>
