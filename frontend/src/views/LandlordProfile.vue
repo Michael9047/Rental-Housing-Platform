@@ -99,7 +99,8 @@ const editForm = reactive({
 
 const qrPreview = computed(() => {
   if (profile.wechat_qr) {
-    return profile.wechat_qr.startsWith('http') ? profile.wechat_qr : '/api/v1/uploads/' + profile.wechat_qr
+    if (profile.wechat_qr.startsWith('http') || profile.wechat_qr.startsWith('/api')) return profile.wechat_qr
+    return '/api/v1/uploads/' + profile.wechat_qr
   }
   return ''
 })
@@ -148,7 +149,7 @@ async function onQrUpload(e: Event) {
       headers: { 'Content-Type': 'multipart/form-data' },
     })
     qrTempUrl.value = r.data.urls?.[0] || ''
-    editForm.wechat_qr = qrTempUrl.value.split('/').pop() || ''
+    editForm.wechat_qr = qrTempUrl.value  // 存完整相对路径，如 /api/v1/uploads/temp/42/xxx.png
   } catch {
     ElMessage.error('上传失败')
   }
