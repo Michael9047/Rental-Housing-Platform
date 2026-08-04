@@ -128,10 +128,6 @@ class UnitTypeService:
         for f in filters: stmt = stmt.where(f)
         result = await self.session.scalars(stmt)
         items = list(result.unique())
-        from app.models.property import Room
-        for ut in items:
-            rc = select(func.count(Room.id)).where(Room.unit_type_id == ut.id)
-            ut._room_count = (await self.session.scalar(rc)) or 0
         return {"items": items, "total": total, "page": skip // limit + 1, "page_size": limit, "total_pages": max(1, (total + limit - 1) // limit)}
 
     async def update(self, unit_type_id: int, data: UnitTypeUpdate) -> UnitType | None:

@@ -2,7 +2,7 @@
 import enum
 from datetime import date, datetime
 
-from sqlalchemy import Boolean, Date, DateTime, Enum, ForeignKey, Integer, Numeric, String, Text, text
+from sqlalchemy import Boolean, Date, DateTime, Enum, Float, ForeignKey, Integer, Numeric, String, Text, text
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -109,7 +109,7 @@ class UnitType(TimestampMixin, Base):
 
     # ── 关系 ──
     institute: Mapped["Institute"] = relationship(back_populates="unit_types")
-    # Room 表已删除，rooms 关系移除
+    images: Mapped[list["UnitTypeImage"]] = relationship(back_populates="unit_type")
 
 
 class UnitTypeImage(TimestampMixin, Base):

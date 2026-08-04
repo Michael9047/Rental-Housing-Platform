@@ -1,5 +1,6 @@
 """户型 Pydantic 模式（稳定版）"""
 from datetime import date, datetime
+from decimal import Decimal
 from pydantic import BaseModel, Field
 
 

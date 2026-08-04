@@ -5,8 +5,8 @@ from app.api.v1.routes import (
     admin, agent, auth, bookings,
     building_staff, buildings, chat, commute, contracts,
     dashboard, favorites, geocoding, health,
-    imports, map_routes, notifications,
-    payments, repair_workers, repairs,
+    images, imports, map_routes, me, notifications,
+    payments, pois, repair_workers, repairs, reviews,
     search_suggestions, tenants,
     unit_types, universities, upload, users, wechat,
 )

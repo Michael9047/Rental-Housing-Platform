@@ -16,9 +16,6 @@ class InstitutePOI(TimestampMixin, Base):
     institute_id: Mapped[int] = mapped_column(
         ForeignKey("institutes.id", ondelete="CASCADE"), primary_key=True
     )
-    institute_id: Mapped[int] = mapped_column(
-        ForeignKey("institutes.id", ondelete="CASCADE"), unique=True, index=True
-    )
     content: Mapped[str] = mapped_column(SAText, nullable=False)
     poi_data: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     generated_at: Mapped[datetime] = mapped_column(
