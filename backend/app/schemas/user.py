@@ -9,6 +9,8 @@ class UserBase(BaseModel):
     username: str = Field(min_length=1, max_length=100)
     phone: str | None = Field(default=None, max_length=32)
     wechat_openid: str | None = Field(default=None, max_length=128)
+    wechat: str | None = Field(default=None, max_length=100)
+    wechat_qr: str | None = Field(default=None, max_length=500)
     email: EmailStr | None = None
     # email_verified/phone_verified columns pending future DB migration
     role: UserRole = UserRole.tenant
@@ -36,6 +38,8 @@ class UserProfileUpdate(BaseModel):
     username: str | None = Field(default=None, min_length=1, max_length=100)
     phone: str | None = Field(default=None, max_length=32)
     email: EmailStr | None = None
+    wechat: str | None = Field(default=None, max_length=100)
+    wechat_qr: str | None = Field(default=None, max_length=500)
     preferred_name: str | None = Field(default=None, max_length=100)
     enrollment_level: str | None = Field(default=None, max_length=20)
     enrollment_class: str | None = Field(default=None, max_length=30)
@@ -61,6 +65,8 @@ class UserProfileRead(UserBase):
     created_at: datetime
     updated_at: datetime
     preferred_name: str | None = None
+    wechat: str | None = None
+    wechat_qr: str | None = None
     enrollment_level: str | None = None
     enrollment_class: str | None = None
     enrollment_term: str | None = None

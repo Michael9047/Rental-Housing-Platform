@@ -169,7 +169,6 @@
             <el-tag v-if="newBuilding.lat!=null && newBuilding.lng!=null" type="success" effect="dark" size="small">✅ 已定位</el-tag>
             <el-tag v-else type="danger" effect="dark" size="small">❌ 未定位</el-tag>
             <el-button size="small" type="danger" plain style="margin-left:auto" @click="clearBldAddressFields">🗑️ 清空</el-button>
-            <el-button size="small" type="warning" plain @click="newBuilding.city='BTN_TEST_'+Date.now().toString().slice(-5)">🧪 测试赋值</el-button>
           </div>
           <div ref="bldMapEl" style="width:100%;height:260px;border-radius:8px;border:1px solid #dcdfe6;"></div>
           <div style="color:#909399;font-size:12px;margin-top:4px">💡 填地址→检索定位；点地图→自动回填</div>
@@ -327,22 +326,6 @@ const facilityAmenitiesBld = ['电梯','洗衣房','自行车库','停车场','�
 const sportAmenitiesBld = ['健身房','游泳池','篮球场','瑜伽室','游戏室','BBQ区','乒乓球/台球']
 
 let bldMapInst:any=null, bldMarkerInst:any=null
-// 用 watch 桥接 Leaflet 异步回调和 Vue 响应式
-const _geoTrigger = ref(0)
-let _pendingGeoData: Record<string, string> | null = null
-watch(_geoTrigger, async () => {
-  if (!_pendingGeoData) return
-  // 先清空所有地址字段
-  newBuilding.country = ''
-  newBuilding.city = ''
-  newBuilding.district = ''
-  newBuilding.street = ''
-  newBuilding.postalCode = ''
-  await import('vue').then(m => m.nextTick())
-  // 再填入新值
-  Object.assign(newBuilding, _pendingGeoData)
-  _pendingGeoData = null
-})
 
 function getL(){ return (window as any).L }
 async function ensureLeaflet(){
@@ -413,21 +396,13 @@ async function reverseBldGeocode(lat:number,lng:number){
     const d=await r.json()
     if(!d?.address) return
     const a = d.address
-    const road = a.road || a.pedestrian || a.path || a.footway || ''
-    const hn = a.house_number || ''
-    // 通过 watch 桥接写入 reactive，保证响应式可靠
-    _pendingGeoData = {
-      country: a.country || newBuilding.country,
-      city: a.city || a.town || a.municipality || a.village || a.hamlet || '',
-      district: a.suburb || a.borough || a.city_district || a.county || a.state_district || '',
-      street: hn ? `${hn} ${road}`.trim() : road,
-      postalCode: a.postcode || newBuilding.postalCode,
-    }
-    _geoTrigger.value++
+    if (a.country && !newBuilding.country) newBuilding.country = a.country
+    if (!newBuilding.city) newBuilding.city = a.city || a.town || a.municipality || a.village || a.hamlet || ''
+    if (!newBuilding.district) newBuilding.district = a.suburb || a.borough || a.city_district || a.county || a.state_district || ''
+    if (!newBuilding.street) { const road = a.road || a.pedestrian || a.path || a.footway || ''; const hn = a.house_number || ''; newBuilding.street = hn ? `${hn} ${road}`.trim() : road }
+    if (!newBuilding.postalCode) newBuilding.postalCode = a.postcode || ''
     ElMessage.success('已从地图反向定位，地址字段已自动填充')
-  }catch(e){
-    console.error('[reverseGeocode]', e)
-  }
+  }catch(e){}
 }
 
 function clearBldAddressFields(){

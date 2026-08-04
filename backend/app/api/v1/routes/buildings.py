@@ -341,25 +341,6 @@ async def create_building(
         session.add(log); await session.commit()
     except Exception: pass
     await session.refresh(building)
-    # ── 负责人写入 building_staff ──
-    manager_name = body.manager_name.strip() if body.manager_name else ""
-    manager_phone = body.manager_phone.strip() if body.manager_phone else ""
-    manager_wechat = body.manager_wechat.strip() if body.manager_wechat else ""
-    manager_wechat_qr = _move_qr_from_temp(body.manager_wechat_qr) if body.manager_wechat_qr else None
-    manager_email = body.manager_email.strip() if body.manager_email else ""
-    if manager_name:
-        from app.models.building_staff import BuildingStaff
-        staff = BuildingStaff(
-            institute_id=building.id,
-            name=manager_name,
-            role="manager",
-            phone=manager_phone or None,
-            wechat=manager_wechat or None,
-            wechat_qr=manager_wechat_qr,
-            notes=manager_email or None,
-        )
-        session.add(staff)
-        await session.commit()
     return {
         "id": building.id,
         "business_id": building.business_id,
@@ -693,39 +674,7 @@ async def update_building(
     await session.commit()
     await session.refresh(b)
 
-    # ── 负责人同步至 building_staff ──
-    manager_name = body.manager_name.strip() if body.manager_name else ""
-    manager_phone = body.manager_phone.strip() if body.manager_phone else ""
-    manager_wechat = body.manager_wechat.strip() if body.manager_wechat else ""
-    manager_wechat_qr = _move_qr_from_temp(body.manager_wechat_qr) if body.manager_wechat_qr else None
-    manager_email = body.manager_email.strip() if body.manager_email else ""
-    if manager_name:
-        from app.models.building_staff import BuildingStaff
-        existing_staff = await session.scalar(
-            select(BuildingStaff).where(
-                BuildingStaff.institute_id == building_id,
-                BuildingStaff.role == "manager",
-            )
-        )
-        if existing_staff:
-            existing_staff.name = manager_name
-            existing_staff.phone = manager_phone or None
-            existing_staff.wechat = manager_wechat or None
-            existing_staff.wechat_qr = manager_wechat_qr
-            existing_staff.notes = manager_email or None
-        else:
-            staff = BuildingStaff(
-                institute_id=building_id,
-                name=manager_name,
-                role="manager",
-                phone=manager_phone or None,
-                wechat=manager_wechat or None,
-                wechat_qr=manager_wechat_qr,
-                notes=manager_email or None,
-            )
-            session.add(staff)
-        await session.commit()
-
+    # ── 返回完整响应 ──
     # 审计
     try:
         from app.models.audit_log import AuditLog

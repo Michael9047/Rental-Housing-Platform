@@ -30,6 +30,10 @@
 
       <!-- ====== 房东侧边栏 ====== -->
       <template v-if="authStore.isLandlord">
+        <el-menu-item index="/landlord/profile">
+          <el-icon><User /></el-icon>
+          <span>个人中心</span>
+        </el-menu-item>
         <el-menu-item index="/buildings">
           <el-icon><HomeFilled /></el-icon>
           <span>公寓管理</span>
@@ -100,6 +104,7 @@ const activeMenu = computed(() => {
   if (path.startsWith('/tenants')) return '/tenants'
   if (path.startsWith('/repairs')) return '/repairs/manage'
   if (path.startsWith('/notifications')) return '/notifications'
+  if (path.startsWith('/landlord/profile')) return '/landlord/profile'
   return path
 })
 </script>

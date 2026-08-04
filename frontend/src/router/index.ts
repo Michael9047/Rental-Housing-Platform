@@ -282,6 +282,12 @@ const routes: RouteRecordRaw[] = [
         component: () => import('@/views/admin/AdminWorkspace.vue'),
         meta: { requiresAuth: true, requiresLandlord: true },
       },
+      {
+        path: 'landlord/profile',
+        name: 'landlord-profile',
+        component: () => import('@/views/LandlordProfile.vue'),
+        meta: { requiresAuth: true, requiresLandlord: true },
+      },
       // ---- 报修详情（通用）----
       {
         path: 'repairs/:id',

@@ -57,13 +57,6 @@ class InstituteCreate(BaseModel):
     female_only: bool = False
     couples_allowed: bool = False
 
-    # 负责人（保存时同步到 building_staff）
-    manager_name: str | None = Field(default=None, max_length=100)
-    manager_phone: str | None = Field(default=None, max_length=32)
-    manager_wechat: str | None = Field(default=None, max_length=100)
-    manager_wechat_qr: str | None = Field(default=None, max_length=255)
-    manager_email: str | None = Field(default=None, max_length=255)
-
     # BM 联系信息
     bm_id: int | None = Field(default=None, description="商务经理用户ID")
     bm_wechat: str | None = Field(default=None, max_length=100, description="BM微信号")
@@ -112,12 +105,6 @@ class InstituteUpdate(BaseModel):
     amenities: list[str] | None = None
     female_only: bool | None = None
     couples_allowed: bool | None = None
-
-    manager_name: str | None = Field(default=None, max_length=100)
-    manager_phone: str | None = Field(default=None, max_length=32)
-    manager_wechat: str | None = Field(default=None, max_length=100)
-    manager_wechat_qr: str | None = Field(default=None, max_length=255)
-    manager_email: str | None = Field(default=None, max_length=255)
 
     bm_id: int | None = None
     bm_wechat: str | None = Field(default=None, max_length=100)
