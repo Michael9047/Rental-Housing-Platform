@@ -175,7 +175,7 @@ async function fetchList() {
 async function fetchBuildings() {
   try {
     const r = await api.get('/buildings', { params: { limit: 200 } })
-    buildings.value = r.data.items || []
+    buildings.value = Array.isArray(r.data) ? r.data : (r.data.items || [])
   } catch { /* */ }
 }
 
