@@ -82,12 +82,13 @@ class UnitTypeRead(BaseModel):
     lease_start: str | None = None
     lease_start_date: date | None = None
     lease_end: str | None = None
-    lease_start_date: date | None = None
     lease_end_date: date | None = None
+    rental_requirements: str | None = None
     currency: str | None = None
     special_offer: str | None = None
     floor_pricing: list[dict] | None = None
     amenities: list[str] | None = None
+    image_urls: list[str] | None = None
     description: str | None = None
     available_from: date | None = None
     min_stay_months: int
@@ -95,6 +96,8 @@ class UnitTypeRead(BaseModel):
     total_count: int = 1
     available_count: int = 1
     status: str
+    room_count: int = 0
+    images: list[dict] | None = None
     deleted_at: datetime | None = None
     created_at: datetime
     updated_at: datetime
