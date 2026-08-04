@@ -354,7 +354,7 @@ async function initBldMap(lat:number|null, lng:number|null){
   if(lat!=null && lng!=null) placeBldMarker(lat, lng, false)
 }
 
-function placeBldMarker(lat:number, lng:number, rev:boolean){
+async function placeBldMarker(lat:number, lng:number, rev:boolean){
   const L=getL(); if(!L||!bldMapInst) return
   if(bldMarkerInst) bldMarkerInst.setLatLng([lat,lng])
   else {
@@ -362,7 +362,7 @@ function placeBldMarker(lat:number, lng:number, rev:boolean){
     bldMarkerInst.on('dragend', ()=>{ const p=bldMarkerInst.getLatLng(); newBuilding.lat=p.lat; newBuilding.lng=p.lng })
   }
   newBuilding.lat=lat; newBuilding.lng=lng
-  if(rev) reverseBldGeocode(lat,lng)
+  if(rev) await reverseBldGeocode(lat,lng)
 }
 
 function destroyBldMap(){
@@ -396,13 +396,15 @@ async function reverseBldGeocode(lat:number,lng:number){
     const d=await r.json()
     if(!d?.address) { console.warn('[reverseGeocode] no address in response', d); return }
     const a = d.address
-    if (a.country) newBuilding.country = a.country
-    newBuilding.city = a.city || a.town || a.municipality || a.village || a.hamlet || ''
-    newBuilding.district = a.suburb || a.borough || a.city_district || a.county || a.state_district || ''
     const road = a.road || a.pedestrian || a.path || a.footway || ''
     const hn = a.house_number || ''
-    newBuilding.street = hn ? `${hn} ${road}`.trim() : road
-    if (a.postcode) newBuilding.postalCode = a.postcode
+    Object.assign(newBuilding, {
+      country: a.country || newBuilding.country,
+      city: a.city || a.town || a.municipality || a.village || a.hamlet || '',
+      district: a.suburb || a.borough || a.city_district || a.county || a.state_district || '',
+      street: hn ? `${hn} ${road}`.trim() : road,
+      postalCode: a.postcode || newBuilding.postalCode,
+    })
     ElMessage.success('已从地图反向定位，地址字段已自动填充')
   }catch(e){
     console.error('[reverseGeocode] error:', e)
