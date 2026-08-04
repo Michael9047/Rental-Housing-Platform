@@ -10,17 +10,28 @@
 <script setup lang="ts">
 import { ref, onErrorCaptured } from 'vue'
 const error = ref<string | null>(null)
+
+function _isNoise(msg: string | undefined): boolean {
+  if (!msg) return false
+  return msg.includes('ResizeObserver') || msg.includes('Script error')
+}
+
 onErrorCaptured((err: any) => {
-  error.value = err?.message || err?.toString() || 'Unknown error'
+  const msg = err?.message || err?.toString() || ''
+  if (_isNoise(msg)) return false
+  error.value = msg || 'Unknown error'
   console.error('Caught:', err)
   return false
 })
 // Global error handler
 window.addEventListener('error', (e) => {
+  if (_isNoise(e.message)) return
   error.value = `[${e.filename?.split('/').pop()}:${e.lineno}] ${e.message}`
 })
 window.addEventListener('unhandledrejection', (e) => {
-  error.value = `[Promise] ${e.reason?.message || e.reason}`
+  const msg = e.reason?.message || e.reason?.toString() || ''
+  if (_isNoise(msg)) return
+  error.value = `[Promise] ${msg}`
 })
 </script>
 
