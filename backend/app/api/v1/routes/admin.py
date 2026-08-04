@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from pydantic import BaseModel
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -10,7 +11,13 @@ from app.models.booking import Booking, BookingStatus
 from app.models.notification import NotificationOutbox, NotificationOutboxStatus
 from app.models.payment import Payment, PaymentStatus
 from app.models.pms_connection import PMSConnection, PMSSyncStatus
+from app.models.system_alert import (
+    SystemAlert as PersistedSystemAlert,
+    SystemAlertSeverity,
+    SystemAlertStatus,
+)
 from app.models.user import User, UserRole
+from app.schemas.system_alert import SystemAlertCreate
 from app.schemas.user import UserRead
 from app.services.audit_service import AuditService
 from app.services.payment_provider import provider_availability
@@ -19,6 +26,44 @@ from app.services.stats_service import StatsService
 from app.services.user_service import UserService
 
 router = APIRouter()
+
+
+class SystemAlertResolveRequest(BaseModel):
+    note: str | None = None
+
+
+def _alert_action(
+    action_type: str | None,
+    action_label: str | None,
+    action_resource_id: str | int | None,
+) -> dict | None:
+    if not action_type or not action_label:
+        return None
+    return {
+        "type": action_type,
+        "label": action_label,
+        "resource_id": action_resource_id,
+    }
+
+
+def _persisted_alert_to_card(row: PersistedSystemAlert) -> dict:
+    return {
+        "id": f"system:{row.id}",
+        "category": row.category,
+        "severity": row.severity.value if hasattr(row.severity, "value") else str(row.severity),
+        "title": row.title,
+        "summary": row.summary,
+        "detail": row.detail or "",
+        "source": row.source,
+        "source_id": row.source_id or row.id,
+        "status": row.status.value if hasattr(row.status, "value") else str(row.status),
+        "updated_at": row.updated_at.isoformat(),
+        "action": _alert_action(
+            row.action_type or "resolve_system_alert",
+            row.action_label or "标记处理",
+            row.action_resource_id or row.id,
+        ),
+    }
 
 
 @router.get("/overview")
@@ -109,9 +154,16 @@ async def get_admin_overview(
 async def list_system_alerts(
     session: AsyncSession = Depends(get_db_session),
     _: User = Depends(require_admin),
+    include_resolved: bool = Query(default=False),
 ) -> list[dict]:
     now = datetime.now(timezone.utc)
     alerts: list[dict] = []
+
+    persisted_stmt = select(PersistedSystemAlert).order_by(PersistedSystemAlert.updated_at.desc()).limit(60)
+    if not include_resolved:
+        persisted_stmt = persisted_stmt.where(PersistedSystemAlert.status != SystemAlertStatus.resolved)
+    persisted_rows = await session.scalars(persisted_stmt)
+    alerts.extend(_persisted_alert_to_card(row) for row in persisted_rows)
 
     failed_outbox_rows = await session.scalars(
         select(NotificationOutbox)
@@ -252,6 +304,52 @@ async def list_system_alerts(
     severity_order = {"high": 0, "medium": 1, "low": 2}
     alerts.sort(key=lambda item: (severity_order.get(item["severity"], 9), item["updated_at"]), reverse=False)
     return alerts[:60]
+
+
+@router.post("/system-alerts", status_code=status.HTTP_201_CREATED)
+async def create_system_alert(
+    body: SystemAlertCreate,
+    session: AsyncSession = Depends(get_db_session),
+    current_user: User = Depends(require_admin),
+) -> dict:
+    alert = PersistedSystemAlert(
+        category=body.category,
+        severity=SystemAlertSeverity(body.severity),
+        title=body.title,
+        summary=body.summary,
+        detail=body.detail,
+        source=body.source,
+        source_id=body.source_id,
+        status=SystemAlertStatus.open,
+        action_type=body.action_type or "resolve_system_alert",
+        action_label=body.action_label or "标记处理",
+        action_resource_id=body.action_resource_id,
+        extra=body.extra,
+        reported_by_id=current_user.id,
+    )
+    session.add(alert)
+    await session.commit()
+    await session.refresh(alert)
+    return _persisted_alert_to_card(alert)
+
+
+@router.patch("/system-alerts/{alert_id}/resolve")
+async def resolve_system_alert(
+    alert_id: int,
+    body: SystemAlertResolveRequest | None = None,
+    session: AsyncSession = Depends(get_db_session),
+    current_user: User = Depends(require_admin),
+) -> dict:
+    alert = await session.get(PersistedSystemAlert, alert_id)
+    if not alert:
+        raise HTTPException(status_code=404, detail="System alert not found")
+    details = alert.extra or {}
+    if body and body.note:
+        details["resolve_note"] = body.note
+    alert.extra = details or None
+    alert.mark_resolved(current_user.id)
+    await session.commit()
+    return {"id": alert.id, "status": alert.status.value}
 
 
 @router.get("/stats")

@@ -65,6 +65,10 @@ export const adminService = {
     return api.post(`/pms/connections/${connectionId}/sync`).then((r) => r.data)
   },
 
+  resolveSystemAlert(alertId: number, note?: string): Promise<{ id: number; status: string }> {
+    return api.patch(`/admin/system-alerts/${alertId}/resolve`, { note }).then((r) => r.data)
+  },
+
   getEmbeddingStats(): Promise<EmbeddingStats> {
     return api.get('/admin/embeddings/stats').then((r) => r.data)
   },

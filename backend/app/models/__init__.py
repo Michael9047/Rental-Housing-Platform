@@ -34,6 +34,7 @@ from app.models.repair import (
 )
 from app.models.review import Review, ReviewStatus
 from app.models.saved_search import SavedSearch
+from app.models.system_alert import SystemAlert, SystemAlertSeverity, SystemAlertStatus
 from app.models.tenant import Tenant, HousingStatus
 from app.models.unit_type import DepositType, PropertyType, UnitType, UnitTypeStatus
 from app.models.user import User, UserRole, UserStatus
@@ -88,6 +89,9 @@ __all__ = [
     "Review",
     "ReviewStatus",
     "SavedSearch",
+    "SystemAlert",
+    "SystemAlertSeverity",
+    "SystemAlertStatus",
     "Tenant",
     "UnitType",
     "UnitTypeStatus",

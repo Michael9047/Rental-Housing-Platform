@@ -72,7 +72,7 @@ export interface NotificationOutboxItem {
 export type SystemAlertSeverity = 'high' | 'medium' | 'low'
 
 export interface SystemAlertAction {
-  type: 'retry_notification' | 'retry_pms_sync'
+  type: 'retry_notification' | 'retry_pms_sync' | 'resolve_system_alert'
   label: string
   resource_id: string | number
 }

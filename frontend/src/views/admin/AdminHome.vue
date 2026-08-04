@@ -147,6 +147,11 @@ async function runAlertAction(alert: SystemAlert) {
     ElMessage.success('已触发 PMS 重新同步')
     await loadData()
   }
+  if (alert.action.type === 'resolve_system_alert') {
+    await adminService.resolveSystemAlert(Number(alert.action.resource_id))
+    ElMessage.success('已标记处理')
+    await loadData()
+  }
 }
 
 async function loadData() {
