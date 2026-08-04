@@ -155,6 +155,126 @@ async def create_my_signed_download_link(
     }
 
 
+# ═══════════════════════════════════════════════════════════════
+# 合同模板管理
+# ═══════════════════════════════════════════════════════════════
+
+from app.schemas.contract_template import TemplateCreate, TemplateUpdate, TemplateRead, TemplateListResponse
+from app.models.contract_template import ContractTemplate
+from app.services.private_object_storage import PrivateObjectStorage
+from fastapi import UploadFile, File, Form
+
+
+@router.post("/templates", response_model=TemplateRead, status_code=201)
+async def upload_template(
+    name: str = Form(...),
+    file: UploadFile = File(...),
+    session: AsyncSession = Depends(get_db_session),
+    current_user: User = Depends(get_current_user),
+):
+    """BM 上传合同 PDF 模板"""
+    if current_user.role not in (UserRole.landlord, UserRole.admin):
+        raise HTTPException(403, "仅房东可上传模板")
+    if not file.filename or not file.filename.lower().endswith(".pdf"):
+        raise HTTPException(400, "仅支持 PDF 文件")
+
+    pdf_bytes = await file.read()
+    tpl_id = str(uuid.uuid4())
+    storage_key = f"contract_templates/{current_user.id}/{tpl_id}.pdf"
+    PrivateObjectStorage().put(storage_key, pdf_bytes)
+
+    tpl = ContractTemplate(
+        id=tpl_id, bm_id=current_user.id, name=name.strip(),
+        file_path=storage_key, field_positions={},
+    )
+    session.add(tpl)
+    await session.commit()
+    await session.refresh(tpl)
+    return tpl
+
+
+@router.get("/templates", response_model=TemplateListResponse)
+async def list_templates(
+    session: AsyncSession = Depends(get_db_session),
+    current_user: User = Depends(get_current_user),
+):
+    """BM 查看自己的模板列表"""
+    stmt = (
+        select(ContractTemplate)
+        .where(ContractTemplate.bm_id == current_user.id)
+        .order_by(ContractTemplate.created_at.desc())
+    )
+    result = await session.execute(stmt)
+    items = list(result.scalars().all())
+    return TemplateListResponse(items=items, total=len(items))
+
+
+@router.get("/templates/{template_id}", response_model=TemplateRead)
+async def get_template(
+    template_id: str,
+    session: AsyncSession = Depends(get_db_session),
+    current_user: User = Depends(get_current_user),
+):
+    tpl = await session.get(ContractTemplate, template_id)
+    if not tpl or tpl.bm_id != current_user.id:
+        raise HTTPException(404, "模板不存在")
+    return tpl
+
+
+@router.get("/templates/{template_id}/file")
+async def download_template_file(
+    template_id: str,
+    session: AsyncSession = Depends(get_db_session),
+    current_user: User = Depends(get_current_user),
+):
+    """下载模板 PDF 文件"""
+    tpl = await session.get(ContractTemplate, template_id)
+    if not tpl or tpl.bm_id != current_user.id:
+        raise HTTPException(404, "模板不存在")
+    try:
+        pdf_bytes = PrivateObjectStorage().get(tpl.file_path)
+    except FileNotFoundError:
+        raise HTTPException(404, "模板文件不存在")
+    return Response(content=pdf_bytes, media_type="application/pdf")
+
+
+@router.put("/templates/{template_id}", response_model=TemplateRead)
+async def update_template(
+    template_id: str,
+    data: TemplateUpdate,
+    session: AsyncSession = Depends(get_db_session),
+    current_user: User = Depends(get_current_user),
+):
+    """更新模板名称或保存字段坐标"""
+    tpl = await session.get(ContractTemplate, template_id)
+    if not tpl or tpl.bm_id != current_user.id:
+        raise HTTPException(404, "模板不存在")
+    update = data.model_dump(exclude_unset=True)
+    for k, v in update.items():
+        setattr(tpl, k, v)
+    await session.commit()
+    await session.refresh(tpl)
+    return tpl
+
+
+@router.delete("/templates/{template_id}", status_code=200)
+async def delete_template(
+    template_id: str,
+    session: AsyncSession = Depends(get_db_session),
+    current_user: User = Depends(get_current_user),
+):
+    tpl = await session.get(ContractTemplate, template_id)
+    if not tpl or tpl.bm_id != current_user.id:
+        raise HTTPException(404, "模板不存在")
+    try:
+        PrivateObjectStorage().delete(tpl.file_path)
+    except Exception:
+        pass
+    await session.delete(tpl)
+    await session.commit()
+    return {"ok": True}
+
+
 # ── 房东合约列表 ──
 
 from pydantic import BaseModel as _PydanticBaseModel

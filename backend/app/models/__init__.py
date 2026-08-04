@@ -8,6 +8,7 @@ from app.models.building_staff import BuildingStaff
 from app.models.chat import ChatMessage, ChatMessageRole, ChatSession, ChatSessionStatus
 from app.models.compare_session import CompareSession
 from app.models.contract import Contract, ContractSignature
+from app.models.contract_template import ContractTemplate
 from app.models.data_import import DataImport, ImportSourceType, ImportStatus
 from app.models.embedding_job import EmbeddingJob, EmbeddingJobStatus
 from app.models.institute import Institute, InstituteStatus

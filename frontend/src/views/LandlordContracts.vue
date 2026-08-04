@@ -1,6 +1,9 @@
 <template>
   <div class="page-container">
-    <h2 class="section-title">合约管理</h2>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+      <h2 class="section-title" style="margin:0">合约管理</h2>
+      <el-button type="primary" @click="$router.push('/contracts/templates')">📄 模板管理</el-button>
+    </div>
 
     <el-table :data="contracts" v-loading="loading" stripe empty-text="暂无合约">
       <el-table-column prop="agreement_number" label="合同编号" width="180" />

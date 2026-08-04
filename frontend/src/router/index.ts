@@ -241,6 +241,13 @@ const routes: RouteRecordRaw[] = [
         component: () => import('@/views/LandlordContracts.vue'),
         meta: { requiresAuth: true, requiresLandlord: true },
       },
+      // 合同模板管理
+      {
+        path: 'contracts/templates',
+        name: 'contract-templates',
+        component: () => import('@/views/ContractTemplateManager.vue'),
+        meta: { requiresAuth: true, requiresLandlord: true },
+      },
       // 租客管理
       {
         path: 'tenants',
