@@ -11,7 +11,7 @@
     <div class="mini-card__body">
       <h4 class="mini-card__title">{{ property.title }}</h4>
       <div class="mini-card__meta">
-        <span class="mini-card__price">¥{{ fmtPrice }}</span>
+        <span class="mini-card__price">{{ fmtPrice }}</span>
         <span>{{ property.area_sqm ? property.area_sqm + '㎡' : '' }}</span>
         <span>·</span>
         <span>{{ typeLabel }}</span>
@@ -44,7 +44,7 @@
     </div>
     <div class="mini-card__body mini-card__body--scroll">
       <h4 class="mini-card__title mini-card__title--scroll">{{ property.title }}</h4>
-      <div class="mini-card__price mini-card__price--scroll">¥{{ fmtPrice }}/月</div>
+      <div class="mini-card__price mini-card__price--scroll">{{ fmtPrice }}/月</div>
       <div class="mini-card__meta--scroll">
         {{ property.area_sqm ? property.area_sqm + '㎡ · ' : '' }}{{ typeLabel }} · {{ property.bedrooms }}室
       </div>
@@ -69,6 +69,7 @@ import { PictureFilled } from '@element-plus/icons-vue'
 import { useCartStore } from '@/stores/cart'
 import { useAuthStore } from '@/stores/auth'
 import type { Property, PropertySearchResult } from '@/types/property'
+import { formatPrice } from '@/data/currency'
 
 const props = withDefaults(defineProps<{
   property: Property | PropertySearchResult
@@ -91,7 +92,7 @@ const typeLabels: Record<string, string> = {
 const typeLabel = computed(() => typeLabels[props.property.property_type] || props.property.property_type)
 const fmtPrice = computed(() => {
   const p = props.property.price_monthly
-  return p ? Number(p).toLocaleString() : '?'
+  return p ? formatPrice(p, props.property.currency, props.property.country) : '?'
 })
 const imageUrl = computed(() => {
   const imgs = props.property.images

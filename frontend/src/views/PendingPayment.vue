@@ -29,8 +29,8 @@
           <el-descriptions-item label="押金状态">
             {{ booking.deposit_status === 'paid' ? '已支付' : booking.deposit_status === 'confirmed' ? '已确认' : '待支付' }}
           </el-descriptions-item>
-          <el-descriptions-item label="押金金额">¥{{ booking.deposit_amount || 0 }}</el-descriptions-item>
-          <el-descriptions-item label="服务费">¥{{ booking.service_fee || 0 }}</el-descriptions-item>
+          <el-descriptions-item label="押金金额">{{ formatPrice(booking.deposit_amount || 0, propertyInfo?.currency) }}</el-descriptions-item>
+          <el-descriptions-item label="服务费">{{ formatPrice(booking.service_fee || 0, propertyInfo?.currency) }}</el-descriptions-item>
           <el-descriptions-item label="创建时间">{{ formatDate(booking.created_at) }}</el-descriptions-item>
           <el-descriptions-item v-if="booking.message" label="留言" :span="2">
             {{ booking.message }}
@@ -65,7 +65,7 @@
               <el-tag size="small">{{ propertyInfo.district }}</el-tag>
             </div>
             <div class="preview-price">
-              <span class="price-num">¥{{ propertyInfo.price_monthly }}</span>
+              <span class="price-num">{{ formatPrice(propertyInfo.price_monthly, propertyInfo?.currency) }}</span>
               <span class="price-unit">/月</span>
             </div>
           </div>
@@ -89,6 +89,7 @@ import { ArrowLeft } from '@element-plus/icons-vue'
 import { bookingService } from '@/services/booking'
 import { propertyService } from '@/services/property'
 import { getImageUrl } from '@/utils/image'
+import { formatPrice } from '@/data/currency'
 import { billService } from '@/services/bill'
 import type { Booking } from '@/types/booking'
 

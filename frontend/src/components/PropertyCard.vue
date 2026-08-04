@@ -51,7 +51,7 @@
 
       <div class="card-footer">
         <div class="price-block">
-          <span class="card-price">¥{{ p.price_monthly }}</span>
+          <span class="card-price">{{ formatPrice(p.price_monthly, p.currency) }}</span>
           <span class="price-unit">/月</span>
         </div>
         <div class="card-actions" @click.stop>
@@ -96,6 +96,7 @@ import { PictureFilled, LocationFilled, Plus, Check } from '@element-plus/icons-
 import { ElMessage } from 'element-plus'
 import type { Property, PropertySearchResult, PropertyType } from '@/types/property'
 import { getImageUrl } from '@/utils/image'
+import { formatPrice, countryToCurrency } from '@/data/currency'
 import { useAuthStore } from '@/stores/auth'
 import { useCartStore } from '@/stores/cart'
 
@@ -132,6 +133,7 @@ const p = computed(() => ({
   ...props.property,
   title: props.property.name || props.property.title || props.property.unit_type_name || '未命名',
   price_monthly: props.property.min_rent ?? props.property.price_monthly ?? props.property.base_rent ?? 0,
+  currency: props.property.currency || countryToCurrency(props.property.country),
   district: props.property.district || props.property.institute_name || props.property.city || '',
   property_type: props.property.property_type || '1-bed',
   bedrooms: props.property.avg_bedrooms ?? props.property.bedrooms ?? 0,

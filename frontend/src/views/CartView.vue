@@ -63,7 +63,7 @@
             {{ item.reason }}
           </div>
           <div class="cart-house-foot">
-            <span class="cart-house-price">¥{{ item.property.price_monthly }}<i>/月</i></span>
+            <span class="cart-house-price">{{ formatPrice(item.property.price_monthly, item.property.currency) }}<i>/月</i></span>
             <el-button size="small" text type="primary" @click.stop="goDetail(item.property_id)">
               查看详情
             </el-button>
@@ -89,6 +89,7 @@ import { useAgentChatStore } from '@/stores/agentChat'
 import { useCartStore } from '@/stores/cart'
 import type { PropertySearchResult, PropertyType } from '@/types/property'
 import { getImageUrl } from '@/utils/image'
+import { formatPrice } from '@/data/currency'
 
 const router = useRouter()
 const agentChatStore = useAgentChatStore()

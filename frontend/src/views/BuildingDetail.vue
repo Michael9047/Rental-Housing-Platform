@@ -115,8 +115,8 @@
               </div>
             </div>
             <div class="ut-price-col">
-              <div class="ut-rent">¥{{ ut.base_rent }}<em>/月</em></div>
-              <div class="ut-deposit" v-if="ut.deposit_amount">押金 ¥{{ ut.deposit_amount }}</div>
+              <div class="ut-rent">{{ formatPrice(ut.base_rent, ut.currency) }}<em>/月</em></div>
+              <div class="ut-deposit" v-if="ut.deposit_amount">押金 {{ formatPrice(ut.deposit_amount, ut.currency) }}</div>
               <el-button class="ut-book" @click="handleBook(ut.id)">立即预定</el-button>
             </div>
           </div>
@@ -165,6 +165,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import api from '@/services/api'
 import L from 'leaflet'
+import { formatPrice } from '@/data/currency'
 import 'leaflet/dist/leaflet.css'
 
 delete (L.Icon.Default.prototype as any)._getIconUrl
