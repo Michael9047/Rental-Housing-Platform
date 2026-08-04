@@ -421,7 +421,6 @@ async def get_building_tenant_detail(
 ) -> dict:
     """租客端公寓详情页：公寓信息+户型列表+可租房源"""
     from app.models.unit_type import UnitType, UnitTypeStatus
-    from app.models.property import Room, RoomStatus
 
     stmt = (
         select(Institute)
@@ -440,14 +439,8 @@ async def get_building_tenant_detail(
     for ut in sorted(inst.unit_types or [], key=lambda x: x.base_rent or 0):
         if ut.deleted_at is not None:
             continue  # 跳过已删除户型
-        # 查该户型下可租房源
-        room_stmt = (
-            select(Room)
-            .where(Room.unit_type_id == ut.id, Room.status == "available", Room.deleted_at.is_(None))
-            .limit(10)
-        )
-        room_result = await session.execute(room_stmt)
-        rooms = room_result.scalars().all()
+        # 两层架构：不再有 Room 子表，UnitType 即为可租房源
+        rooms = []
 
         unit_types_out.append({
             "id": ut.id, "name": ut.name,

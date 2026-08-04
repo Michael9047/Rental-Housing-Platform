@@ -167,35 +167,22 @@ class UnitTypeService:
         return ut
 
     async def delete(self, unit_type_id: int) -> bool:
+        """软删除户型（两层架构不再有下属房间）"""
         from datetime import datetime
-        from app.models.property import Room
         ut = await self.get(unit_type_id)
         if not ut: return False
         name = ut.name
-        now = datetime.utcnow()
-        room_result = await self.session.execute(
-            select(Room).where(Room.unit_type_id == unit_type_id, Room.deleted_at.is_(None))
-        )
-        for r in room_result.scalars().all():
-            r.deleted_at = now
-            r.status = "offline"
-        ut.deleted_at = now
+        ut.deleted_at = datetime.utcnow()
         await self.session.commit()
-        await self._audit("删除户型", unit_type_id, {"户型名": name, "级联删除房间": 0})
+        await self._audit("删除户型", unit_type_id, {"户型名": name})
         return True
 
     async def restore(self, unit_type_id: int) -> UnitType | None:
-        from app.models.property import Room
+        """恢复已删除的户型"""
         ut = await self.get(unit_type_id)
         if not ut or ut.deleted_at is None:
             return None
         ut.deleted_at = None
-        room_result = await self.session.execute(
-            select(Room).where(Room.unit_type_id == unit_type_id, Room.deleted_at.isnot(None))
-        )
-        for r in room_result.scalars().all():
-            r.deleted_at = None
-            r.status = "available"
         await self.session.commit()
         await self.session.refresh(ut)
         await self._audit("恢复户型", unit_type_id, {"户型名": ut.name})
