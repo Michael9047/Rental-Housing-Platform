@@ -79,9 +79,14 @@
         <el-form-item label="学校">
           <el-input v-model="form.school_name" />
         </el-form-item>
+        <el-form-item label="选择公寓">
+          <el-select v-model="form.institute_id" placeholder="先选公寓" clearable filterable style="width:100%" @change="onBuildingChange">
+            <el-option v-for="b in buildings" :key="b.id" :label="b.name_cn || b.name" :value="b.id" />
+          </el-select>
+        </el-form-item>
         <el-form-item label="分配户型">
-          <el-select v-model="form.current_unit_type_id" placeholder="选择户型" clearable filterable style="width:100%">
-            <el-option v-for="ut in unitTypes" :key="ut.id" :label="ut.name + ' (' + (ut.institute_name || '') + ')'" :value="ut.id" />
+          <el-select v-model="form.current_unit_type_id" placeholder="选择户型" clearable filterable style="width:100%" :disabled="!form.institute_id">
+            <el-option v-for="ut in filteredUnitTypes" :key="ut.id" :label="ut.name" :value="ut.id" />
           </el-select>
         </el-form-item>
         <el-form-item label="房间号">
@@ -116,7 +121,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import api from '@/services/api'
 
@@ -129,19 +134,30 @@ const page = ref(1)
 const pageSize = 20
 const total = ref(0)
 const unitTypes = ref<any[]>([])
+const buildings = ref<any[]>([])
+
+const filteredUnitTypes = computed(() => {
+  if (!form.value.institute_id) return []
+  return unitTypes.value.filter(ut => ut.institute_id === form.value.institute_id)
+})
 
 const emptyForm = () => ({
   surname_pinyin: '', given_name_pinyin: '', chinese_name: '',
   phone: '', email: '', school_name: '',
+  institute_id: null as number | null,
   current_unit_type_id: null as number | null,
   room_number: '',
   move_in_date: null as string | null,
   move_out_date: null as string | null,
   housing_status: 'active',
 })
+
+function onBuildingChange() {
+  form.value.current_unit_type_id = null
+}
 const form = ref(emptyForm())
 
-onMounted(() => { fetchList(); fetchUnitTypes() })
+onMounted(() => { fetchList(); fetchBuildings(); fetchUnitTypes() })
 
 async function fetchList() {
   loading.value = true
@@ -153,6 +169,13 @@ async function fetchList() {
     total.value = r.data.total
   } catch { /* */ }
   finally { loading.value = false }
+}
+
+async function fetchBuildings() {
+  try {
+    const r = await api.get('/buildings', { params: { limit: 200 } })
+    buildings.value = r.data.items || []
+  } catch { /* */ }
 }
 
 async function fetchUnitTypes() {
@@ -170,6 +193,8 @@ function resetForm() {
 function openDialog(row?: any) {
   if (row) {
     editingId.value = row.id
+    // 从 unitTypes 中找到对应户型，反查 institute_id
+    const ut = unitTypes.value.find((u: any) => u.id === row.current_unit_type_id)
     form.value = {
       surname_pinyin: row.surname_pinyin || '',
       given_name_pinyin: row.given_name_pinyin || '',
@@ -177,6 +202,7 @@ function openDialog(row?: any) {
       phone: row.phone || '',
       email: row.email || '',
       school_name: row.school_name || '',
+      institute_id: ut?.institute_id || null,
       current_unit_type_id: row.current_unit_type_id || null,
       room_number: row.room_number || '',
       move_in_date: row.move_in_date || null,
@@ -195,10 +221,12 @@ async function handleSave() {
     return
   }
   try {
+    // 去掉仅前端使用的 institute_id，不发给后端
+    const { institute_id, ...payload } = form.value
     if (editingId.value) {
-      await api.patch('/tenants/' + editingId.value, form.value)
+      await api.patch('/tenants/' + editingId.value, payload)
     } else {
-      await api.post('/tenants', form.value)
+      await api.post('/tenants', payload)
     }
     ElMessage.success('保存成功')
     dialogVisible.value = false
