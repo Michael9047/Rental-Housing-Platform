@@ -157,7 +157,8 @@ async def update_repair_status(
     if repair.bm_id != current_user.id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
 
-    status_enum = RepairStatus.approved if new_status == "approved" else RepairStatus.rejected
+    # "approved" 映射到 assigned（批准后状态为已派单）
+    status_enum = RepairStatus.assigned if new_status == "approved" else RepairStatus.rejected
     repair = await svc.update_status(repair_id, status_enum, current_user.id)
     return await _repair_to_read(repair)
 

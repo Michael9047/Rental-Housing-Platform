@@ -36,7 +36,7 @@
                 <el-button size="small" text type="primary" @click="$router.push(`/repairs/${row.id}`)">详情</el-button>
                 <el-button v-if="row.status === 'pending'" size="small" text type="success" @click="approveRepair(row)">批准</el-button>
                 <el-button v-if="row.status === 'pending'" size="small" text type="danger" @click="rejectRepair(row)">拒绝</el-button>
-                <el-button v-if="row.status === 'pending' || row.status === 'pending_escalated'" size="small" text type="warning" @click="showAssign(row)">派单</el-button>
+                <el-button v-if="row.status === 'pending' || row.status === 'pending_escalated' || row.status === 'assigned'" size="small" text type="warning" @click="showAssign(row)">派单</el-button>
               </template>
             </el-table-column>
           </el-table>
@@ -114,6 +114,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { repairService, workerService } from '@/services/repair'
+import api from '@/services/api'
 import { useAuthStore } from '@/stores/auth'
 import { ISSUE_TYPE_LABELS, REPAIR_STATUS_LABELS, REPAIR_STATUS_TAGS, WORKER_SCOPE_LABELS } from '@/types/repair'
 import type { RepairRead, RepairWorker, WorkerScope } from '@/types/repair'
@@ -144,7 +145,17 @@ function tagType(s: string): string { return tagsRec[s] || 'info' }
 
 async function fetchRepairs() {
   repairLoading.value = true
-  try { repairs.value = await repairService.list({ limit: 200 }) } catch { repairs.value = [] }
+  try {
+    // 绕过 service，直接调 API 排查问题
+    const r = await api.get('/repairs', { params: { limit: 200 } })
+    console.log('[Repairs] raw response:', r.status, typeof r.data, Array.isArray(r.data) ? r.data.length : JSON.stringify(r.data).slice(0,200))
+    const data = Array.isArray(r.data) ? r.data : (r.data.items || [])
+    console.log('[Repairs] parsed:', data.length, 'items')
+    repairs.value = data
+  } catch (e) {
+    console.error('[Repairs] fetch failed:', e)
+    repairs.value = []
+  }
   repairLoading.value = false
 }
 
@@ -231,7 +242,11 @@ async function doCreate() {
   } finally { createLoading.value = false }
 }
 
-onMounted(() => { fetchRepairs(); fetchWorkers() })
+onMounted(() => {
+  console.log('[Repairs] current user:', authStore.user?.id, authStore.user?.username, authStore.user?.role)
+  console.log('[Repairs] token:', !!localStorage.getItem('access_token'))
+  fetchRepairs(); fetchWorkers()
+})
 </script>
 
 <style scoped>
