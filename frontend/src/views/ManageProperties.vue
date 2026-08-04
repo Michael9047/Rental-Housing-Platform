@@ -366,6 +366,9 @@ async function placeBldMarker(lat:number, lng:number, rev:boolean){
     })
   }
   newBuilding.lat=lat; newBuilding.lng=lng
+  // 同步测试：直接赋值看能否触发响应式
+  newBuilding.city = 'SYNC_TEST_' + Math.random().toFixed(4)
+  console.log('[placeBldMarker] sync test city =', newBuilding.city)
   if(rev) {
     try { await reverseBldGeocode(lat,lng) } catch(e) { console.error(e) }
   }
@@ -397,21 +400,23 @@ async function geocodeStructured(){
 }
 
 async function reverseBldGeocode(lat:number,lng:number){
+  console.log('[reverseGeocode] called with', lat, lng)
   try{
     const r=await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&accept-language=zh`,{headers:{'User-Agent':'RH/1.0'}})
     const d=await r.json()
+    console.log('[reverseGeocode] response:', d)
     if(!d?.address) { console.warn('[reverseGeocode] no address in response', d); return }
     const a = d.address
     const road = a.road || a.pedestrian || a.path || a.footway || ''
     const hn = a.house_number || ''
-    Object.assign(newBuilding, {
-      country: a.country || newBuilding.country,
-      city: a.city || a.town || a.municipality || a.village || a.hamlet || '',
-      district: a.suburb || a.borough || a.city_district || a.county || a.state_district || '',
-      street: hn ? `${hn} ${road}`.trim() : road,
-      postalCode: a.postcode || newBuilding.postalCode,
-    })
-    ElMessage.success('已从地图反向定位，地址字段已自动填充')
+    // 先写硬编码测试值，验证响应式链路通不通
+    newBuilding.city = 'TEST_CITY_' + Date.now()
+    newBuilding.district = 'TEST_DISTRICT'
+    newBuilding.street = 'TEST_STREET'
+    newBuilding.country = a.country || newBuilding.country
+    newBuilding.postalCode = a.postcode || newBuilding.postalCode
+    console.log('[reverseGeocode] newBuilding.city =', newBuilding.city)
+    ElMessage.success('已从地图反向定位，地址字段已自动填充: ' + newBuilding.city)
   }catch(e){
     console.error('[reverseGeocode] error:', e)
   }
