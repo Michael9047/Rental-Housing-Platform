@@ -5,9 +5,23 @@
       <el-button :icon="Refresh" @click="loadData">刷新</el-button>
     </div>
 
-    <div v-if="alerts.length" class="card-list">
+    <div v-if="alerts.length" class="summary-grid">
+      <button
+        v-for="item in categoryStats"
+        :key="item.category"
+        class="summary-card"
+        :class="{ active: selectedCategory === item.category }"
+        @click="selectedCategory = item.category"
+      >
+        <span>{{ item.category }}</span>
+        <strong>{{ item.count }}</strong>
+        <small>{{ item.highCount ? `${item.highCount} 条紧急` : '无紧急' }}</small>
+      </button>
+    </div>
+
+    <div v-if="filteredAlerts.length" class="card-list">
       <article
-        v-for="alert in alerts"
+        v-for="alert in filteredAlerts"
         :key="alert.id"
         class="alert-card"
         :class="`alert-${alert.severity}`"
@@ -27,12 +41,12 @@
         </div>
       </article>
     </div>
-    <el-empty v-else description="暂无系统异常" />
+    <el-empty v-else :description="alerts.length ? '当前分类暂无异常' : '暂无系统异常'" />
   </div>
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { Refresh } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { adminService } from '@/services/admin'
@@ -40,6 +54,38 @@ import type { SystemAlert, SystemAlertSeverity } from '@/types/admin'
 
 const loading = ref(false)
 const alerts = ref<SystemAlert[]>([])
+const selectedCategory = ref('全部')
+
+const categoryStats = computed(() => {
+  const orderedCategories = ['全部', '预约', '维修', '合同', '支付', '对接', '通知', '系统']
+  const seen = new Set(orderedCategories)
+  const dynamicCategories = alerts.value
+    .map((alert) => alert.category)
+    .filter((category) => {
+      if (seen.has(category)) return false
+      seen.add(category)
+      return true
+    })
+
+  return [...orderedCategories, ...dynamicCategories]
+    .map((category) => {
+      const rows = category === '全部'
+        ? alerts.value
+        : alerts.value.filter((alert) => alert.category === category)
+      return {
+        category,
+        count: rows.length,
+        highCount: rows.filter((alert) => alert.severity === 'high').length,
+      }
+    })
+    .filter((item) => item.category === '全部' || item.count > 0)
+})
+
+const filteredAlerts = computed(() => (
+  selectedCategory.value === '全部'
+    ? alerts.value
+    : alerts.value.filter((alert) => alert.category === selectedCategory.value)
+))
 
 function formatDateTime(value: string) {
   if (!value) return '-'
@@ -75,6 +121,12 @@ async function loadData() {
   loading.value = true
   try {
     alerts.value = await adminService.getSystemAlerts()
+    if (
+      selectedCategory.value !== '全部' &&
+      !alerts.value.some((alert) => alert.category === selectedCategory.value)
+    ) {
+      selectedCategory.value = '全部'
+    }
   } finally {
     loading.value = false
   }
@@ -106,6 +158,53 @@ onMounted(loadData)
 h2,
 h3 {
   margin: 0;
+}
+
+.summary-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 150px), 1fr));
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.summary-card {
+  background: #fff;
+  border: 1px solid #ebeef5;
+  border-radius: 8px;
+  box-sizing: border-box;
+  cursor: pointer;
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  padding: 12px 14px;
+  text-align: left;
+}
+
+.summary-card:hover,
+.summary-card.active {
+  background: #fff7f2;
+  border-color: #f06f3d;
+}
+
+.summary-card span {
+  color: #606266;
+  font-size: 13px;
+}
+
+.summary-card strong {
+  color: #303133;
+  font-size: 24px;
+  line-height: 1.1;
+}
+
+.summary-card small {
+  color: #909399;
+  font-size: 12px;
+}
+
+.summary-card.active span,
+.summary-card.active strong {
+  color: #e76535;
 }
 
 .card-list {
