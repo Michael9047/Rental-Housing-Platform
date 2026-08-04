@@ -1,5 +1,8 @@
 <template>
   <div class="page-container">
+    <div style="background:red;color:white;padding:8px 16px;font-size:18px;font-weight:bold;margin-bottom:12px;border-radius:6px">
+      🔴 VERSION: KEY-RENDER v2 — {{ newBuilding.city || '(city empty)' }}
+    </div>
     <div class="page-header">
       <h2>户型管理</h2>
       <div style="display:flex;gap:10px;align-items:center">
@@ -158,13 +161,13 @@
       <el-form :model="newBuilding" label-width="100px">
         <el-form-item label="公寓名称" required><el-input v-model="newBuilding.name" placeholder="中/英文均可" maxlength="200" /></el-form-item>
         <el-divider>📍 地址与定位</el-divider>
-        <template :key="bldFormKey">
+        <div :key="bldFormKey">
         <el-form-item label="国家"><el-autocomplete v-model="newBuilding.country" :fetch-suggestions="filterCountries" placeholder="输入或选择国家" clearable style="width:100%" /></el-form-item>
         <el-form-item label="城市"><el-input v-model="newBuilding.city" placeholder="如：伦敦、上海" maxlength="100" /></el-form-item>
         <el-form-item label="区域"><el-input v-model="newBuilding.district" placeholder="如：肯辛顿、浦东" maxlength="100" /></el-form-item>
         <el-form-item label="街道/门牌号"><el-input v-model="newBuilding.street" placeholder="如：105 Cheyne Walk" maxlength="200" /></el-form-item>
         <el-form-item label="邮编"><el-input v-model="newBuilding.postalCode" placeholder="选填" maxlength="20" style="width:200px" /></el-form-item>
-        </template>
+        </div>
         <el-form-item label="地图定位">
           <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
             <el-button type="primary" @click="geocodeStructured" :loading="geoLoading" :disabled="!(newBuilding.country || newBuilding.city)">📍 检索定位</el-button>
