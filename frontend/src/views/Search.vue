@@ -129,12 +129,20 @@
         <!-- ──────── 排序 ──────── -->
         <div class="filter-block">
           <div class="filter-block-title">排序方式</div>
-          <el-radio-group v-model="sortBy" class="fg-radio" @change="onSortChange">
-            <el-radio value="similarity">匹配度优先</el-radio>
-            <el-radio value="price_asc">价格从低到高</el-radio>
-            <el-radio value="price_desc">价格从高到低</el-radio>
-            <el-radio value="area_desc">面积从大到小</el-radio>
-          </el-radio-group>
+          <div class="sort-row">
+            <el-select v-model="sortField" size="small" style="flex:1" @change="onSortFieldChange">
+              <el-option label="综合匹配" value="similarity" />
+              <el-option label="距离" value="commute_dist" />
+              <el-option label="价格" value="price" />
+            </el-select>
+            <el-button
+              size="small"
+              :icon="sortAsc ? SortUp : SortDown"
+              @click="sortAsc = !sortAsc; onSortFieldChange()"
+            >
+              {{ sortAsc ? '升序' : '降序' }}
+            </el-button>
+          </div>
         </div>
       </aside>
 
@@ -235,7 +243,7 @@ import { ref, reactive, computed, defineAsyncComponent, onMounted, onUnmounted, 
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { ElMessage } from 'element-plus'
-import { Search, School, Grid, List, Location, Loading, ChatDotRound } from '@element-plus/icons-vue'
+import { Search, School, Grid, List, Location, Loading, ChatDotRound, SortUp, SortDown } from '@element-plus/icons-vue'
 
 import { usePropertyStore } from '@/stores/property'
 import { storeToRefs } from 'pinia'
@@ -502,7 +510,8 @@ watch(viewMode, (mode) => {
 })
 
 // ── 通用 ──
-const sortBy = ref('similarity')
+const sortField = ref('similarity')
+const sortAsc = ref(false)
 const currentPage = ref(1)
 const pageSize = 12
 
@@ -929,28 +938,17 @@ const filteredAndSortedResults = computed(() => {
   }
 
   // ── 客户端排序 ──
-  if (sortBy.value === 'commute_time') {
+  const order = sortAsc.value ? 1 : -1
+  if (sortField.value === 'commute_dist') {
     results.sort((a, b) => {
       const ca = commuteMap.value[a.id]
       const cb = commuteMap.value[b.id]
-      const ta = ca ? Math.min(ca.walk_min, ca.drive_min) : Infinity
-      const tb = cb ? Math.min(cb.walk_min, cb.drive_min) : Infinity
-      return ta - tb
+      return ((ca?.dist_km ?? Infinity) - (cb?.dist_km ?? Infinity)) * order
     })
-  } else if (sortBy.value === 'commute_dist') {
-    results.sort((a, b) => {
-      const ca = commuteMap.value[a.id]
-      const cb = commuteMap.value[b.id]
-      return (ca?.dist_km ?? Infinity) - (cb?.dist_km ?? Infinity)
-    })
-  } else if (sortBy.value === 'price_asc') {
-    results.sort((a, b) => a.price_monthly - b.price_monthly)
-  } else if (sortBy.value === 'price_desc') {
-    results.sort((a, b) => b.price_monthly - a.price_monthly)
-  } else if (sortBy.value === 'area_desc') {
-    results.sort((a, b) => (b.area_sqm || 0) - (a.area_sqm || 0))
+  } else if (sortField.value === 'price') {
+    results.sort((a, b) => (a.price_monthly - b.price_monthly) * order)
   }
-  // 'similarity' / 'created_at' 走后端排序，不在此处理
+  // 'similarity' 走后端排序，不在此处理
 
   return results
 })
@@ -1017,9 +1015,9 @@ async function doSearch() {
     p.near_distance_km = uniRadius.value
   }
 
-  // 排序（非通勤排序发送到后端）
-  if (sortBy.value && !['commute_time', 'commute_dist'].includes(sortBy.value)) {
-    p.sort_by = sortBy.value
+  // 排序（后端排序：price 字段 + 方向；距离和综合为客户端排序）
+  if (sortField.value === 'price') {
+    p.sort_by = sortAsc.value ? 'price_asc' : 'price_desc'
   }
 
   propertyStore.fetchSearch(p)
@@ -1042,13 +1040,13 @@ function onCommuteFilterChange() {
   currentPage.value = 1
 }
 
-/** 排序变更 — 后端排序需重新请求，客户端排序仅重置分页 */
-function onSortChange() {
+/** 排序变更 */
+function onSortFieldChange() {
   currentPage.value = 1
-  if (sortBy.value && !['commute_time', 'commute_dist', 'area_desc'].includes(sortBy.value)) {
-    doSearch() // 后端排序需要重新请求
+  if (sortField.value === 'price') {
+    doSearch() // 价格走后端排序
   }
-  // 客户端排序：filteredAndSortedResults 自动响应
+  // 距离和综合为客户端排序：filteredAndSortedResults 自动响应
 }
 
 function resetFilters() {
@@ -1056,7 +1054,7 @@ function resetFilters() {
   filters.price_max = undefined; filters.property_type = undefined
   filters.institute_id = undefined; filters.amenities = undefined
   schoolId.value = null; schoolName.value = ''; searchMode.value = 'city'
-  sortBy.value = 'similarity'
+  sortField.value = 'similarity'; sortAsc.value = false
   doSearch()
 }
 
@@ -1214,6 +1212,7 @@ watch(() => route.query, () => { initFromRoute() })
 /* radio group vertical */
 .fg-radio { display: flex; flex-direction: column; gap: 5px; }
 .fg-radio .el-radio { margin-right: 0; font-size: 13px; height: 28px; }
+.sort-row { display: flex; gap: 6px; align-items: center; }
 
 /* check group vertical */
 .fg-check { display: flex; flex-direction: column; gap: 5px; }
