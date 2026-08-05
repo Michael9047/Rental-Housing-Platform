@@ -671,6 +671,17 @@ class SearchAgent(BaseAgent):
             query=semantic_query,
             filters=effective_filters,
         )
+
+        # 按公寓去重：同一 institute 只保留得分最高的那条
+        seen_institutes: set[int] = set()
+        deduped: list[dict[str, Any]] = []
+        for item in reranked:
+            inst_id = item["institute"].id
+            if inst_id not in seen_institutes:
+                seen_institutes.add(inst_id)
+                deduped.append(item)
+        reranked = deduped
+
         source_manifest = build_source_manifest(reranked)
         school_name = str(uni_info["name"] if uni_info else institution_name or "")
         grounded_context = pack_grounded_candidates(
