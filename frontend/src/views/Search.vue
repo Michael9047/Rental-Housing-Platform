@@ -43,6 +43,29 @@
           </el-button>
         </div>
 
+        <!-- ──────── 排序 ──────── -->
+        <div class="filter-block">
+          <div class="sort-header">
+            <span class="filter-block-title" style="margin-bottom:0">排序方式</span>
+            <el-button
+              size="small"
+              :icon="sortAsc ? SortUp : SortDown"
+              @click="sortAsc = !sortAsc; onSortFieldChange()"
+            >
+              {{ sortAsc ? '升序' : '降序' }}
+            </el-button>
+          </div>
+          <div class="chip-row">
+            <button
+              v-for="opt in sortOptions"
+              :key="opt.value"
+              class="chip"
+              :class="{ on: sortField === opt.value }"
+              @click="sortField = opt.value; onSortFieldChange()"
+            >{{ opt.label }}</button>
+          </div>
+        </div>
+
         <!-- ① 学校 / 位置 / 半径 -->
         <template v-if="searchMode === 'uni' && uniName">
           <div class="filter-block">
@@ -125,29 +148,6 @@
         </div>
 
         <!-- ⑤ 周边配套 — 待实现 -->
-
-        <!-- ──────── 排序 ──────── -->
-        <div class="filter-block">
-          <div class="sort-header">
-            <span class="filter-block-title" style="margin-bottom:0">排序方式</span>
-            <el-button
-              size="small"
-              :icon="sortAsc ? SortUp : SortDown"
-              @click="sortAsc = !sortAsc; onSortFieldChange()"
-            >
-              {{ sortAsc ? '升序' : '降序' }}
-            </el-button>
-          </div>
-          <div class="chip-row">
-            <button
-              v-for="opt in sortOptions"
-              :key="opt.value"
-              class="chip"
-              :class="{ on: sortField === opt.value }"
-              @click="sortField = opt.value; onSortFieldChange()"
-            >{{ opt.label }}</button>
-          </div>
-        </div>
       </aside>
 
       <!-- ════════════════════════════════════════════ -->
