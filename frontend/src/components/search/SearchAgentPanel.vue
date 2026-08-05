@@ -68,71 +68,52 @@
         :key="message.id || `${message.role}-${index}`"
         class="message-block"
       >
-        <!-- 房源图片和卡片统一置于回复正文上方，横向展示去重后的全部结果。 -->
+        <!-- 历史消息的推荐卡片（非最新一条） -->
         <div
-          v-if="message.role === 'assistant' && message.recommendations?.length"
+          v-if="message.role === 'assistant' && message.recommendations?.length && index < conversationMessages.length - 1"
           class="recommendation-group"
         >
           <div class="recommendation-head">
             <strong>{{ uniqueRecommendations(message.recommendations).length }} 套匹配房源</strong>
-            <span>勾选 2–5 套可直接对比</span>
           </div>
           <div class="recommendation-row">
             <article
-              v-for="rec in uniqueRecommendations(message.recommendations)"
+              v-for="rec in uniqueRecommendations(message.recommendations).slice(0, 3)"
               :key="rec.property_id"
               class="recommendation-card"
-              role="button"
-              tabindex="0"
+              role="button" tabindex="0"
               @click="openProperty(rec.property_id)"
               @keydown.enter.prevent="openProperty(rec.property_id)"
             >
               <div class="recommendation-image">
                 <img v-if="imageUrl(rec)" :src="imageUrl(rec)!" :alt="rec.property.title" />
                 <el-icon v-else :size="22"><PictureFilled /></el-icon>
-                <div class="recommendation-check" @click.stop>
-                  <el-checkbox
-                    :model-value="selectedCompareIds.includes(rec.property_id)"
-                    :disabled="!selectedCompareIds.includes(rec.property_id) && selectedCompareIds.length >= 5"
-                    @change="(checked: boolean) => toggleCompare(rec.property_id, checked)"
-                  >
-                    对比
-                  </el-checkbox>
-                </div>
               </div>
               <div class="recommendation-copy">
                 <strong :title="rec.property.title">{{ rec.property.title }}</strong>
-                <span>{{ rec.property.district || '区域待确认' }} · {{ formatPrice(rec) }}/月</span>
-                <div class="recommendation-specs">
-                  <span>{{ rec.property.bedrooms ?? '?' }}室{{ rec.property.bathrooms ?? '?' }}卫</span>
-                  <span v-if="rec.property.area_sqm">{{ rec.property.area_sqm }}㎡</span>
-                </div>
-                <p v-if="rec.match_reason">{{ rec.match_reason }}</p>
+                <span>{{ rec.property.district || '区域待确认' }} · {{ formatPrice(rec) }}{{ (rec.property as any).rent_period === 'weekly' ? '/周' : '/月' }}</span>
               </div>
             </article>
           </div>
-          <div v-if="selectedCompareIds.length" class="compare-selection" aria-live="polite">
-            <span>已选 {{ selectedCompareIds.length }} 套</span>
-            <el-button
-              size="small"
-              type="primary"
-              :disabled="selectedCompareIds.length < 2 || sending"
-              @click="compareSelected"
-            >
-              对比已选房源
+        </div>
+
+        <!-- 最新消息：搜索结果摘要 + 分析提示 -->
+        <div
+          v-if="message.role === 'assistant' && message.recommendations?.length && index === conversationMessages.length - 1"
+          class="recommendation-summary"
+        >
+          <p>
+            ✅ 已为你找到 <strong>{{ uniqueRecommendations(message.recommendations).length }} 套</strong>匹配房源，
+            中间区域已更新。需要我帮你具体对比分析前 3 套吗？
+          </p>
+          <div class="summary-actions">
+            <el-button size="small" type="primary" :disabled="sending" @click="send('请帮我详细分析对比前 3 套房源')">
+              分析前 3 套
             </el-button>
-            <el-button size="small" text @click="selectedCompareIds = []">清空</el-button>
+            <el-button size="small" :disabled="sending" @click="send('请帮我对比分析全部 ' + uniqueRecommendations(message.recommendations).length + ' 套')">
+              对比全部
+            </el-button>
           </div>
-          <el-button
-            v-if="uniqueRecommendations(message.allRecommendations).length"
-            class="show-results-btn"
-            size="small"
-            plain
-            type="primary"
-            @click="emit('show-recommendations', uniqueRecommendations(message.allRecommendations))"
-          >
-            在搜索区显示 {{ uniqueRecommendations(message.allRecommendations).length }} 套
-          </el-button>
         </div>
 
         <div class="bubble-row" :class="message.role">
@@ -425,9 +406,16 @@ async function send(preset?: string, explicitCompareIds?: number[]) {
         ? uniqueRecommendations(finalMeta.top_picks)
         : []
     if (finalMeta.filter_patch && Object.keys(finalMeta.filter_patch).length > 0) {
+      // 有推荐结果时不同时触发 doSearch，避免覆盖 Agent 排序
       emit('apply-filter-patch', finalMeta.filter_patch, recommendations.length === 0)
     }
-    if (recommendations.length > 0) emit('show-recommendations', recommendations)
+    // 始终更新中间搜索结果
+    if (recommendations.length > 0) {
+      emit('show-recommendations', recommendations)
+    } else if (finalMeta.filter_patch && Object.keys(finalMeta.filter_patch).length > 0) {
+      // 无推荐但有筛选补丁 → 让中间区域用新条件重新搜索
+      emit('apply-filter-patch', finalMeta.filter_patch, true)
+    }
   } catch (error) {
     const reason = error instanceof Error ? error.message : '请求没有成功，请稍后再试'
     assistantMessage.content = assistantMessage.content
@@ -839,5 +827,23 @@ function openProperty(propertyId: number) {
   }
   .recommendation-head { align-items: flex-start; flex-direction: column; gap: 2px; }
   .welcome-actions { grid-template-columns: 1fr; }
+}
+
+/* ── 搜索结果摘要 ── */
+.recommendation-summary {
+  background: #f0f9eb;
+  border: 1px solid #e1f3d8;
+  border-radius: 8px;
+  padding: 12px;
+  margin: 8px 0;
+}
+.recommendation-summary p {
+  margin: 0 0 10px 0;
+  font-size: 13px;
+  color: #303133;
+}
+.summary-actions {
+  display: flex;
+  gap: 8px;
 }
 </style>
