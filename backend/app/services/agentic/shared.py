@@ -1,10 +1,12 @@
 """Agent 共享工具函数 —— 从 AgentService 提取，供多个 Agent 复用。"""
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from app.models.property import Property
 from app.services.compare_scoring import DIMENSION_LABELS
+from app.services.currency import convert, get_symbol
 
 
 def property_to_dict(prop: Property) -> dict[str, Any]:
@@ -171,3 +173,60 @@ def extract_amenities_from_desc(description: str) -> list[str]:
             if label not in amenities:
                 amenities.append(label)
     return amenities
+
+
+# ═══════════════════════════════════════════════════════════════════
+# PR #43 新增工具函数（Unit 2）
+# ═══════════════════════════════════════════════════════════════════
+
+
+def property_currency(prop: Property) -> str:
+    """返回房源币种代码；历史数据未填写时按人民币兼容。"""
+    return str(getattr(prop, "currency", None) or "CNY").upper()
+
+
+def format_property_money(prop: Property, amount: Any) -> str:
+    """按房源原始币种格式化金额，避免海外房源误显示人民币符号。"""
+    return f"{get_symbol(property_currency(prop))}{float(amount):,.0f}"
+
+
+def comparable_price_cny(prop: Property) -> float:
+    """把月租换算为人民币基准值，仅用于跨币种排序与评分。
+
+    HEAD: Property=UnitType，价格字段为 base_rent。
+    """
+    price = float(getattr(prop, "base_rent", 0) or 0)
+    return convert(price, property_currency(prop), "CNY")
+
+
+def _amenity_list(value: Any) -> list[str]:
+    """兼容数组、JSON 文本和逗号文本三种设施字段。"""
+    if isinstance(value, (list, tuple, set)):
+        return [str(item).strip() for item in value if str(item).strip()]
+    if not isinstance(value, str) or not value.strip():
+        return []
+    try:
+        parsed = json.loads(value)
+        if isinstance(parsed, list):
+            return [str(item).strip() for item in parsed if str(item).strip()]
+    except (TypeError, ValueError, json.JSONDecodeError):
+        pass
+    return [
+        item.strip()
+        for item in value.replace("，", ",").split(",")
+        if item.strip()
+    ]
+
+
+def property_amenities(prop: Property) -> list[str]:
+    """合并户型与公寓的真实设施，去重。
+
+    HEAD: Property=UnitType（两层模型），无独立 Room 表。
+    设施来源 = UnitType.amenities + Institute.amenities。
+    """
+    institute = getattr(prop, "institute", None)
+    values = [
+        *_amenity_list(getattr(prop, "amenities", None)),
+        *_amenity_list(getattr(institute, "amenities", None) if institute else None),
+    ]
+    return list(dict.fromkeys(values))
