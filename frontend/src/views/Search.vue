@@ -1,5 +1,12 @@
 <template>
   <div class="search-page">
+    <!-- 大学/位置模式顶部横幅 -->
+    <div v-if="searchMode === 'uni' && uniName" class="school-banner uni-banner">
+      <el-icon :size="22"><component :is="uniId ? School : Location" /></el-icon>
+      <h1>靠近 {{ uniName }} 的房源</h1>
+      <span class="school-count">共 {{ searchResults.length }} 套</span>
+    </div>
+
     <!-- 学校模式顶部横幅 -->
     <div v-if="searchMode === 'school' && schoolName" class="school-banner">
       <el-icon :size="22"><School /></el-icon>
@@ -14,7 +21,7 @@
       <span class="school-count">{{ searchResults.length }} 套</span>
     </div>
 
-    <div class="search-layout" :class="{ 'agent-open': agentOpen }">
+    <div class="search-layout">
       <!-- ════════════════════════════════════════════ -->
       <!--  左侧筛选栏                                 -->
       <!-- ════════════════════════════════════════════ -->
@@ -36,184 +43,88 @@
           </el-button>
         </div>
 
-        <div
-          v-if="agentFilterSynced && agentSyncedFilterChips.length"
-          class="agent-synced-filters"
-          aria-live="polite"
-        >
-          <div class="agent-synced-title">
-            <el-icon><ChatDotRound /></el-icon>
-            Agent 已同步到左侧
-          </div>
-          <div class="agent-synced-chips">
-            <span v-for="chip in agentSyncedFilterChips" :key="chip">{{ chip }}</span>
-          </div>
-        </div>
-
-        <!-- ──────── 国家 / 地区市场 ──────── -->
-        <div class="filter-block country-filter-block">
-          <div class="filter-block-title">国家 / 地区</div>
-          <el-select
-            v-model="filters.country"
-            placeholder="全部国家和地区"
-            clearable
-            filterable
-            style="width: 100%"
-            @change="onCountryFilterChange"
-          >
-            <el-option
-              v-for="country in countryOptions"
-              :key="country.value"
-              :label="country.label"
-              :value="country.value"
-            />
-          </el-select>
-        </div>
-
-        <div class="filter-block">
-          <div class="filter-block-title">城市 / 区域</div>
-          <el-input
-            v-model="filters.district"
-            placeholder="不限"
-            clearable
-            @change="doSearch"
-          />
-        </div>
-
-        <!-- ──────── 学校专属 ──────── -->
-        <template v-if="searchMode === 'school'">
+        <!-- ① 学校 / 位置 / 半径 -->
+        <template v-if="searchMode === 'uni' && uniName">
           <div class="filter-block">
-            <div class="filter-block-title">到学校的时间</div>
-            <el-radio-group v-model="commuteTime" class="fg-radio" @change="onCommuteFilterChange">
-              <el-radio :value="null">不限</el-radio>
-              <el-radio :value="5">步行5分钟以内</el-radio>
-              <el-radio :value="10">步行10分钟以内</el-radio>
-              <el-radio :value="15">步行15分钟以内</el-radio>
-              <el-radio :value="20">车程15分钟以内</el-radio>
-              <el-radio :value="30">车程30分钟以内</el-radio>
-            </el-radio-group>
+            <div class="filter-block-title">{{ uniId ? '🎓' : '📍' }} {{ uniName }}</div>
+            <el-button size="small" text type="danger" @click="clearSchool">{{ uniId ? '✕ 清除学校' : '✕ 清除位置' }}</el-button>
           </div>
-
           <div class="filter-block">
-            <div class="filter-block-title">距离</div>
-            <el-radio-group v-model="distanceFilter" class="fg-radio" @change="onCommuteFilterChange">
-              <el-radio :value="null">不限</el-radio>
-              <el-radio :value="0.5">500m 以内</el-radio>
-              <el-radio :value="1">1km 以内</el-radio>
-              <el-radio :value="3">3km 以内</el-radio>
-              <el-radio :value="5">5km 以内</el-radio>
-            </el-radio-group>
+            <div class="filter-block-title">搜索半径：{{ uniRadius }}km</div>
+            <el-slider v-model="uniRadius" :min="1" :max="20" :step="1" show-input @change="doSearch" />
+          </div>
+        </template>
+        <template v-else>
+          <!-- 地区模式：学校选择器 + 半径 -->
+          <div class="filter-block">
+            <div class="filter-block-title">学校</div>
+            <el-select
+              v-model="selectedUniId"
+              placeholder="输入学校名搜索"
+              clearable
+              filterable
+              remote
+              :remote-method="searchSchools"
+              :loading="schoolLoading"
+              style="width:100%"
+              @change="onSchoolSelect"
+              @visible-change="(v:boolean) => { if(v) searchSchools('') }"
+            >
+              <el-option v-for="s in schoolOptions" :key="s.id"
+                :label="(s.name_cn||'') + ' / ' + s.name" :value="s.id" />
+            </el-select>
+          </div>
+          <div class="filter-block">
+            <div class="filter-block-title">搜索半径：{{ uniRadius }}km</div>
+            <el-slider v-model="uniRadius" :min="1" :max="20" :step="1" show-input @change="doSearch" />
           </div>
         </template>
 
-        <!-- ──────── 城市专属：时长 ──────── -->
-        <template v-if="searchMode === 'city'">
-          <div class="filter-block">
-            <div class="filter-block-title">时长</div>
-            <el-radio-group v-model="durationFilter" class="fg-radio" @change="doSearch">
-              <el-radio :value="null">不限</el-radio>
-              <el-radio value="short">短租 (1-3月)</el-radio>
-              <el-radio value="medium">中租 (3-6月)</el-radio>
-              <el-radio value="long">长租 (12月+)</el-radio>
-            </el-radio-group>
-          </div>
-        </template>
-
-        <!-- ──────── 通用：入住月份 ──────── -->
+        <!-- ② 月租金范围 -->
         <div class="filter-block">
-          <div class="filter-block-title">入住月份</div>
-          <el-select v-model="filters.move_in_month" placeholder="不限" clearable style="width:100%" @change="doSearch">
-            <el-option v-for="m in moveInMonths" :key="m.value" :label="m.label" :value="m.value" />
-          </el-select>
-        </div>
-
-        <!-- ──────── 通用：房型 / 房间类型 ──────── -->
-        <div class="filter-block">
-          <div class="filter-block-title">{{ searchMode === 'school' ? '房型' : '房间类型' }}</div>
-          <div class="chip-row">
-            <span v-for="opt in roomTypes" :key="opt.value"
-              class="chip" :class="{ on: filters.room_type === opt.value }"
-              @click="filters.room_type = filters.room_type === opt.value ? undefined : opt.value; doSearch()"
-            >{{ opt.label }}</span>
+          <div class="filter-block-title">月租金范围</div>
+          <div class="price-row">
+            <el-input-number v-model="filters.price_min" :min="0" :step="500" placeholder="最低" controls-position="right" size="small" style="flex:1" @change="doSearch" />
+            <span class="price-dash">—</span>
+            <el-input-number v-model="filters.price_max" :min="0" :step="500" placeholder="最高" controls-position="right" size="small" style="flex:1" @change="doSearch" />
           </div>
         </div>
 
-        <!-- ──────── 通用：公寓类型 ──────── -->
+        <!-- ③ 户型类型 -->
         <div class="filter-block">
-          <div class="filter-block-title">公寓类型</div>
+          <div class="filter-block-title">户型类型</div>
           <div class="chip-row">
-            <span v-for="opt in propertyTypes" :key="opt.value"
+            <span v-for="opt in roomTypeOptions" :key="opt.value"
               class="chip" :class="{ on: filters.property_type === opt.value }"
               @click="filters.property_type = filters.property_type === opt.value ? undefined : opt.value; doSearch()"
             >{{ opt.label }}</span>
           </div>
         </div>
 
-        <!-- ──────── 通用：价格 ──────── -->
-        <div class="filter-block">
-          <div class="filter-block-title">价格范围</div>
-          <div class="price-row">
-            <el-input-number v-model="filters.price_min" :min="0" placeholder="最低" controls-position="right" size="small" style="flex:1" @change="doSearch" />
-            <span class="price-dash">—</span>
-            <el-input-number v-model="filters.price_max" :min="0" placeholder="最高" controls-position="right" size="small" style="flex:1" @change="doSearch" />
-          </div>
-        </div>
-
-        <!-- ──────── 通用：房型（卧室数） ──────── -->
-        <div class="filter-block">
-          <div class="filter-block-title">户型</div>
-          <div class="chip-row">
-            <span v-for="opt in bedroomOptions" :key="opt.value"
-              class="chip" :class="{ on: filters.bedrooms === opt.value }"
-              @click="filters.bedrooms = filters.bedrooms === opt.value ? undefined : opt.value; doSearch()"
-            >{{ opt.label }}</span>
-          </div>
-        </div>
-
-        <!-- ──────── 通用：服务特点 ──────── -->
-        <div class="filter-block">
-          <div class="filter-block-title">服务特点</div>
-          <el-checkbox-group v-model="filters.features" class="fg-check" @change="doSearch">
-            <el-checkbox label="furnished">全套家具</el-checkbox>
-            <el-checkbox label="wifi">WiFi 覆盖</el-checkbox>
-            <el-checkbox label="cleaning">定期保洁</el-checkbox>
-            <el-checkbox label="security">24h 安保</el-checkbox>
-            <el-checkbox label="laundry">洗衣烘干</el-checkbox>
-            <el-checkbox label="gym">健身房</el-checkbox>
-            <el-checkbox label="pool">游泳池</el-checkbox>
-            <el-checkbox label="parking">停车位</el-checkbox>
-            <el-checkbox label="air_conditioning">空调</el-checkbox>
-            <el-checkbox label="private_kitchen">独立厨房</el-checkbox>
-            <el-checkbox label="study_room">自习室</el-checkbox>
-          </el-checkbox-group>
-        </div>
-
-        <!-- ──────── 通用：便利设施 ──────── -->
+        <!-- ④ 便利设施 -->
         <div class="filter-block">
           <div class="filter-block-title">便利设施</div>
-          <el-checkbox-group v-model="filters.amenities" class="fg-check" @change="doSearch">
-            <el-checkbox label="supermarket">超市</el-checkbox>
-            <el-checkbox label="restaurant">餐厅</el-checkbox>
-            <el-checkbox label="hospital">医院</el-checkbox>
-            <el-checkbox label="bus">公交站</el-checkbox>
-            <el-checkbox label="metro">地铁站</el-checkbox>
-            <el-checkbox label="park">公园</el-checkbox>
-          </el-checkbox-group>
+          <div class="amenity-grid">
+            <el-checkbox
+              v-for="a in visibleAmenities"
+              :key="a"
+              :model-value="filters.amenities || []"
+              :label="a"
+              size="small"
+              @change="(checked: boolean) => toggleAmenity(a, checked)"
+            >{{ a }}</el-checkbox>
+          </div>
+          <el-button
+            v-if="amenityOptions.length > amenityCollapseLimit"
+            text size="small" type="primary"
+            class="amenity-toggle"
+            @click="amenityExpanded = !amenityExpanded"
+          >
+            {{ amenityExpanded ? '收起 ▲' : `展开全部 (${amenityOptions.length - amenityCollapseLimit}+)` }}
+          </el-button>
         </div>
 
-        <!-- ──────── 通用：位置特点 ──────── -->
-        <div class="filter-block">
-          <div class="filter-block-title">位置特点</div>
-          <el-checkbox-group v-model="filters.location_tags" class="fg-check" @change="doSearch">
-            <el-checkbox label="quiet">安静社区</el-checkbox>
-            <el-checkbox label="downtown">市中心</el-checkbox>
-            <el-checkbox label="riverside">河景 / 海景</el-checkbox>
-            <el-checkbox label="pet_friendly">可养宠物</el-checkbox>
-            <el-checkbox label="balcony">阳台 / 露台</el-checkbox>
-            <el-checkbox label="elevator">电梯楼</el-checkbox>
-            <el-checkbox label="new_renovation">新装修</el-checkbox>
-          </el-checkbox-group>
-        </div>
+        <!-- ⑤ 周边配套 — 待实现 -->
 
         <!-- ──────── 排序 ──────── -->
         <div class="filter-block">
@@ -223,10 +134,6 @@
             <el-radio value="price_asc">价格从低到高</el-radio>
             <el-radio value="price_desc">价格从高到低</el-radio>
             <el-radio value="area_desc">面积从大到小</el-radio>
-            <template v-if="searchMode === 'school'">
-              <el-radio value="commute_time">通勤时间最短</el-radio>
-              <el-radio value="commute_dist">距离最近</el-radio>
-            </template>
           </el-radio-group>
         </div>
       </aside>
@@ -237,20 +144,6 @@
       <main class="results-area" :class="{ 'map-layout': viewMode === 'map' }">
         <div class="results-top">
           <span class="results-count">共 <strong>{{ filteredAndSortedResults.length }}</strong> 套房源</span>
-          <span v-if="selectedResultIds.length" class="results-compare-status">
-            已选 {{ selectedResultIds.length }} 套待对比
-          </span>
-          <el-tooltip :content="agentOpen ? '关闭 AI 租房管家' : '打开 AI 租房管家'" placement="bottom">
-            <el-button
-              class="agent-toggle-btn"
-              :type="agentOpen ? 'primary' : 'default'"
-              size="small"
-              @click="toggleAgent"
-            >
-              <el-icon><ChatDotRound /></el-icon>
-              Agent
-            </el-button>
-          </el-tooltip>
         </div>
 
         <div v-if="loading" class="loading-wrap">
@@ -265,33 +158,8 @@
           <div class="map-body">
             <!-- 房源列表列 -->
             <div class="map-property-col" ref="propertyListCol">
-              <div
-                v-for="p in filteredAndSortedResults" :key="p.id"
-                :id="'prop-' + p.id"
-                class="map-property-card"
-              >
-                <div class="property-card" :class="{ 'map-card-highlight': highlightedId === p.id }" @click="flyToProperty(p)">
-                  <div class="card-image">
-                    <img v-if="p.images?.length" :src="p.images[0].filename?.startsWith('http')?p.images[0].filename:'/api/v1/uploads/'+p.images[0].filename" alt="" class="property-img" />
-                    <div v-else class="image-placeholder"><span>暂无图片</span></div>
-                    <span class="district-badge">{{ p.district }}</span>
-                    <div class="result-compare-check" @click.stop>
-                      <el-checkbox
-                        :model-value="isResultSelected(p.id)"
-                        :disabled="!isResultSelected(p.id) && selectedResultIds.length >= 5"
-                        @change="(checked: boolean) => toggleResultCompare(p.id, checked)"
-                      >
-                        对比
-                      </el-checkbox>
-                    </div>
-                  </div>
-                  <div class="card-body">
-                    <h3 class="card-title">{{ p.title }}</h3>
-                    <div class="card-footer">
-                      <span class="card-price">{{ formatPropertyPrice(p.price_monthly, p.currency, p.country) }}/月</span>
-                    </div>
-                  </div>
-                </div>
+              <div v-for="p in filteredAndSortedResults" :key="p.id" :id="'prop-'+p.id" class="map-property-card">
+                <PropertyCard :property="p" :commute="commuteMap[p.id]" :no-navigate="true" @click="flyToProperty(p)" />
               </div>
             </div>
             <!-- 地图 -->
@@ -302,34 +170,7 @@
         <!-- ═══ 网格 / 列表模式 ═══ -->
         <template v-else>
           <div :class="viewMode === 'grid' ? 'card-grid' : 'card-list'">
-            <!-- 内联卡片替代 PropertyCard，避免组件依赖崩溃 -->
-            <div v-for="p in pagedResults" :key="p.id" class="property-card" @click="$router.push('/property/'+p.id)">
-              <div class="card-image">
-                <img v-if="p.images?.length" :src="p.images[0].filename?.startsWith('http')?p.images[0].filename:'/api/v1/uploads/'+p.images[0].filename" alt="" class="property-img" />
-                <div v-else class="image-placeholder"><span>暂无图片</span></div>
-                <span class="district-badge">{{ p.district }}</span>
-                <div class="result-compare-check" @click.stop>
-                  <el-checkbox
-                    :model-value="isResultSelected(p.id)"
-                    :disabled="!isResultSelected(p.id) && selectedResultIds.length >= 5"
-                    @change="(checked: boolean) => toggleResultCompare(p.id, checked)"
-                  >
-                    对比
-                  </el-checkbox>
-                </div>
-              </div>
-              <div class="card-body">
-                <h3 class="card-title">{{ p.title }}</h3>
-                <div class="card-tags">
-                  <el-tag size="small" type="info">{{ p.property_type || '1-bed' }}</el-tag>
-                  <el-tag size="small">{{ p.bedrooms }}室{{ p.bathrooms }}卫</el-tag>
-                  <el-tag v-if="p.area_sqm" size="small" type="info">{{ p.area_sqm }}㎡</el-tag>
-                </div>
-                <div class="card-footer">
-                  <span class="card-price">{{ formatPropertyPrice(p.price_monthly, p.currency, p.country) }}/月</span>
-                </div>
-              </div>
-            </div>
+            <PropertyCard v-for="p in pagedResults" :key="p.id" :property="p" :commute="commuteMap[p.id]" :show-similarity="false" />
           </div>
           <div v-if="searchResults.length > pageSize" class="pag">
             <el-pagination
@@ -339,32 +180,6 @@
           </div>
         </template>
       </main>
-
-      <button
-        v-if="agentOpen"
-        class="agent-backdrop"
-        aria-label="关闭 AI 租房管家"
-        @click="agentOpen = false"
-      />
-      <aside v-if="agentOpen" class="agent-dock">
-        <Suspense>
-          <SearchAgentPanel
-            :filters="agentFilters"
-            :result-count="agentComparableResults.length"
-            :result-ids="agentComparableResults.map((property) => property.id)"
-            :selected-result-ids="selectedResultIds"
-            @close="agentOpen = false"
-            @apply-filter-patch="applyAgentFilterPatch"
-            @show-recommendations="showAgentRecommendations"
-          />
-          <template #fallback>
-            <div class="agent-panel-loading">
-              <el-icon class="is-loading" :size="24"><Loading /></el-icon>
-              <span>正在打开 AI 租房管家</span>
-            </div>
-          </template>
-        </Suspense>
-      </aside>
     </div>
 
     <BookingDateDialog
@@ -374,67 +189,168 @@
       :property-price="selectedProperty?.price_monthly"
       @confirm="handleBookingConfirm"
     />
+
+    <!-- Agent 遮罩（窄屏） -->
+    <div
+      v-if="agentOpen && isNarrowScreen"
+      class="agent-overlay"
+      @click="agentOpen = false"
+    />
+    <!-- Agent 侧边栏 -->
+    <aside v-if="agentOpen" class="agent-dock" :class="{ 'agent-drawer': isNarrowScreen }">
+      <Suspense>
+        <SearchAgentPanel
+          :filters="agentFilters"
+          :result-count="agentComparableResults.length"
+          :result-ids="agentComparableResults.map((property: any) => property.id)"
+          :selected-result-ids="selectedResultIds"
+          @close="agentOpen = false"
+          @apply-filter-patch="applyAgentFilterPatch"
+          @show-recommendations="showAgentRecommendations"
+        />
+        <template #fallback>
+          <div class="agent-loading">AI 管家启动中...</div>
+        </template>
+      </Suspense>
+    </aside>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, reactive, computed, defineAsyncComponent, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { School, Location, Loading, ChatDotRound } from '@element-plus/icons-vue'
-import { usePropertyStore } from '@/stores/property'
 import { useAuthStore } from '@/stores/auth'
-import { storeToRefs } from 'pinia'
 import { ElMessage } from 'element-plus'
+import { useAuthStore } from '@/stores/auth'
+import { ElMessage } from 'element-plus'
+import { Search, School, Grid, List, Location, Loading, ChatDotRound } from '@element-plus/icons-vue'
+
+import { usePropertyStore } from '@/stores/property'
+import { storeToRefs } from 'pinia'
 interface CommuteInfo { dist_km: number; walk_min: number; bike_min: number; drive_min: number; transit_min: number }
 // PropertyCard 替换，避免组件依赖崩溃
 import BookingDateDialog from '@/components/BookingDateDialog.vue'
+import PropertyCard from '@/components/PropertyCard.vue'
 import type { Property, PropertySearchParams, PropertyType } from '@/types/property'
+import type { AgentFilters, AgentRecommendation } from '@/types/agent'
 import type { AgentFilters, AgentRecommendation } from '@/types/agent'
 import { commuteService } from '@/services/commute'
 import { formatPropertyPrice } from '@/utils/currency'
 import { uniqueAgentRecommendations, uniquePropertiesByIdAndTitle } from '@/utils/agentRecommendations'
-// Leaflet 暂时禁用——排查崩溃原因
-declare const require: (moduleId: string) => any
-let L: any = null
-const initLeaflet = () => {
-  if (L) return L
-  try {
-    const leaflet = require('leaflet')
-    require('leaflet/dist/leaflet.css')
-    L = leaflet
-    const markerIcon2x = require('leaflet/dist/images/marker-icon-2x.png')
-    const markerIcon = require('leaflet/dist/images/marker-icon.png')
-    const markerShadow = require('leaflet/dist/images/marker-shadow.png')
-    delete L.Icon.Default.prototype._getIconUrl
-    L.Icon.Default.mergeOptions({ iconUrl: markerIcon, iconRetinaUrl: markerIcon2x, shadowUrl: markerShadow })
-  } catch (e) { console.warn('Leaflet init failed:', e) }
-  return L
+import { formatPropertyPrice } from '@/utils/currency'
+import { uniqueAgentRecommendations, uniquePropertiesByIdAndTitle } from '@/utils/agentRecommendations'
+import api from '@/services/api'
+// Google Maps 加载
+const gmKey = import.meta.env.VITE_GM_KEY as string | undefined
+let gmReady = false
+
+async function loadGoogleMaps(): Promise<boolean> {
+  if (gmReady) return true
+  if (!gmKey) { console.warn('VITE_GM_KEY not set'); return false }
+  const gWin = window as any
+  if (gWin.google?.maps) { gmReady = true; return true }
+  return new Promise((resolve) => {
+    const script = document.createElement('script')
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${gmKey}&libraries=places&language=zh-CN`
+    script.onload = () => { gmReady = true; resolve(true) }
+    script.onerror = () => { console.warn('Google Maps load failed'); resolve(false) }
+    document.head.appendChild(script)
+  })
 }
 
 const route = useRoute()
 const router = useRouter()
 const propertyStore = usePropertyStore()
-const authStore = useAuthStore()
 const { searchResults, loading } = storeToRefs(propertyStore)
-const SearchAgentPanel = defineAsyncComponent(() => import('@/components/search/SearchAgentPanel.vue'))
+const SearchAgentPanel = defineAsyncComponent(() => import("@/components/search/SearchAgentPanel.vue"))
+const authStore = useAuthStore()
+const SearchAgentPanel = defineAsyncComponent(() => import("@/components/search/SearchAgentPanel.vue"))
+const authStore = useAuthStore()
 
 // ── 模式 ──
-const searchMode = ref<'city' | 'school' | 'agent'>('city')
+const searchMode = ref<'city' | 'school' | 'uni' | 'agent'>('city')
 const schoolId = ref<number | null>(null)
 const schoolName = ref('')
-const viewMode = ref<'grid' | 'list' | 'map'>('grid')
+const uniId = ref<number | null>(null)
+const uniName = ref('')
+const uniLat = ref<number | null>(null)
+const uniLng = ref<number | null>(null)
+const uniRadius = ref<number>(5)
+
+const selectedUniId = ref<number | null>(null)
+const schoolOptions = ref<any[]>([])
+const schoolLoading = ref(false)
+
+async function searchSchools(q: string) {
+  if (!q || q.length < 1) q = ''
+  schoolLoading.value = true
+  try {
+    const r = await import('@/services/api').then(m => m.default.get('/search/schools', { params: { q, limit: 20 } }))
+    schoolOptions.value = r.data || []
+  } catch { schoolOptions.value = [] }
+  finally { schoolLoading.value = false }
+}
+
+function onSchoolSelect(schoolId: number | null) {
+  if (!schoolId) {
+    uniId.value = null; uniName.value = ''; uniLat.value = null; uniLng.value = null; searchMode.value = 'city'
+  } else {
+    const s = schoolOptions.value.find((u: any) => u.id === schoolId)
+    if (s) {
+      uniId.value = s.id; uniName.value = s.name_cn || s.name; uniLat.value = s.latitude; uniLng.value = s.longitude
+      searchMode.value = 'uni'
+    }
+  }
+  doSearch()
+}
+
+function clearSchool() {
+  uniId.value = null; uniName.value = ''; uniLat.value = null; uniLng.value = null
+  selectedUniId.value = null; schoolOptions.value = []; searchMode.value = 'city'
+  doSearch()
+}
+const viewMode = ref<'grid' | 'list'>('grid')
 /** 是否来自 Agent 推荐（显示 AI 推荐横幅） */
 const fromAgent = ref(false)
 const agentContext = ref<{ filters?: Record<string, unknown>; total?: number } | null>(null)
 const agentOpen = ref(false)
-/** 左侧房源卡勾选结果；右侧 Agent 会优先对比这些房源。 */
+
 const selectedResultIds = ref<number[]>([])
-/** Agent 条件已写入左栏；用于给用户明确的同步反馈。 */
+
 const agentFilterSynced = ref(false)
-/** Agent 支持、但普通筛选控件暂时无法表达的设施，仍在左栏展示。 */
+
 const unmappedAgentAmenities = ref<string[]>([])
-/** 无法匹配本地学校字典时保留原始学校名，避免条件静默消失。 */
+
 const agentInstitutionName = ref('')
+
+const agentOpen = ref(false)
+
+const selectedResultIds = ref<number[]>([])
+
+const agentFilterSynced = ref(false)
+
+const unmappedAgentAmenities = ref<string[]>([])
+
+const agentInstitutionName = ref("")
+
+
+
+/** 国家筛选变更 */
+function onCountryFilterChange() {
+  filters.district = undefined
+  currentPage.value = 1
+  doSearch()
+}
+
+const countryOptions = [
+  { label: '全部', value: '' },
+  { label: '新加坡', value: 'SG' },
+  { label: '英国', value: 'GB' },
+  { label: '美国', value: 'US' },
+  { label: '中国香港', value: 'HK' },
+  { label: '中国大陆', value: 'CN' },
+  { label: '澳大利亚', value: 'AU' },
+]
 
 // ── 学校专属 ──
 const commuteTime = ref<number | null>(null)
@@ -443,22 +359,15 @@ const distanceFilter = ref<number | null>(null)
 // ── 城市专属 ──
 const durationFilter = ref<string | null>(null)
 
-// ── 地图 ──
+// ── Google 地图 ──
 let mapInstance: any = null
-let markerLayer: any = null
-function getMarkerLayer() {
-  if (!markerLayer) {
-    const leaflet = initLeaflet()
-    if (leaflet) markerLayer = leaflet.layerGroup()
-  }
-  return markerLayer
-}
+let markers: any[] = []
+let infoWindow: any = null
 const mapContainer = ref<HTMLElement | null>(null)
 const propertyListCol = ref<HTMLElement | null>(null)
 const mapReady = ref(false)
 const highlightedId = ref<number | null>(null)
 
-/** 滚动房源列表到指定卡片 */
 function scrollToList(propertyId: number) {
   highlightedId.value = propertyId
   nextTick(() => {
@@ -467,45 +376,93 @@ function scrollToList(propertyId: number) {
       el.scrollIntoView({ behavior: 'smooth', block: 'center' })
     }
   })
-  // 1.5 秒后取消高亮
   setTimeout(() => { highlightedId.value = null }, 2000)
 }
 
-function initMap() {
+async function initMap() {
   if (!mapContainer.value || mapReady.value) return
-  mapInstance = initLeaflet().map(mapContainer.value, { zoomControl: true }).setView([30, 0], 2)
-  initLeaflet().tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    attribution: '&copy; OpenStreetMap',
-    maxZoom: 19,
-  }).addTo(mapInstance)
-  getMarkerLayer()?.addTo(mapInstance)
+  const ok = await loadGoogleMaps()
+  if (!ok) return
+  const google = (window as any).google
+  mapInstance = new google.maps.Map(mapContainer.value, {
+    zoom: 12,
+    center: { lat: 1.3521, lng: 103.8198 },
+    gestureHandling: 'greedy',
+    mapTypeControl: false,
+    streetViewControl: false,
+    fullscreenControl: true,
+    zoomControl: true,
+  })
+  infoWindow = new google.maps.InfoWindow()
   mapReady.value = true
+  renderMarkers()
 }
 
 function renderMarkers() {
   if (!mapInstance) return
-  getMarkerLayer()?.clearLayers()
-  const bounds: [number, number][] = []
+  const google = (window as any).google
+  // 清除旧标记
+  markers.forEach(m => m.setMap(null))
+  markers = []
+  const bounds = new google.maps.LatLngBounds()
+  let hasValid = false
+
+  // 学校模式：标注大学位置（蓝色圆形+标签）
+  if (uniLat.value != null && uniLng.value != null && uniName.value) {
+    const uniPos = { lat: uniLat.value, lng: uniLng.value }
+    const uniMarker = new google.maps.Marker({
+      position: uniPos, map: mapInstance, title: uniName.value,
+      icon: {
+        path: google.maps.SymbolPath.CIRCLE,
+        scale: 16, fillColor: '#4285F4', fillOpacity: 1,
+        strokeColor: '#fff', strokeWeight: 2,
+      },
+      label: { text: uniId.value ? '🏫' : '📍', fontSize: '16px' },
+    })
+    uniMarker.addListener('click', () => {
+      infoWindow?.setContent('<b>'+uniName.value+'</b>'); infoWindow?.open(mapInstance, uniMarker)
+    })
+    markers.push(uniMarker)
+    bounds.extend(uniPos)
+    hasValid = true
+  }
+
   for (const p of filteredAndSortedResults.value) {
     const lat = Number((p as any).latitude)
     const lng = Number((p as any).longitude)
     if (isNaN(lat) || isNaN(lng)) continue
-    const m = initLeaflet().marker([lat, lng]).bindPopup(
-      `<div style="max-width:220px">
-        <strong>${(p as any).title || ''}</strong><br/>
-        ${(p as any).district || ''}<br/>
-        ${formatPropertyPrice((p as any).price_monthly, (p as any).currency, (p as any).country)}/月 · ${(p as any).bedrooms}室
-      </div>`
-    )
-    // 点击标记 → 滚动房源列表到对应卡片
-    m.on('click', () => {
+    hasValid = true
+    const pos = { lat, lng }
+
+    const marker = new google.maps.Marker({
+      position: pos,
+      map: mapInstance,
+      title: (p as any).name || (p as any).title || '',
+      animation: google.maps.Animation.DROP,
+    })
+
+    const name = (p as any).name || (p as any).title || ''
+    const rent = (p as any).min_rent ?? (p as any).base_rent ?? (p as any).price_monthly ?? 0
+    const currency = (p as any).currency || 'CNY'
+    const sym = { CNY: '¥', GBP: '£', SGD: 'SG$', USD: '$' }[currency] || '¥'
+    const content = `<div style="max-width:200px;font-size:13px">
+      <strong>${name}</strong><br/>
+      ${sym}${Number(rent).toLocaleString()}/月起
+    </div>`
+
+    marker.addListener('click', () => {
+      infoWindow?.close()
+      infoWindow?.setContent(content)
+      infoWindow?.open(mapInstance, marker)
       scrollToList(p.id)
     })
-    getMarkerLayer()?.addLayer(m)
-    bounds.push([lat, lng])
+
+    markers.push(marker)
+    bounds.extend(pos)
   }
-  if (bounds.length > 0) {
-    mapInstance.fitBounds(bounds, { padding: [30, 30], maxZoom: 15 })
+
+  if (hasValid) {
+    mapInstance.fitBounds(bounds, { top: 30, right: 30, bottom: 30, left: 380 })
   }
 }
 
@@ -514,21 +471,24 @@ function flyToProperty(p: any) {
   const lat = Number(p.latitude)
   const lng = Number(p.longitude)
   if (isNaN(lat) || isNaN(lng)) return
-  mapInstance.flyTo([lat, lng], 16, { duration: 0.8 })
-  // 打开弹窗
-  getMarkerLayer()?.eachLayer((layer: any) => {
-    const ll = layer.getLatLng()
-    if (Math.abs(ll.lat - lat) < 0.0001 && Math.abs(ll.lng - lng) < 0.0001) {
-      layer.openPopup()
+  mapInstance.panTo({ lat, lng })
+  mapInstance.setZoom(16)
+  // 找到对应 marker 并触发 click 以打开 infoWindow
+  for (const m of markers) {
+    const pos = m.getPosition()
+    if (pos && Math.abs(pos.lat() - lat) < 0.0001 && Math.abs(pos.lng() - lng) < 0.0001) {
+      const google = (window as any).google
+      google.maps.event.trigger(m, 'click')
+      break
     }
-  })
+  }
 }
 
 function destroyMap() {
-  if (mapInstance) {
-    mapInstance.remove()
-    mapInstance = null
-  }
+  markers.forEach(m => m.setMap(null))
+  markers = []
+  if (infoWindow) { infoWindow.close(); infoWindow = null }
+  mapInstance = null
   mapReady.value = false
 }
 
@@ -550,13 +510,138 @@ const currentPage = ref(1)
 const pageSize = 12
 
 const filters = reactive<PropertySearchParams & {
-  move_in_month?: number; room_type?: string
-  features?: string[]; amenities?: string[]; location_tags?: string[]
+  amenities?: string[]
 }>({
-  q: '', district: undefined, price_min: undefined, price_max: undefined,
-  bedrooms: undefined, property_type: undefined,
+  q: '', district: undefined, city: undefined, price_min: undefined, price_max: undefined,
+  property_type: undefined,
   limit: 30, country: undefined, institute_id: undefined,
 })
+
+const activeFilterCount = computed(() => {
+  let n = 0
+  if (filters.institute_id) n++
+  if (filters.property_type) n++
+  if (filters.price_min || filters.price_max) n++
+  if (filters.amenities?.length) n += filters.amenities.length
+  return n
+})
+
+// ── 学校信息（硬编码，避免后端 API 依赖）──
+const SCHOOL_INFO: Record<number, { name: string; lat: number; lng: number; country: string; city: string }> = {
+  1: { name: 'University of California, Los Angeles (UCLA)', lat: 34.0689, lng: -118.4452, country: 'US', city: 'Los Angeles' },
+  2: { name: 'National University of Singapore (NUS)',       lat: 1.2966,  lng: 103.7764,  country: 'SG', city: 'Singapore' },
+  3: { name: 'Nanyang Technological University (NTU)',       lat: 1.3483,  lng: 103.6831,  country: 'SG', city: 'Singapore' },
+}
+
+/** Haversine 距离 (km) */
+function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const R = 6371
+  const dLat = (lat2 - lat1) * Math.PI / 180
+  const dLng = (lng2 - lng1) * Math.PI / 180
+  const a = Math.sin(dLat / 2) ** 2 +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+    Math.sin(dLng / 2) ** 2
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+}
+
+/** Haversine 兜底估算（API 不可用时使用） */
+function estimateCommuteFallback(distKm: number): CommuteInfo {
+  const road = distKm * 1.35
+  return {
+    dist_km: Math.round(distKm * 100) / 100,
+    walk_min: Math.max(1, Math.round(road / 5 * 60)),
+    bike_min: Math.max(1, Math.round(road / 15 * 60)),
+    drive_min: Math.max(1, Math.round(road / 35 * 60)),
+    transit_min: Math.max(1, Math.round(road / 20 * 60)),
+  }
+}
+
+/** 当前学校模式下每个 property_id → 通勤信息 */
+const commuteMap = ref<Record<number, CommuteInfo>>({})
+const commuteLoading = ref(false)
+
+/** 异步获取真实通勤时间（API → Haversine 兜底） */
+async function fetchCommuteTimes() {
+  // 大学模式：用 uniLat/Lng 作为起点
+  if (searchMode.value === 'uni' && uniLat.value != null && uniLng.value != null) {
+    const origin = { lat: uniLat.value, lng: uniLng.value, country: 'SG', city: 'Singapore' }
+    await _calcCommute(origin)
+    return
+  }
+  if (searchMode.value !== 'school' || !schoolId.value) {
+    commuteMap.value = {}
+    return
+  }
+  const school = SCHOOL_INFO[schoolId.value]
+  if (!school) { commuteMap.value = {}; return }
+  await _calcCommute(school)
+}
+
+async function _calcCommute(origin: { lat: number; lng: number; country: string; city: string }) {
+  // collect destinations...
+
+  // 收集有坐标的房源
+  const destinations: { id: number; lat: number; lng: number }[] = []
+  for (const p of searchResults.value) {
+    const lat = Number((p as any).latitude)
+    const lng = Number((p as any).longitude)
+    if (!isNaN(lat) && !isNaN(lng)) {
+      destinations.push({ id: p.id, lat, lng })
+    }
+  }
+
+  if (destinations.length === 0) { commuteMap.value = {}; return }
+
+  // 第一步：立即用 Haversine 填充，保证 UI 不空白
+  const fallbackMap: Record<number, CommuteInfo> = {}
+  for (const d of destinations) {
+    const km = haversineKm(origin.lat, origin.lng, d.lat, d.lng)
+    fallbackMap[d.id] = estimateCommuteFallback(km)
+  }
+  commuteMap.value = fallbackMap
+
+  // 第二步：调用后端 API 获取真实路线时间
+  commuteLoading.value = true
+  try {
+    const resp = await commuteService.calculate({
+      origin_lat: origin.lat,
+      origin_lng: origin.lng,
+      destinations: destinations.slice(0, 30),
+      country: origin.country,
+      city: origin.city,
+    })
+    // 用 API 结果更新
+    const apiMap: Record<number, CommuteInfo> = {}
+    for (const item of resp.results) {
+      const id = typeof item.dest_id === 'string' ? Number(item.dest_id) : item.dest_id
+      apiMap[id] = {
+        dist_km: item.dist_km,
+        walk_min: item.walk_min,
+        bike_min: item.bike_min,
+        drive_min: item.drive_min,
+        transit_min: item.transit_min,
+      }
+    }
+    commuteMap.value = apiMap
+  } catch {
+    // API 失败，保持 Haversine 兜底值（已在上方赋值）
+    console.debug('通勤 API 调用失败，使用 Haversine 估算')
+  } finally {
+    commuteLoading.value = false
+  }
+}
+
+// 搜索结果或学校变化时重新获取通勤时间
+watch([searchResults, schoolId], () => {
+  fetchCommuteTimes()
+})
+
+// 通勤数据更新后重置分页（可能因筛选导致结果减少）
+watch(commuteMap, () => {
+  currentPage.value = 1
+})
+
+/** 传递给详情页的 school query 参数 */
 
 const AGENT_AMENITY_LABELS: Record<string, string> = {
   furnished: '家具齐全', wifi: 'WiFi', cleaning: '定期保洁', security: '24h安保',
@@ -599,131 +684,113 @@ const agentFilters = computed<AgentFilters>(() => {
   return result
 })
 
-const activeFilterCount = computed(() => {
-  let n = 0
-  if (filters.country) n++
-  if (filters.district) n++
-  if (commuteTime.value) n++
-  if (distanceFilter.value) n++
-  if (durationFilter.value) n++
-  if (filters.move_in_month) n++
-  if (filters.room_type) n++
-  if (filters.property_type) n++
-  if (filters.price_min || filters.price_max) n++
-  if (filters.bedrooms != null) n++
-  if (filters.features?.length) n += filters.features.length
-  if (filters.amenities?.length) n += filters.amenities.length
-  if (filters.location_tags?.length) n += filters.location_tags.length
-  if (unmappedAgentAmenities.value.length) n += unmappedAgentAmenities.value.length
-  if (agentInstitutionName.value && !schoolName.value) n++
-  return n
+const agentComparableResults = computed(() => {
+  return filteredAndSortedResults.value
 })
 
-// ── 学校信息（硬编码，避免后端 API 依赖）──
-const SCHOOL_INFO: Record<number, { name: string; lat: number; lng: number; country: string; city: string }> = {
-  1: { name: 'University of California, Los Angeles (UCLA)', lat: 34.0689, lng: -118.4452, country: 'US', city: 'Los Angeles' },
-  2: { name: 'National University of Singapore (NUS)',       lat: 1.2966,  lng: 103.7764,  country: 'SG', city: 'Singapore' },
-  3: { name: 'Nanyang Technological University (NTU)',       lat: 1.3483,  lng: 103.6831,  country: 'SG', city: 'Singapore' },
+function isResultSelected(propertyId: number): boolean {
+  return selectedResultIds.value.includes(propertyId)
 }
 
-/** Haversine 距离 (km) */
-function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number): number {
-  const R = 6371
-  const dLat = (lat2 - lat1) * Math.PI / 180
-  const dLng = (lng2 - lng1) * Math.PI / 180
-  const a = Math.sin(dLat / 2) ** 2 +
-    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-    Math.sin(dLng / 2) ** 2
-  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
-}
-
-/** Haversine 兜底估算（API 不可用时使用） */
-function estimateCommuteFallback(distKm: number): CommuteInfo {
-  const road = distKm * 1.35
-  return {
-    dist_km: Math.round(distKm * 100) / 100,
-    walk_min: Math.max(1, Math.round(road / 5 * 60)),
-    bike_min: Math.max(1, Math.round(road / 15 * 60)),
-    drive_min: Math.max(1, Math.round(road / 35 * 60)),
-    transit_min: Math.max(1, Math.round(road / 20 * 60)),
+function toggleResultCompare(propertyId: number, checked: boolean) {
+  if (checked) {
+    if (!selectedResultIds.value.includes(propertyId)) selectedResultIds.value.push(propertyId)
+  } else {
+    selectedResultIds.value = selectedResultIds.value.filter((id) => id !== propertyId)
   }
 }
 
-/** 当前学校模式下每个 property_id → 通勤信息 */
-const commuteMap = ref<Record<number, CommuteInfo>>({})
-const commuteLoading = ref(false)
+const isNarrowScreen = computed(() => window.innerWidth <= 1100)
 
-/** 异步获取真实通勤时间（API → Haversine 兜底） */
-async function fetchCommuteTimes() {
-  if (searchMode.value !== 'school' || !schoolId.value) {
-    commuteMap.value = {}
+/** 打开/关闭 Agent 面板 */
+function toggleAgent() {
+  if (!authStore.isLoggedIn) {
+    ElMessage.warning('请先登录后再使用 AI 租房管家')
+    router.push({ path: '/login', query: { redirect: route.fullPath } })
     return
   }
-  const school = SCHOOL_INFO[schoolId.value]
-  if (!school) { commuteMap.value = {}; return }
+  agentOpen.value = !agentOpen.value
+}
 
-  // 收集有坐标的房源
-  const destinations: { id: number; lat: number; lng: number }[] = []
-  for (const p of searchResults.value) {
-    const lat = Number((p as any).latitude)
-    const lng = Number((p as any).longitude)
-    if (!isNaN(lat) && !isNaN(lng)) {
-      destinations.push({ id: p.id, lat, lng })
-    }
+/** 接收 Agent 筛选补丁 -> 回填传统筛选栏 */
+function applyAgentFilterPatch(patch: Record<string, unknown>, refreshResults?: boolean) {
+  agentFilterSynced.value = true
+  unmappedAgentAmenities.value = []
+
+  if ('country' in patch) {
+    const v = patch.country as string | null
+    filters.country = v || undefined
+    if (v) onCountryFilterChange()
   }
-
-  if (destinations.length === 0) { commuteMap.value = {}; return }
-
-  // 第一步：立即用 Haversine 填充，保证 UI 不空白
-  const fallbackMap: Record<number, CommuteInfo> = {}
-  for (const d of destinations) {
-    const km = haversineKm(school.lat, school.lng, d.lat, d.lng)
-    fallbackMap[d.id] = estimateCommuteFallback(km)
+  if ('district' in patch) {
+    const v = patch.district as string | null
+    filters.district = v || undefined
+    if (v) searchMode.value = 'city'
   }
-  commuteMap.value = fallbackMap
-
-  // 第二步：调用后端 API 获取真实路线时间
-  commuteLoading.value = true
-  try {
-    const resp = await commuteService.calculate({
-      origin_lat: school.lat,
-      origin_lng: school.lng,
-      destinations: destinations.slice(0, 30), // 最多 30 个
-      country: school.country,
-      city: school.city,
-    })
-    // 用 API 结果更新
-    const apiMap: Record<number, CommuteInfo> = {}
-    for (const item of resp.results) {
-      const id = typeof item.dest_id === 'string' ? Number(item.dest_id) : item.dest_id
-      apiMap[id] = {
-        dist_km: item.dist_km,
-        walk_min: item.walk_min,
-        bike_min: item.bike_min,
-        drive_min: item.drive_min,
-        transit_min: item.transit_min,
+  if ('price_min' in patch) filters.price_min = (patch.price_min as number) || undefined
+  if ('price_max' in patch) filters.price_max = (patch.price_max as number) || undefined
+  if ('bedrooms' in patch) filters.bedrooms = (patch.bedrooms as number) || undefined
+  if ('property_type' in patch) filters.property_type = (patch.property_type as PropertyType) || undefined
+  if ('room_type' in patch) filters.room_type = (patch.room_type as string) || undefined
+  if ('institution' in patch) {
+    const instName = patch.institution as string
+    if (instName) {
+      agentInstitutionName.value = instName
+      const id = findSchoolId(instName)
+      if (id) {
+        schoolId.value = id
+        filters.institute_id = id
+        searchMode.value = 'school'
       }
     }
-    commuteMap.value = apiMap
-  } catch {
-    // API 失败，保持 Haversine 兜底值（已在上方赋值）
-    console.debug('通勤 API 调用失败，使用 Haversine 估算')
-  } finally {
-    commuteLoading.value = false
+  }
+  if ('commute_minutes' in patch) {
+    commuteTime.value = (patch.commute_minutes as number) || null
+    if (commuteTime.value) onCommuteFilterChange()
+  }
+  if ('amenities' in patch && Array.isArray(patch.amenities)) {
+    const mapped: string[] = []
+    const reverseLabel: Record<string, string> = {}
+    for (const [key, label] of Object.entries(AGENT_AMENITY_LABELS)) {
+      reverseLabel[label] = key
+    }
+    for (const label of patch.amenities as string[]) {
+      const key = reverseLabel[label]
+      if (key) mapped.push(key)
+      else unmappedAgentAmenities.value.push(label)
+    }
+    if (mapped.length) {
+      filters.features = [...new Set([...(filters.features || []), ...mapped])]
+      filters.amenities = [...new Set([...(filters.amenities || []), ...mapped])]
+    }
+  }
+
+  if (refreshResults !== false) doSearch()
+}
+
+/** 接收 Agent 推荐 -> 替换搜索结果 */
+function showAgentRecommendations(recommendations: AgentRecommendation[]) {
+  const results = recommendations.map((rec) => ({
+    ...rec.property,
+    id: rec.property_id,
+  }))
+  propertyStore.setSearchResults(results)
+  fromAgent.value = true
+  agentContext.value = {
+    filters: agentFilters.value as unknown as Record<string, unknown>,
+    total: results.length,
   }
 }
 
-// 搜索结果或学校变化时重新获取通勤时间
-watch([searchResults, schoolId], () => {
-  fetchCommuteTimes()
-})
+/** 查找学校 ID（硬编码映射，与后端 universities 表对齐） */
+function findSchoolId(name: string): number | null {
+  const n = name.toLowerCase()
+  if (n.includes('ucla')) return 1
+  if (n.includes('nus') || n.includes('新加坡国立')) return 2
+  if (n.includes('ntu') || n.includes('南洋理工')) return 3
+  return null
+}
 
-// 通勤数据更新后重置分页（可能因筛选导致结果减少）
-watch(commuteMap, () => {
-  currentPage.value = 1
-})
-
-/** 传递给详情页的 school query 参数 */
 const schoolLinkQuery = computed(() => {
   if (searchMode.value !== 'school' || !schoolId.value) return {} as Record<string, string>
   const school = SCHOOL_INFO[schoolId.value]
@@ -739,69 +806,94 @@ const schoolLinkQuery = computed(() => {
 })
 
 // ── 选项数据 ──
-const moveInMonths = [
-  { label: '2026年7月', value: 202607 }, { label: '2026年8月', value: 202608 },
-  { label: '2026年9月', value: 202609 }, { label: '2026年10月', value: 202610 },
-  { label: '2027年1月', value: 202701 },
-]
-const countryOptions = [
-  { label: '🇸🇬 新加坡', value: 'SG' },
-  { label: '🇬🇧 英国', value: 'GB' },
-  { label: '🇺🇸 美国', value: 'US' },
-  { label: '🇭🇰 中国香港', value: 'HK' },
-  { label: '🇨🇳 中国大陆', value: 'CN' },
-  { label: '🇦🇺 澳大利亚', value: 'AU' },
-]
-const roomTypes = [
-  { label: 'Ensuite 独卫', value: 'ensuite' }, { label: 'Studio 单人', value: 'studio' },
-  { label: '1室', value: '1bed' }, { label: '2室', value: '2bed' },
-  { label: '3室+', value: '3bed+' }, { label: '共享', value: 'shared' },
-]
-const propertyTypes: { label: string; value: PropertyType }[] = [
-  { label: '一室', value: '1-bed' }, { label: '两室+', value: '2-bed' },
-  { label: '别墅', value: 'house' }, { label: '合租', value: 'shared' }, { label: '单间', value: 'studio' },
-]
-const bedroomOptions = [
-  { label: '开间', value: 0 }, { label: '1室', value: 1 }, { label: '2室', value: 2 },
-  { label: '3室', value: 3 }, { label: '4室+', value: 4 },
+// ── 筛选选项（对应 DB 真实字段）──
+
+/** 户型类型 → rooms.property_type (DB值: studio, 1-bed, 2-bed, shared, house) */
+const roomTypeOptions = [
+  { label: 'Studio 单间', value: 'studio' },
+  { label: '一室', value: '1-bed' },
+  { label: '两室', value: '2-bed' },
+  { label: '合租', value: 'shared' },
+  { label: '整栋', value: 'house' },
 ]
 
-/** 左栏的 Agent 同步摘要与真实控件共用同一份状态，避免显示与请求条件不一致。 */
-const agentSyncedFilterChips = computed(() => {
-  const chips: string[] = []
-  const country = countryOptions.find((option) => option.value === filters.country)
-  if (filters.country) chips.push(country?.label || `国家：${filters.country}`)
-  const institution = schoolName.value || agentInstitutionName.value
-  if (institution) chips.push(`学校：${institution}`)
-  if (filters.district) chips.push(`区域：${filters.district}`)
-  if (filters.price_min != null || filters.price_max != null) {
-    const min = filters.price_min != null ? Number(filters.price_min).toLocaleString() : '不限'
-    const max = filters.price_max != null ? Number(filters.price_max).toLocaleString() : '不限'
-    chips.push(`预算：${min}–${max}`)
-  }
-  if (filters.move_in_month) {
-    const moveIn = moveInMonths.find((month) => month.value === filters.move_in_month)
-    chips.push(`入住：${moveIn?.label || filters.move_in_month}`)
-  }
-  const roomType = roomTypes.find((option) => option.value === filters.room_type)
-  if (roomType) chips.push(`房型：${roomType.label}`)
-  const propertyType = propertyTypes.find((option) => option.value === filters.property_type)
-  if (propertyType) chips.push(`类型：${propertyType.label}`)
-  if (filters.bedrooms != null) chips.push(`户型：${filters.bedrooms >= 4 ? '4室+' : `${filters.bedrooms}室`}`)
-  if (commuteTime.value != null) chips.push(`通勤：${commuteTime.value}分钟内`)
-  if (durationFilter.value === 'short') chips.push('租期：1–3月')
-  if (durationFilter.value === 'medium') chips.push('租期：3–6月')
-  if (durationFilter.value === 'long') chips.push('租期：12月+')
+/** 便利设施 可收起 */
+const amenityCollapseLimit = 9
+const amenityExpanded = ref(false)
+const visibleAmenities = computed(() =>
+  amenityExpanded.value ? amenityOptions : amenityOptions.slice(0, amenityCollapseLimit)
+)
 
-  const amenityValues = [
-    ...(filters.features || []),
-    ...(filters.amenities || []),
-    ...(filters.location_tags || []),
-  ]
-  for (const value of amenityValues) chips.push(AGENT_AMENITY_LABELS[value] || value)
-  chips.push(...unmappedAgentAmenities.value)
-  return [...new Set(chips)]
-})
+/** 便利设施 → institutes.amenities (JSONB)，覆盖常见租房配套设施 */
+function toggleAmenity(amenity: string, checked: boolean) {
+  if (!filters.amenities) filters.amenities = []
+  if (checked) {
+    if (!filters.amenities.includes(amenity)) filters.amenities.push(amenity)
+  } else {
+    filters.amenities = filters.amenities.filter(a => a !== amenity)
+  }
+  doSearch()
+}
+
+/** 便利设施 → room_types.amenities (DB 真实值，23 种) */
+const amenityOptions = [
+  'WiFi',
+  '独立卫浴',
+  '共享厨房',
+  '独立厨房',
+  '公共卫浴',
+  '空调',
+  '中央空调',
+  '家具齐全',
+  '全屋家电',
+  '洗衣机',
+  '冰箱',
+  '微波炉',
+  '电视',
+  '衣柜',
+  '衣帽间',
+  '阳台',
+  '双阳台',
+  '沙发',
+  '书桌',
+  '椅子',
+  '床垫',
+  '台灯',
+  '储物间',
+]
+
+/** 公寓搜索 */
+const instituteLoading = ref(false)
+const instituteOptions = ref<{ id: number; name: string }[]>([])
+
+async function searchInstitutes(query: string) {
+  if (!query || query.trim().length < 1) { instituteOptions.value = []; return }
+  instituteLoading.value = true
+  try {
+    const resp = await api.get('/buildings/public', { params: { limit: 20 } })
+    const buildings: any[] = resp.data || []
+    const q = query.trim().toLowerCase()
+    instituteOptions.value = buildings
+      .filter((b: any) => b.name?.toLowerCase().includes(q) || (b.name_cn || '').includes(q))
+      .slice(0, 10)
+      .map((b: any) => ({ id: b.id, name: b.name || b.name_cn || String(b.id) }))
+  } catch { instituteOptions.value = [] }
+  finally { instituteLoading.value = false }
+}
+
+function onInstituteChange(val: number | undefined) {
+  filters.institute_id = val || undefined
+  if (val) {
+    searchMode.value = 'school'
+    schoolId.value = val
+    schoolName.value = instituteOptions.value.find(o => o.id === val)?.name || ''
+  } else {
+    searchMode.value = 'city'
+    schoolId.value = null
+    schoolName.value = ''
+  }
+  doSearch()
+}
 
 // ── Booking ──
 const showBookingDialog = ref(false)
@@ -809,12 +901,12 @@ const selectedProperty = ref<Property | null>(null)
 function openBookingDialog(p: Property) { selectedProperty.value = p; showBookingDialog.value = true }
 function handleBookingConfirm(data: { propertyId: number; date: string; slot: string }) {
   showBookingDialog.value = false
-  router.push({ path: '/booking/confirm', query: { property_id: String(data.propertyId), date: data.date, slot: data.slot } })
+  router.push({ name: 'booking-move-in-date', params: { propertyId: String(data.propertyId) } })
 }
 
 /** 应用客户端筛选（通勤时间/距离/排序）后的最终结果 */
 const filteredAndSortedResults = computed(() => {
-  let results = uniquePropertiesByIdAndTitle([...searchResults.value])
+  let results = [...searchResults.value]
 
   // ── 通勤时间筛选（学校模式）──
   if (searchMode.value === 'school' && commuteTime.value != null) {
@@ -873,25 +965,6 @@ const pagedResults = computed(() => {
   return filteredAndSortedResults.value.slice(s, s + pageSize)
 })
 
-/** Agent 的“这几套”与用户当前看到的结果保持一致。 */
-const agentComparableResults = computed(() =>
-  viewMode.value === 'map' ? filteredAndSortedResults.value : pagedResults.value,
-)
-
-function isResultSelected(propertyId: number): boolean {
-  return selectedResultIds.value.includes(propertyId)
-}
-
-function toggleResultCompare(propertyId: number, checked: boolean) {
-  if (checked) {
-    if (!selectedResultIds.value.includes(propertyId) && selectedResultIds.value.length < 5) {
-      selectedResultIds.value = [...selectedResultIds.value, propertyId]
-    }
-    return
-  }
-  selectedResultIds.value = selectedResultIds.value.filter((id) => id !== propertyId)
-}
-
 // 地图模式下筛选结果变化时刷新标记
 watch(filteredAndSortedResults, (results) => {
   if (viewMode.value === 'map' && mapReady.value) {
@@ -899,300 +972,37 @@ watch(filteredAndSortedResults, (results) => {
   }
 })
 
-const SEARCH_AMENITY_TARGETS: Record<string, { group: 'features' | 'amenities' | 'location_tags'; value: string }> = {
-  家具齐全: { group: 'features', value: 'furnished' },
-  全套家具: { group: 'features', value: 'furnished' },
-  furnished: { group: 'features', value: 'furnished' },
-  WiFi: { group: 'features', value: 'wifi' },
-  wifi: { group: 'features', value: 'wifi' },
-  定期保洁: { group: 'features', value: 'cleaning' },
-  cleaning: { group: 'features', value: 'cleaning' },
-  '24h安保': { group: 'features', value: 'security' },
-  security: { group: 'features', value: 'security' },
-  洗衣机: { group: 'features', value: 'laundry' },
-  洗衣烘干: { group: 'features', value: 'laundry' },
-  laundry: { group: 'features', value: 'laundry' },
-  健身房: { group: 'features', value: 'gym' },
-  gym: { group: 'features', value: 'gym' },
-  泳池: { group: 'features', value: 'pool' },
-  游泳池: { group: 'features', value: 'pool' },
-  pool: { group: 'features', value: 'pool' },
-  停车位: { group: 'features', value: 'parking' },
-  parking: { group: 'features', value: 'parking' },
-  空调: { group: 'features', value: 'air_conditioning' },
-  aircon: { group: 'features', value: 'air_conditioning' },
-  airconditioning: { group: 'features', value: 'air_conditioning' },
-  独立厨房: { group: 'features', value: 'private_kitchen' },
-  privatekitchen: { group: 'features', value: 'private_kitchen' },
-  自习室: { group: 'features', value: 'study_room' },
-  自习空间: { group: 'features', value: 'study_room' },
-  studyroom: { group: 'features', value: 'study_room' },
-  超市: { group: 'amenities', value: 'supermarket' },
-  supermarket: { group: 'amenities', value: 'supermarket' },
-  餐厅: { group: 'amenities', value: 'restaurant' },
-  restaurant: { group: 'amenities', value: 'restaurant' },
-  医院: { group: 'amenities', value: 'hospital' },
-  hospital: { group: 'amenities', value: 'hospital' },
-  公交站: { group: 'amenities', value: 'bus' },
-  bus: { group: 'amenities', value: 'bus' },
-  地铁站: { group: 'amenities', value: 'metro' },
-  metro: { group: 'amenities', value: 'metro' },
-  公园: { group: 'amenities', value: 'park' },
-  park: { group: 'amenities', value: 'park' },
-  安静社区: { group: 'location_tags', value: 'quiet' },
-  市中心: { group: 'location_tags', value: 'downtown' },
-  '河景/海景': { group: 'location_tags', value: 'riverside' },
-  宠物友好: { group: 'location_tags', value: 'pet_friendly' },
-  可养宠物: { group: 'location_tags', value: 'pet_friendly' },
-  petfriendly: { group: 'location_tags', value: 'pet_friendly' },
-  阳台: { group: 'location_tags', value: 'balcony' },
-  电梯: { group: 'location_tags', value: 'elevator' },
-  新装修: { group: 'location_tags', value: 'new_renovation' },
-}
-
-function toggleAgent() {
-  if (!authStore.isLoggedIn) {
-    ElMessage.warning('登录后即可使用 AI 租房管家')
-    router.push({ name: 'login', query: { redirect: route.fullPath } })
-    return
-  }
-  agentOpen.value = !agentOpen.value
-}
-
-function patchNumber(value: unknown): number | undefined {
-  if (value == null || value === '') return undefined
-  const parsed = Number(value)
-  return Number.isFinite(parsed) ? parsed : undefined
-}
-
-function agentCountry(value: unknown): string | undefined {
-  if (typeof value !== 'string') return undefined
-  const normalized = value.trim().toLowerCase().replace(/[\s_-]+/g, '')
-  const aliases: Record<string, string> = {
-    sg: 'SG', singapore: 'SG', 新加坡: 'SG',
-    gb: 'GB', uk: 'GB', unitedkingdom: 'GB', 英国: 'GB',
-    us: 'US', usa: 'US', unitedstates: 'US', 美国: 'US',
-    hk: 'HK', hongkong: 'HK', 中国香港: 'HK', 香港: 'HK',
-    cn: 'CN', china: 'CN', 中国: 'CN', 中国大陆: 'CN',
-    au: 'AU', australia: 'AU', 澳大利亚: 'AU',
-  }
-  return aliases[normalized] || (normalized.length === 2 ? normalized.toUpperCase() : undefined)
-}
-
-function normalizedAgentChoice(value: unknown): string | undefined {
-  if (typeof value !== 'string') return undefined
-  const normalized = value.trim().toLowerCase().replace(/[_\s]+/g, '-')
-  return normalized || undefined
-}
-
-function agentPropertyType(value: unknown): PropertyType | undefined {
-  const normalized = normalizedAgentChoice(value)
-  const aliases: Record<string, PropertyType> = {
-    studio: 'studio', '1-bed': '1-bed', '1bed': '1-bed',
-    '2-bed': '2-bed', '2bed': '2-bed', shared: 'shared', house: 'house',
-  }
-  return normalized ? aliases[normalized] : undefined
-}
-
-function agentRoomType(value: unknown): string | undefined {
-  const normalized = normalizedAgentChoice(value)
-  const aliases: Record<string, string> = {
-    studio: 'studio', ensuite: 'ensuite', '独立卫浴': 'ensuite', '独卫': 'ensuite',
-    '1-bed': '1bed', '1bed': '1bed', '2-bed': '2bed', '2bed': '2bed',
-    '3-bed+': '3bed+', '3bed+': '3bed+', shared: 'shared',
-  }
-  return normalized ? aliases[normalized] : undefined
-}
-
-function applyAgentAmenities(value: unknown) {
-  filters.features = []
-  filters.amenities = []
-  filters.location_tags = []
-  unmappedAgentAmenities.value = []
-  if (!Array.isArray(value)) return
-
-  for (const label of value) {
-    const original = String(label).trim()
-    const normalized = original.replace(/[\s_-]+/g, '')
-    const target = SEARCH_AMENITY_TARGETS[normalized] || SEARCH_AMENITY_TARGETS[normalized.toLowerCase()]
-    if (!target) {
-      if (!['独立卫浴', '独卫', 'ensuite'].includes(original.toLowerCase())) {
-        unmappedAgentAmenities.value.push(original)
-      }
-      continue
-    }
-    const group = filters[target.group] || []
-    if (!group.includes(target.value)) group.push(target.value)
-    filters[target.group] = group
-  }
-  unmappedAgentAmenities.value = [...new Set(unmappedAgentAmenities.value.filter(Boolean))]
-  if (value.some((label) => ['独立卫浴', '独卫', 'ensuite'].includes(String(label).trim().toLowerCase()))) {
-    filters.room_type = 'ensuite'
-  }
-}
-
-function findSchoolId(institution: string): number | null {
-  const normalized = institution.toLowerCase().replace(/[^a-z0-9\u4e00-\u9fff]/g, '')
-  const aliases: Record<number, string[]> = {
-    1: ['ucla', 'universityofcalifornialosangeles', '加州大学洛杉矶分校'],
-    2: ['nus', 'nationaluniversityofsingapore', '新加坡国立大学'],
-    3: ['ntu', 'nanyangtechnologicaluniversity', '南洋理工大学'],
-  }
-  const entry = Object.entries(aliases).find(([, names]) => names.some((name) => normalized.includes(name)))
-  return entry ? Number(entry[0]) : null
-}
-
-function applyAgentFilterPatch(patch: Record<string, unknown>, refreshResults = true) {
-  if (!patch || typeof patch !== 'object') return
-  if (Object.keys(patch).length) agentFilterSynced.value = true
-  if ('country' in patch) {
-    filters.country = agentCountry(patch.country)
-  }
-  if ('price_min' in patch) filters.price_min = patchNumber(patch.price_min)
-  if ('price_max' in patch) filters.price_max = patchNumber(patch.price_max)
-  if ('bedrooms' in patch) filters.bedrooms = patchNumber(patch.bedrooms)
-  if ('property_type' in patch) {
-    filters.property_type = agentPropertyType(patch.property_type)
-  }
-  if ('room_type' in patch) {
-    filters.room_type = agentRoomType(patch.room_type)
-  }
-  if ('available_from' in patch) {
-    const value = patch.available_from == null ? '' : String(patch.available_from)
-    const month = value.replace(/[^0-9]/g, '').slice(0, 6)
-    filters.move_in_month = month.length === 6 ? Number(month) : undefined
-  }
-  if ('amenities' in patch) applyAgentAmenities(patch.amenities)
-
-  const institutionValue = typeof patch.institution === 'string' ? patch.institution : ''
-  const matchedSchoolId = institutionValue ? findSchoolId(institutionValue) : null
-  if ('institution' in patch) agentInstitutionName.value = institutionValue.trim()
-  if ('institution' in patch && matchedSchoolId) {
-    const school = SCHOOL_INFO[matchedSchoolId]
-    searchMode.value = 'school'
-    schoolId.value = matchedSchoolId
-    schoolName.value = school.name
-    filters.country = school.country
-    filters.institute_id = matchedSchoolId
-    filters.district = undefined
-  } else if ('institution' in patch && !matchedSchoolId) {
-    if (searchMode.value === 'school') searchMode.value = 'city'
-    schoolId.value = null
-    schoolName.value = ''
-    filters.institute_id = undefined
-  }
-
-  if ('district' in patch && !matchedSchoolId) {
-    filters.district = typeof patch.district === 'string' ? patch.district : undefined
-    if (filters.district) {
-      searchMode.value = 'city'
-      schoolId.value = null
-      schoolName.value = ''
-      filters.institute_id = undefined
-    }
-  }
-  if ('commute_minutes' in patch) {
-    const minutes = patchNumber(patch.commute_minutes)
-    if (searchMode.value === 'school' && minutes != null) {
-      commuteTime.value = [5, 10, 15, 20, 30].find((value) => value >= minutes) || 30
-    } else if (minutes == null) {
-      commuteTime.value = null
-    }
-  }
-
-  if ('min_lease_months' in patch || 'max_lease_months' in patch) {
-    const minLease = patchNumber(patch.min_lease_months)
-    const maxLease = patchNumber(patch.max_lease_months)
-    if (minLease != null && minLease >= 12) durationFilter.value = 'long'
-    else if (maxLease != null && maxLease <= 3) durationFilter.value = 'short'
-    else if (minLease != null && minLease >= 3 && maxLease != null && maxLease <= 6) durationFilter.value = 'medium'
-    else durationFilter.value = null
-  }
-
-  currentPage.value = 1
-  if (refreshResults) doSearch()
-}
-
-function showAgentRecommendations(recommendations: AgentRecommendation[]) {
-  const results = uniqueAgentRecommendations(recommendations).map((recommendation) => ({
-    ...recommendation.property,
-    id: recommendation.property_id,
-    similarity: recommendation.final_score ? recommendation.final_score / 100 : null,
-  }))
-  propertyStore.setSearchResults(results)
-  currentPage.value = 1
-  fromAgent.value = true
-  if (Object.keys(agentFilters.value).some((key) => {
-    const value = (agentFilters.value as Record<string, unknown>)[key]
-    return value != null && value !== '' && (!Array.isArray(value) || value.length > 0)
-  })) {
-    agentFilterSynced.value = true
-  }
-  agentContext.value = { filters: { ...agentFilters.value }, total: results.length }
-  nextTick(() => {
-    if (viewMode.value === 'map' && mapInstance) {
-      mapInstance.invalidateSize()
-      renderMarkers()
-    }
-  })
-}
-
-watch(agentOpen, () => {
-  nextTick(() => {
-    if (viewMode.value === 'map' && mapInstance) mapInstance.invalidateSize()
-  })
-})
-
 // ── 搜索 ──
-function doSearch() {
-  fromAgent.value = false
+async function doSearch() {
   currentPage.value = 1
   const p: PropertySearchParams = {}
 
-  // 地点筛选
-  if (filters.country) p.country = filters.country
-  if (searchMode.value === 'school' && filters.institute_id) {
-    p.institute_id = filters.institute_id
-  } else if (filters.district) {
-    p.district = filters.district
-  }
+  if (filters.institute_id) p.institute_id = filters.institute_id
+  else if (filters.city) p.city = filters.city
+  else if (filters.district) p.district = filters.district
 
-  if (filters.q) p.q = filters.q
+  // 半径搜索时 q 仅用于显示，不传给后端做名称过滤（否则会和半径条件叠加导致空结果）
+  if (filters.q && !(uniLat.value && uniLng.value)) p.q = filters.q
+  // 文字搜索→geocode→自动切换为学校模式
+  if (filters.q && !uniLat.value) {
+    try {
+      const geo = await import('@/services/property').then(m => m.propertyService.geocodeAddress(filters.q!))
+      if (geo.latitude && geo.longitude) {
+        uniLat.value = geo.latitude; uniLng.value = geo.longitude
+        uniName.value = geo.formatted_address || (geo.city ? geo.city + ' · ' + (geo.district || '') : filters.q)
+        searchMode.value = 'uni'
+      }
+    } catch { /* ignore */ }
+  }
   if (filters.price_min != null) p.price_min = filters.price_min
   if (filters.price_max != null) p.price_max = filters.price_max
-  if (filters.bedrooms != null) p.bedrooms = filters.bedrooms
   if (filters.property_type) p.property_type = filters.property_type as PropertyType
+  if (filters.amenities?.length) p.amenities = filters.amenities
 
-  // 入住月份 → available_from (YYYYMM 字符串)
-  if (filters.move_in_month) {
-    p.available_from = String(filters.move_in_month)
-  }
-
-  // 房型
-  if (filters.room_type) {
-    p.room_type = filters.room_type
-  }
-
-  // 合并 features + amenities + location_tags → amenities 数组
-  const allAmenities = [
-    ...(filters.features || []),
-    ...(filters.amenities || []),
-    ...(filters.location_tags || []),
-  ]
-  if (allAmenities.length > 0) {
-    p.amenities = allAmenities
-  }
-
-  // 时长（城市模式）→ 租期范围
-  if (durationFilter.value) {
-    if (durationFilter.value === 'short') {
-      p.max_lease_months = 3
-    } else if (durationFilter.value === 'medium') {
-      p.min_lease_months = 3
-      p.max_lease_months = 6
-    } else if (durationFilter.value === 'long') {
-      p.min_lease_months = 12
-    }
+  // 半径搜索：大学坐标 → 地图中心
+  if (uniLat.value != null && uniLng.value != null) {
+    p.near_lat = uniLat.value; p.near_lng = uniLng.value
+    p.near_distance_km = uniRadius.value
   }
 
   // 排序（非通勤排序发送到后端）
@@ -1205,10 +1015,21 @@ function doSearch() {
   propertyStore.fetchSearch(p)
 }
 
+/** 半径变更 → 重新搜索 */
+function onRadiusChange() {
+  // 更新 URL 并重新搜索
+  if (uniId.value) {
+    router.replace({
+      path: '/search',
+      query: { uni_id: String(uniId.value), radius: String(uniRadius.value), uni_name: uniName.value }
+    })
+  }
+  doSearch()
+}
+
 /** 通勤筛选变更（纯客户端筛选，不需要重新请求后端） */
 function onCommuteFilterChange() {
-  currentPage.value = 1 // 重置分页
-  // filteredAndSortedResults 会自动响应 commuteTime/distanceFilter/commuteMap 变化
+  currentPage.value = 1
 }
 
 /** 排序变更 — 后端排序需重新请求，客户端排序仅重置分页 */
@@ -1220,26 +1041,17 @@ function onSortChange() {
   // 客户端排序：filteredAndSortedResults 自动响应
 }
 
-/** 切换国家/地区时清掉旧市场的区域条件，避免组合出无效查询。 */
-function onCountryFilterChange() {
-  filters.district = undefined
-  currentPage.value = 1
-  doSearch()
-}
-
 function resetFilters() {
-  filters.q = ''; filters.country = undefined; filters.district = undefined; filters.price_min = undefined
-  filters.price_max = undefined; filters.bedrooms = undefined; filters.property_type = undefined
-  filters.move_in_month = undefined; filters.room_type = undefined
-  filters.features = undefined; filters.amenities = undefined; filters.location_tags = undefined
-  commuteTime.value = null; distanceFilter.value = null; durationFilter.value = null
-  agentFilterSynced.value = false; unmappedAgentAmenities.value = []; agentInstitutionName.value = ''
+  filters.q = ''; filters.district = undefined; filters.city = undefined; filters.price_min = undefined
+  filters.price_max = undefined; filters.property_type = undefined
+  filters.institute_id = undefined; filters.amenities = undefined
+  schoolId.value = null; schoolName.value = ''; searchMode.value = 'city'
   sortBy.value = 'similarity'
   doSearch()
 }
 
 // ── 路由初始化 ──
-function initFromRoute() {
+async function initFromRoute() {
   const q = route.query
 
   // 优先检查是否来自 Agent 推荐（sessionStorage 中预存了结果）
@@ -1254,38 +1066,65 @@ function initFromRoute() {
         fromAgent.value = true
         agentContext.value = ctx
         searchMode.value = 'agent'
-        // 预填筛选条件
         if (ctx?.filters) {
           const f = ctx.filters as Record<string, unknown>
           if (f.country) filters.country = f.country as string
           if (f.district) filters.district = f.district as string
         }
       }
-    } catch {
-      // 解析失败，回退到正常搜索
-    }
-    // 消费后清除（避免刷新页面重复加载）
+    } catch { /* fallback */ }
     sessionStorage.removeItem('agentSearchResults')
     sessionStorage.removeItem('agentSearchContext')
     return
   }
 
-  if (q.school_id) {
+  // 直接坐标搜索（来自搜索框地理编码结果）
+  if (q.lat && q.lng) {
+    uniLat.value = Number(q.lat)
+    uniLng.value = Number(q.lng)
+    uniName.value = (q.geo_city as string) || (q.q as string) || (q.uni_name as string) || ''
+    uniRadius.value = Number(q.radius) || 5
+    searchMode.value = 'uni'
+    filters.district = undefined
+    filters.city = undefined
+    filters.institute_id = undefined
+  } else if (q.uni_id) {
+    // 大学近距搜索
+    uniId.value = Number(q.uni_id)
+    uniName.value = (q.uni_name as string) || ''
+    uniRadius.value = Number(q.radius) || 5
+    searchMode.value = 'uni'
+    filters.district = undefined
+    filters.city = undefined
+    filters.institute_id = undefined
+
+    // 从 API 获取大学坐标
+    try {
+      const resp = await api.get(`/universities?q=&limit=50`)
+      const unis: any[] = resp.data || []
+      const found = unis.find((u: any) => u.id === uniId.value)
+      if (found?.latitude && found?.longitude) {
+        uniLat.value = found.latitude
+        uniLng.value = found.longitude
+        uniName.value = found.name_cn || found.name || uniName.value
+      }
+    } catch { /* fallback: use hardcoded */ }
+  } else if (q.school_id) {
     searchMode.value = 'school'; schoolId.value = Number(q.school_id)
-    filters.institute_id = schoolId.value; filters.district = undefined
+    filters.institute_id = schoolId.value; filters.district = undefined; filters.city = undefined
     schoolName.value = SCHOOL_INFO[schoolId.value]?.name || ''
-    filters.country = SCHOOL_INFO[schoolId.value]?.country
   } else if (q.institute_id) {
     searchMode.value = 'school'; schoolId.value = Number(q.institute_id)
-    filters.institute_id = schoolId.value; filters.district = undefined
+    filters.institute_id = schoolId.value; filters.district = undefined; filters.city = undefined
     schoolName.value = (q.institute_name as string) || ''
+  } else if (q.city) {
+    searchMode.value = 'city'; filters.city = q.city as string; filters.district = undefined
+    filters.institute_id = undefined; schoolName.value = ''
   } else if (q.district) {
-    searchMode.value = 'city'; filters.district = q.district as string
+    searchMode.value = 'city'; filters.city = undefined; filters.district = q.district as string
     filters.institute_id = undefined; schoolName.value = ''
   }
-  if (q.country) filters.country = q.country as string
   if (q.q) filters.q = q.q as string
-  // 来自 AI 搜索的精确筛选条件
   if (q.price_min) filters.price_min = Number(q.price_min) || undefined
   if (q.price_max) filters.price_max = Number(q.price_max) || undefined
   if (q.bedrooms) filters.bedrooms = Number(q.bedrooms) || undefined
@@ -1293,22 +1132,20 @@ function initFromRoute() {
   doSearch()
 }
 onMounted(() => {
-  document.documentElement.classList.add('search-page-active')
+
   initFromRoute()
 })
 onUnmounted(() => {
-  document.documentElement.classList.remove('search-page-active')
+
   destroyMap()
 })
-watch(() => route.query, () => initFromRoute())
+watch(() => route.query, () => { initFromRoute() })
 </script>
 
 <style scoped>
 .search-page {
-  flex: 1;
-  height: auto;
-  min-height: 0;
-  margin: 0; padding: 0 16px 8px 16px;
+  height: calc(100vh - 108px);
+  margin: 0; padding: 0 16px;
   display: flex; flex-direction: column; overflow: hidden;
 }
 
@@ -1320,6 +1157,10 @@ watch(() => route.query, () => initFromRoute())
 }
 .school-banner h1 { font-size: 20px; font-weight: 700; color: var(--text-primary); margin: 0; }
 .school-count { font-size: 13px; color: var(--text-muted); background: var(--bg); padding: 2px 12px; border-radius: 20px; }
+.uni-banner { flex-wrap: wrap; gap: 8px; }
+.radius-slider { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+.radius-label { font-size: 12px; color: var(--text-muted); }
+.radius-value { font-size: 13px; font-weight: 600; color: var(--primary); min-width: 36px; }
 
 /* Agent 推荐横幅 */
 .agent-banner {
@@ -1349,36 +1190,6 @@ watch(() => route.query, () => initFromRoute())
 }
 .sidebar-title { font-size: 15px; font-weight: 700; color: var(--text-primary); }
 
-.agent-synced-filters {
-  margin: -2px 0 14px;
-  padding: 10px;
-  border: 1px solid #cfe1f2;
-  border-radius: 8px;
-  background: #f2f8fe;
-}
-.agent-synced-title {
-  margin-bottom: 7px;
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  color: #35658f;
-  font-size: 11px;
-  font-weight: 700;
-}
-.agent-synced-chips { display: flex; flex-wrap: wrap; gap: 5px; }
-.agent-synced-chips span {
-  max-width: 100%;
-  padding: 3px 7px;
-  overflow: hidden;
-  color: #3e6385;
-  background: #fff;
-  border: 1px solid #d8e6f3;
-  border-radius: 999px;
-  font-size: 10.5px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 /* ── Filter Blocks ── */
 .filter-block {
   margin-bottom: 18px; padding-bottom: 16px;
@@ -1397,6 +1208,23 @@ watch(() => route.query, () => initFromRoute())
 /* check group vertical */
 .fg-check { display: flex; flex-direction: column; gap: 5px; }
 .fg-check .el-checkbox { margin-right: 0; font-size: 13px; height: 26px; }
+
+/* ── 便利设施 3列网格 ── */
+.amenity-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 2px 4px;
+}
+.amenity-grid .el-checkbox {
+  margin-right: 0;
+  font-size: 11px;
+  height: 24px;
+}
+.amenity-toggle {
+  margin-top: 6px;
+  padding: 2px 8px;
+  font-size: 12px;
+}
 
 /* chip buttons */
 .chip-row { display: flex; flex-wrap: wrap; gap: 6px; }
@@ -1417,25 +1245,15 @@ watch(() => route.query, () => initFromRoute())
 .results-area {
   flex: 1; min-width: 0;
   display: flex; flex-direction: column;
-  overflow-y: auto; /* 网格/列表模式下内部滚动 */
+  overflow-y: auto;
   overflow-x: hidden;
+  padding-bottom: 60px;
 }
 .results-area.map-layout { overflow-y: hidden; } /* 地图模式由 map-body 控制滚动 */
 .results-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; padding: 0 4px; flex-shrink: 0; }
 .results-count { font-size: 14px; color: var(--text-secondary); }
-.results-compare-status {
-  margin-left: auto;
-  margin-right: 10px;
-  padding: 4px 9px;
-  color: #2f6694;
-  background: #edf5fc;
-  border-radius: 999px;
-  font-size: 12px;
-}
-.agent-toggle-btn { width: 86px; min-width: 86px; }
 .loading-wrap { display: flex; flex-direction: column; align-items: center; padding: 60px; color: var(--text-muted); gap: 10px; }
 .card-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
-.search-layout.agent-open .card-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .card-list { display: flex; flex-direction: column; gap: 14px; }
 .pag { display: flex; justify-content: center; margin-top: 24px; padding-bottom: 30px; flex-shrink: 0; }
 
@@ -1446,18 +1264,6 @@ watch(() => route.query, () => initFromRoute())
 .property-img { width: 100%; height: 100%; object-fit: cover; }
 .image-placeholder { font-size: 14px; color: #c0c4cc; }
 .district-badge { position: absolute; top: 8px; left: 8px; background: rgba(0,0,0,0.6); color: #fff; padding: 2px 10px; border-radius: 6px; font-size: 12px; }
-.result-compare-check {
-  position: absolute;
-  top: 8px;
-  right: 8px;
-  z-index: 2;
-  padding: 3px 8px;
-  background: rgba(255, 255, 255, 0.94);
-  border-radius: 6px;
-  box-shadow: 0 1px 5px rgba(28, 43, 58, 0.16);
-}
-.result-compare-check :deep(.el-checkbox) { height: 22px; margin-right: 0; }
-.result-compare-check :deep(.el-checkbox__label) { padding-left: 5px; font-size: 12px; }
 .card-body { padding: 12px 16px 16px; }
 .card-title { font-size: 15px; font-weight: 600; color: #303133; margin: 0 0 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .card-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 8px; }
@@ -1519,82 +1325,115 @@ watch(() => route.query, () => initFromRoute())
   flex: 1; min-width: 0;
 }
 
-.agent-dock {
-  width: 480px;
-  flex: 0 0 480px;
-  min-height: 0;
-}
-
-.agent-backdrop { display: none; }
-
-.agent-panel-loading {
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  color: #7a8795;
-  background: #fff;
-  border: 1px solid #dfe4ea;
-  border-radius: 8px;
-  font-size: 12px;
-}
-
-@media (max-width: 1360px) {
-  .agent-dock { width: 440px; flex-basis: 440px; }
-}
-
 @media (max-width: 1200px) { .card-grid { grid-template-columns: repeat(2, 1fr); } }
-
-@media (max-width: 1240px) {
-  .agent-dock {
-    position: fixed;
-    top: 64px;
-    right: 0;
-    bottom: 0;
-    z-index: 2201;
-    width: min(480px, 100vw);
-    box-shadow: -10px 0 30px rgba(31, 45, 61, 0.16);
-  }
-  .agent-backdrop {
-    display: block;
-    position: fixed;
-    inset: 64px 0 0;
-    z-index: 2200;
-    padding: 0;
-    background: rgba(27, 39, 51, 0.28);
-    border: 0;
-  }
-  .search-layout.agent-open .card-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-}
-
 @media (max-width: 900px) {
   .search-layout { flex-direction: column; }
   .filter-sidebar { width: 100%; position: static; max-height: none; }
   .card-grid { grid-template-columns: 1fr; }
-  .search-layout.agent-open .card-grid { grid-template-columns: 1fr; }
+}
+
+/* ── Agent 三栏布局 ── */
+.search-layout.agent-open {
+  grid-template-columns: 260px 1fr 390px;
+}
+@media (max-width: 1360px) {
+  .search-layout.agent-open {
+    grid-template-columns: 260px 1fr 350px;
+  }
+}
+.agent-dock {
+  background: var(--el-bg-color);
+  border-left: 1px solid var(--el-border-color-light);
+  overflow-y: auto;
+  height: calc(100vh - 100px);
+  position: sticky;
+  top: 80px;
+}
+.agent-drawer {
+  position: fixed;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  width: min(400px, 100vw);
+  height: 100vh;
+  z-index: 2000;
+  box-shadow: -4px 0 20px rgba(0, 0, 0, 0.15);
+}
+.agent-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.3);
+  z-index: 1999;
+}
+.agent-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 200px;
+  color: var(--el-text-color-secondary);
+  font-size: 14px;
+}
+.agent-toggle-btn {
+  margin-right: 8px;
+}
+.results-compare-status {
+  font-size: 12px;
+  color: var(--el-color-primary);
+  margin-right: 12px;
+  white-space: nowrap;
 }
 </style>
 
 <style>
-/* 搜索页全局样式：锁定视口，阻止 body 滚动 */
-html.search-page-active,
-html.search-page-active body,
-html.search-page-active #app {
-  overflow: hidden;
-  height: 100%;
-}
 
-html.search-page-active .layout-container {
-  height: 100dvh;
-  min-height: 0;
-  overflow: hidden;
+/* ── Agent 三栏布局 ── */
+.search-layout.agent-open {
+  grid-template-columns: 260px 1fr 390px;
 }
-
-html.search-page-active .layout-body,
-html.search-page-active .layout-main {
-  min-height: 0;
-  overflow: hidden;
+@media (max-width: 1360px) {
+  .search-layout.agent-open {
+    grid-template-columns: 260px 1fr 350px;
+  }
+}
+.agent-dock {
+  background: var(--el-bg-color);
+  border-left: 1px solid var(--el-border-color-light);
+  overflow-y: auto;
+  height: calc(100vh - 100px);
+  position: sticky;
+  top: 80px;
+}
+.agent-drawer {
+  position: fixed;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  width: min(400px, 100vw);
+  height: 100vh;
+  z-index: 2000;
+  box-shadow: -4px 0 20px rgba(0, 0, 0, 0.15);
+}
+.agent-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.3);
+  z-index: 1999;
+}
+.agent-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 200px;
+  color: var(--el-text-color-secondary);
+  font-size: 14px;
+}
+.agent-toggle-btn {
+  margin-right: 8px;
+}
+.results-compare-status {
+  font-size: 12px;
+  color: var(--el-color-primary);
+  margin-right: 12px;
+  white-space: nowrap;
 }
 </style>
