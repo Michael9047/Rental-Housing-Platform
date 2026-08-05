@@ -5,7 +5,7 @@ from app.api.v1.routes import (
     admin, agent, auth, bookings,
     building_staff, buildings, chat, commute, contracts,
     dashboard, favorites, geocoding, health,
-    imports, map_routes, notifications,
+    imports, map_routes, me, notifications,
     payments, pois, repair_workers, repairs,
     search_suggestions, tenants,
     unit_types, universities, upload, users, wechat,
@@ -17,6 +17,7 @@ api_router = APIRouter()
 api_router.include_router(health.router, tags=["health"])
 api_router.include_router(auth.router, prefix="/auth", tags=["auth"])
 api_router.include_router(users.router, prefix="/users", tags=["users"])
+api_router.include_router(me.router, prefix="/me", tags=["me"])
 
 # 三层架构核心
 api_router.include_router(buildings.router, tags=["buildings"])

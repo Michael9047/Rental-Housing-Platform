@@ -28,11 +28,12 @@ class RepairUpdate(BaseModel):
 class RepairRead(BaseModel):
     """工单详情"""
     id: int
-    property_id: int
+    property_id: int | None = None
     tenant_id: int
-    landlord_id: int
+    landlord_id: int | None = None
     assigned_worker_id: int | None = None
     issue_type: RepairIssueType
+    severity: str | None = None
     description: str
     images: list[str] | None = None
     status: RepairStatus
@@ -40,6 +41,7 @@ class RepairRead(BaseModel):
     completed_at: str | None = None
     work_record: str | None = None
     work_images: list[str] | None = None
+    reject_reason: str | None = None
     created_at: str
     updated_at: str
 
@@ -48,6 +50,7 @@ class RepairRead(BaseModel):
     landlord_name: str | None = None
     worker_name: str | None = None
     property_title: str | None = None
+    institute_contact: str | None = None
 
     model_config = {"from_attributes": True}
 
