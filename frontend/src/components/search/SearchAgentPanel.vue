@@ -9,11 +9,18 @@
           <span>{{ starting ? '正在启动' : startupFailed ? '启动失败，请重新打开' : '结合当前搜索继续问' }}</span>
         </div>
       </div>
-      <el-tooltip content="关闭 AI 租房管家" placement="bottom">
-        <el-button class="close-btn" text circle aria-label="关闭 AI 租房管家" @click="emit('close')">
-          <el-icon><Close /></el-icon>
-        </el-button>
-      </el-tooltip>
+      <div class="agent-header-actions">
+        <el-tooltip content="新建对话" placement="bottom">
+          <el-button class="new-session-btn" text circle aria-label="新建 AI 对话" :disabled="sending || starting" @click="startNewChat">
+            <el-icon :size="18"><Plus /></el-icon>
+          </el-button>
+        </el-tooltip>
+        <el-tooltip content="关闭 AI 租房管家" placement="bottom">
+          <el-button class="close-btn" text circle aria-label="关闭 AI 租房管家" @click="emit('close')">
+            <el-icon><Close /></el-icon>
+          </el-button>
+        </el-tooltip>
+      </div>
     </header>
 
     <div v-if="currentFilterChips.length" class="context-bar">
@@ -112,6 +119,10 @@
             </el-button>
             <el-button size="small" :disabled="sending" @click="send('请帮我对比分析全部 ' + uniqueRecommendations(message.recommendations).length + ' 套')">
               对比全部
+            </el-button>
+            <el-button size="small" type="primary" plain :disabled="sending" @click="openDeepAnalysis">
+              <el-icon :size="14"><MagicStick /></el-icon>
+              深度分析
             </el-button>
           </div>
         </div>
@@ -220,7 +231,9 @@ import {
   Close,
   DataAnalysis,
   Loading,
+  MagicStick,
   PictureFilled,
+  Plus,
   Promotion,
   Search,
 } from '@element-plus/icons-vue'
@@ -250,6 +263,7 @@ const emit = defineEmits<{
   (event: 'close'): void
   (event: 'apply-filter-patch', patch: Record<string, unknown>, refreshResults?: boolean): void
   (event: 'show-recommendations', recommendations: AgentRecommendation[]): void
+  (event: 'goto-ai-search'): void
 }>()
 
 const router = useRouter()
@@ -531,6 +545,19 @@ function formatPrice(rec: AgentRecommendation): string {
 function openProperty(propertyId: number) {
   router.push(`/property/${propertyId}`)
 }
+
+async function startNewChat() {
+  try {
+    await agentChatStore.newSession()
+    await scrollToBottom()
+  } catch {
+    ElMessage.error('新建对话失败，请稍后重试')
+  }
+}
+
+function openDeepAnalysis() {
+  emit('goto-ai-search')
+}
 </script>
 
 <style scoped>
@@ -576,6 +603,8 @@ function openProperty(propertyId: number) {
 .agent-title strong { font-size: 16px; color: #263445; }
 .agent-title span { font-size: 12px; color: #778596; }
 .close-btn { width: 34px; height: 34px; flex: 0 0 34px; }
+.agent-header-actions { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
+.new-session-btn { width: 34px; height: 34px; flex: 0 0 34px; }
 
 .context-bar {
   padding: 10px 14px;

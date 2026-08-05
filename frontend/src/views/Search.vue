@@ -229,6 +229,7 @@
         @close="agentOpen = false"
         @apply-filter-patch="applyAgentFilterPatch"
         @show-recommendations="showAgentRecommendations"
+        @goto-ai-search="gotoAiSearch"
       />
       <template #fallback>
         <div class="agent-loading">AI 管家启动中...</div>
@@ -241,6 +242,7 @@
 import { ref, reactive, computed, defineAsyncComponent, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
+import { useAgentChatStore } from '@/stores/agentChat'
 import { ElMessage } from 'element-plus'
 import { Search, School, Grid, List, Location, Loading, ChatDotRound, SortUp, SortDown } from '@element-plus/icons-vue'
 
@@ -280,6 +282,8 @@ const propertyStore = usePropertyStore()
 const { searchResults, loading } = storeToRefs(propertyStore)
 const SearchAgentPanel = defineAsyncComponent(() => import("@/components/search/SearchAgentPanel.vue"))
 const authStore = useAuthStore()
+const agentChatStore = useAgentChatStore()
+const lastAgentSearchKey = ref('')
 
 // ── 模式 ──
 const searchMode = ref<'city' | 'school' | 'uni' | 'agent'>('city')
@@ -792,6 +796,20 @@ function showAgentRecommendations(recommendations: AgentRecommendation[]) {
   }
 }
 
+/** 跳转到 AI 找房全页，携带当前搜索上下文 */
+function gotoAiSearch() {
+  sessionStorage.setItem('returnSearchState', JSON.stringify({
+    filters: { ...filters },
+    searchMode: searchMode.value,
+    uniId: uniId.value, uniName: uniName.value,
+    uniLat: uniLat.value, uniLng: uniLng.value, uniRadius: uniRadius.value,
+    schoolId: schoolId.value, schoolName: schoolName.value,
+    fromAgent: fromAgent.value, agentContext: agentContext.value,
+    selectedUniId: selectedUniId.value,
+  }))
+  router.push('/ai-search')
+}
+
 /** 查找学校 ID（硬编码映射，与后端 universities 表对齐） */
 function findSchoolId(name: string): number | null {
   const n = name.toLowerCase()
@@ -1024,6 +1042,23 @@ async function doSearch() {
   // 排序（后端排序：price 字段 + 方向；距离和综合为客户端排序）
   if (sortField.value === 'price') {
     p.sort_by = sortAsc.value ? 'price_asc' : 'price_desc'
+  }
+
+  // 切换城市/学校/国家 → 自动新 Agent 会话，避免跨市场对话串扰
+  if (agentChatStore.sessionId !== null) {
+    const currentKey = JSON.stringify({
+      country: filters.country,
+      city: filters.city,
+      district: filters.district,
+      institute_id: filters.institute_id,
+      uniId: uniId.value,
+      uniName: uniName.value,
+      searchMode: searchMode.value,
+    })
+    if (currentKey && currentKey !== lastAgentSearchKey.value) {
+      lastAgentSearchKey.value = currentKey
+      agentChatStore.newSession().catch(() => {})
+    }
   }
 
   propertyStore.fetchSearch(p)
