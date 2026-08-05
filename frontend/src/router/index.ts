@@ -22,6 +22,7 @@ const routes: RouteRecordRaw[] = [
         path: 'ai-search',
         name: 'ai-search',
         component: () => import('@/views/AiSearch.vue'),
+        meta: { hideFooter: true },
       },
       {
         path: 'cart',
