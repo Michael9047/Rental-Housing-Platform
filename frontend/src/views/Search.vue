@@ -128,13 +128,8 @@
 
         <!-- ──────── 排序 ──────── -->
         <div class="filter-block">
-          <div class="filter-block-title">排序方式</div>
-          <div class="sort-row">
-            <el-select v-model="sortField" size="small" style="flex:1" @change="onSortFieldChange">
-              <el-option label="综合匹配" value="similarity" />
-              <el-option label="距离" value="commute_dist" />
-              <el-option label="价格" value="price" />
-            </el-select>
+          <div class="sort-header">
+            <span class="filter-block-title" style="margin-bottom:0">排序方式</span>
             <el-button
               size="small"
               :icon="sortAsc ? SortUp : SortDown"
@@ -142,6 +137,15 @@
             >
               {{ sortAsc ? '升序' : '降序' }}
             </el-button>
+          </div>
+          <div class="chip-row">
+            <button
+              v-for="opt in sortOptions"
+              :key="opt.value"
+              class="chip"
+              :class="{ on: sortField === opt.value }"
+              @click="sortField = opt.value; onSortFieldChange()"
+            >{{ opt.label }}</button>
           </div>
         </div>
       </aside>
@@ -512,6 +516,11 @@ watch(viewMode, (mode) => {
 // ── 通用 ──
 const sortField = ref('similarity')
 const sortAsc = ref(false)
+const sortOptions = [
+  { label: '综合匹配', value: 'similarity' },
+  { label: '距离', value: 'commute_dist' },
+  { label: '价格', value: 'price' },
+]
 const currentPage = ref(1)
 const pageSize = 12
 
@@ -1212,7 +1221,7 @@ watch(() => route.query, () => { initFromRoute() })
 /* radio group vertical */
 .fg-radio { display: flex; flex-direction: column; gap: 5px; }
 .fg-radio .el-radio { margin-right: 0; font-size: 13px; height: 28px; }
-.sort-row { display: flex; gap: 6px; align-items: center; }
+.sort-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
 
 /* check group vertical */
 .fg-check { display: flex; flex-direction: column; gap: 5px; }
