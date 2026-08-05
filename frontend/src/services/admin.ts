@@ -10,6 +10,7 @@ import type {
   NotificationOutboxItem,
   RowResult,
   SystemAlert,
+  SystemAlertProcessRecord,
 } from '@/types/admin'
 import type { Property } from '@/types/property'
 import type { User } from '@/types/user'
@@ -57,6 +58,18 @@ export const adminService = {
     return api.get('/admin/system-alerts').then((r) => r.data)
   },
 
+  getSystemAlertRecords(params?: {
+    alert_key?: string
+    keyword?: string
+    category?: string
+    action_type?: string
+    source?: string
+    source_id?: string
+    limit?: number
+  }): Promise<SystemAlertProcessRecord[]> {
+    return api.get('/admin/system-alerts/records', { params }).then((r) => r.data)
+  },
+
   retryNotification(outboxId: string): Promise<{ id: string; status: string }> {
     return api.post(`/notifications/admin/outbox/${outboxId}/retry`).then((r) => r.data)
   },
@@ -67,6 +80,20 @@ export const adminService = {
 
   resolveSystemAlert(alertId: number, note?: string): Promise<{ id: number; status: string }> {
     return api.patch(`/admin/system-alerts/${alertId}/resolve`, { note }).then((r) => r.data)
+  },
+
+  resolveGeneratedSystemAlert(alert: SystemAlert, note?: string): Promise<{ id: number; alert_key: string; status: string }> {
+    return api.patch('/admin/system-alerts/generated/resolve', {
+      alert_key: alert.id,
+      category: alert.category,
+      severity: alert.severity,
+      title: alert.title,
+      source: alert.source,
+      source_id: alert.source_id,
+      status: alert.status,
+      detail: alert.detail,
+      note,
+    }).then((r) => r.data)
   },
 
   getEmbeddingStats(): Promise<EmbeddingStats> {

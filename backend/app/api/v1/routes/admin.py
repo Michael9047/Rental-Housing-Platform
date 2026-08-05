@@ -2,7 +2,7 @@ from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
-from sqlalchemy import select, func
+from sqlalchemy import select, func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, get_db_session, require_admin, require_landlord
@@ -15,6 +15,7 @@ from app.models.pms_connection import PMSConnection, PMSSyncStatus
 from app.models.repair import RepairRequest, RepairStatus
 from app.models.system_alert import (
     SystemAlert as PersistedSystemAlert,
+    SystemAlertProcessRecord,
     SystemAlertSeverity,
     SystemAlertStatus,
 )
@@ -25,12 +26,25 @@ from app.services.audit_service import AuditService
 from app.services.payment_provider import provider_availability
 from app.services.property_service import PropertyService
 from app.services.stats_service import StatsService
+from app.services.system_alert_record_service import record_alert_action
 from app.services.user_service import UserService
 
 router = APIRouter()
 
 
 class SystemAlertResolveRequest(BaseModel):
+    note: str | None = None
+
+
+class GeneratedSystemAlertResolveRequest(BaseModel):
+    alert_key: str
+    category: str
+    severity: str
+    title: str
+    source: str
+    source_id: str | int | None = None
+    status: str | None = None
+    detail: str | None = None
     note: str | None = None
 
 
@@ -65,6 +79,14 @@ def _persisted_alert_to_card(row: PersistedSystemAlert) -> dict:
             row.action_label or "标记处理",
             row.action_resource_id or row.id,
         ),
+    }
+
+
+def _generated_alert_action(alert_key: str) -> dict:
+    return {
+        "type": "resolve_generated_alert",
+        "label": "标记处理",
+        "resource_id": alert_key,
     }
 
 
@@ -160,6 +182,13 @@ async def list_system_alerts(
 ) -> list[dict]:
     now = datetime.now(timezone.utc)
     alerts: list[dict] = []
+    handled_alert_keys = set()
+    if not include_resolved:
+        handled_alert_keys = set(await session.scalars(
+            select(SystemAlertProcessRecord.alert_key).where(
+                SystemAlertProcessRecord.action_type == "resolve_generated_alert"
+            )
+        ))
 
     persisted_stmt = select(PersistedSystemAlert).order_by(PersistedSystemAlert.updated_at.desc()).limit(60)
     if not include_resolved:
@@ -545,6 +574,14 @@ async def list_system_alerts(
             })
 
     severity_order = {"high": 0, "medium": 1, "low": 2}
+    for item in alerts:
+        if not str(item["id"]).startswith("system:") and not item.get("action"):
+            item["action"] = _generated_alert_action(str(item["id"]))
+    if handled_alert_keys:
+        alerts = [
+            item for item in alerts
+            if str(item["id"]).startswith("system:") or str(item["id"]) not in handled_alert_keys
+        ]
     alerts.sort(key=lambda item: (severity_order.get(item["severity"], 9), item["updated_at"]), reverse=False)
     return alerts[:60]
 
@@ -576,6 +613,87 @@ async def create_system_alert(
     return _persisted_alert_to_card(alert)
 
 
+@router.get("/system-alerts/records")
+async def list_system_alert_process_records(
+    session: AsyncSession = Depends(get_db_session),
+    _: User = Depends(require_admin),
+    alert_key: str | None = Query(default=None),
+    keyword: str | None = Query(default=None),
+    category: str | None = Query(default=None),
+    action_type: str | None = Query(default=None),
+    source: str | None = Query(default=None),
+    source_id: str | None = Query(default=None),
+    limit: int = Query(default=80, ge=1, le=200),
+) -> list[dict]:
+    stmt = select(SystemAlertProcessRecord).order_by(SystemAlertProcessRecord.created_at.desc()).limit(limit)
+    if alert_key:
+        stmt = stmt.where(SystemAlertProcessRecord.alert_key == alert_key)
+    if keyword:
+        pattern = f"%{keyword.strip()}%"
+        stmt = stmt.where(or_(
+            SystemAlertProcessRecord.alert_key.ilike(pattern),
+            SystemAlertProcessRecord.title.ilike(pattern),
+            SystemAlertProcessRecord.source.ilike(pattern),
+            SystemAlertProcessRecord.source_id.ilike(pattern),
+            SystemAlertProcessRecord.note.ilike(pattern),
+        ))
+    if category:
+        stmt = stmt.where(SystemAlertProcessRecord.category == category)
+    if action_type:
+        stmt = stmt.where(SystemAlertProcessRecord.action_type == action_type)
+    if source:
+        stmt = stmt.where(SystemAlertProcessRecord.source == source)
+    if source_id:
+        stmt = stmt.where(SystemAlertProcessRecord.source_id == source_id)
+    rows = await session.scalars(stmt)
+    return [
+        {
+            "id": row.id,
+            "alert_key": row.alert_key,
+            "system_alert_id": row.system_alert_id,
+            "category": row.category,
+            "severity": row.severity,
+            "title": row.title,
+            "source": row.source,
+            "source_id": row.source_id,
+            "action_type": row.action_type,
+            "note": row.note,
+            "status_before": row.status_before,
+            "status_after": row.status_after,
+            "handled_by_id": row.handled_by_id,
+            "extra": row.extra,
+            "created_at": row.created_at.isoformat(),
+        }
+        for row in rows
+    ]
+
+
+@router.patch("/system-alerts/generated/resolve")
+async def resolve_generated_system_alert(
+    body: GeneratedSystemAlertResolveRequest,
+    session: AsyncSession = Depends(get_db_session),
+    current_user: User = Depends(require_admin),
+) -> dict:
+    record = await record_alert_action(
+        session,
+        current_user,
+        alert_key=body.alert_key,
+        category=body.category,
+        severity=body.severity,
+        title=body.title,
+        source=body.source,
+        source_id=body.source_id,
+        action_type="resolve_generated_alert",
+        note=body.note,
+        status_before=body.status,
+        status_after="resolved",
+        extra={"detail": body.detail} if body.detail else None,
+    )
+    await session.commit()
+    await session.refresh(record)
+    return {"id": record.id, "alert_key": record.alert_key, "status": "resolved"}
+
+
 @router.patch("/system-alerts/{alert_id}/resolve")
 async def resolve_system_alert(
     alert_id: int,
@@ -590,7 +708,23 @@ async def resolve_system_alert(
     if body and body.note:
         details["resolve_note"] = body.note
     alert.extra = details or None
+    status_before = alert.status.value if hasattr(alert.status, "value") else str(alert.status)
     alert.mark_resolved(current_user.id)
+    await record_alert_action(
+        session,
+        current_user,
+        alert_key=f"system:{alert.id}",
+        system_alert_id=alert.id,
+        category=alert.category,
+        severity=alert.severity.value if hasattr(alert.severity, "value") else str(alert.severity),
+        title=alert.title,
+        source=alert.source,
+        source_id=alert.source_id or alert.id,
+        action_type="resolve_system_alert",
+        note=body.note if body else None,
+        status_before=status_before,
+        status_after=alert.status.value,
+    )
     await session.commit()
     return {"id": alert.id, "status": alert.status.value}
 

@@ -72,7 +72,7 @@ export interface NotificationOutboxItem {
 export type SystemAlertSeverity = 'high' | 'medium' | 'low'
 
 export interface SystemAlertAction {
-  type: 'retry_notification' | 'retry_pms_sync' | 'resolve_system_alert'
+  type: 'retry_notification' | 'retry_pms_sync' | 'resolve_system_alert' | 'resolve_generated_alert'
   label: string
   resource_id: string | number
 }
@@ -89,6 +89,24 @@ export interface SystemAlert {
   status: string
   updated_at: string
   action: SystemAlertAction | null
+}
+
+export interface SystemAlertProcessRecord {
+  id: number
+  alert_key: string
+  system_alert_id: number | null
+  category: string
+  severity: string
+  title: string
+  source: string
+  source_id: string | null
+  action_type: string
+  note: string | null
+  status_before: string | null
+  status_after: string | null
+  handled_by_id: number | null
+  extra: Record<string, unknown> | null
+  created_at: string
 }
 
 export interface ImportTask {

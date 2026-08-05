@@ -8,6 +8,7 @@ from app.models.notification import NotificationOutbox, NotificationOutboxStatus
 from app.models.user import User
 from app.schemas.notification import NotificationRead, NotificationListResponse, UnreadCount
 from app.services.notification_service import NotificationService
+from app.services.system_alert_record_service import record_alert_action
 from app.services.tenant_order_service import TenantOrderService
 
 router = APIRouter()
@@ -20,11 +21,27 @@ async def list_failed_outbox(session: AsyncSession = Depends(get_db_session), _:
 
 
 @router.post("/admin/outbox/{outbox_id}/retry")
-async def retry_outbox(outbox_id: str, session: AsyncSession = Depends(get_db_session), _: User = Depends(require_admin)) -> dict:
+async def retry_outbox(outbox_id: str, session: AsyncSession = Depends(get_db_session), current_user: User = Depends(require_admin)) -> dict:
     row = await session.get(NotificationOutbox, outbox_id)
     if not row: raise HTTPException(404, "通知事件不存在")
     if row.status == NotificationOutboxStatus.sent: raise HTTPException(409, "通知已经发送")
+    status_before = row.status.value if hasattr(row.status, "value") else str(row.status)
+    attempts_before = row.attempts
     row.status=NotificationOutboxStatus.pending; row.next_attempt_at=datetime.now(timezone.utc); row.last_error=None
+    await record_alert_action(
+        session,
+        current_user,
+        alert_key=f"notification:{row.id}",
+        category="通知",
+        severity="high" if attempts_before >= 3 else "medium",
+        title="通知发送失败",
+        source="notification_outbox",
+        source_id=row.id,
+        action_type="retry_notification",
+        status_before=status_before,
+        status_after="pending",
+        extra={"event_type": row.event_type, "attempts_before": attempts_before},
+    )
     await session.commit(); return {"id":row.id,"status":"pending"}
 
 

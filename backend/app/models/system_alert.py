@@ -58,3 +58,32 @@ class SystemAlert(TimestampMixin, Base):
         self.status = SystemAlertStatus.resolved
         self.resolved_by_id = user_id
         self.resolved_at = datetime.now(timezone.utc)
+
+
+class SystemAlertProcessRecord(Base):
+    __tablename__ = "system_alert_process_records"
+
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    alert_key: Mapped[str] = mapped_column(String(160), nullable=False, index=True)
+    system_alert_id: Mapped[int | None] = mapped_column(
+        ForeignKey("system_alerts.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    category: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
+    severity: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
+    title: Mapped[str] = mapped_column(String(120), nullable=False)
+    source: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
+    source_id: Mapped[str | None] = mapped_column(String(120), index=True)
+    action_type: Mapped[str] = mapped_column(String(60), nullable=False, index=True)
+    note: Mapped[str | None] = mapped_column(Text)
+    status_before: Mapped[str | None] = mapped_column(String(80))
+    status_after: Mapped[str | None] = mapped_column(String(80))
+    handled_by_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    extra: Mapped[dict | None] = mapped_column(JSON)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        nullable=False,
+        index=True,
+    )

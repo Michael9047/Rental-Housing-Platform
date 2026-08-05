@@ -7,6 +7,7 @@ from app.api.deps import get_current_user, get_db_session, require_admin
 from app.models.pms_connection import PMSConnection, PMSSyncStatus, PMSType
 from app.models.user import User
 from app.services.pms.sync_service import PMSSyncService
+from app.services.system_alert_record_service import record_alert_action
 
 router = APIRouter()
 
@@ -118,16 +119,51 @@ async def get_connection(
 async def trigger_sync(
     connection_id: int,
     session: AsyncSession = Depends(get_db_session),
-    _: User = Depends(require_admin),
+    current_user: User = Depends(require_admin),
 ) -> dict:
     """手动触发全量同步"""
+    conn = await session.get(PMSConnection, connection_id)
+    if not conn:
+        raise HTTPException(status_code=404, detail="PMS connection not found")
+    status_before = conn.sync_status.value if hasattr(conn.sync_status, "value") else str(conn.sync_status)
     sync_service = PMSSyncService(session)
     try:
         stats = await sync_service.sync_connection(connection_id)
-        return {"status": "success", **stats}
+        result_status = "partial_failed" if stats.get("errors") else "success"
+        await record_alert_action(
+            session,
+            current_user,
+            alert_key=f"pms_failed:{connection_id}",
+            category="对接",
+            severity="high" if stats.get("errors") else "low",
+            title="PMS 对接同步失败",
+            source="pms_connection",
+            source_id=connection_id,
+            action_type="retry_pms_sync",
+            status_before=status_before,
+            status_after=result_status,
+            extra=stats,
+        )
+        await session.commit()
+        return {"status": result_status, **stats}
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
+        await record_alert_action(
+            session,
+            current_user,
+            alert_key=f"pms_failed:{connection_id}",
+            category="对接",
+            severity="high",
+            title="PMS 对接同步失败",
+            source="pms_connection",
+            source_id=connection_id,
+            action_type="retry_pms_sync",
+            status_before=status_before,
+            status_after="failed",
+            extra={"error": str(exc)},
+        )
+        await session.commit()
         raise HTTPException(status_code=500, detail=f"Sync failed: {exc}") from exc
 
 

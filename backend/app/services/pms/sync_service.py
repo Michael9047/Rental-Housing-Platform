@@ -6,6 +6,7 @@ from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.models.pms_connection import PMSConnection, PMSSyncStatus
 from app.models.property import Property
@@ -34,7 +35,11 @@ class PMSSyncService:
 
     async def sync_connection(self, connection_id: int) -> dict[str, Any]:
         """对单个 PMS 连接执行全量同步"""
-        conn = await self.session.get(PMSConnection, connection_id)
+        conn = await self.session.scalar(
+            select(PMSConnection)
+            .options(selectinload(PMSConnection.institute))
+            .where(PMSConnection.id == connection_id)
+        )
         if not conn:
             raise ValueError(f"PMSConnection {connection_id} not found")
         if not conn.is_active:
@@ -73,7 +78,7 @@ class PMSSyncService:
                     logger.warning("Sync error for %s: %s", item.external_id, exc)
 
             # 4. 更新同步状态
-            conn.sync_status = PMSSyncStatus.success
+            conn.sync_status = PMSSyncStatus.failed if stats["errors"] else PMSSyncStatus.success
             conn.last_synced_at = datetime.now(timezone.utc)
             conn.total_properties_synced = stats["created"] + stats["updated"]
             conn.last_sync_error = (json.dumps(stats["error_details"][:10])

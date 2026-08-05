@@ -5,7 +5,7 @@ from app.api.v1.routes import (
     admin, agent, auth, bookings,
     building_staff, buildings, chat, commute, contracts,
     dashboard, favorites, geocoding, health,
-    imports, map_routes, notifications,
+    imports, map_routes, notifications, pms,
     payments, repair_workers, repairs,
     search_suggestions, tenants,
     unit_types, universities, upload, users, wechat,
@@ -50,5 +50,5 @@ api_router.include_router(agent.router, prefix="/agent", tags=["agent"])
 # api_router.include_router(ml.router, tags=["ml"])
 api_router.include_router(repairs.router, tags=["repairs"])
 api_router.include_router(repair_workers.router, tags=["repair-workers"])
-# api_router.include_router(pms.router, prefix="/pms", tags=["pms"])
+api_router.include_router(pms.router, prefix="/pms", tags=["pms"])
 api_router.include_router(commute.router, prefix="/commute", tags=["commute"])

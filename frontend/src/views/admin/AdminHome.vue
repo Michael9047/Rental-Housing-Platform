@@ -161,6 +161,11 @@ async function runAlertAction(alert: SystemAlert) {
     ElMessage.success('已标记处理')
     await loadData()
   }
+  if (alert.action.type === 'resolve_generated_alert') {
+    await adminService.resolveGeneratedSystemAlert(alert)
+    ElMessage.success('已标记处理')
+    await loadData()
+  }
 }
 
 async function markNoticeRead(id: number) {
