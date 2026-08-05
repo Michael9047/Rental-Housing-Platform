@@ -12,9 +12,9 @@ from datetime import date, datetime, timezone
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import func, or_, select, text
+from sqlalchemy import String, cast, func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import defer, selectinload
 
 from app.models.unit_type import UnitType, UnitTypeStatus, PropertyType, DepositType
 from app.models.institute import Institute, InstituteStatus
@@ -324,6 +324,7 @@ class PropertyService:
         self,
         *,
         district: str | None = None,
+        country: str | None = None,
         price_min: Decimal | None = None,
         price_max: Decimal | None = None,
         bedrooms: int | None = None,
@@ -332,36 +333,105 @@ class PropertyService:
         near_lng: float | None = None,
         near_distance_km: float | None = None,
         female_only: bool | None = None,
+        query_vec: list[float] | None = None,
         limit: int = 50,
     ) -> list[dict]:
-        """搜户型 — UnitType + Institute JOIN，不再聚合 Room。
+        """搜户型 —— 搜索主表为 unit_types，JOIN institutes。
 
-        返回 [{"unit_type": UnitType, "institute": Institute, "available_rooms": int, "min_price": Decimal, "embedding": str}, ...]
+        当传入 query_vec 时，语义相似度排序由数据库 pgvector 完成
+        （ORDER BY embedding <=> query_vec），不再把向量拉回应用层用 numpy 全量计算。
+        返回 [{unit_type, institute, available_rooms, min_price, embedding_score}, ...]
+        embedding_score ∈ [0,1]（无向量时为 None）。
         """
+        from sqlalchemy.orm import defer
+        from sqlalchemy.orm.attributes import set_committed_value
+
+        select_cols: list = [UnitType, Institute]
+
+        # 语义排序下推 DB：cosine 距离与 HNSW(vector_cosine_ops) 索引一致
+        distance_expr = None
+        if query_vec is not None:
+            distance_expr = UnitType.embedding.cosine_distance(query_vec)
+            select_cols.append(distance_expr.label("distance"))
+
         stmt = (
-            select(UnitType, Institute)
+            select(*select_cols)
+            # 不把 1536 维向量本身传回应用层
+            .options(defer(UnitType.embedding))
             .join(Institute, UnitType.institute_id == Institute.id)
             .where(
-                UnitType.status == UnitTypeStatus.available,
-                Institute.status == InstituteStatus.active,
+                cast(UnitType.status, String) == UnitTypeStatus.available.value,
+                cast(Institute.status, String) == InstituteStatus.active.value,
                 UnitType.deleted_at.is_(None),
             )
-            .options(selectinload(UnitType.institute))
         )
 
+        # ── 区域匹配：多字段搜索 + 城市别名 ──
         if district:
-            stmt = stmt.where(Institute.district.ilike(f"%{district}%"))
+            district_pattern = f"%{district}%"
+            stmt = stmt.where(or_(
+                Institute.district.ilike(district_pattern),
+                Institute.city.ilike(district_pattern),
+                Institute.country.ilike(district_pattern),
+                Institute.name.ilike(district_pattern),
+                Institute.name_cn.ilike(district_pattern),
+            ))
+
+        # ── 国家别名 ──
+        if country:
+            normalized_country = str(country).strip()
+            country_aliases = {
+                "CN": ("CN", "China", "中国"),
+                "SG": ("SG", "Singapore", "新加坡"),
+                "GB": ("GB", "UK", "United Kingdom", "英国"),
+                "UK": ("GB", "UK", "United Kingdom", "英国"),
+                "US": ("US", "USA", "United States", "美国"),
+                "HK": ("HK", "Hong Kong", "香港"),
+            }.get(normalized_country.upper(), (normalized_country,))
+            stmt = stmt.where(or_(
+                *(Institute.country.ilike(f"%{alias}%") for alias in country_aliases)
+            ))
+
         if price_min is not None:
             stmt = stmt.where(UnitType.base_rent >= price_min)
         if price_max is not None:
             stmt = stmt.where(UnitType.base_rent <= price_max)
         if bedrooms is not None:
             stmt = stmt.where(UnitType.bedrooms == bedrooms)
+
+        # ── property_type 模糊匹配 ──
         if property_type:
-            stmt = stmt.where(UnitType.property_type == _resolve_property_type(property_type))
+            room_type = str(property_type).lower().replace("_", "-")
+            if room_type == "studio":
+                stmt = stmt.where(or_(
+                    UnitType.bedrooms == 0,
+                    UnitType.name.ilike("%studio%"),
+                    UnitType.name.ilike("%单间%"),
+                    UnitType.name.ilike("%开间%"),
+                ))
+            elif room_type in {"1-bed", "1bed", "one-bed"}:
+                stmt = stmt.where(UnitType.bedrooms == 1)
+            elif room_type in {"2-bed", "2bed", "two-bed"}:
+                stmt = stmt.where(UnitType.bedrooms == 2)
+            elif room_type in {"3-bed+", "3bed+", "three-bed-plus"}:
+                stmt = stmt.where(UnitType.bedrooms >= 3)
+            elif room_type in {"shared", "合租"}:
+                stmt = stmt.where(or_(
+                    UnitType.name.ilike("%shared%"),
+                    UnitType.name.ilike("%合租%"),
+                    UnitType.name.ilike("%床位%"),
+                ))
+            elif room_type in {"ensuite", "独卫"}:
+                # ensuite 由 UnitType.name 或 amenities 判断
+                stmt = stmt.where(or_(
+                    UnitType.name.ilike("%ensuite%"),
+                    UnitType.name.ilike("%独卫%"),
+                ))
+
         if female_only is not None:
             stmt = stmt.where(Institute.female_only == female_only)
 
+        # ── 大学距离 bounding box ──
         if near_lat is not None and near_lng is not None and near_distance_km is not None:
             import math as _math
             lat_d = near_distance_km / 111.0
@@ -373,20 +443,32 @@ class PropertyService:
                 Institute.longitude <= near_lng + lng_d,
             )
 
-        stmt = stmt.order_by(UnitType.base_rent.asc()).limit(limit)
+        # ── 排序：有向量时按语义距离；否则按租金 ──
+        if distance_expr is not None:
+            stmt = stmt.order_by(distance_expr.asc().nullslast(), UnitType.base_rent.asc()).limit(limit)
+        else:
+            stmt = stmt.order_by(UnitType.base_rent.asc()).limit(limit)
+
         result = await self.session.execute(stmt)
         rows = result.all()
-
-        return [
-            {
-                "unit_type": row[0],
-                "institute": row[1],
-                "available_rooms": row[0].available_count,
-                "min_price": row[0].base_rent,
-                "embedding": row[0].embedding,
-            }
-            for row in rows
-        ]
+        items: list[dict] = []
+        for row in rows:
+            ut, inst = row[0], row[1]
+            set_committed_value(ut, "institute", inst)
+            items.append({
+                "unit_type": ut,
+                "institute": inst,
+                # HEAD: UnitType 即最小可租单元，available_rooms 固定为 1
+                "available_rooms": 1,
+                "min_price": ut.base_rent,
+                "_unit_type_id": int(ut.id),
+                "_property_id": int(ut.id),
+                # cosine 距离 ∈ [0,2] → 相似度 ∈ [0,1]
+                "embedding_score": (
+                    max(0.0, 1.0 - float(row[2])) if distance_expr is not None and row[2] is not None else None
+                ) if distance_expr is not None else None,
+            })
+        return items
 
     # ── list ────────────────────────────────────────────────────────────
 
