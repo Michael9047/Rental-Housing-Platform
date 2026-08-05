@@ -449,9 +449,10 @@ function renderMarkers() {
     const rent = (p as any).min_rent ?? (p as any).base_rent ?? (p as any).price_monthly ?? 0
     const currency = (p as any).currency || 'CNY'
     const sym = { CNY: '¥', GBP: '£', SGD: 'SG$', USD: '$' }[currency] || '¥'
+    const rp = (p as any).rent_period === 'weekly' ? '/周' : '/月'
     const content = `<div style="max-width:200px;font-size:13px">
       <strong>${name}</strong><br/>
-      ${sym}${Number(rent).toLocaleString()}/月起
+      ${sym}${Number(rent).toLocaleString()}${rp}起
     </div>`
 
     marker.addListener('click', () => {
@@ -681,7 +682,8 @@ const agentFilters = computed<AgentFilters>(() => {
   const amenities = amenityValues.map((value) => AGENT_AMENITY_LABELS[value]).filter(Boolean)
   if (amenities.length) result.amenities = amenities
   if (searchMode.value === 'school' && schoolName.value) result.institution = schoolName.value
-  if (searchMode.value === 'school' && commuteTime.value != null) {
+  if (searchMode.value === 'uni' && uniName.value) result.institution = uniName.value
+  if ((searchMode.value === 'school' || searchMode.value === 'uni') && commuteTime.value != null) {
     result.commute_minutes = commuteTime.value
     result.commute_mode = commuteTime.value <= 15 ? 'walking' : 'driving'
   }
