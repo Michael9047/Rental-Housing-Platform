@@ -827,7 +827,7 @@ function openProperty(propertyId: number) {
   .composer :deep(.el-textarea__inner) { min-height: 46px !important; }
 }
 
-@media (max-width: 1240px) {
+@media (max-width: 720px) {
   .agent-panel { border: 0; border-radius: 0; }
 }
 

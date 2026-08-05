@@ -1548,6 +1548,28 @@ watch(() => route.query, () => initFromRoute())
 @media (max-width: 1200px) { .card-grid { grid-template-columns: repeat(2, 1fr); } }
 
 @media (max-width: 1240px) {
+  .search-layout { gap: 12px; }
+  .filter-sidebar { width: 180px; padding: 12px; }
+  .agent-dock {
+    position: static;
+    width: 300px;
+    flex: 0 0 300px;
+    box-shadow: none;
+  }
+  .search-layout.agent-open .card-grid { grid-template-columns: 1fr; }
+}
+
+/* 手机端空间不足时才使用抽屉，桌面与平板始终保持筛选、房源、Agent 三列同级。 */
+@media (max-width: 720px) {
+  .search-layout { flex-direction: column; }
+  .filter-sidebar {
+    width: 100%;
+    max-height: 38vh;
+    position: static;
+    flex: 0 0 auto;
+  }
+  .card-grid,
+  .search-layout.agent-open .card-grid { grid-template-columns: 1fr; }
   .agent-dock {
     position: fixed;
     top: 64px;
@@ -1566,14 +1588,6 @@ watch(() => route.query, () => initFromRoute())
     background: rgba(27, 39, 51, 0.28);
     border: 0;
   }
-  .search-layout.agent-open .card-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-}
-
-@media (max-width: 900px) {
-  .search-layout { flex-direction: column; }
-  .filter-sidebar { width: 100%; position: static; max-height: none; }
-  .card-grid { grid-template-columns: 1fr; }
-  .search-layout.agent-open .card-grid { grid-template-columns: 1fr; }
 }
 </style>
 
