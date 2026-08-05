@@ -565,16 +565,23 @@ class GooglePOIService:
                 )
                 return None
 
-            # 组装 map_poi_data
+            # 组装 map_poi_data — 用前端 Tab key 分类
+            KW_TO_FRONTEND_KEY: dict[str, str] = {
+                "地铁站": "subway_station", "公交站": "bus_station",
+                "医院": "hospital",         "药店": "pharmacy",
+                "超市": "supermarket",      "便利店": "supermarket", "商场": "supermarket",
+                "餐厅": "restaurant",       "快餐": "restaurant",    "食阁": "restaurant", "小贩中心": "restaurant",
+                "市场": "supermarket",      "健身房": "sports",
+            }
             map_categories: dict[str, list[dict]] = {}
             for kw in KW_ORDER:
                 if kw in item_map and item_map[kw]:
                     items = [{"id": p.place_id or p.name, "name": p.name, "lat": p.lat, "lng": p.lng,
-                              "distance": p.distance_m, "line": [ln.get("ref", "") for ln in p.transit_lines] if p.transit_lines else []}
+                              "distance": p.distance_m, "line": ",".join(ln.get("ref","") for ln in p.transit_lines) if p.transit_lines else ""}
                              for p in item_map[kw]]
                     if items:
-                        parent = next((cat for cat, kws in CATEGORIES.items() if kw in kws), "其他")
-                        map_categories.setdefault(parent, []).extend(items)
+                        key = KW_TO_FRONTEND_KEY.get(kw, "other")
+                        map_categories.setdefault(key, []).extend(items)
 
             map_poi_data = {"search_radius_m": 2000, "categories": map_categories}
 
@@ -602,7 +609,7 @@ class GooglePOIService:
             content = "\n".join(lines) if len(lines) > 1 else f"该房源位于{base}，周边配套设施较少。"
 
             # Upsert
-            result = await session.execute(sa_select(PropertyPOI).where(PropertyPOI.property_id == prop.id))
+            result = await session.execute(sa_select(PropertyPOI).where(PropertyPOI.institute_id == prop.id))
             poi_record = result.scalar_one_or_none()
             if poi_record:
                 poi_record.content = content
@@ -610,7 +617,7 @@ class GooglePOIService:
                 poi_record.map_poi_data = map_poi_data
                 poi_record.generated_at = datetime.now(timezone.utc)
             else:
-                poi_record = PropertyPOI(property_id=prop.id, content=content, poi_data=poi_data,
+                poi_record = PropertyPOI(institute_id=prop.id, content=content, poi_data=poi_data,
                                          map_poi_data=map_poi_data, generated_at=datetime.now(timezone.utc), reviewed=False)
                 session.add(poi_record)
             await session.commit()
@@ -624,15 +631,15 @@ class GooglePOIService:
     async def get_or_generate_map_pois(self, property_id: int, session) -> dict | None:
         """获取地图 POI——有缓存直接返回，否则 Google 搜索并持久化。替代 POIService.get_or_generate_map_pois()。"""
         from app.models.poi import PropertyPOI
-        from app.models.property import Property
+        from app.models.institute import Institute
         from sqlalchemy import select as sa_select
 
-        result = await session.execute(sa_select(PropertyPOI).where(PropertyPOI.property_id == property_id))
+        result = await session.execute(sa_select(PropertyPOI).where(PropertyPOI.institute_id == property_id))
         poi = result.scalar_one_or_none()
         if poi and poi.map_poi_data:
             return poi.map_poi_data
 
-        prop = await session.get(Property, property_id)
+        prop = await session.get(Institute, property_id)
         if not prop:
             return None
 
@@ -642,15 +649,15 @@ class GooglePOIService:
     async def get_or_generate_poi(self, property_id: int, session) -> "PropertyPOI | None":
         """获取 POI——有缓存返回，否则生成。替代 POIService.get_or_generate_poi()。"""
         from app.models.poi import PropertyPOI
-        from app.models.property import Property
+        from app.models.institute import Institute
         from sqlalchemy import select as sa_select
 
-        result = await session.execute(sa_select(PropertyPOI).where(PropertyPOI.property_id == property_id))
+        result = await session.execute(sa_select(PropertyPOI).where(PropertyPOI.institute_id == property_id))
         poi = result.scalar_one_or_none()
         if poi:
             return poi
 
-        prop = await session.get(Property, property_id)
+        prop = await session.get(Institute, property_id)
         if not prop:
             return None
         return await self.generate_and_save(prop, session)
@@ -660,5 +667,5 @@ class GooglePOIService:
         """纯读取 POI 记录。"""
         from app.models.poi import PropertyPOI
         from sqlalchemy import select as sa_select
-        result = await session.execute(sa_select(PropertyPOI).where(PropertyPOI.property_id == property_id))
+        result = await session.execute(sa_select(PropertyPOI).where(PropertyPOI.institute_id == property_id))
         return result.scalar_one_or_none()

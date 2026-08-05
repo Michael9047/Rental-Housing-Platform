@@ -1,4 +1,4 @@
-{
+﻿{
   "skipWebFetchPreflight": true,
   "permissions": {
     "allow": [
@@ -86,16 +86,7 @@
       "Edit(*.tsx)",
       "Edit(*.scss)",
       "Edit(*.csv)",
-      "Write(*.py)",
-      "Write(*.ts)",
-      "Write(*.vue)",
-      "Write(*.json)",
-      "Write(*.md)",
-      "Write(*.env)",
-      "Write(*.csv)",
-      "Write(*.html)",
-      "Write(*.sql)",
-      "Write(*.sh)",
+      "Edit(*.sh)",
       "Grep(*)",
       "Glob(*)",
       "Skill(*)",

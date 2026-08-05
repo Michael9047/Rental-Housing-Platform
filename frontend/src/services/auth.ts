@@ -48,4 +48,14 @@ export const authService = {
   phoneRegister(data: PhoneRegisterRequest): Promise<TokenResponse> {
     return api.post('/auth/phone-register', data).then((r) => r.data)
   },
+
+  /** 已登录用户修改密码 */
+  changePassword(data: { old_password: string; new_password: string }): Promise<{ detail: string }> {
+    return api.post('/auth/change-password', data).then((r) => r.data)
+  },
+
+  /** 已登录用户更换手机号（需短信验证） */
+  changePhone(data: { new_phone: string; sms_code: string }): Promise<{ detail: string }> {
+    return api.post('/auth/change-phone', data).then((r) => r.data)
+  },
 }

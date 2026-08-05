@@ -108,5 +108,17 @@ class WeChatLoginResponse(BaseModel):
     user: CurrentUserResponse
 
 
+class ChangePasswordRequest(BaseModel):
+    """已登录用户修改密码"""
+    old_password: str = Field(min_length=1, max_length=128)
+    new_password: str = Field(min_length=8, max_length=128)
+
+
+class ChangePhoneRequest(BaseModel):
+    """已登录用户更换手机号（需短信验证）"""
+    new_phone: str = Field(min_length=11, max_length=32)
+    sms_code: str = Field(min_length=6, max_length=6)
+
+
 class WeChatConfigResponse(BaseModel):
     appid: str

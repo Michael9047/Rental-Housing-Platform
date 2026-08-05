@@ -1,8 +1,8 @@
 <template>
   <div class="search-page">
-    <!-- 大学模式顶部横幅 -->
+    <!-- 大学/位置模式顶部横幅 -->
     <div v-if="searchMode === 'uni' && uniName" class="school-banner uni-banner">
-      <el-icon :size="22"><School /></el-icon>
+      <el-icon :size="22"><component :is="uniId ? School : Location" /></el-icon>
       <h1>靠近 {{ uniName }} 的房源</h1>
       <span class="school-count">共 {{ searchResults.length }} 套</span>
     </div>
@@ -43,12 +43,11 @@
           </el-button>
         </div>
 
-        <!-- ① 学校 / 半径 -->
+        <!-- ① 学校 / 位置 / 半径 -->
         <template v-if="searchMode === 'uni' && uniName">
-          <!-- 学校模式：显示学校名 + 半径 -->
           <div class="filter-block">
-            <div class="filter-block-title">🎓 {{ uniName }}</div>
-            <el-button size="small" text type="danger" @click="clearSchool">✕ 清除学校</el-button>
+            <div class="filter-block-title">{{ uniId ? '🎓' : '📍' }} {{ uniName }}</div>
+            <el-button size="small" text type="danger" @click="clearSchool">{{ uniId ? '✕ 清除学校' : '✕ 清除位置' }}</el-button>
           </div>
           <div class="filter-block">
             <div class="filter-block-title">搜索半径：{{ uniRadius }}km</div>
@@ -342,7 +341,7 @@ function renderMarkers() {
         scale: 16, fillColor: '#4285F4', fillOpacity: 1,
         strokeColor: '#fff', strokeWeight: 2,
       },
-      label: { text: '🏫', fontSize: '16px' },
+      label: { text: uniId.value ? '🏫' : '📍', fontSize: '16px' },
     })
     uniMarker.addListener('click', () => {
       infoWindow?.setContent('<b>'+uniName.value+'</b>'); infoWindow?.open(mapInstance, uniMarker)
@@ -437,7 +436,7 @@ const pageSize = 12
 const filters = reactive<PropertySearchParams & {
   amenities?: string[]
 }>({
-  q: '', district: undefined, price_min: undefined, price_max: undefined,
+  q: '', district: undefined, city: undefined, price_min: undefined, price_max: undefined,
   property_type: undefined,
   limit: 30, country: undefined, institute_id: undefined,
 })
@@ -754,9 +753,11 @@ async function doSearch() {
   const p: PropertySearchParams = {}
 
   if (filters.institute_id) p.institute_id = filters.institute_id
+  else if (filters.city) p.city = filters.city
   else if (filters.district) p.district = filters.district
 
-  if (filters.q) p.q = filters.q
+  // 半径搜索时 q 仅用于显示，不传给后端做名称过滤（否则会和半径条件叠加导致空结果）
+  if (filters.q && !(uniLat.value && uniLng.value)) p.q = filters.q
   // 文字搜索→geocode→自动切换为学校模式
   if (filters.q && !uniLat.value) {
     try {
@@ -816,7 +817,7 @@ function onSortChange() {
 }
 
 function resetFilters() {
-  filters.q = ''; filters.district = undefined; filters.price_min = undefined
+  filters.q = ''; filters.district = undefined; filters.city = undefined; filters.price_min = undefined
   filters.price_max = undefined; filters.property_type = undefined
   filters.institute_id = undefined; filters.amenities = undefined
   schoolId.value = null; schoolName.value = ''; searchMode.value = 'city'
@@ -852,13 +853,24 @@ async function initFromRoute() {
     return
   }
 
-  // 大学近距搜索
-  if (q.uni_id) {
+  // 直接坐标搜索（来自搜索框地理编码结果）
+  if (q.lat && q.lng) {
+    uniLat.value = Number(q.lat)
+    uniLng.value = Number(q.lng)
+    uniName.value = (q.geo_city as string) || (q.q as string) || (q.uni_name as string) || ''
+    uniRadius.value = Number(q.radius) || 5
+    searchMode.value = 'uni'
+    filters.district = undefined
+    filters.city = undefined
+    filters.institute_id = undefined
+  } else if (q.uni_id) {
+    // 大学近距搜索
     uniId.value = Number(q.uni_id)
     uniName.value = (q.uni_name as string) || ''
     uniRadius.value = Number(q.radius) || 5
     searchMode.value = 'uni'
     filters.district = undefined
+    filters.city = undefined
     filters.institute_id = undefined
 
     // 从 API 获取大学坐标
@@ -874,14 +886,17 @@ async function initFromRoute() {
     } catch { /* fallback: use hardcoded */ }
   } else if (q.school_id) {
     searchMode.value = 'school'; schoolId.value = Number(q.school_id)
-    filters.institute_id = schoolId.value; filters.district = undefined
+    filters.institute_id = schoolId.value; filters.district = undefined; filters.city = undefined
     schoolName.value = SCHOOL_INFO[schoolId.value]?.name || ''
   } else if (q.institute_id) {
     searchMode.value = 'school'; schoolId.value = Number(q.institute_id)
-    filters.institute_id = schoolId.value; filters.district = undefined
+    filters.institute_id = schoolId.value; filters.district = undefined; filters.city = undefined
     schoolName.value = (q.institute_name as string) || ''
+  } else if (q.city) {
+    searchMode.value = 'city'; filters.city = q.city as string; filters.district = undefined
+    filters.institute_id = undefined; schoolName.value = ''
   } else if (q.district) {
-    searchMode.value = 'city'; filters.district = q.district as string
+    searchMode.value = 'city'; filters.city = undefined; filters.district = q.district as string
     filters.institute_id = undefined; schoolName.value = ''
   }
   if (q.q) filters.q = q.q as string

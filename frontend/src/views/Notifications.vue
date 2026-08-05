@@ -4,7 +4,6 @@
       <div class="toolbar-title"><h1>消息中心</h1><p>{{ unreadCount }} 条未读消息</p></div>
       <div class="toolbar-actions">
         <el-radio-group v-model="filter" size="small" aria-label="消息筛选"><el-radio-button label="all">全部</el-radio-button><el-radio-button label="unread">未读</el-radio-button></el-radio-group>
-        <el-button text @click="router.push('/profile')">返回个人中心</el-button>
         <el-button :disabled="unreadCount === 0" @click="markAllRead">{{ unreadCount ? '全部标为已读' : '已全部读完' }}</el-button>
       </div>
     </section>

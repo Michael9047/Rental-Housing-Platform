@@ -54,6 +54,10 @@
           <span class="card-price">{{ formatPrice(p.price_monthly, p.currency) }}</span>
           <span class="price-unit">/月</span>
         </div>
+        <!-- 安全评分 -->
+        <div v-if="property.safety_score != null" class="safety-badge" :class="safetyLevel">
+          🛡 {{ property.safety_score.toFixed(1) }}
+        </div>
         <div class="card-actions" @click.stop>
           <el-button
             v-if="showQuickBook"
@@ -148,6 +152,14 @@ const p = computed(() => ({
       : null,
 }))
 const inCart = computed(() => cartStore.has(props.property.id))
+// 安全评分等级
+const safetyLevel = computed(() => {
+  const s = (props.property as any).safety_score
+  if (s == null) return ''
+  if (s >= 4) return 'safe-high'
+  if (s >= 3) return 'safe-mid'
+  return 'safe-low'
+})
 
 async function handleToggleCart() {
   if (busy.value) return
@@ -429,6 +441,16 @@ function openDetail() {
   align-items: baseline;
   gap: 2px;
 }
+
+/* ── 安全评分 ── */
+.safety-badge {
+  font-size: 13px; font-weight: 600;
+  padding: 2px 10px; border-radius: 12px;
+  white-space: nowrap;
+}
+.safety-badge.safe-high { background: #e8f5e9; color: #2e7d32; }
+.safety-badge.safe-mid  { background: #fff8e1; color: #f57f17; }
+.safety-badge.safe-low  { background: #fbe9e7; color: #c62828; }
 
 .card-price {
   font-size: 22px;

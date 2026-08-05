@@ -17,6 +17,7 @@ from sqlalchemy.orm import selectinload
 
 from app.api.deps import get_current_user, get_db_session, require_landlord
 from app.models.institute import Institute, InstituteStatus
+from app.models.poi import InstitutePOI
 from app.models.user import User
 from app.schemas.institute import InstituteCreate, InstituteUpdate
 
@@ -138,6 +139,19 @@ async def _search_buildings(
     stmt = stmt.offset(skip).limit(limit if limit <= 200 else 200)
     result = await session.scalars(stmt)
     cards = [_build_card(b) for b in result]
+
+    # 批量查询安全评分
+    if cards:
+        poi_result = await session.execute(
+            select(InstitutePOI.institute_id, InstitutePOI.safety_data)
+            .where(InstitutePOI.institute_id.in_([c["id"] for c in cards]))
+        )
+        safety_map: dict[int, dict] = {}
+        for row in poi_result:
+            safety_map[row[0]] = row[1] or {}
+        for c in cards:
+            sd = safety_map.get(c["id"], {})
+            c["safety_score"] = sd.get("safety_score") if sd else None
 
     # 客户端过滤（价格 / 户型 / 地理位置）
     if price_min is not None:
@@ -441,11 +455,20 @@ async def get_tenant_building_detail(
     building_id: int,
     session: AsyncSession = Depends(get_db_session),
 ) -> dict:
-    """租客端公寓详情 — 返回楼栋 + 户型 + 图片"""
+    """租客端公寓详情 — 返回楼栋 + 户型 + 图片 + 安全评分"""
     b = await session.get(Institute, building_id,
         options=[selectinload(Institute.unit_types), selectinload(Institute.images)])
     if not b or b.status != InstituteStatus.active:
         raise HTTPException(status_code=404, detail="楼栋不存在")
+
+    # 查询安全评分
+    safety_score = None
+    poi_result = await session.execute(
+        select(InstitutePOI.safety_data).where(InstitutePOI.institute_id == building_id)
+    )
+    poi_row = poi_result.first()
+    if poi_row and poi_row[0]:
+        safety_score = poi_row[0].get("safety_score")
 
     uts = []
     for ut in (b.unit_types or []):
@@ -494,6 +517,7 @@ async def get_tenant_building_detail(
         "images": [{"id": img.id, "filename": img.filename, "original_name": img.original_name,
                      "sort_order": img.sort_order, "is_primary": img.is_primary}
                    for img in sorted(b.images or [], key=lambda x: x.sort_order)],
+        "safety_score": safety_score,
         "unit_types": uts,
     }
 

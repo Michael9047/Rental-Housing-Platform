@@ -8,18 +8,12 @@
           <div class="user-name-row">
             <span class="user-name">{{ user?.username || '未登录' }}</span>
             <el-tag type="info" size="small">租客</el-tag>
-            <el-tag v-if="user?.status === 'active'" type="success" size="small">已实名</el-tag>
-            <el-tag v-else type="warning" size="small">待认证</el-tag>
           </div>
           <div class="user-contact">
             <span v-if="user?.email">📧 {{ user.email }}</span>
             <span v-if="user?.phone">📱 {{ maskPhone(user.phone) }}</span>
             <span>📅 {{ formatDate(user?.created_at || '') }} 加入</span>
           </div>
-        </div>
-        <div class="user-actions">
-          <el-button type="primary" round @click="router.push('/profile/edit')">编辑资料</el-button>
-          <el-button round @click="showVerify = true">实名认证</el-button>
         </div>
       </div>
     </el-card>
@@ -30,7 +24,6 @@
 
         <!-- Tab1: 我的合同 -->
         <el-tab-pane label="📄 我的合同" name="contracts">
-          <p class="contract-hint">签署完成的合同将在此显示；支付成功后合同及预订正式生效。</p>
           <div class="tab-toolbar">
             <el-radio-group v-model="contractFilter" size="small">
               <el-radio-button value="pending_effective">待生效</el-radio-button>
@@ -103,7 +96,6 @@
                 <el-button text @click="router.push(`/building/${order.property_id}`)">查看房源</el-button>
                 <el-button v-if="order.agreement_id && order.booking_status !== 'confirmed'" text @click="router.push(`/my-contracts/${order.agreement_id}`)">查看合同</el-button>
                 <el-button v-if="order.payment_status === 'payment_processing'" text @click="refreshOrders">刷新状态</el-button>
-                <!-- 非终态的订单：直接跳支付页，由支付页自行判决 -->
                 <el-button v-if="order.booking_id && !['paid','cancelled','refunded','payment_expired'].includes(order.payment_status) && order.booking_status !== 'confirmed'" type="primary" @click="router.push(`/booking/payment/${order.booking_id}/deposit`)">继续支付</el-button>
                 <el-button v-if="order.booking_id && ['payment_expired','cancelled'].includes(order.payment_status)" type="warning" @click="router.push(`/booking/${order.property_id}/move-in-date`)">重新预订</el-button>
               </div>
@@ -111,218 +103,93 @@
           </div>
         </el-tab-pane>
 
-        <!-- Tab5: 报修 -->
-        <el-tab-pane label="🔧 报修" name="repairs">
+        <!-- Tab3: 我的信息（租客管理） -->
+        <el-tab-pane label="👤 我的信息" name="my-info">
           <div class="tab-toolbar">
-            <el-button type="primary" size="small" @click="showNewRepair = true">我要报修</el-button>
+            <span class="toolbar-hint">管理租客档案，签合同时可直接选择租客信息填入</span>
+            <el-button type="primary" @click="openAddTenant">+ 添加租客</el-button>
           </div>
-          <el-empty v-if="repairs.length === 0" description="没有报修记录，一切正常 👍" />
-          <el-table v-else :data="repairs" stripe>
-            <el-table-column label="房源" min-width="140">
-              <template #default="{ row }">{{ row.property_title || `房源#${row.property_id}` }}</template>
-            </el-table-column>
-            <el-table-column label="问题" min-width="140">
-              <template #default="{ row }">
-                <el-tag size="small" type="warning" style="margin-right:6px">{{ issueTypeLabel(row.issue_type) }}</el-tag>
-                <span>{{ row.description?.slice(0, 20) }}{{ row.description?.length > 20 ? '...' : '' }}</span>
-              </template>
-            </el-table-column>
-            <el-table-column label="提交时间" width="110">
-              <template #default="{ row }">{{ formatDate(row.created_at) }}</template>
-            </el-table-column>
-            <el-table-column label="状态" width="100">
-              <template #default="{ row }">
-                <el-tag :type="repairTag(row.status)" size="small">{{ repairStatusLabel(row.status) }}</el-tag>
-              </template>
-            </el-table-column>
-            <el-table-column label="操作" width="160">
-              <template #default="{ row }">
-                <el-button size="small" text type="primary" @click="viewRepair(row)">查看详情</el-button>
-                <el-button v-if="row.status === 'pending'" size="small" text type="danger" @click="cancelRepairFromList(row)">取消</el-button>
-              </template>
-            </el-table-column>
-          </el-table>
-        </el-tab-pane>
 
-        <!-- Tab6: 消息 -->
-        <el-tab-pane label="🔔 消息" name="messages">
-          <el-row :gutter="16">
-            <el-col :span="12">
-              <el-card shadow="never" class="msg-card">
-                <template #header><span>💬 房东消息</span></template>
-                <div v-for="m in chats" :key="m.id" class="msg-item">
-                  <div class="msg-header">
-                    <strong>{{ m.from }}</strong>
-                    <span class="msg-time">{{ m.time }}</span>
-                    <el-tag v-if="!m.read" size="small" type="danger">新</el-tag>
+          <el-empty v-if="tenants.length === 0 && !tenantLoading" description="还没有租客档案，点击上方按钮添加" />
+          <div v-else class="tenant-list" v-loading="tenantLoading">
+            <el-card v-for="t in tenants" :key="t.id" shadow="hover" :class="['tenant-card', { 'is-default': t.is_default }]">
+              <div class="tenant-card-body">
+                <div class="tenant-card-main">
+                  <div class="tenant-card-header">
+                    <span class="tenant-label">{{ t.label || '未命名' }}</span>
+                    <el-tag v-if="t.is_default" type="success" size="small" effect="dark">默认</el-tag>
                   </div>
-                  <p class="msg-text">{{ m.text }}</p>
+                  <div class="tenant-card-info">
+                    <span v-if="t.chinese_name">{{ t.chinese_name }}</span>
+                    <span v-if="t.phone">📱 {{ maskPhone(t.phone) }}</span>
+                    <span v-if="t.school_name">🎓 {{ t.school_name }}</span>
+                  </div>
                 </div>
-                <el-empty v-if="chats.length === 0" description="暂无消息" />
-              </el-card>
-            </el-col>
-            <el-col :span="12">
-              <el-card shadow="never" class="msg-card">
-                <template #header><span>🔔 系统通知</span></template>
-                <div v-for="n in notices" :key="n.id" class="msg-item">
-                  <span class="msg-time">{{ n.time }}</span>
-                  <p class="msg-text">{{ n.text }}</p>
+                <div class="tenant-card-actions">
+                  <el-button size="small" text type="primary" @click="openEditTenant(t)">编辑</el-button>
+                  <el-button v-if="!t.is_default" size="small" text type="success" @click="setDefaultTenant(t.id)">设为默认</el-button>
+                  <el-button size="small" text type="danger" @click="deleteTenant(t)">删除</el-button>
                 </div>
-                <el-empty v-if="notices.length === 0" description="暂无通知" />
-              </el-card>
-            </el-col>
-          </el-row>
+              </div>
+            </el-card>
+          </div>
+
+          <!-- 添加/编辑租客弹窗 -->
+          <el-dialog v-model="showTenantDialog" :title="editingTenant ? '编辑租客' : '添加租客'" width="640px" :close-on-click-modal="false">
+            <el-form label-width="100px" label-position="top" size="small">
+              <el-row :gutter="16">
+                <el-col :span="8"><el-form-item label="中文姓名"><el-input v-model="tenantForm.chinese_name" placeholder="与证件一致" /></el-form-item></el-col>
+                <el-col :span="8"><el-form-item label="名（拼音大写）"><el-input v-model="tenantForm.given_name_pinyin" placeholder="如 MING" @input="tenantForm.given_name_pinyin = tenantForm.given_name_pinyin.toUpperCase()" /></el-form-item></el-col>
+                <el-col :span="8"><el-form-item label="姓（拼音大写）"><el-input v-model="tenantForm.surname_pinyin" placeholder="如 WANG" @input="tenantForm.surname_pinyin = tenantForm.surname_pinyin.toUpperCase()" /></el-form-item></el-col>
+              </el-row>
+              <el-row :gutter="16">
+                <el-col :span="8"><el-form-item label="出生日期"><el-date-picker v-model="tenantForm.birth_date" type="date" value-format="YYYY-MM-DD" style="width:100%" /></el-form-item></el-col>
+                <el-col :span="8"><el-form-item label="性别"><el-radio-group v-model="tenantForm.gender"><el-radio value="male" size="small">男</el-radio><el-radio value="female" size="small">女</el-radio></el-radio-group></el-form-item></el-col>
+              </el-row>
+              <el-form-item label="手机号"><el-input v-model="tenantForm.phone" placeholder="手机号" /></el-form-item>
+              <el-form-item label="邮箱"><el-input v-model="tenantForm.email" placeholder="邮箱" /></el-form-item>
+              <el-row :gutter="16">
+                <el-col :span="8"><el-form-item label="国籍/地区"><el-select v-model="tenantForm.nationality" style="width:100%" filterable><el-option v-for="c in nationalityOptions" :key="c" :label="c" :value="c" /></el-select></el-form-item></el-col>
+                <el-col :span="8"><el-form-item label="学校"><el-input v-model="tenantForm.school_name" placeholder="学校全称" /></el-form-item></el-col>
+                <el-col :span="8"><el-form-item label="入学年级"><el-select v-model="tenantForm.enrollment_grade" style="width:100%"><el-option v-for="g in gradeOptions" :key="g" :label="g" :value="g" /></el-select></el-form-item></el-col>
+              </el-row>
+              <el-row :gutter="16">
+                <el-col :span="8"><el-form-item label="专业（英文）"><el-input v-model="tenantForm.major_english" placeholder="如 Computer Science" /></el-form-item></el-col>
+                <el-col :span="8"><el-form-item label="签证类型"><el-input v-model="tenantForm.visa_type" placeholder="如 Student Pass" /></el-form-item></el-col>
+                <el-col :span="8"><el-form-item label="签证到期日"><el-date-picker v-model="tenantForm.visa_expiry" type="date" value-format="YYYY-MM-DD" style="width:100%" /></el-form-item></el-col>
+              </el-row>
+              <el-row :gutter="16">
+                <el-col :span="8"><el-form-item label="公民身份国家"><el-input v-model="tenantForm.citizenship_country" placeholder="如 China" /></el-form-item></el-col>
+              </el-row>
+              <el-form-item label="标签"><el-input v-model="tenantForm.label" placeholder="可选，如：本人、室友A" maxlength="50" /></el-form-item>
+            </el-form>
+            <template #footer>
+              <el-button @click="showTenantDialog = false">取消</el-button>
+              <el-button type="primary" :loading="savingTenant" @click="saveTenant">{{ editingTenant ? '保存修改' : '添加' }}</el-button>
+            </template>
+          </el-dialog>
         </el-tab-pane>
 
-        <!-- Tab7: 设置 -->
+        <!-- Tab4: 设置 -->
         <el-tab-pane label="⚙️ 设置" name="settings">
+          <el-card shadow="never" class="setting-card">
+            <template #header>🔐 账号安全</template>
+            <el-form label-width="100px" size="default">
+              <el-form-item label="手机号">
+                <span class="security-value">{{ user?.phone ? maskPhone(user.phone) : '未绑定' }}</span>
+                <el-button size="small" text type="primary" @click="openChangePhone" style="margin-left:12px">更换手机号</el-button>
+              </el-form-item>
+              <el-form-item label="密码">
+                <span class="security-value">********</span>
+                <el-button size="small" text type="primary" @click="showChangePassword = true" style="margin-left:12px">修改密码</el-button>
+              </el-form-item>
+              <el-form-item label="微信">
+                <el-tag :type="user?.wechat_openid ? 'success' : 'info'" size="small">{{ user?.wechat_openid ? '已绑定' : '未绑定' }}</el-tag>
+                <el-button size="small" text type="primary" @click="bindWechat" style="margin-left:12px">{{ user?.wechat_openid ? '换绑' : '绑定' }}</el-button>
+              </el-form-item>
+            </el-form>
+          </el-card>
           <el-row :gutter="24">
-            <el-col :span="12">
-              <el-card shadow="never" class="setting-card">
-                <template #header>🔐 账号安全</template>
-                <el-form label-width="80px" size="small">
-                  <el-form-item label="手机号"><el-input :model-value="user?.phone || ''" /></el-form-item>
-                  <el-form-item label="密码"><el-input type="password" model-value="********" /></el-form-item>
-                  <el-form-item label="微信">
-                    <el-tag :type="user?.wechat_openid ? 'success' : 'info'" size="small">{{ user?.wechat_openid ? '已绑定' : '未绑定' }}</el-tag>
-                    <el-button size="small" text type="primary" @click="bindWechat">{{ user?.wechat_openid ? '换绑' : '绑定' }}</el-button>
-                  </el-form-item>
-                  <el-form-item><el-button type="primary" size="small">保存修改</el-button></el-form-item>
-                </el-form>
-              </el-card>
-            </el-col>
-            <el-col :span="12">
-              <el-card shadow="never" class="setting-card">
-                <template #header>🆔 实名认证</template>
-                <p style="color:var(--text-secondary);font-size:13px;margin-bottom:10px">租房签约前需要完成实名认证</p>
-                <el-upload action="#" :auto-upload="false" :show-file-list="false">
-                  <el-button type="primary" size="small">📷 上传身份证</el-button>
-                </el-upload>
-              </el-card>
-            </el-col>
-          </el-row>
-
-          <!-- 个人信息（预订流程预填数据源） -->
-          <el-row :gutter="24" style="margin-top:16px">
-            <el-col :span="24">
-              <el-card shadow="never" class="setting-card">
-                <template #header>
-                  <div style="display:flex;justify-content:space-between;align-items:center">
-                    <span>📋 个人信息（预订时自动填充）</span>
-                    <el-button type="primary" size="small" :loading="savingProfile" @click="saveProfileInfo">保存</el-button>
-                  </div>
-                </template>
-                <el-form label-width="100px" label-position="top" size="small">
-                  <el-row :gutter="16">
-                    <el-col :span="8">
-                      <el-form-item label="中文姓名"><el-input v-model="profileForm.chinese_name" placeholder="与证件一致" /></el-form-item>
-                    </el-col>
-                    <el-col :span="8">
-                      <el-form-item label="名（拼音大写）"><el-input v-model="profileForm.given_name_pinyin" placeholder="如 MING" /></el-form-item>
-                    </el-col>
-                    <el-col :span="8">
-                      <el-form-item label="姓（拼音大写）"><el-input v-model="profileForm.surname_pinyin" placeholder="如 WANG" /></el-form-item>
-                    </el-col>
-                  </el-row>
-                  <el-row :gutter="16">
-                    <el-col :span="6">
-                      <el-form-item label="出生日期"><el-date-picker v-model="profileForm.birth_date" type="date" value-format="YYYY-MM-DD" style="width:100%" /></el-form-item>
-                    </el-col>
-                    <el-col :span="6">
-                      <el-form-item label="性别">
-                        <el-radio-group v-model="profileForm.gender"><el-radio value="male" size="small">男</el-radio><el-radio value="female" size="small">女</el-radio></el-radio-group>
-                      </el-form-item>
-                    </el-col>
-                    <el-col :span="6">
-                      <el-form-item label="手机号"><el-input v-model="profileForm.phone" :placeholder="user?.phone || '请输入手机号'" /></el-form-item>
-                    </el-col>
-                    <el-col :span="6">
-                      <el-form-item label="邮箱"><el-input v-model="profileForm.email" :placeholder="user?.email || '请输入邮箱'" /></el-form-item>
-                    </el-col>
-                  </el-row>
-                  <el-row :gutter="16">
-                    <el-col :span="8">
-                      <el-form-item label="国籍/地区">
-                        <el-select v-model="profileForm.nationality" style="width:100%" filterable>
-                          <el-option v-for="c in nationalityOptions" :key="c" :label="c" :value="c" />
-                        </el-select>
-                      </el-form-item>
-                    </el-col>
-                    <el-col :span="8">
-                      <el-form-item label="学校"><el-input v-model="profileForm.school_name" placeholder="学校全称" /></el-form-item>
-                    </el-col>
-                    <el-col :span="4">
-                      <el-form-item label="学历层次">
-                        <el-select v-model="profileForm.enrollment_level" style="width:100%">
-                          <el-option v-for="l in enrollmentLevelOptions" :key="l" :label="l" :value="l" />
-                        </el-select>
-                      </el-form-item>
-                    </el-col>
-                    <el-col :span="4">
-                      <el-form-item label="入学年级">
-                        <el-select v-model="profileForm.enrollment_grade" style="width:100%">
-                          <el-option v-for="g in gradeOptions" :key="g" :label="g" :value="g" />
-                        </el-select>
-                      </el-form-item>
-                    </el-col>
-                  </el-row>
-                  <el-row :gutter="16">
-                    <el-col :span="8">
-                      <el-form-item label="专业（英文）"><el-input v-model="profileForm.major_english" placeholder="如 Computer Science" /></el-form-item>
-                    </el-col>
-                    <el-col :span="4">
-                      <el-form-item label="入学学期">
-                        <el-select v-model="profileForm.enrollment_term" style="width:100%">
-                          <el-option label="秋季 Fall" value="Fall" />
-                          <el-option label="春季 Spring" value="Spring" />
-                          <el-option label="夏季 Summer" value="Summer" />
-                        </el-select>
-                      </el-form-item>
-                    </el-col>
-                    <el-col :span="6">
-                      <el-form-item label="学生分类">
-                        <el-select v-model="profileForm.student_classification" style="width:100%">
-                          <el-option v-for="c in studentClassificationOptions" :key="c" :label="c" :value="c" />
-                        </el-select>
-                      </el-form-item>
-                    </el-col>
-                    <el-col :span="6">
-                      <el-form-item label="偏好名"><el-input v-model="profileForm.preferred_name" placeholder="英文偏好名" /></el-form-item>
-                    </el-col>
-                  </el-row>
-                  <el-row :gutter="16">
-                    <el-col :span="6">
-                      <el-form-item label="国际学生">
-                        <el-switch v-model="profileForm.is_international" active-text="是" inactive-text="否" />
-                      </el-form-item>
-                    </el-col>
-                    <el-col :span="6">
-                      <el-form-item label="签证类型"><el-input v-model="profileForm.visa_type" placeholder="如 Student Pass" :disabled="!profileForm.is_international" /></el-form-item>
-                    </el-col>
-                    <el-col :span="6">
-                      <el-form-item label="签证到期日"><el-date-picker v-model="profileForm.visa_expiry" type="date" value-format="YYYY-MM-DD" style="width:100%" :disabled="!profileForm.is_international" /></el-form-item>
-                    </el-col>
-                    <el-col :span="6">
-                      <el-form-item label="公民身份国家"><el-input v-model="profileForm.citizenship_country" placeholder="如 China" /></el-form-item>
-                    </el-col>
-                  </el-row>
-                  <el-row :gutter="16">
-                    <el-col :span="6">
-                      <el-form-item label="性别认同"><el-input v-model="profileForm.gender_identity" placeholder="用于室友匹配" /></el-form-item>
-                    </el-col>
-                    <el-col :span="9">
-                      <el-form-item label="无障碍需求"><el-input v-model="profileForm.disability_needs" placeholder="如有请填写" /></el-form-item>
-                    </el-col>
-                    <el-col :span="9">
-                      <el-form-item label="饮食需求"><el-input v-model="profileForm.dietary_needs" placeholder="如素食/清真" /></el-form-item>
-                    </el-col>
-                  </el-row>
-                </el-form>
-              </el-card>
-            </el-col>
-          </el-row>
-
-          <el-row :gutter="24" style="margin-top:16px">
             <el-col :span="12">
               <el-card shadow="never" class="setting-card">
                 <template #header>🔔 通知设置</template>
@@ -347,41 +214,47 @@
       </el-tabs>
     </el-card>
 
-    <!-- 报修弹窗 -->
-    <el-dialog v-model="showNewRepair" title="我要报修" width="440px">
-      <el-form label-width="70px">
-        <el-form-item label="房源">
-          <el-select v-model="repairForm.property_id" style="width:100%" placeholder="选择需要维修的房源">
-            <el-option v-for="b in bookings" :key="b.id" :label="`房源 #${b.property_id}`" :value="b.property_id" />
-          </el-select>
+    <!-- 修改密码弹窗 -->
+    <el-dialog v-model="showChangePassword" title="修改密码" width="400px">
+      <el-form label-width="100px">
+        <el-form-item label="旧密码">
+          <el-input v-model="passwordForm.old_password" type="password" placeholder="请输入旧密码" show-password />
         </el-form-item>
-        <el-form-item label="哪里坏了">
-          <el-select v-model="repairForm.issue_type" style="width:100%" placeholder="选择问题类型">
-            <el-option v-for="(label, key) in ISSUE_TYPE_LABELS" :key="key" :label="label" :value="key" />
-          </el-select>
+        <el-form-item label="新密码">
+          <el-input v-model="passwordForm.new_password" type="password" placeholder="至少8位" show-password />
         </el-form-item>
-        <el-form-item label="描述一下">
-          <el-input v-model="repairForm.description" type="textarea" :rows="3" placeholder="简单说说哪里出了问题..." />
-        </el-form-item>
-        <el-form-item label="预约时间">
-          <el-input v-model="repairForm.scheduled_time" placeholder="例如：7月10日 上午（可选）" />
+        <el-form-item label="确认新密码">
+          <el-input v-model="passwordForm.confirm_password" type="password" placeholder="再次输入新密码" show-password @keyup.enter="submitChangePassword" />
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="showNewRepair = false">算了</el-button>
-        <el-button type="primary" :loading="showSubmitRepair" @click="submitRepair">提交</el-button>
+        <el-button @click="showChangePassword = false">取消</el-button>
+        <el-button type="primary" :loading="changingPassword" @click="submitChangePassword">确认修改</el-button>
       </template>
     </el-dialog>
 
-    <!-- 实名认证弹窗 -->
-    <el-dialog v-model="showVerify" title="实名认证" width="400px">
-      <p style="color:var(--text-secondary);font-size:14px;margin-bottom:16px">完成实名认证后才能签署租房合同哦</p>
-      <el-form label-width="80px">
-        <el-form-item label="姓名"><el-input placeholder="身份证上的姓名" /></el-form-item>
-        <el-form-item label="身份证号"><el-input placeholder="18位号码" /></el-form-item>
-        <el-form-item label="证件照片"><el-upload action="#" :auto-upload="false"><el-button type="primary" size="small">📷 拍照或上传</el-button></el-upload></el-form-item>
+    <!-- 更换手机号弹窗 -->
+    <el-dialog v-model="showChangePhone" title="更换手机号" width="400px">
+      <el-form label-width="100px">
+        <el-form-item label="当前手机号">
+          <span class="security-value">{{ user?.phone ? maskPhone(user.phone) : '未绑定' }}</span>
+        </el-form-item>
+        <el-form-item label="新手机号">
+          <el-input v-model="phoneForm.new_phone" placeholder="请输入新手机号" maxlength="11" />
+        </el-form-item>
+        <el-form-item label="验证码">
+          <div style="display:flex;gap:12px;width:100%">
+            <el-input v-model="phoneForm.sms_code" placeholder="6位验证码" maxlength="6" style="flex:1" @keyup.enter="submitChangePhone" />
+            <el-button :disabled="phoneCodeCountdown > 0" :loading="sendingPhoneCode" @click="sendPhoneCode" style="min-width:110px">
+              {{ phoneCodeCountdown > 0 ? `${phoneCodeCountdown}s 后重发` : '发送验证码' }}
+            </el-button>
+          </div>
+        </el-form-item>
       </el-form>
-      <template #footer><el-button @click="showVerify = false">取消</el-button><el-button type="primary" @click="showVerify = false">提交认证</el-button></template>
+      <template #footer>
+        <el-button @click="showChangePhone = false">取消</el-button>
+        <el-button type="primary" :loading="changingPhone" @click="submitChangePhone">确认更换</el-button>
+      </template>
     </el-dialog>
   </div>
 </template>
@@ -392,19 +265,16 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { UserFilled } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
+import { authService } from '@/services/auth'
 import { bookingService } from '@/services/booking'
 import { contractService } from '@/services/contract'
 import type { TenantContractItem } from '@/services/contract'
 import { paymentService, type TenantOrderItem } from '@/services/payment'
 import { remainingPaymentSeconds } from '@/utils/orderPresentation'
 import { profileService, type DashboardSummary } from '@/services/profile'
-import { repairService } from '@/services/repair'
+import { tenantService, type TenantProfile, type TenantCreateData } from '@/services/tenant'
 import { storeToRefs } from 'pinia'
-import { favoriteService } from '@/services/favorite'
 import type { Booking } from '@/types/booking'
-import type { Property } from '@/types/property'
-import type { RepairRead, RepairIssueType } from '@/types/repair'
-import { ISSUE_TYPE_LABELS, REPAIR_STATUS_LABELS, REPAIR_STATUS_TAGS } from '@/types/repair'
 
 const route = useRoute()
 const router = useRouter()
@@ -413,12 +283,9 @@ const { user } = storeToRefs(authStore)
 
 const activeTab = ref((route.query.tab as string) || 'bills')
 const pageLoading = ref(false)
-const showVerify = ref(false)
-const showNewRepair = ref(false)
 const contractFilter = ref('pending_effective')
 const billTab = ref('pending')
 
-const bookings = ref<Booking[]>([]) // 用于报修弹窗房源选择
 const contracts = ref<TenantContractItem[]>([])
 const orders = ref<TenantOrderItem[]>([])
 const payingOrderId = ref<number | null>(null)
@@ -429,112 +296,173 @@ const summaryError = ref(false)
 const contractsError = ref(false)
 const ordersError = ref(false)
 let orderTimer = 0
-const favorites = ref<Property[]>([])
-const repairs = ref<RepairRead[]>([])
-const repairForm = ref({ property_id: 0, issue_type: 'other' as RepairIssueType, description: '', scheduled_time: '' })
 
-// ── 个人信息表单（预订流程预填数据源）──
-const nationalityOptions = ['中国大陆','中国香港','中国澳门','中国台湾','英国','美国','加拿大','澳大利亚','新加坡','日本','韩国','德国','法国','其他']
-const gradeOptions = ['本科一年级','本科二年级','本科三年级','本科四年级','硕士','博士','语言课程','其他']
-const enrollmentLevelOptions = ['undergraduate','graduate','phd','language','other']
-const studentClassificationOptions = ['freshman','returning','transfer','exchange']
-const savingProfile = ref(false)
-const profileForm = ref({
-  chinese_name: '', given_name_pinyin: '', surname_pinyin: '', birth_date: '',
-  gender: '', phone: '', email: '', nationality: '中国大陆',
-  school_name: '', enrollment_grade: '', major_english: '',
-  enrollment_level: '', enrollment_term: '', student_classification: '',
-  is_international: true, visa_type: '', visa_expiry: '',
-  citizenship_country: '', disability_needs: '', dietary_needs: '',
-  gender_identity: '', preferred_name: '',
-})
+// ── 账号安全 ──────────────────────────────
+const showChangePassword = ref(false)
+const showChangePhone = ref(false)
+const changingPassword = ref(false)
+const changingPhone = ref(false)
+const sendingPhoneCode = ref(false)
+const phoneCodeCountdown = ref(0)
+let phoneCodeTimer: ReturnType<typeof setInterval> | null = null
 
-async function loadProfileInfo() {
-  try {
-    const resp = await fetch('/api/v1/me/profile', { headers: { Authorization: `Bearer ${localStorage.getItem('access_token')}` } })
-    if (resp.ok) {
-      const data = await resp.json()
-      if (data.chinese_name) profileForm.value.chinese_name = data.chinese_name || data.preferred_name || ''
-      if (data.preferred_name) profileForm.value.preferred_name = data.preferred_name
-      if (data.enrollment_level) profileForm.value.enrollment_level = data.enrollment_level
-      if (data.enrollment_class) profileForm.value.enrollment_grade = data.enrollment_class
-      if (data.enrollment_term) profileForm.value.enrollment_term = data.enrollment_term
-      if (data.school_name) profileForm.value.school_name = data.school_name
-      if (data.major) profileForm.value.major_english = data.major
-      if (data.student_classification) profileForm.value.student_classification = data.student_classification
-      if (data.is_international !== undefined) profileForm.value.is_international = data.is_international
-      if (data.visa_type) profileForm.value.visa_type = data.visa_type
-      if (data.visa_expiry) profileForm.value.visa_expiry = data.visa_expiry
-      if (data.nationality) profileForm.value.nationality = data.nationality
-      if (data.citizenship_country) profileForm.value.citizenship_country = data.citizenship_country
-      if (data.disability_needs) profileForm.value.disability_needs = data.disability_needs
-      if (data.dietary_needs) profileForm.value.dietary_needs = data.dietary_needs
-      if (data.gender_identity) profileForm.value.gender_identity = data.gender_identity
-    }
-  } catch { /* 后端不可用时回退 localStorage */ }
-  // 从 localStorage 补充
-  try {
-    const saved = localStorage.getItem('user_profile_info')
-    if (saved) Object.assign(profileForm.value, JSON.parse(saved))
-  } catch { }
-  if (!profileForm.value.phone && user?.value?.phone) profileForm.value.phone = user.value.phone
-  if (!profileForm.value.email && user?.value?.email) profileForm.value.email = user.value.email
-  if (!profileForm.value.chinese_name && user?.value?.username) profileForm.value.chinese_name = user.value.username
-}
+const passwordForm = ref({ old_password: '', new_password: '', confirm_password: '' })
+const phoneForm = ref({ new_phone: '', sms_code: '' })
 
-async function saveProfileInfo() {
-  savingProfile.value = true
+async function submitChangePassword() {
+  if (!passwordForm.value.old_password) { ElMessage.warning('请输入旧密码'); return }
+  if (!passwordForm.value.new_password || passwordForm.value.new_password.length < 8) { ElMessage.warning('新密码至少8位'); return }
+  if (passwordForm.value.new_password !== passwordForm.value.confirm_password) { ElMessage.warning('两次输入的密码不一致'); return }
+  changingPassword.value = true
   try {
-    const body: Record<string, any> = {
-      preferred_name: profileForm.value.preferred_name || profileForm.value.chinese_name || undefined,
-      phone: profileForm.value.phone || undefined,
-      email: profileForm.value.email || undefined,
-      enrollment_level: profileForm.value.enrollment_level || undefined,
-      enrollment_class: profileForm.value.enrollment_grade || undefined,
-      enrollment_term: profileForm.value.enrollment_term || undefined,
-      school_name: profileForm.value.school_name || undefined,
-      major: profileForm.value.major_english || undefined,
-      student_classification: profileForm.value.student_classification || undefined,
-      is_international: profileForm.value.is_international,
-      visa_type: profileForm.value.visa_type || undefined,
-      visa_expiry: profileForm.value.visa_expiry || undefined,
-      nationality: profileForm.value.nationality || undefined,
-      citizenship_country: profileForm.value.citizenship_country || undefined,
-      disability_needs: profileForm.value.disability_needs || undefined,
-      dietary_needs: profileForm.value.dietary_needs || undefined,
-      gender_identity: profileForm.value.gender_identity || undefined,
-    }
-    await fetch('/api/v1/me/profile', {
-      method: 'PATCH', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('access_token')}` },
-      body: JSON.stringify(body),
-    })
-    localStorage.setItem('user_profile_info', JSON.stringify(profileForm.value))
-    ElMessage.success('个人信息已保存，预订时将从这里自动填充')
-  } catch {
-    localStorage.setItem('user_profile_info', JSON.stringify(profileForm.value))
-    ElMessage.success('已本地保存（服务器暂不可用）')
+    await authService.changePassword({ old_password: passwordForm.value.old_password, new_password: passwordForm.value.new_password })
+    ElMessage.success('密码已修改，请重新登录')
+    passwordForm.value = { old_password: '', new_password: '', confirm_password: '' }
+    showChangePassword.value = false
+    authStore.logout()
+  } catch (err: any) {
+    ElMessage.error(err?.response?.data?.detail || '修改失败，请重试')
   } finally {
-    savingProfile.value = false
+    changingPassword.value = false
   }
 }
-const showSubmitRepair = ref(false)
-const chats = ref([
-  { id: 1, from: '张房东', time: '30分钟前', text: '明天下午2点可以看房，到了联系我', read: false },
-  { id: 2, from: '李管家', time: '昨天', text: '房子还在的，随时欢迎来看', read: true },
-])
-const notices = ref([
-  { id: 1, time: '今天 10:30', text: '✅ 预约通过啦 — 明天14:00看房，别迟到哦' },
-  { id: 2, time: '昨天 18:00', text: '💳 押金已到账，电子合同已生成' },
-])
+
+function openChangePhone() {
+  phoneForm.value = { new_phone: '', sms_code: '' }
+  showChangePhone.value = true
+}
+
+async function sendPhoneCode() {
+  const phone = phoneForm.value.new_phone.trim()
+  if (!phone || !/^1[3-9]\d{9}$/.test(phone)) { ElMessage.warning('请输入正确的手机号'); return }
+  sendingPhoneCode.value = true
+  try {
+    await authService.sendSmsCode({ phone })
+    ElMessage.success('验证码已发送')
+    phoneCodeCountdown.value = 60
+    phoneCodeTimer = setInterval(() => {
+      phoneCodeCountdown.value--
+      if (phoneCodeCountdown.value <= 0 && phoneCodeTimer) { clearInterval(phoneCodeTimer); phoneCodeTimer = null }
+    }, 1000)
+  } catch (err: any) {
+    ElMessage.error(err?.response?.data?.detail || '发送失败，请重试')
+  } finally {
+    sendingPhoneCode.value = false
+  }
+}
+
+async function submitChangePhone() {
+  const phone = phoneForm.value.new_phone.trim()
+  if (!phone || !/^1[3-9]\d{9}$/.test(phone)) { ElMessage.warning('请输入正确的手机号'); return }
+  if (!phoneForm.value.sms_code || phoneForm.value.sms_code.length !== 6) { ElMessage.warning('请输入6位验证码'); return }
+  changingPhone.value = true
+  try {
+    await authService.changePhone({ new_phone: phone, sms_code: phoneForm.value.sms_code })
+    ElMessage.success('手机号已修改')
+    showChangePhone.value = false
+    authStore.fetchCurrentUser()
+  } catch (err: any) {
+    ElMessage.error(err?.response?.data?.detail || '修改失败，请重试')
+  } finally {
+    changingPhone.value = false
+  }
+}
+
+function bindWechat() { ElMessage.info('请用微信扫码绑定') }
+
+// ── 租客档案管理 ───────────────────────────
+const nationalityOptions = ['中国大陆','中国香港','中国澳门','中国台湾','英国','美国','加拿大','澳大利亚','新加坡','日本','韩国','德国','法国','其他']
+const gradeOptions = ['本科一年级','本科二年级','本科三年级','本科四年级','硕士','博士','语言课程','其他']
+
+const tenants = ref<TenantProfile[]>([])
+const tenantLoading = ref(false)
+const showTenantDialog = ref(false)
+const savingTenant = ref(false)
+const editingTenant = ref<TenantProfile | null>(null)
+const tenantForm = ref<TenantCreateData>({
+  label: '', chinese_name: '', given_name_pinyin: '', surname_pinyin: '',
+  birth_date: '', gender: '', phone: '', email: '', nationality: '中国大陆',
+  school_name: '', enrollment_grade: '', major_english: '',
+  visa_type: '', visa_expiry: '', citizenship_country: '',
+})
+
+function resetTenantForm() {
+  tenantForm.value = {
+    label: '', chinese_name: '', given_name_pinyin: '', surname_pinyin: '',
+    birth_date: '', gender: '', phone: '', email: '', nationality: '中国大陆',
+    school_name: '', enrollment_grade: '', major_english: '',
+    visa_type: '', visa_expiry: '', citizenship_country: '',
+  }
+}
+
+function openAddTenant() {
+  editingTenant.value = null
+  resetTenantForm()
+  showTenantDialog.value = true
+}
+
+function openEditTenant(t: TenantProfile) {
+  editingTenant.value = t
+  tenantForm.value = {
+    label: t.label || '', chinese_name: t.chinese_name || '',
+    given_name_pinyin: t.given_name_pinyin || '', surname_pinyin: t.surname_pinyin || '',
+    birth_date: t.birth_date || '', gender: t.gender || '',
+    phone: t.phone || '', email: t.email || '',
+    nationality: t.nationality || '中国大陆', school_name: t.school_name || '',
+    enrollment_grade: t.enrollment_grade || '', major_english: t.major_english || '',
+    visa_type: t.visa_type || '', visa_expiry: t.visa_expiry || '',
+    citizenship_country: t.citizenship_country || '',
+  }
+  showTenantDialog.value = true
+}
+
+async function saveTenant() {
+  savingTenant.value = true
+  try {
+    if (editingTenant.value) {
+      await tenantService.update(editingTenant.value.id, tenantForm.value)
+      ElMessage.success('租客信息已更新')
+    } else {
+      await tenantService.create(tenantForm.value)
+      ElMessage.success('租客已添加')
+    }
+    showTenantDialog.value = false
+    await fetchTenants()
+  } catch (err: any) {
+    ElMessage.error(err?.response?.data?.detail || '保存失败')
+  } finally {
+    savingTenant.value = false
+  }
+}
+
+async function setDefaultTenant(id: number) {
+  try {
+    await tenantService.setDefault(id)
+    ElMessage.success('已设为默认租客')
+    await fetchTenants()
+  } catch { ElMessage.error('设置失败') }
+}
+
+async function deleteTenant(t: TenantProfile) {
+  try {
+    await ElMessageBox.confirm(`确定删除「${t.label || t.chinese_name || '未命名'}」吗？`, '删除租客', { confirmButtonText: '确定', cancelButtonText: '取消', type: 'warning' })
+    await tenantService.delete(t.id)
+    ElMessage.success('已删除')
+    await fetchTenants()
+  } catch { /* cancelled */ }
+}
+
+async function fetchTenants() {
+  tenantLoading.value = true
+  try { tenants.value = await tenantService.listMine() }
+  catch { tenants.value = [] }
+  finally { tenantLoading.value = false }
+}
 
 const notifSite = ref(true)
 const notifSms = ref(true)
 
 // ── Computed ──
-const repairTag = (s: string) => ((REPAIR_STATUS_TAGS as Record<string, string>)[s] || 'info') as 'danger'|'warning'|'success'|'info'|''
-const issueTypeLabel = (t: string) => (ISSUE_TYPE_LABELS as Record<string, string>)[t] || t
-const repairStatusLabel = (s: string) => ((REPAIR_STATUS_LABELS as Record<string, string>)[s] || s)
-
 const filteredContracts = computed(() => {
   return contracts.value.filter(c => c.category === contractFilter.value)
 })
@@ -547,106 +475,45 @@ const filteredOrders = computed(() => orders.value.filter(order => billTab.value
 // ── Actions ──
 async function fetchAll() {
   pageLoading.value = true
-  summaryLoading.value=true
-  const [summaryResult,bookingsResult,contractsResult,ordersResult,favoritesResult,repairsResult]=await Promise.allSettled([
-    profileService.getSummary(),bookingService.list(),contractService.listMine(),paymentService.listMyOrders(),favoriteService.list(),repairService.list(),
+  summaryLoading.value = true
+  const [summaryResult, contractsResult, ordersResult] = await Promise.allSettled([
+    profileService.getSummary(), contractService.listMine(), paymentService.listMyOrders(),
   ])
-  if(summaryResult.status==='fulfilled'){summary.value=summaryResult.value;summaryError.value=false}else{summary.value=null;summaryError.value=true}
-  summaryLoading.value=false
-  if(bookingsResult.status==='fulfilled')bookings.value=bookingsResult.value
-  if(contractsResult.status==='fulfilled'){contracts.value=contractsResult.value;contractsError.value=false}else{console.error('contractsResult rejected:', contractsResult.reason);contractsError.value=true}
-  if(ordersResult.status==='fulfilled'){orders.value=ordersResult.value;ordersError.value=false}else{console.error('ordersResult rejected:', ordersResult.reason);ordersError.value=true}
-  if(repairsResult.status==='fulfilled')repairs.value=repairsResult.value
-  if(favoritesResult.status==='fulfilled'){
-    const favItems = favoritesResult.value
-    const ids = favItems.map((f) => f.property_id)
-    if (ids.length > 0) {
-      const results = await Promise.allSettled(ids.map((id) => propertyService.getById(id)))
-      favorites.value = results
-        .filter((r): r is PromiseFulfilledResult<Property> => r.status === 'fulfilled')
-        .map((r) => r.value)
-    } else {
-      favorites.value = []
-    }
-  }
+  if (summaryResult.status === 'fulfilled') { summary.value = summaryResult.value; summaryError.value = false } else { summary.value = null; summaryError.value = true }
+  summaryLoading.value = false
+  if (contractsResult.status === 'fulfilled') { contracts.value = contractsResult.value; contractsError.value = false } else { console.error('contractsResult rejected:', contractsResult.reason); contractsError.value = true }
+  if (ordersResult.status === 'fulfilled') { orders.value = ordersResult.value; ordersError.value = false } else { console.error('ordersResult rejected:', ordersResult.reason); ordersError.value = true }
   pageLoading.value = false
 }
-async function cancelBooking(b: Booking) {
-  try {
-    await ElMessageBox.confirm('确定不看了吗？', '取消预约', { confirmButtonText: '确定', cancelButtonText: '我再想想', type: 'warning' })
-    await bookingService.cancel(b.id)
-    ElMessage.success('已取消')
-    fetchAll()
-  } catch { /* cancelled */ }
-}
-function goPay(b: Booking) { router.push({ path: `/booking/payment/${b.id}` }) }
+
 async function downloadContract(row: TenantContractItem) {
-  try { const link=await contractService.getSignedDownloadLink(row.agreement_id); if (!link.url) { ElMessage.info(link.message || '签署版 PDF 正在生成'); return }; window.location.assign(link.url); ElMessage.success('合同下载已开始') }
+  try { const link = await contractService.getSignedDownloadLink(row.agreement_id); if (!link.url) { ElMessage.info(link.message || '签署版 PDF 正在生成'); return }; window.location.assign(link.url); ElMessage.success('合同下载已开始') }
   catch { ElMessage.error('合同下载失败，请稍后重试') }
 }
-const contractDateTime=(value:string)=>new Intl.DateTimeFormat('zh-CN',{dateStyle:'medium',timeStyle:'short'}).format(new Date(value))
-const contractMoney=(minor:number|null,currency:string|null)=>minor===null||!currency?'—':new Intl.NumberFormat('zh-CN',{style:'currency',currency}).format(minor/100)
-const duration=(seconds:number)=>`${String(Math.floor(seconds/3600)).padStart(2,'0')}:${String(Math.floor(seconds%3600/60)).padStart(2,'0')}:${String(seconds%60).padStart(2,'0')}`
-const remainingSeconds=(order:TenantOrderItem)=>Math.min(order.remaining_payment_seconds,remainingPaymentSeconds(order.expires_at,orderNow.value))
-async function refreshOrders(){ try { orders.value=await paymentService.listMyOrders();ordersError.value=false } catch { ordersError.value=true } }
-async function enterPayment(order:TenantOrderItem){
-  payingOrderId.value=order.booking_id
-  try {
-    const result=await paymentService.validatePayment(order.booking_id)
-    if(!result.can_pay){ ElMessage.warning(result.reason || '当前订单暂不能支付'); await refreshOrders(); return }
-    await router.push(`/booking/payment/${order.booking_id}/deposit`)
-  } catch(e:any) { ElMessage.error(e?.response?.data?.detail || '支付资格校验失败，请稍后重试') }
-  finally { payingOrderId.value=null }
-}
-function openBookingDialog(p: Property) { router.push({ name: 'booking-move-in-date', params: { propertyId: String(p.id) } }) }
-function viewRepair(row: RepairRead) { router.push(`/repairs/${row.id}`) }
 
-async function cancelRepairFromList(row: RepairRead) {
-  try {
-    await ElMessageBox.confirm('确定取消这个报修吗？', '取消报修', { confirmButtonText: '确定', cancelButtonText: '我再想想', type: 'warning' })
-    await repairService.cancel(row.id)
-    ElMessage.success('报修已取消')
-    await fetchRepairs()
-  } catch { /* cancelled */ }
-}
+const contractDateTime = (value: string) => new Intl.DateTimeFormat('zh-CN', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value))
+const contractMoney = (minor: number | null, currency: string | null) => minor === null || !currency ? '—' : new Intl.NumberFormat('zh-CN', { style: 'currency', currency }).format(minor / 100)
+const duration = (seconds: number) => `${String(Math.floor(seconds / 3600)).padStart(2, '0')}:${String(Math.floor(seconds % 3600 / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`
+const remainingSeconds = (order: TenantOrderItem) => Math.min(order.remaining_payment_seconds, remainingPaymentSeconds(order.expires_at, orderNow.value))
 
-async function fetchRepairs() {
-  try { repairs.value = await repairService.list() }
-  catch { repairs.value = [] }
-}
-
-async function submitRepair() {
-  if (!repairForm.value.property_id) { ElMessage.warning('请选择房源'); return }
-  if (!repairForm.value.description.trim()) { ElMessage.warning('请描述问题'); return }
-  showSubmitRepair.value = true
-  try {
-    await repairService.create({
-      property_id: repairForm.value.property_id,
-      issue_type: repairForm.value.issue_type,
-      description: repairForm.value.description,
-      scheduled_time: repairForm.value.scheduled_time || undefined,
-    })
-    ElMessage.success('报修已提交，房东会尽快处理')
-    showNewRepair.value = false
-    repairForm.value = { property_id: 0, issue_type: 'other', description: '', scheduled_time: '' }
-    await fetchRepairs()
-  } catch { ElMessage.error('提交失败，请重试') }
-  finally { showSubmitRepair.value = false }
-}
-function bindWechat() { ElMessage.info('请用微信扫码绑定') }
+async function refreshOrders() { try { orders.value = await paymentService.listMyOrders(); ordersError.value = false } catch { ordersError.value = true } }
 
 function maskPhone(p: string | null): string { return p && p.length >= 11 ? p.slice(0, 3) + '****' + p.slice(-4) : (p || '未设置') }
 function formatDate(d: string): string { return d ? new Date(d).toLocaleDateString('zh-CN') : '' }
 
 onMounted(() => {
-  if(route.query.selectedContractId||route.query.selectedOrderId){const query={...route.query};delete query.selectedContractId;delete query.selectedOrderId;router.replace({query})}
-  authStore.fetchCurrentUser();fetchAll();loadProfileInfo();orderTimer=window.setInterval(()=>{orderNow.value=Date.now()},1000)
+  if (route.query.selectedContractId || route.query.selectedOrderId) { const query = { ...route.query }; delete query.selectedContractId; delete query.selectedOrderId; router.replace({ query }) }
+  authStore.fetchCurrentUser(); fetchAll(); fetchTenants()
+  orderTimer = window.setInterval(() => { orderNow.value = Date.now() }, 1000)
 })
-onBeforeUnmount(()=>window.clearInterval(orderTimer))
+onBeforeUnmount(() => {
+  window.clearInterval(orderTimer)
+  if (phoneCodeTimer) clearInterval(phoneCodeTimer)
+})
 </script>
 
 <style scoped>
-.profile-page { max-width: 1000px; margin: 0 auto; }
+.profile-page { width: 960px; max-width: 100%; margin: 0 auto; }
 
 .user-card { margin-bottom: 20px; }
 .user-info { display: flex; align-items: center; gap: 20px; }
@@ -656,19 +523,9 @@ onBeforeUnmount(()=>window.clearInterval(orderTimer))
 .user-contact { display: flex; gap: 16px; font-size: 13px; color: var(--text-muted); flex-wrap: wrap; }
 .user-actions { display: flex; gap: 10px; flex-shrink: 0; }
 
-.stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 20px; }
-.summary-error { margin-bottom: 16px; }
-.stat-card { background: var(--bg-white); border-radius: var(--radius); border: 1px solid var(--border); padding: 14px; display: flex; align-items: center; gap: 12px; cursor: pointer; transition: all 0.2s; }
-.stat-card:hover { border-color: var(--primary); box-shadow: var(--shadow); transform: translateY(-2px); }
-.stat-icon { font-size: 24px; }
-.stat-num { font-size: 20px; font-weight: 700; color: var(--text-primary); }
-.stat-label { font-size: 12px; color: var(--text-muted); }
-
 .tabs-card { border-radius: var(--radius) !important; }
 .profile-tabs :deep(.el-tabs__item) { font-size: 14px; }
 .tab-toolbar { margin-bottom: 16px; display: flex; justify-content: space-between; flex-wrap: wrap; gap: 10px; }
-.link-text { color: var(--primary); cursor: pointer; font-weight: 500; }
-.link-text:hover { text-decoration: underline; }
 
 .contract-hint { margin: 0 0 16px; color: var(--text-secondary); line-height: 1.6; }
 .contract-list { display: flex; flex-direction: column; gap: 16px; }
@@ -691,26 +548,18 @@ onBeforeUnmount(()=>window.clearInterval(orderTimer))
 .order-title { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 17px; }
 .order-tags { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0; }
 
-.fav-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
-
-.bill-list { display: flex; flex-direction: column; gap: 10px; }
-.bill-card { display: flex; justify-content: space-between; align-items: center; background: #fff; border: 1px solid var(--border); border-radius: var(--radius); padding: 16px 20px; }
-.bill-card.paid { background: #f6ffed; border-color: #b7eb8f; }
-.bill-left { display: flex; flex-direction: column; gap: 4px; }
-.bill-title { font-size: 15px; font-weight: 600; color: var(--text-primary); }
-.bill-desc { font-size: 12px; color: var(--text-muted); }
-.bill-right { display: flex; align-items: center; gap: 14px; }
-.bill-amount { font-size: 22px; font-weight: 700; color: var(--danger); }
-.bill-note { font-size: 12px; color: var(--text-muted); }
-
-.msg-card { height: 320px; overflow-y: auto; }
-.msg-item { padding: 10px 0; border-bottom: 1px solid var(--border-light); }
-.msg-item:last-child { border-bottom: none; }
-.msg-header { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
-.msg-time { font-size: 12px; color: var(--text-muted); margin-left: auto; }
-.msg-text { font-size: 13px; color: var(--text-secondary); margin: 4px 0; }
-
 .setting-card { margin-bottom: 16px; }
+.security-value { font-size: 14px; color: var(--text-primary); font-weight: 500; }
+.toolbar-hint { font-size: 13px; color: var(--text-muted); }
+.tenant-list { display: flex; flex-direction: column; gap: 12px; }
+.tenant-card { border-radius: var(--radius); transition: all 0.2s; }
+.tenant-card.is-default { border-color: var(--primary); border-width: 2px; }
+.tenant-card-body { display: flex; justify-content: space-between; align-items: center; }
+.tenant-card-header { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
+.tenant-label { font-size: 15px; font-weight: 600; color: var(--text-primary); }
+.tenant-card-info { display: flex; gap: 16px; font-size: 13px; color: var(--text-muted); flex-wrap: wrap; }
+.tenant-card-actions { display: flex; gap: 4px; flex-shrink: 0; }
+
 .notif-switches { display: flex; flex-direction: column; gap: 10px; }
 .help-links { display: flex; flex-direction: column; gap: 6px; }
 
