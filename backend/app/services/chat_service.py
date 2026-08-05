@@ -23,24 +23,38 @@ class ChatService:
 
     # ── Session management ────────────────────────────────────────
 
-    async def create_session(self, user_id: int, title: str | None = None, session_kind: str = "chat") -> ChatSession:
+    async def create_session(
+        self,
+        user_id: int,
+        title: str | None = None,
+        *,
+        session_kind: str = "chat",
+    ) -> ChatSession:
         chat_session = ChatSession(
             user_id=user_id,
             session_id=uuid.uuid4().hex,
             title=title,
-            status=ChatSessionStatus.active,
             session_kind=session_kind,
+            status=ChatSessionStatus.active,
         )
         self.session.add(chat_session)
         await self.session.commit()
         await self.session.refresh(chat_session)
         return chat_session
 
-    async def get_session(self, session_id: int, user_id: int) -> ChatSession | None:
+    async def get_session(
+        self,
+        session_id: int,
+        user_id: int,
+        *,
+        session_kind: str | None = None,
+    ) -> ChatSession | None:
         stmt = select(ChatSession).where(
             ChatSession.id == session_id,
             ChatSession.user_id == user_id,
         )
+        if session_kind is not None:
+            stmt = stmt.where(ChatSession.session_kind == session_kind)
         result = await self.session.scalars(stmt)
         return result.first()
 
@@ -88,17 +102,13 @@ class ChatService:
 
     async def _build_rag_context(self, query: str) -> tuple[str, list[dict]]:
         """Generate embedding for query, search pgvector, return context text + matched properties."""
-        from sqlalchemy import Float
+        from app.services.embedding_service import get_embedding_service
 
-        from app.services.embedding_service import EmbeddingService
-
-        embedding_service = EmbeddingService()
+        embedding_service = get_embedding_service()
         query_vec = await embedding_service.generate_embedding(query)
 
-        # pgvector 的 L2 距离操作符（新版 pgvector 不再导出 l2_distance 函数）
-        similarity_expr = (
-            Property.embedding.op("<->", return_type=Float)(query_vec).label("similarity")
-        )
+        # cosine 距离，与 HNSW(vector_cosine_ops) 索引一致；embedding 未归一化，用 cosine 而非 L2
+        similarity_expr = Property.embedding.cosine_distance(query_vec).label("similarity")
         stmt = (
             select(Property, similarity_expr)
             .where(Property.embedding.isnot(None))
