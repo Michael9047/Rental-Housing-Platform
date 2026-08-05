@@ -413,22 +413,83 @@ def rerank_candidates(
     return candidates
 
 
-def recommendation_explanation(item: dict[str, Any], filters: dict[str, Any]) -> tuple[str, list[str], list[str]]:
-    """从可验证分项生成短推荐理由、优点和缺点。"""
+def _describe_match(item: dict[str, Any], filters: dict[str, Any]) -> str:
+    """根据房源真实特征描述为什么匹配用户需求。"""
     unit_type = item["unit_type"]
     institute = item["institute"]
-    breakdown = item.get("_score_breakdown") or {}
-    factors = sorted(breakdown.items(), key=lambda pair: pair[1], reverse=True)
-    factor_labels = {
-        "semantic": "需求语义匹配", "lexical": "关键词匹配", "price": "预算贴合",
-        "commute": "通勤表现", "poi": "周边便利", "quality": "信息完整",
-        "constraint": "条件满足度",
-    }
-    pros = [factor_labels[key] for key, score in factors if score >= 70][:3]
-    if int(item.get("available_rooms", 0) or 0) > 0:
-        pros.append(f"{int(item['available_rooms'])}间可租")
-    pros = list(dict.fromkeys(pros))[:3]
+    user_wants = filters or {}
+    parts: list[str] = []
 
+    # 1. 价格贴合
+    price = float(unit_type.base_rent)
+    if user_wants.get("price_max") is not None and price <= float(user_wants["price_max"]):
+        parts.append("预算内")
+    elif user_wants.get("price_max") is not None:
+        parts.append(f"略超预算{int(price - float(user_wants['price_max']))}元")
+
+    # 2. 设施匹配
+    inst_amenities = {_text(a) for a in (institute.amenities or []) if _text(a)}
+    ut_amenities = {_text(a) for a in (unit_type.amenities or []) if _text(a)}
+    all_amenities = inst_amenities | ut_amenities
+
+    wanted_amenities = {_text(a) for a in (filters.get("amenities") or [])}
+    matched = wanted_amenities & all_amenities
+    if matched:
+        parts.append(f"含{', '.join(list(matched)[:2])}")
+
+    # 3. 公寓级设施亮点
+    inst_highlights = [a for a in list(inst_amenities)[:3] if a and len(a) <= 6]
+    if inst_highlights and not matched:
+        parts.append(f"配套{', '.join(inst_highlights[:2])}")
+
+    # 4. 户型亮点
+    if unit_type.bedrooms is not None and unit_type.bathrooms is not None:
+        if user_wants.get("bedrooms") == unit_type.bedrooms:
+            parts.append(f"正好{unit_type.bedrooms}室")
+    if "ensuite" in ut_amenities or "独卫" in ut_amenities or "独立卫浴" in ut_amenities:
+        parts.append("带独卫")
+
+    # 5. 通勤
+    commute = item.get("_commute_minutes")
+    if isinstance(commute, (int, float)):
+        parts.append(f"通勤{int(commute)}分钟")
+
+    # 6. POI 距离
+    poi = item.get("_poi_distances") or {}
+    if poi:
+        nearest = min(poi.items(), key=lambda kv: kv[1])
+        parts.append(f"近{nearest[0]}")
+
+    if not parts:
+        score = float(item.get("_final_score", 0.0))
+        return f"综合匹配{score:.0f}分"
+    return " · ".join(parts)
+
+
+def recommendation_explanation(item: dict[str, Any], filters: dict[str, Any]) -> tuple[str, list[str], list[str]]:
+    """从房源真实特征生成推荐理由、优点和缺点。"""
+    unit_type = item["unit_type"]
+    institute = item["institute"]
+
+    # 推荐理由：描述公寓如何匹配需求
+    reason = _describe_match(item, filters)
+
+    # 优点：基于公寓真实设施
+    inst_amenities = {_text(a) for a in (institute.amenities or []) if _text(a)}
+    ut_amenities = {_text(a) for a in (unit_type.amenities or []) if _text(a)}
+    all_amenities = inst_amenities | ut_amenities
+
+    amenity_display = {
+        "wifi": "WiFi", "gym": "健身房", "pool": "泳池", "空调": "空调",
+        "furnished": "家具齐全", "laundry": "洗衣机", "parking": "停车位",
+        "security": "24h安保", "balcony": "阳台", "kitchen": "厨房",
+        "study_room": "自习室", "elevator": "电梯", "cleaning": "定期保洁",
+    }
+    pros = [amenity_display[a] for a in list(all_amenities)[:3] if a in amenity_display]
+    if not pros:
+        pros = [f"{institute.name} · {unit_type.bedrooms or '?'}室"]
+
+    # 缺点
     cons: list[str] = []
     missing = (item.get("_source_metadata") or {}).get("missing_fields") or []
     missing_labels = {"area_sqm": "面积待确认", "commute": "通勤数据待补充", "poi": "周边数据待补充", "description": "详情较少"}
@@ -436,8 +497,7 @@ def recommendation_explanation(item: dict[str, Any], filters: dict[str, Any]) ->
     if filters.get("price_max") is not None and float(unit_type.base_rent) > float(filters["price_max"]):
         cons.append("超出原预算")
     cons = list(dict.fromkeys(cons))[:2]
-    score = float(item.get("_final_score", 0.0))
-    reason = f"综合匹配 {score:.0f} 分 · {institute.name} · {unit_type.bedrooms}室 · {int(item.get('available_rooms', 0) or 0)}间可租"
+
     return reason, pros, cons
 
 

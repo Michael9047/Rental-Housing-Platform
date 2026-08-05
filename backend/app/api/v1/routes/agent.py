@@ -74,9 +74,10 @@ def _to_search_result(prop, property_id_override: int | None = None) -> Property
             property_type = "2-bed"
         else:
             property_type = "studio"
+        # 公寓设施优先展示（搜索对象是公寓）
         amenities = list(dict.fromkeys([
-            *[str(value) for value in (getattr(prop, "amenities", None) or []) if value],
             *[str(value) for value in (getattr(inst, "amenities", None) or []) if value],
+            *[str(value) for value in (getattr(prop, "amenities", None) or []) if value],
         ]))
         return PropertySearchResult(
             id=property_id_override or prop.id,
