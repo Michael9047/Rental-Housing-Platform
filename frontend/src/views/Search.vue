@@ -221,8 +221,6 @@ import { ref, reactive, computed, defineAsyncComponent, onMounted, onUnmounted, 
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { ElMessage } from 'element-plus'
-import { useAuthStore } from '@/stores/auth'
-import { ElMessage } from 'element-plus'
 import { Search, School, Grid, List, Location, Loading, ChatDotRound } from '@element-plus/icons-vue'
 
 import { usePropertyStore } from '@/stores/property'
@@ -233,10 +231,7 @@ import BookingDateDialog from '@/components/BookingDateDialog.vue'
 import PropertyCard from '@/components/PropertyCard.vue'
 import type { Property, PropertySearchParams, PropertyType } from '@/types/property'
 import type { AgentFilters, AgentRecommendation } from '@/types/agent'
-import type { AgentFilters, AgentRecommendation } from '@/types/agent'
 import { commuteService } from '@/services/commute'
-import { formatPropertyPrice } from '@/utils/currency'
-import { uniqueAgentRecommendations, uniquePropertiesByIdAndTitle } from '@/utils/agentRecommendations'
 import { formatPropertyPrice } from '@/utils/currency'
 import { uniqueAgentRecommendations, uniquePropertiesByIdAndTitle } from '@/utils/agentRecommendations'
 import api from '@/services/api'
@@ -262,8 +257,6 @@ const route = useRoute()
 const router = useRouter()
 const propertyStore = usePropertyStore()
 const { searchResults, loading } = storeToRefs(propertyStore)
-const SearchAgentPanel = defineAsyncComponent(() => import("@/components/search/SearchAgentPanel.vue"))
-const authStore = useAuthStore()
 const SearchAgentPanel = defineAsyncComponent(() => import("@/components/search/SearchAgentPanel.vue"))
 const authStore = useAuthStore()
 
@@ -322,16 +315,6 @@ const agentFilterSynced = ref(false)
 const unmappedAgentAmenities = ref<string[]>([])
 
 const agentInstitutionName = ref('')
-
-const agentOpen = ref(false)
-
-const selectedResultIds = ref<number[]>([])
-
-const agentFilterSynced = ref(false)
-
-const unmappedAgentAmenities = ref<string[]>([])
-
-const agentInstitutionName = ref("")
 
 
 
