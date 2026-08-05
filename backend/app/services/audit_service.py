@@ -1,4 +1,6 @@
-from sqlalchemy import select
+from datetime import datetime
+
+from sqlalchemy import String, cast, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.audit_log import AuditLog
@@ -80,9 +82,13 @@ class AuditService:
         user_id: int | None = None,
         resource_type: str | None = None,
         resource_id: int | None = None,
+        keyword: str | None = None,
+        start_at: datetime | None = None,
+        end_at: datetime | None = None,
     ) -> list[AuditLog]:
         stmt = (
             select(AuditLog)
+            .where(AuditLog.action != "embedding_reindex")
             .order_by(AuditLog.created_at.desc())
             .offset(skip)
             .limit(limit)
@@ -95,6 +101,21 @@ class AuditService:
             stmt = stmt.where(AuditLog.resource_type == resource_type)
         if resource_id is not None:
             stmt = stmt.where(AuditLog.resource_id == resource_id)
+        if keyword:
+            like = f"%{keyword.strip()}%"
+            stmt = stmt.where(
+                or_(
+                    AuditLog.action.ilike(like),
+                    AuditLog.resource_type.ilike(like),
+                    cast(AuditLog.resource_id, String).ilike(like),
+                    cast(AuditLog.details, String).ilike(like),
+                    AuditLog.ip_address.ilike(like),
+                )
+            )
+        if start_at is not None:
+            stmt = stmt.where(AuditLog.created_at >= start_at)
+        if end_at is not None:
+            stmt = stmt.where(AuditLog.created_at <= end_at)
 
         result = await self.session.scalars(stmt)
         return list(result)

@@ -32,7 +32,7 @@ async def retry_outbox(outbox_id: str, session: AsyncSession = Depends(get_db_se
         session,
         current_user,
         alert_key=f"notification:{row.id}",
-        category="通知",
+        category="系统接口",
         severity="high" if attempts_before >= 3 else "medium",
         title="通知发送失败",
         source="notification_outbox",
@@ -40,7 +40,11 @@ async def retry_outbox(outbox_id: str, session: AsyncSession = Depends(get_db_se
         action_type="retry_notification",
         status_before=status_before,
         status_after="pending",
-        extra={"event_type": row.event_type, "attempts_before": attempts_before},
+        extra={
+            "变更前": f"通知状态：{status_before}；尝试次数：{attempts_before}；错误原因：{row.last_error or '无'}",
+            "变更后": "通知状态：pending；已重新加入发送队列",
+            "补充信息": f"通知类型：{row.event_type}；收件人：{row.recipient_email or '无'}",
+        },
     )
     await session.commit(); return {"id":row.id,"status":"pending"}
 

@@ -1,30 +1,75 @@
 <template>
-  <div v-if="error" style="padding:40px;color:red;background:#fff;max-width:800px;margin:40px auto;border-radius:12px;font-family:monospace">
-    <h2>⚠️ Vue App Error</h2>
-    <pre style="white-space:pre-wrap;word-break:break-all">{{ error }}</pre>
-    <button @click="error=null" style="margin-top:20px;padding:10px 20px;background:#e94560;color:#fff;border:none;border-radius:8px;cursor:pointer">🔄 Retry</button>
+  <div v-if="error" class="app-error-banner">
+    <span>{{ error }}</span>
+    <button @click="error = null">关闭</button>
   </div>
-  <router-view v-else />
+  <router-view />
 </template>
 
 <script setup lang="ts">
 import { ref, onErrorCaptured } from 'vue'
 const error = ref<string | null>(null)
+
+function isIgnoredBrowserNoise(message: unknown) {
+  return String(message || '').includes('ResizeObserver')
+}
+
 onErrorCaptured((err: any) => {
-  error.value = err?.message || err?.toString() || 'Unknown error'
+  if (isIgnoredBrowserNoise(err?.message || err)) return false
+  error.value = err?.message || err?.toString() || '页面运行异常'
   console.error('Caught:', err)
   return false
 })
 // Global error handler
 window.addEventListener('error', (e) => {
-  error.value = `[${e.filename?.split('/').pop()}:${e.lineno}] ${e.message}`
+  if (isIgnoredBrowserNoise(e.message)) {
+    e.preventDefault()
+    return
+  }
+  error.value = `页面运行异常：${e.message}`
 })
 window.addEventListener('unhandledrejection', (e) => {
-  error.value = `[Promise] ${e.reason?.message || e.reason}`
+  const message = e.reason?.message || e.reason
+  if (isIgnoredBrowserNoise(message)) {
+    e.preventDefault()
+    return
+  }
+  error.value = `请求或页面运行异常：${message || '请刷新后重试'}`
+  e.preventDefault()
 })
 </script>
 
 <style>
+.app-error-banner {
+  align-items: center;
+  background: #fff2f0;
+  border-bottom: 1px solid #ffccc7;
+  color: #a8071a;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  padding: 10px 18px;
+  position: sticky;
+  top: 0;
+  z-index: 3000;
+}
+
+.app-error-banner span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.app-error-banner button {
+  background: #fff;
+  border: 1px solid #ffccc7;
+  border-radius: 6px;
+  color: #a8071a;
+  cursor: pointer;
+  padding: 4px 10px;
+}
+
 /* ===== 全局橙白主题 — 租房品牌色 ===== */
 :root {
   --primary: #FF6B35;

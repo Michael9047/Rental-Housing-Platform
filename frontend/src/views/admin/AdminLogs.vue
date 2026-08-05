@@ -3,11 +3,38 @@
     <h2>审计日志</h2>
 
     <div class="filters">
-      <el-select v-model="filterAction" placeholder="操作类型" clearable @change="fetchLogs">
-        <el-option label="房源审核" value="property_moderate" />
-        <el-option label="角色变更" value="user_role_change" />
-        <el-option label="重建索引" value="embedding_reindex" />
-      </el-select>
+      <div class="filter-row">
+        <el-select v-model="filterAction" placeholder="操作类型" clearable @change="fetchLogs">
+          <el-option label="户型信息审核" value="unit_type_review" />
+          <el-option label="角色变更" value="user_role_change" />
+        </el-select>
+        <el-input-number
+          v-model="filterUserId"
+          placeholder="用户 ID"
+          :min="1"
+          controls-position="right"
+          class="filter-number"
+          @change="fetchLogs"
+        />
+        <el-input-number
+          v-model="filterResourceId"
+          placeholder="表内 ID"
+          :min="1"
+          controls-position="right"
+          class="filter-number"
+          @change="fetchLogs"
+        />
+        <el-date-picker
+          v-model="dateRange"
+          type="daterange"
+          start-placeholder="开始日期"
+          end-placeholder="结束日期"
+          class="date-input"
+          @change="fetchLogs"
+        />
+        <el-button type="primary" @click="fetchLogs">查询</el-button>
+        <el-button @click="resetFilters">重置</el-button>
+      </div>
     </div>
 
     <div class="table-wrap">
@@ -19,11 +46,13 @@
           </template>
         </el-table-column>
         <el-table-column prop="user_id" label="操作用户 ID" width="110" />
-        <el-table-column prop="resource_type" label="资源类型" width="110" />
-        <el-table-column prop="resource_id" label="资源 ID" width="90" />
+        <el-table-column prop="resource_type" label="数据表" width="140">
+          <template #default="{ row }">{{ resourceTypeLabel(row.resource_type) }}</template>
+        </el-table-column>
+        <el-table-column prop="resource_id" label="表内 ID" width="90" />
         <el-table-column label="详情" min-width="220" show-overflow-tooltip>
           <template #default="{ row }">
-            <span class="details-text">{{ JSON.stringify(row.details) }}</span>
+            <span class="details-text">{{ detailsText(row) }}</span>
           </template>
         </el-table-column>
         <el-table-column label="时间" width="170">
@@ -53,31 +82,123 @@ import type { AuditLog } from '@/types/admin'
 const logs = ref<AuditLog[]>([])
 const loading = ref(false)
 const filterAction = ref('')
+const filterUserId = ref<number | undefined>()
+const filterResourceId = ref<number | undefined>()
+const dateRange = ref<[Date, Date] | null>(null)
 const page = ref(0)
 const pageSize = 50
 const total = ref(0)
 
 const actionLabels: Record<string, string> = {
-  property_moderate: '房源审核',
+  unit_type_review: '户型信息审核',
+  unit_type_status_change: '户型状态变更',
+  property_moderate: '旧房源审核',
   user_role_change: '角色变更',
-  embedding_reindex: '重建索引',
+  user_login: '登录',
+  resolve_system_alert: '异常处理',
 }
 
 function actionLabel(action: string) {
   return actionLabels[action] || action
 }
 
+function resourceTypeLabel(type: string | null) {
+  const labels: Record<string, string> = {
+    unit_type: 'unit_types / 户型',
+    institute: 'institutes / 公寓',
+    property: 'properties / 旧房源',
+    user: 'users / 用户',
+  }
+  return type ? labels[type] || type : '-'
+}
+
+function statusLabel(status: string | null | undefined) {
+  const labels: Record<string, string> = {
+    available: '可租',
+    rented: '已租',
+    maintenance: '维修中',
+    offline: '下架',
+    pending_review: '待审核',
+  }
+  return status ? labels[status] || status : '-'
+}
+
+function reviewResultLabel(result: string | null | undefined) {
+  const labels: Record<string, string> = {
+    normal: '正常',
+    abnormal: '异常',
+  }
+  return result ? labels[result] || result : '-'
+}
+
+function detailsOf(row: AuditLog): Record<string, any> {
+  if (!row.details) return {}
+  if (typeof row.details === 'string') {
+    try {
+      return JSON.parse(row.details)
+    } catch {
+      return { content: row.details }
+    }
+  }
+  return row.details as Record<string, any>
+}
+
+function detailsText(row: AuditLog) {
+  const details = detailsOf(row)
+  if (row.action === 'unit_type_review') {
+    return [
+      `户型：${details.unit_type_name || `#${row.resource_id || '-'}`}`,
+      `公寓：${details.institute_name || '-'}`,
+      `结果：${reviewResultLabel(details.result)}`,
+      `备注：${details.note || '-'}`,
+    ].join('；')
+  }
+  if (row.action === 'unit_type_status_change') {
+    return [
+      `户型：${details.unit_type_name || `#${row.resource_id || '-'}`}`,
+      `公寓：${details.institute_name || '-'}`,
+      `状态：${statusLabel(details.new_status)}`,
+    ].join('；')
+  }
+  if (row.action === 'user_role_change') {
+    return `用户：${row.resource_id || '-'}；角色：${details.old_role || '-'} -> ${details.new_role || '-'}`
+  }
+  if (row.action === 'resolve_system_alert') {
+    return `异常：${row.resource_id || '-'}；处理：${details.action_label || details.action_type || '-'}`
+  }
+  return details.content || Object.entries(details).map(([key, value]) => `${key}: ${value}`).join('；') || '-'
+}
+
 async function fetchLogs() {
   loading.value = true
   try {
-    logs.value = await adminService.getLogs({
+    const params: Parameters<typeof adminService.getLogs>[0] = {
       skip: page.value * pageSize,
       limit: pageSize,
-      action: filterAction.value || undefined,
-    })
+    }
+    if (filterAction.value) params.action = filterAction.value
+    if (typeof filterUserId.value === 'number') params.user_id = filterUserId.value
+    if (typeof filterResourceId.value === 'number') params.resource_id = filterResourceId.value
+    if (dateRange.value?.[0]) params.start_at = dateRange.value[0].toISOString()
+    if (dateRange.value?.[1]) {
+      const end = new Date(dateRange.value[1])
+      end.setHours(23, 59, 59, 999)
+      params.end_at = end.toISOString()
+    }
+
+    logs.value = await adminService.getLogs(params)
   } finally {
     loading.value = false
   }
+}
+
+function resetFilters() {
+  filterAction.value = ''
+  filterUserId.value = undefined
+  filterResourceId.value = undefined
+  dateRange.value = null
+  page.value = 0
+  fetchLogs()
 }
 
 function handlePageChange(p: number) {
@@ -102,8 +223,23 @@ onMounted(fetchLogs)
 
 .filters {
   display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.filter-row {
+  align-items: center;
+  display: flex;
   flex-wrap: wrap;
   gap: 12px;
+}
+
+.filter-number {
+  width: 160px;
+}
+
+.date-input {
+  max-width: 260px;
 }
 
 .table-wrap {

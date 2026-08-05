@@ -41,6 +41,16 @@
             <el-tag :type="systemAlerts.length ? 'warning' : 'success'" size="small">
               {{ systemAlerts.length ? `${systemAlerts.length} 条异常` : '正常' }}
             </el-tag>
+            <el-button
+              v-if="systemAlerts.length"
+              text
+              type="primary"
+              :icon="Check"
+              :loading="markingAlerts"
+              @click="markAllAlertsRead"
+            >
+              一键已读
+            </el-button>
             <el-button text type="primary" @click="router.push('/admin/alerts')">打开</el-button>
           </div>
         </div>
@@ -60,14 +70,7 @@
             <p class="alert-detail">{{ alert.detail }}</p>
             <div class="alert-foot">
               <span>{{ formatDateTime(alert.updated_at) }}</span>
-              <el-button
-                v-if="alert.action"
-                size="small"
-                type="primary"
-                @click="runAlertAction(alert)"
-              >
-                {{ alert.action.label }}
-              </el-button>
+              <el-button size="small" type="primary" @click="openAlertCenter">查看</el-button>
             </div>
           </article>
         </div>
@@ -90,7 +93,7 @@
             :key="notice.id"
             class="notice-card"
             :class="{ unread: !notice.is_read }"
-            @click="markNoticeRead(notice.id)"
+            @click="openNotification(notice.id)"
           >
             <span class="notice-title">{{ notice.title }}</span>
             <span class="notice-time">{{ formatDateTime(notice.created_at) }}</span>
@@ -106,7 +109,7 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { Refresh } from '@element-plus/icons-vue'
+import { Check, Refresh } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { adminService } from '@/services/admin'
 import { notificationService } from '@/services/notification'
@@ -121,6 +124,7 @@ const overview = ref<AdminOverview | null>(null)
 const systemAlerts = ref<SystemAlert[]>([])
 const notifications = ref<Notification[]>([])
 const unreadCount = ref(0)
+const markingAlerts = ref(false)
 
 function formatDateTime(value: string) {
   if (!value) return '-'
@@ -131,12 +135,6 @@ function openUsers(role: string) {
   router.push({ path: '/admin/users', query: { role } })
 }
 
-async function retryOutbox(id: string) {
-  await adminService.retryNotification(id)
-  ElMessage.success('已重新加入发送队列')
-  await loadData()
-}
-
 function severityTag(severity: SystemAlertSeverity) {
   return ({ high: 'danger', medium: 'warning', low: 'info' }[severity] || 'info') as 'danger' | 'warning' | 'info'
 }
@@ -145,48 +143,55 @@ function severityLabel(severity: SystemAlertSeverity) {
   return ({ high: '紧急', medium: '提醒', low: '关注' }[severity] || '关注')
 }
 
-async function runAlertAction(alert: SystemAlert) {
-  if (!alert.action) return
-  if (alert.action.type === 'retry_notification') {
-    await retryOutbox(String(alert.action.resource_id))
-    return
-  }
-  if (alert.action.type === 'retry_pms_sync') {
-    await adminService.triggerPmsSync(Number(alert.action.resource_id))
-    ElMessage.success('已触发 PMS 重新同步')
+function openAlertCenter() {
+  router.push('/admin/alerts')
+}
+
+async function markAllAlertsRead() {
+  if (!systemAlerts.value.length) return
+  markingAlerts.value = true
+  try {
+    await Promise.all(systemAlerts.value.map((alert) => adminService.markSystemAlertRead(alert)))
+    ElMessage.success('异常已全部标为已读')
     await loadData()
-  }
-  if (alert.action.type === 'resolve_system_alert') {
-    await adminService.resolveSystemAlert(Number(alert.action.resource_id))
-    ElMessage.success('已标记处理')
-    await loadData()
-  }
-  if (alert.action.type === 'resolve_generated_alert') {
-    await adminService.resolveGeneratedSystemAlert(alert)
-    ElMessage.success('已标记处理')
-    await loadData()
+  } finally {
+    markingAlerts.value = false
   }
 }
 
-async function markNoticeRead(id: number) {
+async function openNotification(id: number) {
   const notice = notifications.value.find((item) => item.id === id)
-  if (!notice || notice.is_read) return
-  await notificationService.markRead(id)
-  await loadData()
+  if (notice && !notice.is_read) {
+    await notificationService.markRead(id)
+  }
+  router.push('/admin/notifications')
 }
 
 async function loadData() {
   loading.value = true
   try {
-    const [overviewData, alerts, noticeData] = await Promise.all([
+    const [overviewResult, alertsResult, noticeResult] = await Promise.allSettled([
       adminService.getOverview(),
-      adminService.getSystemAlerts(),
+      adminService.getSystemAlerts({ read_status: 'unread' }),
       notificationService.list({ page: 1, page_size: 30, unread_only: true, business_only: true }),
     ])
-    overview.value = overviewData
-    systemAlerts.value = alerts
-    notifications.value = noticeData.items
-    unreadCount.value = noticeData.total
+    if (overviewResult.status === 'fulfilled') {
+      overview.value = overviewResult.value
+    }
+    if (alertsResult.status === 'fulfilled') {
+      systemAlerts.value = alertsResult.value
+    } else {
+      systemAlerts.value = []
+      ElMessage.error('异常中心数据读取失败')
+    }
+    if (noticeResult.status === 'fulfilled') {
+      notifications.value = noticeResult.value.items
+      unreadCount.value = noticeResult.value.total
+    } else {
+      notifications.value = []
+      unreadCount.value = 0
+      ElMessage.error('信息通知数据读取失败')
+    }
   } finally {
     loading.value = false
   }

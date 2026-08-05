@@ -72,7 +72,7 @@ export interface NotificationOutboxItem {
 export type SystemAlertSeverity = 'high' | 'medium' | 'low'
 
 export interface SystemAlertAction {
-  type: 'retry_notification' | 'retry_pms_sync' | 'resolve_system_alert' | 'resolve_generated_alert'
+  type: 'mark_alert_read' | 'resolve_system_alert' | 'resolve_generated_alert' | 'resolve_generated_system_alert'
   label: string
   resource_id: string | number
 }
@@ -88,7 +88,23 @@ export interface SystemAlert {
   source_id: string | number
   status: string
   updated_at: string
+  read?: boolean
+  location?: string
+  extra: Record<string, unknown> | null
   action: SystemAlertAction | null
+}
+
+export interface SystemAlertSchema {
+  categories: string[]
+  detection_types: {
+    key: string
+    category: string
+    name: string
+    sources: string[]
+    checks: string[]
+  }[]
+  record_retention_days: number
+  record_detail_fields: string[]
 }
 
 export interface SystemAlertProcessRecord {

@@ -33,6 +33,7 @@ from app.models.repair import (
     WorkerStatus,
 )
 from app.models.review import Review, ReviewStatus
+from app.models.runtime_event import RuntimeEvent
 from app.models.saved_search import SavedSearch
 from app.models.system_alert import (
     SystemAlert,
@@ -93,6 +94,7 @@ __all__ = [
     "RepairWorker",
     "Review",
     "ReviewStatus",
+    "RuntimeEvent",
     "SavedSearch",
     "SystemAlert",
     "SystemAlertProcessRecord",

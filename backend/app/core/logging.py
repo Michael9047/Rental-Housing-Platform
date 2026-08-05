@@ -123,6 +123,40 @@ def mask_sensitive(data: Any, depth: int = 0) -> Any:
     return data
 
 
+async def _record_runtime_event(request: Request, exc: Exception, status_code: int) -> None:
+    try:
+        from app.db.session import async_session_maker
+        from app.models.runtime_event import RuntimeEvent
+
+        tb = traceback.extract_tb(exc.__traceback__)[-1] if exc.__traceback__ else None
+        location = f"{tb.filename}:{tb.lineno}" if tb else None
+        request_id = getattr(request.state, "request_id", None)
+        user_id = getattr(request.state, "user_id", None)
+        event = RuntimeEvent(
+            level="ERROR",
+            event_type=type(exc).__name__,
+            title=f"{request.method} {request.url.path} 运行异常",
+            message=str(mask_sensitive(str(exc)))[:1000] if str(exc) else type(exc).__name__,
+            method=request.method,
+            path=request.url.path,
+            status_code=status_code,
+            request_id=request_id,
+            user_id=int(user_id) if str(user_id or "").isdigit() else None,
+            extra={
+                "错误类型": type(exc).__name__,
+                "接口路径": request.url.path,
+                "请求方法": request.method,
+                "请求编号": request_id,
+                "代码位置": location,
+            },
+        )
+        async with async_session_maker() as session:
+            session.add(event)
+            await session.commit()
+    except Exception:
+        logging.getLogger("app.error").debug("Failed to persist runtime event", exc_info=True)
+
+
 class RequestLoggingMiddleware(BaseHTTPMiddleware):
     """Log request/response details: method, path, status, duration, user_id."""
 
@@ -219,6 +253,8 @@ async def http_exception_handler(request: Request, exc: StarletteHTTPException) 
         exc.detail,
         extra={"request_id": getattr(request.state, "request_id", None)},
     )
+    if exc.status_code >= 500:
+        await _record_runtime_event(request, exc, exc.status_code)
     return _build_error_response(exc.status_code, exc.detail, "http_error")
 
 
@@ -241,6 +277,7 @@ async def generic_exception_handler(request: Request, exc: Exception) -> JSONRes
             extra={"request_id": getattr(request.state, "request_id", None)},
         )
 
+    await _record_runtime_event(request, exc, 500)
     return _build_error_response(500, msg, error_type)
 
 

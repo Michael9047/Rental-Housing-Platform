@@ -11,6 +11,7 @@ import type {
   RowResult,
   SystemAlert,
   SystemAlertProcessRecord,
+  SystemAlertSchema,
 } from '@/types/admin'
 import type { Property } from '@/types/property'
 import type { User } from '@/types/user'
@@ -29,19 +30,35 @@ export const adminService = {
     limit?: number
     action?: string
     user_id?: number
+    resource_type?: string
+    resource_id?: number
+    keyword?: string
+    start_at?: string
+    end_at?: string
   }): Promise<AuditLog[]> {
     return api.get('/admin/logs', { params }).then((r) => r.data)
   },
 
-  moderateProperty(propertyId: number, new_status: string): Promise<void> {
-    return api.patch(`/admin/properties/${propertyId}/status`, null, {
+  reviewUnitType(unitTypeId: number, result: 'normal' | 'abnormal', note?: string): Promise<{ detail: string; id: number; result: string }> {
+    return api.post(`/admin/unit-types/${unitTypeId}/review`, { result, note }).then((r) => r.data)
+  },
+
+  updateUnitTypeStatus(unitTypeId: number, new_status: string): Promise<void> {
+    return api.patch(`/admin/unit-types/${unitTypeId}/status`, null, {
       params: { new_status },
     })
   },
 
+  moderateProperty(propertyId: number, new_status: string): Promise<void> {
+    return this.updateUnitTypeStatus(propertyId, new_status)
+  },
+
   /** 获取待审核房源列表 */
   getPendingProperties(): Promise<Property[]> {
-    return api.get('/admin/properties/pending').then((r) => r.data)
+    return api.get('/unit-types', { params: { page_size: 500 } }).then((r) => {
+      const items = r.data.items || []
+      return items.filter((item: Property) => item.status === 'available' || item.status === 'maintenance')
+    })
   },
 
   updateUserRole(userId: number, new_role: string): Promise<User> {
@@ -54,8 +71,12 @@ export const adminService = {
     return api.get('/notifications/admin/outbox').then((r) => r.data)
   },
 
-  getSystemAlerts(): Promise<SystemAlert[]> {
-    return api.get('/admin/system-alerts').then((r) => r.data)
+  getSystemAlerts(params?: { read_status?: 'unread' | 'read' | 'all' }): Promise<SystemAlert[]> {
+    return api.get('/admin/system-alerts', { params }).then((r) => r.data)
+  },
+
+  getSystemAlertSchema(): Promise<SystemAlertSchema> {
+    return api.get('/admin/system-alerts/schema').then((r) => r.data)
   },
 
   getSystemAlertRecords(params?: {
@@ -74,10 +95,6 @@ export const adminService = {
     return api.post(`/notifications/admin/outbox/${outboxId}/retry`).then((r) => r.data)
   },
 
-  triggerPmsSync(connectionId: number): Promise<Record<string, unknown>> {
-    return api.post(`/pms/connections/${connectionId}/sync`).then((r) => r.data)
-  },
-
   resolveSystemAlert(alertId: number, note?: string): Promise<{ id: number; status: string }> {
     return api.patch(`/admin/system-alerts/${alertId}/resolve`, { note }).then((r) => r.data)
   },
@@ -90,9 +107,31 @@ export const adminService = {
       title: alert.title,
       source: alert.source,
       source_id: alert.source_id,
+      action_type: alert.action?.type,
       status: alert.status,
       detail: alert.detail,
+      extra: alert.extra,
       note,
+    }).then((r) => r.data)
+  },
+
+  markSystemAlertRead(alert: SystemAlert): Promise<{ id: number | string; alert_key?: string; read: boolean }> {
+    if (String(alert.id).startsWith('system:')) {
+      return api.patch(`/admin/system-alerts/${String(alert.id).replace('system:', '')}/read`, {
+        note: '已读',
+      }).then((r) => r.data)
+    }
+    return api.patch('/admin/system-alerts/generated/read', {
+      alert_key: alert.id,
+      category: alert.category,
+      severity: alert.severity,
+      title: alert.title,
+      source: alert.source,
+      source_id: alert.source_id,
+      status: alert.status,
+      detail: alert.detail,
+      extra: alert.extra,
+      note: '已读',
     }).then((r) => r.data)
   },
 
