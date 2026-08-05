@@ -18,6 +18,7 @@ RATES_TO_CNY: dict[str, float] = {
     "SGD": 5.40,   # 1 SGD = 5.40 CNY
     "USD": 7.25,   # 1 USD = 7.25 CNY
     "HKD": 0.93,   # 1 HKD = 0.93 CNY
+    "AUD": 4.75,   # 1 AUD = 4.75 CNY
 }
 
 # ── 币种符号映射 ──
@@ -27,6 +28,7 @@ CURRENCY_SYMBOLS: dict[str, str] = {
     "SGD": "S$",
     "USD": "$",
     "HKD": "HK$",
+    "AUD": "A$",
 }
 
 # ── 币种检测正则（用户消息中的币种关键词） ──
@@ -37,6 +39,7 @@ CURRENCY_PATTERNS: list[tuple[str, re.Pattern]] = [
     ("SGD", re.compile(r"新币|新加坡元|新元|坡币|SGD|S\$", re.IGNORECASE)),
     ("USD", re.compile(r"美元|美金|美刀|USD|[0-9]刀", re.IGNORECASE)),
     ("HKD", re.compile(r"港币|港元|港纸|HKD|HK\$", re.IGNORECASE)),
+    ("AUD", re.compile(r"澳元|澳币|AUD|A\$", re.IGNORECASE)),
     ("CNY", re.compile(r"人民币|RMB|CNY|¥|元|块", re.IGNORECASE)),
     # $ 单独处理：如果前面没被 USD/SGD/HKD 匹配到，且消息中有数字+$，默认为 USD
     ("USD", re.compile(r"\$[0-9]|[0-9]\s*\$")),

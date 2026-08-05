@@ -2,7 +2,7 @@ import enum
 import json
 from datetime import datetime
 
-from sqlalchemy import DateTime, Enum, ForeignKey, Integer, String, Text as SAText
+from sqlalchemy import JSON, DateTime, Enum, ForeignKey, Integer, String, Text as SAText
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -57,7 +57,9 @@ class Booking(TimestampMixin, Base):
     inventory_reserved: Mapped[bool] = mapped_column(default=False, nullable=False)
     lease_months: Mapped[int | None] = mapped_column(Integer, nullable=True)
     total_rent: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    application_data: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    application_data: Mapped[dict | None] = mapped_column(
+        JSON().with_variant(JSONB, "postgresql"), nullable=True
+    )
 
     tenant: Mapped["User"] = relationship(foreign_keys=[tenant_id])
     property: Mapped["Room"] = relationship()

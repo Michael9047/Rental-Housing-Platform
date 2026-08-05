@@ -1,10 +1,60 @@
 """Agent 共享工具函数 —— 从 AgentService 提取，供多个 Agent 复用。"""
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from app.models.property import Property
 from app.services.compare_scoring import DIMENSION_LABELS
+from app.services.currency import convert, get_symbol
+
+
+def property_currency(prop: Property) -> str:
+    """返回房源币种代码；历史数据未填写时按人民币兼容。"""
+    return str(getattr(prop, "currency", None) or "CNY").upper()
+
+
+def format_property_money(prop: Property, amount: Any) -> str:
+    """按房源原始币种格式化金额，避免海外房源误显示人民币符号。"""
+    return f"{get_symbol(property_currency(prop))}{float(amount):,.0f}"
+
+
+def comparable_price_cny(prop: Property) -> float:
+    """把月租换算为人民币基准值，仅用于跨币种排序与评分。"""
+    return convert(float(prop.price_monthly), property_currency(prop), "CNY")
+
+
+def _amenity_list(value: Any) -> list[str]:
+    """兼容数组、JSON 文本和逗号文本三种设施字段。"""
+    if isinstance(value, (list, tuple, set)):
+        return [str(item).strip() for item in value if str(item).strip()]
+    if not isinstance(value, str) or not value.strip():
+        return []
+    try:
+        parsed = json.loads(value)
+        if isinstance(parsed, list):
+            return [str(item).strip() for item in parsed if str(item).strip()]
+    except (TypeError, ValueError, json.JSONDecodeError):
+        pass
+    return [
+        item.strip()
+        for item in value.replace("，", ",").split(",")
+        if item.strip()
+    ]
+
+
+def property_amenities(prop: Property) -> list[str]:
+    """合并房间冗余字段、户型和公寓的真实设施，不触发隐式懒加载。"""
+    unit_type = getattr(prop, "__dict__", {}).get("unit_type")
+    institute = getattr(prop, "__dict__", {}).get("institute")
+    if institute is None and unit_type is not None:
+        institute = getattr(unit_type, "__dict__", {}).get("institute")
+    values = [
+        *_amenity_list(getattr(prop, "institute_amenities", None)),
+        *_amenity_list(getattr(unit_type, "amenities", None) if unit_type else None),
+        *_amenity_list(getattr(institute, "amenities", None) if institute else None),
+    ]
+    return list(dict.fromkeys(values))
 
 
 def property_to_dict(prop: Property) -> dict[str, Any]:
@@ -21,6 +71,7 @@ def property_to_dict(prop: Property) -> dict[str, Any]:
         "bathrooms": prop.bathrooms,
         "property_type": prop.property_type.value if hasattr(prop.property_type, "value") else str(prop.property_type),
         "description": (prop.description or "")[:200],
+        "amenities": property_amenities(prop),
     }
 
 
@@ -70,26 +121,41 @@ def build_dimension_analysis(
         lines.append(f"- **{p.title}**：位于{district_info}{hint_text}")
     lines.append("")
 
-    # 3. 房内设施
-    lines.append("### 🛋️ 房内设施")
+    # 3. 房源与公寓设施
+    lines.append("### 🛋️ 房源与公寓设施")
     for p in props:
         desc = (p.description or "")[:200]
-        amenities = extract_amenities_from_desc(desc)
+        amenities = list(dict.fromkeys([
+            *property_amenities(p),
+            *extract_amenities_from_desc(desc),
+        ]))
         if amenities:
             lines.append(f"- **{p.title}**：{'、'.join(amenities)}")
         else:
-            lines.append(f"- **{p.title}**：设施信息待补充（请联系房东确认）")
+            lines.append(f"- **{p.title}**：设施清单待补充（请联系公寓确认）")
     lines.append("")
 
     # 4. 价格对比
     lines.append("### 💰 价格对比")
-    sorted_price = sorted(props, key=lambda p: float(p.price_monthly))
+    sorted_price = sorted(props, key=comparable_price_cny)
+    currencies = {property_currency(p) for p in props}
+    if len(currencies) > 1:
+        lines.append(
+            "> 房源包含多个币种；综合价格得分已统一换算，下面仍展示各房源原始币种。"
+        )
     for p in sorted_price:
         s = scores[p.id]["breakdown"].get("price", 0)
         deposit = getattr(p, "deposit_amount", None)
-        deposit_text = f"（押金 ¥{float(deposit):.0f}）" if deposit else ""
-        lines.append(f"- **{p.title}**：¥{float(p.price_monthly):.0f}/月 {deposit_text}（价格得分 {s}）")
-    lines.append(f"\n💰 价格最低：**{sorted_price[0].title}**（¥{float(sorted_price[0].price_monthly):.0f}/月）\n")
+        deposit_text = f"（押金 {format_property_money(p, deposit)}）" if deposit else ""
+        lines.append(
+            f"- **{p.title}**：{format_property_money(p, p.price_monthly)}/月 "
+            f"{deposit_text}（价格得分 {s}）"
+        )
+    cheapest = sorted_price[0]
+    lines.append(
+        f"\n💰 价格最低：**{cheapest.title}**"
+        f"（{format_property_money(cheapest, cheapest.price_monthly)}/月）\n"
+    )
 
     # 5. 空间户型
     lines.append("### 📐 空间户型")

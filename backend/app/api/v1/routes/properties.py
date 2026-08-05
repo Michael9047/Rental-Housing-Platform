@@ -10,7 +10,6 @@ from app.schemas.property_image import PropertyImageRead
 from app.services.property_service import PropertyService
 from app.services.user_service import UserService
 from app.models.property import Property
-from app.tasks.poi_tasks import generate_full_poi_for_property
 
 router = APIRouter()
 
@@ -28,15 +27,13 @@ async def create_property(
     if current_user.role.value != "admin" and property_in.landlord_id != current_user.id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
                            detail="Landlords can only create properties for themselves")
-    prop = await PropertyService(session).create(property_in)
-    # 异步生成地图 POI（Celery 任务，不阻塞响应）
-    generate_full_poi_for_property.delay(prop.id)
-    return prop
+    return await PropertyService(session).create(property_in)
 
 
 @router.get("/search", response_model=list[PropertySearchResult])
 async def search_properties(
     q: str | None = Query(default=None),
+    country: str | None = Query(default=None),
     district: str | None = Query(default=None),
     price_min: Decimal | None = Query(default=None, ge=0),
     price_max: Decimal | None = Query(default=None, ge=0),
@@ -53,7 +50,7 @@ async def search_properties(
     session: AsyncSession = Depends(get_db_session),
 ) -> list[PropertySearchResult]:
     results = await PropertyService(session).search(
-        query=q, district=district, price_min=price_min,
+        query=q, country=country, district=district, price_min=price_min,
         price_max=price_max, bedrooms=bedrooms,
         property_type=property_type, limit=limit,
         institute_id=institute_id,
@@ -68,7 +65,7 @@ async def search_properties(
         PropertySearchResult(
             id=prop.id, landlord_id=prop.landlord_id,
             title=prop.title, description=prop.description,
-            address=prop.address, district=prop.district,
+            address=prop.address, district=prop.district, country=prop.country,
             price_monthly=prop.price_monthly,
             area_sqm=prop.area_sqm, bedrooms=prop.bedrooms, bathrooms=prop.bathrooms,
             property_type=prop.property_type, status=prop.status,
@@ -93,6 +90,7 @@ async def list_properties(
     session: AsyncSession = Depends(get_db_session),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=500),
+    country: str | None = Query(default=None),
     district: str | None = Query(default=None),
     status_filter: str | None = Query(default=None, alias="status"),
     landlord_id: int | None = Query(default=None),
@@ -105,7 +103,7 @@ async def list_properties(
     skip = (page - 1) * page_size
     result = await PropertyService(session).list(
         skip=skip, limit=page_size,
-        district=district, status=status_filter,
+        country=country, district=district, status=status_filter,
         landlord_id=landlord_id, keyword=keyword,
         property_type=property_type,
         price_min=price_min, price_max=price_max,

@@ -3,7 +3,7 @@ import enum
 from datetime import date
 from decimal import Decimal
 
-from sqlalchemy import Date, Enum, ForeignKey, Integer, Numeric, String, Text as SAText
+from sqlalchemy import JSON, Date, Enum, ForeignKey, Integer, Numeric, String, Text as SAText
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -42,7 +42,7 @@ class RoomType(TimestampMixin, Base):
 
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
     property_id: Mapped[int] = mapped_column(
-        ForeignKey("rooms.id", ondelete="CASCADE"), index=True, nullable=False
+        ForeignKey("properties.id", ondelete="CASCADE"), index=True, nullable=False
     )
 
     # 房型基本信息
@@ -70,7 +70,9 @@ class RoomType(TimestampMixin, Base):
     )
 
     # 设施与描述
-    amenities: Mapped[list[str] | None] = mapped_column(ARRAY(String(30)), nullable=True)
+    amenities: Mapped[list[str] | None] = mapped_column(
+        JSON().with_variant(ARRAY(String(30)), "postgresql"), nullable=True
+    )
     description: Mapped[str | None] = mapped_column(SAText, nullable=True)
 
     # 状态

@@ -3,8 +3,8 @@ import enum
 from datetime import date, datetime
 from decimal import Decimal
 
-from sqlalchemy import Boolean, Date, DateTime, Enum, Float, ForeignKey, Integer, Numeric, String, Text
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy import JSON, Boolean, Date, DateTime, Enum, Float, ForeignKey, Integer, Numeric, String, Text
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from pgvector.sqlalchemy import Vector
 
@@ -67,7 +67,13 @@ class Room(TimestampMixin, Base):
     latitude: Mapped[Decimal | None] = mapped_column(Numeric(9, 6), nullable=True)
     longitude: Mapped[Decimal | None] = mapped_column(Numeric(9, 6), nullable=True)
     rent_type: Mapped[str | None] = mapped_column(String(50), nullable=True)
-    rental_rules: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    rental_rules: Mapped[dict | None] = mapped_column(
+        JSON().with_variant(JSONB, "postgresql"), nullable=True
+    )
+    # 旧库直接把设施数组保存在 properties.amenities。
+    amenities: Mapped[list[str] | None] = mapped_column(
+        JSON().with_variant(ARRAY(String(50)), "postgresql"), nullable=True
+    )
     # 语义检索向量（pgvector）；由 EmbeddingService 生成，HNSW cosine 索引见迁移 20260725_0100
     embedding: Mapped[list[float] | None] = mapped_column(Vector(1536), nullable=True)
     # 三层架构字段
@@ -90,13 +96,14 @@ class Room(TimestampMixin, Base):
     # ── 关系 ──
     landlord: Mapped["User"] = relationship(back_populates="rooms")
     institute: Mapped["Institute"] = relationship(
-        "Institute", lazy="selectin",
+        "Institute", lazy="noload",
         foreign_keys=[institute_id], primaryjoin="Room.institute_id == Institute.id",
         viewonly=True,
     )
     unit_type: Mapped["UnitType"] = relationship(
         "UnitType", back_populates="rooms",
         foreign_keys="[Room.unit_type_id]",
+        lazy="noload",
     )
     images: Mapped[list["RoomImage"]] = relationship(
         "RoomImage", back_populates="room", cascade="all, delete-orphan", lazy="selectin"

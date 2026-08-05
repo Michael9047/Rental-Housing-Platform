@@ -16,11 +16,13 @@ const routes: RouteRecordRaw[] = [
         path: 'search',
         name: 'search',
         component: () => import('@/views/Search.vue'),
+        meta: { hideFooter: true },
       },
       {
         path: 'ai-search',
         name: 'ai-search',
         component: () => import('@/views/AiSearch.vue'),
+        meta: { requiresAuth: true, hideFooter: true },
       },
       {
         path: 'map',
@@ -41,6 +43,7 @@ const routes: RouteRecordRaw[] = [
       },
       {
         path: 'property/:id',
+        alias: 'room/:id',
         name: 'property-detail',
         component: () => import('@/views/PropertyDetail.vue'),
       },
@@ -125,31 +128,31 @@ const routes: RouteRecordRaw[] = [
       {
         path: 'booking/:propertyId/move-in-date',
         name: 'booking-move-in-date',
-        component: () => import('@/views/booking/MoveInDate.vue'),
+        redirect: (to) => ({ path: '/booking/flow', query: { property_id: String(to.params.propertyId) } }),
         meta: { requiresAuth: true },
       },
       {
         path: 'booking/:propertyId/lease-term',
         name: 'booking-lease-term',
-        component: () => import('@/views/booking/LeaseTerm.vue'),
+        redirect: (to) => ({ path: '/booking/flow', query: { property_id: String(to.params.propertyId) } }),
         meta: { requiresAuth: true },
       },
       {
         path: 'booking/:propertyId/personal-info',
         name: 'booking-personal-info',
-        component: () => import('@/views/booking/PersonalInfo.vue'),
+        redirect: (to) => ({ path: '/booking/flow', query: { property_id: String(to.params.propertyId) } }),
         meta: { requiresAuth: true },
       },
       {
         path: 'booking/:propertyId/emergency-contact',
         name: 'booking-emergency-contact',
-        component: () => import('@/views/booking/EmergencyContact.vue'),
+        redirect: (to) => ({ path: '/booking/flow', query: { property_id: String(to.params.propertyId) } }),
         meta: { requiresAuth: true },
       },
       {
         path: 'booking/:propertyId/review',
         name: 'booking-review',
-        component: () => import('@/views/booking/BookingReview.vue'),
+        redirect: (to) => ({ path: '/booking/flow', query: { property_id: String(to.params.propertyId) } }),
         meta: { requiresAuth: true },
       },
       {

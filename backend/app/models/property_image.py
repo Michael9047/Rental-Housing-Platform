@@ -8,10 +8,12 @@ from app.models.mixins import TimestampMixin
 
 class RoomImage(TimestampMixin, Base):
     """房间实拍图"""
-    __tablename__ = "room_images"
+    # 当前真实库仍使用旧表名 property_images，暂不迁移时直接兼容读取。
+    __tablename__ = "property_images"
 
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
     room_id: Mapped[int] = mapped_column(
+        "property_id",
         ForeignKey("properties.id", ondelete="CASCADE"), index=True
     )
     filename: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)

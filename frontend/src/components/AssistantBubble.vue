@@ -34,9 +34,15 @@
               <p class="ab-empty-sub">找房、预订、合同、退款…都可以问我</p>
             </div>
 
-            <div v-for="(msg, i) in messages" :key="i" class="ab-msg-block">
+            <div v-for="(msg, i) in messages" :key="msg.id || `${msg.role}-${i}`" class="ab-msg-block">
               <div class="ab-bubble-row" :class="msg.role">
-                <div class="ab-bubble" :class="msg.role">{{ msg.content }}</div>
+                <div
+                  v-if="msg.role === 'assistant' && msg.streaming && !msg.content"
+                  class="ab-bubble assistant typing"
+                >
+                  正在思考…
+                </div>
+                <div v-else class="ab-bubble" :class="msg.role">{{ msg.content }}</div>
               </div>
 
               <!-- 深链 + 后续 chips -->
@@ -97,14 +103,17 @@
               </div>
             </div>
 
-            <div v-if="sending" class="ab-bubble-row assistant">
-              <div class="ab-bubble assistant typing">正在思考…</div>
-            </div>
           </div>
 
           <!-- 快捷 chips -->
           <div v-if="faqChips.length" class="ab-chips-row">
-            <button v-for="c in faqChips" :key="c.id" class="ab-chip" @click="send(c.chip)">
+            <button
+              v-for="c in faqChips"
+              :key="c.id"
+              class="ab-chip"
+              :disabled="sending"
+              @click="send(c.chip)"
+            >
               {{ c.chip }}
             </button>
           </div>
@@ -113,6 +122,7 @@
             <el-input
               v-model="inputText"
               size="default"
+              :disabled="sending"
               placeholder="问我任何租房问题…"
               @keydown.enter.exact.prevent="send()"
             />
@@ -127,7 +137,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   ChatDotRound,
@@ -144,7 +154,12 @@ import { getImageUrl } from '@/utils/image'
 import { useAuthStore } from '@/stores/auth'
 import { useAgentChatStore } from '@/stores/agentChat'
 import { useCartStore } from '@/stores/cart'
-import type { AgentChatMessage, AgentRecommendation, FaqChip } from '@/types/agent'
+import type {
+  AgentChatMessage,
+  AgentRecommendation,
+  AgentStreamMeta,
+  FaqChip,
+} from '@/types/agent'
 import type { PropertySearchResult } from '@/types/property'
 
 const router = useRouter()
@@ -160,6 +175,7 @@ const inputText = ref('')
 const sending = ref(false)
 const faqChips = ref<FaqChip[]>([])
 const listRef = ref<HTMLElement | null>(null)
+let scrollFrame: number | null = null
 
 // 登录可见
 const visible = computed(() => authStore.isLoggedIn)
@@ -238,6 +254,7 @@ onMounted(() => {
 onBeforeUnmount(() => {
   window.removeEventListener('pointermove', onDragMove)
   window.removeEventListener('pointerup', onDragEnd)
+  if (scrollFrame !== null) window.cancelAnimationFrame(scrollFrame)
 })
 
 // 监听来自首页等外部页面的查询触发
@@ -272,6 +289,14 @@ async function scrollToBottom() {
   if (listRef.value) listRef.value.scrollTop = listRef.value.scrollHeight
 }
 
+function scheduleScrollToBottom() {
+  if (scrollFrame !== null) return
+  scrollFrame = window.requestAnimationFrame(() => {
+    scrollFrame = null
+    void scrollToBottom()
+  })
+}
+
 async function handleOpen() {
   open.value = true
   if (faqChips.value.length === 0) {
@@ -301,23 +326,55 @@ async function send(preset?: string) {
   if (!text || sending.value || sessionId.value === null) return
 
   messages.value.push({ role: 'user', content: text })
+  const assistantMessage = reactive<AgentChatMessage>({
+    role: 'assistant',
+    content: '',
+    streaming: true,
+  })
+  messages.value.push(assistantMessage)
   if (!preset) inputText.value = ''
   sending.value = true
   await scrollToBottom()
 
+  let cartChanged = false
   try {
-    const resp = await agentService.sendMessage(sessionId.value, { message: text })
-    messages.value.push({
-      role: 'assistant',
-      content: resp.reply,
-      recommendations: resp.intent === 'recommend' ? resp.recommendations.slice(0, 3) : undefined,
-      quickReplies: resp.quick_replies,
-      links: resp.links,
-    })
-    if (resp.cart_changed) await cartStore.fetch()
-  } catch {
-    messages.value.push({ role: 'assistant', content: '抱歉，请求失败了，请稍后再试。' })
+    await agentService.sendMessageStream(
+      sessionId.value,
+      { message: text },
+      {
+        onToken(token) {
+          assistantMessage.content += token
+          scheduleScrollToBottom()
+        },
+        onMeta(meta: AgentStreamMeta) {
+          if (meta.quick_replies) assistantMessage.quickReplies = meta.quick_replies
+          if (meta.links) assistantMessage.links = meta.links
+          if (meta.ai_available !== undefined) assistantMessage.aiAvailable = meta.ai_available
+          const recommendations = meta.top_picks?.length
+            ? meta.top_picks
+            : meta.recommendations
+          if (recommendations?.length) {
+            assistantMessage.recommendations = recommendations.slice(0, 3)
+          }
+          if (meta.cart_changed) cartChanged = true
+          scheduleScrollToBottom()
+        },
+        onError(message) {
+          if (!assistantMessage.content) assistantMessage.content = `抱歉，${message}`
+        },
+      },
+    )
+    if (!assistantMessage.content) {
+      assistantMessage.content = '这次没有生成有效回复，请换一种说法再试。'
+    }
+    if (cartChanged) await cartStore.fetch()
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : '请求失败了，请稍后再试。'
+    assistantMessage.content = assistantMessage.content
+      ? `${assistantMessage.content}\n\n（连接中断：${reason}）`
+      : `抱歉，${reason}`
   } finally {
+    assistantMessage.streaming = false
     sending.value = false
     await scrollToBottom()
   }

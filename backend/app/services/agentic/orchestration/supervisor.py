@@ -801,8 +801,14 @@ class Supervisor:
     async def _run_search_agent(self, context: AgentContext) -> AgentResult:
         """房源搜索（SearchAgent 独立处理，无 AgentService 依赖）。"""
         from app.services.agentic.agents.search_agent import SearchAgent
+        from app.services.agentic.query_understanding import understand_query
         try:
             agent = SearchAgent(session=self.session)
+            context.extra["query_understanding"] = await understand_query(
+                context.user_message,
+                context.filters or {},
+            )
+            context.extra.setdefault("stage", "narrow")
             return await agent.handle(context)
         except Exception as exc:
             logger.exception("search_agent 失败")
@@ -919,10 +925,17 @@ class Supervisor:
             if agent_name == "search_agent":
                 try:
                     from app.services.agentic.agents.search_agent import SearchAgent
+                    from app.services.agentic.query_understanding import understand_query
                     agent = SearchAgent(session=self.session)
+                    understanding = await understand_query(
+                        context.user_message,
+                        context.filters or {},
+                    )
                     structured = await agent.search(
                         message=context.user_message,
                         filters=context.filters,
+                        understanding=understanding,
+                        stage=str(context.extra.get("stage") or "narrow"),
                     )
                     react_data = {
                         "recommendations": structured.get("recommendations", []),

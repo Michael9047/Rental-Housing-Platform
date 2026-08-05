@@ -7,17 +7,14 @@
         <span>智能租房</span>
         <el-tag v-if="!aiAvailable" size="small" type="warning">AI 暂不可用</el-tag>
       </div>
-      <div class="chat-content-actions">
-        <el-radio-group
-          v-model="agentMode"
-          size="small"
-          class="mode-switcher"
-        >
-          <el-radio-button value="auto">🤖 智能</el-radio-button>
-          <el-radio-button value="default">⚡ 快速</el-radio-button>
-          <el-radio-button value="handoff">🧠 深度</el-radio-button>
-        </el-radio-group>
-      </div>
+    </div>
+
+    <!-- 当前会话 Memory：让用户知道系统记住了什么，也便于发现理解偏差 -->
+    <div v-if="latestStateSummary?.chips.length" class="memory-bar">
+      <span class="memory-label">已记住</span>
+      <span v-for="chip in latestStateSummary.chips" :key="chip.key" class="memory-chip">
+        {{ chip.label }}
+      </span>
     </div>
 
     <!-- ═══ 消息列表 ═══ -->
@@ -31,10 +28,20 @@
       <div v-for="(msg, i) in messages" :key="i" class="msg-block">
         <!-- 消息气泡 -->
         <div class="chat-bubble-row" :class="msg.role">
-          <div class="chat-bubble" :class="msg.role">{{ msg.content }}</div>
+          <div class="chat-bubble" :class="msg.role">
+            {{ msg.content || (msg.streaming ? '正在理解你的需求…' : '') }}
+          </div>
         </div>
 
-        <!-- 专家模式：思考步骤 -->
+        <!-- Query Rewrite：只展示“系统如何理解”，不展示模型思维链 -->
+        <div
+          v-if="msg.role === 'assistant' && msg.queryRewrite && msg.queryRewrite.rewritten !== msg.queryRewrite.original"
+          class="query-rewrite"
+        >
+          <span>理解为：</span>{{ msg.queryRewrite.rewritten }}
+        </div>
+
+        <!-- 可验证处理步骤：只展示动作摘要，不展示模型思维链 -->
         <div
           v-if="msg.role === 'assistant' && msg.thinkingSteps && msg.thinkingSteps.length"
           class="thinking-panel"
@@ -44,7 +51,7 @@
               <template #title>
                 <div class="thinking-title">
                   <el-icon :size="14" color="#409eff"><Loading /></el-icon>
-                  <span>分析过程（{{ msg.thinkingSteps.filter(s => s.status === 'success').length }}/{{ msg.thinkingSteps.length }} 步完成）</span>
+                  <span>处理过程（{{ msg.thinkingSteps.filter(s => s.status === 'success').length }}/{{ msg.thinkingSteps.length }} 步完成）</span>
                 </div>
               </template>
               <div class="thinking-steps">
@@ -65,6 +72,14 @@
               </div>
             </el-collapse-item>
           </el-collapse>
+        </div>
+
+        <!-- Grounded Answer 来源 -->
+        <div v-if="msg.role === 'assistant' && msg.sources?.length" class="source-row">
+          <span class="source-label">数据依据</span>
+          <span v-for="source in msg.sources" :key="source.label" class="source-chip">
+            <span class="source-dot" />{{ source.label }}
+          </span>
         </div>
 
         <!-- 深链按钮 + 快捷追问 chips -->
@@ -97,7 +112,7 @@
           class="rec-carousel-wrap"
         >
           <div class="rec-carousel-head">
-            <span>为你找到 {{ msg.recommendations.length }} 套推荐</span>
+            <span>为你找到 {{ msg.allRecommendations?.length || msg.recommendations.length }} 套，先看前 {{ msg.recommendations.length }} 套</span>
             <el-tag v-if="msg.aiAvailable === false" size="small" type="warning">
               AI 分析暂不可用
             </el-tag>
@@ -105,13 +120,14 @@
           </div>
           <div class="rec-carousel">
             <div
-              v-for="rec in msg.recommendations"
+              v-for="(rec, recIndex) in msg.recommendations"
               :key="rec.property_id"
               class="rec-card"
               :class="{ selected: isSelected(rec.property_id) }"
               @click="goDetail(rec.property_id)"
             >
               <div class="rec-card-img">
+                <span class="rec-rank">{{ rec.rank || recIndex + 1 }}</span>
                 <img
                   v-if="imageUrl(rec.property)"
                   :src="imageUrl(rec.property)!"
@@ -125,8 +141,11 @@
                 <div class="rec-card-title" :title="rec.property.title">
                   {{ rec.property.title }}
                 </div>
+                <div v-if="rec.final_score" class="rec-score">
+                  匹配度 {{ Math.round(rec.final_score) }}
+                </div>
                 <div class="rec-card-tags">
-                  <el-tag size="small" type="info">{{ typeLabels[rec.property.property_type] }}</el-tag>
+                  <el-tag size="small" type="info">{{ propertyTypeLabel(rec.property.property_type) }}</el-tag>
                   <el-tag size="small">{{ rec.property.bedrooms }}室{{ rec.property.bathrooms }}卫</el-tag>
                   <el-tag v-if="rec.property.area_sqm" size="small" type="info">
                     {{ rec.property.area_sqm }}㎡
@@ -150,7 +169,9 @@
                   <span v-for="a in getCardAmenities(rec.property).slice(0, 4)" :key="a" class="amenity-dot">{{ a }}</span>
                 </div>
                 <div class="rec-card-foot">
-                  <span class="rec-card-price">¥{{ rec.property.price_monthly }}<i>/月</i></span>
+                  <span class="rec-card-price">
+                    {{ formatRent(rec.property) }}<i v-if="rec.property.price_monthly != null">/月</i>
+                  </span>
                 </div>
                 <div class="rec-card-acts">
                   <el-button
@@ -165,11 +186,22 @@
             </div>
           </div>
         </div>
-      </div>
 
-      <div v-if="sending" class="chat-bubble-row assistant">
-        <div class="chat-bubble assistant typing">
-          {{ agentMode === 'handoff' ? '多 Agent 深度分析中，请稍候…' : agentMode === 'auto' ? '智能分析中，请稍候…' : '正在思考…' }}
+        <!-- 渐进搜索与约束消融建议 -->
+        <div
+          v-if="msg.role === 'assistant' && msg.guidedOptions?.length"
+          class="guided-row"
+        >
+          <span class="guided-label">继续调整</span>
+          <button
+            v-for="option in msg.guidedOptions"
+            :key="option.kind + option.label"
+            class="guided-chip"
+            :disabled="sending"
+            @click="handleGuidedOption(option)"
+          >
+            <span v-if="option.icon">{{ option.icon }}</span>{{ option.label }}
+          </button>
         </div>
       </div>
     </div>
@@ -247,7 +279,9 @@
               </div>
               <div class="cart-item-info">
                 <div class="cart-item-title" :title="item.property.title">{{ item.property.title }}</div>
-                <div class="cart-item-meta">{{ item.property.district }} · ¥{{ item.property.price_monthly }}/月</div>
+                <div class="cart-item-meta">
+                  {{ item.property.district }} · {{ formatRent(item.property) }}<template v-if="item.property.price_monthly != null">/月</template>
+                </div>
                 <div v-if="item.reason" class="cart-item-reason" :title="item.reason">{{ item.reason }}</div>
               </div>
               <el-button
@@ -312,7 +346,7 @@
           </el-table-column>
           <el-table-column label="月租" width="95">
             <template #default="{ row }">
-              <span v-if="row.property">¥{{ row.property.price_monthly }}</span>
+              <span v-if="row.property">{{ formatRent(row.property) }}</span>
               <span v-else>—</span>
             </template>
           </el-table-column>
@@ -385,11 +419,12 @@ import { agentService } from '@/services/agent'
 import { useAgentChatStore } from '@/stores/agentChat'
 import { useCartStore } from '@/stores/cart'
 import type {
-  AgentChatMessage,
   AgentRecommendation,
+  AgentStreamMeta,
   CompareItem,
   ComparePriority,
   CompareResponse,
+  GuidedOption,
   ThinkingStep,
 } from '@/types/agent'
 import type { PropertySearchResult, PropertyType } from '@/types/property'
@@ -409,9 +444,6 @@ const typeLabels: Record<PropertyType, string> = {
   house: '别墅',
 }
 
-// ── 模式：auto=智能自动, default=快速(linear), handoff=深度(多Agent交接) ──
-const agentMode = ref<string>('auto')
-
 // ── 状态 ────────────────────────────────────────────────────────
 const inputText = ref('')
 const sending = ref(false)
@@ -421,6 +453,15 @@ const compareResult = ref<CompareResponse | null>(null)
 const comparePriority = ref<ComparePriority>('balanced')
 const lastCompareIds = ref<number[] | undefined>(undefined)
 const chatListRef = ref<HTMLElement | null>(null)
+let scrollFrame: number | null = null
+
+const latestStateSummary = computed(() => {
+  for (let index = messages.value.length - 1; index >= 0; index -= 1) {
+    const summary = messages.value[index].stateSummary
+    if (summary) return summary
+  }
+  return null
+})
 
 // 对比选择
 const selectedIds = ref<number[]>([])
@@ -490,24 +531,30 @@ function imageUrl(property: PropertySearchResult): string | null {
   return getImageUrl(primary.filename)
 }
 
-/** 从房源属性推断设施特点标签 */
+/** 只展示后端返回的真实设施字段，不按价格或户型猜测。 */
 function getCardAmenities(property: PropertySearchResult): string[] {
-  const tags: string[] = []
-  const p = property
-  if (p.property_type === '1-bed' || p.property_type === '2-bed') { tags.push('电梯'); tags.push('WiFi') }
-  else if (p.property_type === 'studio') { tags.push('独立卫浴'); tags.push('WiFi') }
-  else if (p.property_type === 'house') { tags.push('车位'); tags.push('全屋家电') }
-  else if (p.property_type === 'shared') { tags.push('包水电'); tags.push('WiFi') }
-  if ((p.area_sqm ?? 0) > 60) tags.push('阳台')
-  if (p.bedrooms >= 2) tags.push('近地铁')
-  if (p.price_monthly < 3000) tags.push('高性价比')
-  else if (p.price_monthly > 8000) tags.push('精装修')
-  if (p.description) {
-    if (/短租/.test(p.description)) tags.push('可短租')
-    if (/宠物|猫|狗/.test(p.description)) tags.push('可养宠物')
-    if (/暖气/.test(p.description)) tags.push('暖气')
+  return [...new Set((property.amenities || []).filter(Boolean))]
+}
+
+function propertyTypeLabel(propertyType: string | null | undefined): string {
+  if (!propertyType) return '户型待确认'
+  return typeLabels[propertyType as PropertyType] || propertyType
+}
+
+function formatRent(property: PropertySearchResult): string {
+  if (property.price_monthly == null) return '价格待确认'
+  const symbols: Record<string, string> = {
+    CNY: '¥',
+    GBP: '£',
+    SGD: 'S$',
+    USD: '$',
+    HKD: 'HK$',
   }
-  return [...new Set(tags)]
+  const currency = (property.currency || 'CNY').toUpperCase()
+  const amount = Number(property.price_monthly).toLocaleString('zh-CN', {
+    maximumFractionDigits: 0,
+  })
+  return `${symbols[currency] || `${currency} `}${amount}`
 }
 
 function inCart(propertyId: number): boolean {
@@ -531,8 +578,16 @@ async function scrollChatToBottom() {
   }
 }
 
+function scheduleScrollToBottom() {
+  if (scrollFrame !== null) return
+  scrollFrame = window.requestAnimationFrame(() => {
+    scrollFrame = null
+    void scrollChatToBottom()
+  })
+}
+
 // ── 发送消息 ────────────────────────────────────────────────────
-async function handleSend(preset?: string) {
+async function handleSend(preset?: string, filterPatch?: Record<string, unknown> | null) {
   const text = (preset ?? inputText.value).trim()
   if (!text || sending.value) return
 
@@ -547,36 +602,76 @@ async function handleSend(preset?: string) {
   }
 
   messages.value.push({ role: 'user', content: text })
+  const assistantMessage = agentChat.appendStreamingAssistant({
+    thinkingSteps: [],
+  })
   if (!preset) inputText.value = ''
   sending.value = true
   await scrollChatToBottom()
-
-  const mode = agentMode.value === 'auto' ? null : agentMode.value
+  let cartChanged = false
 
   try {
-    const resp = await agentService.sendMessage(sessionId.value!, {
-      message: text,
-      mode,
-    })
-    messages.value.push({
-      role: 'assistant',
-      content: resp.reply,
-      recommendations: resp.intent === 'recommend' ? resp.recommendations : undefined,
-      aiAvailable: resp.ai_available,
-      quickReplies: resp.quick_replies,
-      links: resp.links,
-      thinkingSteps: (resp as any).thinking_steps || [],
-    } as AgentChatMessage)
-    aiAvailable.value = resp.ai_available
-    if (resp.cart_changed) {
+    await agentService.sendMessageStream(
+      sessionId.value!,
+      {
+        message: text,
+        filters: (filterPatch || undefined) as any,
+        mode: 'auto',
+      },
+      {
+        onToken(token) {
+          assistantMessage.content += token
+          scheduleScrollToBottom()
+        },
+        onMeta(meta: AgentStreamMeta) {
+          if (meta.thinking_steps) assistantMessage.thinkingSteps = meta.thinking_steps
+          if (meta.query_rewrite) assistantMessage.queryRewrite = meta.query_rewrite
+          if (meta.sources) assistantMessage.sources = meta.sources
+          if (meta.state_summary) assistantMessage.stateSummary = meta.state_summary
+          if (meta.guided_options) assistantMessage.guidedOptions = meta.guided_options
+          if (meta.quick_replies) assistantMessage.quickReplies = meta.quick_replies
+          if (meta.links) assistantMessage.links = meta.links
+          if (meta.ai_available !== undefined) {
+            assistantMessage.aiAvailable = meta.ai_available
+            aiAvailable.value = meta.ai_available
+          }
+          if (meta.recommendations) {
+            assistantMessage.allRecommendations = meta.recommendations
+          }
+          if (meta.top_picks?.length) {
+            assistantMessage.topPicks = meta.top_picks
+            assistantMessage.recommendations = meta.top_picks
+          } else if (meta.recommendations?.length) {
+            assistantMessage.recommendations = meta.recommendations.slice(0, 3)
+          }
+          if (meta.cart_changed) cartChanged = true
+          scheduleScrollToBottom()
+        },
+        onError(message) {
+          if (!assistantMessage.content) assistantMessage.content = `抱歉，${message}`
+        },
+      },
+    )
+    if (!assistantMessage.content) {
+      assistantMessage.content = '这次没有生成有效回复，请换一种说法再试。'
+    }
+    if (cartChanged) {
       await cartStore.fetch()
     }
-  } catch {
-    messages.value.push({ role: 'assistant', content: '抱歉，请求失败了，请稍后再试。' })
+  } catch (error) {
+    const errorText = error instanceof Error ? error.message : '请求失败了，请稍后再试。'
+    assistantMessage.content = assistantMessage.content
+      ? `${assistantMessage.content}\n\n（连接中断：${errorText}）`
+      : `抱歉，${errorText}`
   } finally {
+    assistantMessage.streaming = false
     sending.value = false
     await scrollChatToBottom()
   }
+}
+
+function handleGuidedOption(option: GuidedOption) {
+  void handleSend(option.message || option.label, option.filter_patch)
 }
 
 async function handleToggleCart(rec: AgentRecommendation) {
@@ -681,6 +776,7 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   window.removeEventListener('resize', onResize)
   sidebarObserver?.disconnect()
+  if (scrollFrame !== null) window.cancelAnimationFrame(scrollFrame)
 })
 </script>
 
@@ -716,6 +812,31 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+.memory-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin: -2px 0 10px;
+  padding: 9px 12px;
+  border: 1px solid #e7edf5;
+  border-radius: 10px;
+  background: #f7faff;
+}
+
+.memory-label {
+  color: #7a8798;
+  font-size: 12px;
+}
+
+.memory-chip {
+  padding: 3px 8px;
+  border-radius: 999px;
+  color: #315b86;
+  background: #eaf3ff;
+  font-size: 12px;
 }
 
 .mode-label {
@@ -785,6 +906,55 @@ onBeforeUnmount(() => {
   color: #303133;
   border-bottom-left-radius: 2px;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+}
+
+.query-rewrite {
+  width: fit-content;
+  max-width: min(720px, 88%);
+  margin: 6px 0 0 42px;
+  padding: 6px 10px;
+  border-left: 2px solid #a8c8ee;
+  color: #738195;
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.query-rewrite span {
+  color: #4d6683;
+  font-weight: 600;
+}
+
+.source-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin: 8px 0 0 42px;
+}
+
+.source-label,
+.guided-label {
+  color: #9099a8;
+  font-size: 12px;
+}
+
+.source-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px;
+  border: 1px solid #dfe8df;
+  border-radius: 999px;
+  color: #58725b;
+  background: #f5faf5;
+  font-size: 11px;
+}
+
+.source-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #67c23a;
 }
 
 .chat-bubble.typing {
@@ -907,6 +1077,8 @@ onBeforeUnmount(() => {
 
 /* ── 推荐横条 ─────────────────────── */
 .rec-carousel-wrap {
+  /* 推荐卡片在所有 Agent 回复中都先于文字展示。 */
+  order: -1;
   background: #fafbfc;
   border: 1px solid #eef0f3;
   border-radius: 10px;
@@ -975,6 +1147,22 @@ onBeforeUnmount(() => {
   background: #f5f7fa;
 }
 
+.rec-rank {
+  position: absolute;
+  z-index: 2;
+  top: 7px;
+  left: 7px;
+  display: grid;
+  width: 23px;
+  height: 23px;
+  place-items: center;
+  border-radius: 50%;
+  color: #fff;
+  background: rgb(32 45 64 / 82%);
+  font-size: 12px;
+  font-weight: 700;
+}
+
 .rec-card-img img {
   width: 100%;
   height: 100%;
@@ -1019,6 +1207,50 @@ onBeforeUnmount(() => {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.rec-score {
+  width: fit-content;
+  margin-top: 5px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  color: #33775a;
+  background: #edf8f2;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.guided-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 10px 0 0 42px;
+}
+
+.guided-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 10px;
+  border: 1px solid #d7e4f5;
+  border-radius: 999px;
+  color: #356691;
+  background: #fff;
+  font-size: 12px;
+  cursor: pointer;
+  transition: 0.18s ease;
+}
+
+.guided-chip:hover:not(:disabled) {
+  border-color: #8fb8e7;
+  background: #f3f8ff;
+  transform: translateY(-1px);
+}
+
+.guided-chip:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
 }
 
 .rec-card-tags {

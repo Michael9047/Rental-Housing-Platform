@@ -10,7 +10,7 @@ from app.db.session import Base
 class RoomCommute(Base):
     __tablename__ = "room_commutes"
 
-    room_id: Mapped[int] = mapped_column(ForeignKey("rooms.id", ondelete="CASCADE"), primary_key=True)
+    room_id: Mapped[int] = mapped_column(ForeignKey("properties.id", ondelete="CASCADE"), primary_key=True)
     university_id: Mapped[int] = mapped_column(ForeignKey("universities.id", ondelete="CASCADE"), primary_key=True)
     transit_min: Mapped[int | None] = mapped_column(Integer, nullable=True)
     walk_min: Mapped[int | None] = mapped_column(Integer, nullable=True)

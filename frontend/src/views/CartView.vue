@@ -8,11 +8,11 @@
       </div>
       <el-button
         type="primary"
-        :icon="ChatDotRound"
+        :icon="DataAnalysis"
         :disabled="cartStore.count < 2"
         @click="goCompare"
       >
-        去推荐管家对比
+        开始综合对比
       </el-button>
     </div>
 
@@ -78,20 +78,18 @@
 import { onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import {
-  ChatDotRound,
+  DataAnalysis,
   Delete,
   LocationFilled,
   PictureFilled,
   ShoppingCart,
   Star,
 } from '@element-plus/icons-vue'
-import { useAgentChatStore } from '@/stores/agentChat'
 import { useCartStore } from '@/stores/cart'
 import type { PropertySearchResult, PropertyType } from '@/types/property'
 import { getImageUrl } from '@/utils/image'
 
 const router = useRouter()
-const agentChatStore = useAgentChatStore()
 const cartStore = useCartStore()
 
 const typeLabels: Record<PropertyType, string> = {
@@ -114,7 +112,10 @@ function goDetail(propertyId: number) {
 }
 
 function goCompare() {
-  agentChatStore.openWithQuery('帮我对比候选清单里的房源')
+  router.push({
+    name: 'compare',
+    query: { ids: cartStore.items.map((item) => item.property_id).join(',') },
+  })
 }
 
 async function handleRemove(propertyId: number) {

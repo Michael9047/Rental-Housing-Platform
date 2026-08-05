@@ -1,3 +1,4 @@
+"""对话模型 —— 区分普通客服聊天与租房 Agent 会话。"""
 import enum
 import uuid
 
@@ -31,6 +32,11 @@ class ChatSession(TimestampMixin, Base):
         String(64), unique=True, index=True, default=lambda: uuid.uuid4().hex
     )
     title: Mapped[str | None] = mapped_column(String(200))
+    # 线上旧库使用 ``kind``；Python 侧继续保留 session_kind 名称，
+    # 这样无需迁移也能区分普通聊天与租房 Agent 会话。
+    session_kind: Mapped[str] = mapped_column(
+        "kind", String(32), default="chat", server_default="chat", nullable=False, index=True
+    )
     status: Mapped[ChatSessionStatus] = mapped_column(
         Enum(ChatSessionStatus, name="chat_session_status"),
         default=ChatSessionStatus.active,

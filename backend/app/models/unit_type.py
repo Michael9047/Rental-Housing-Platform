@@ -3,7 +3,7 @@ import enum
 from datetime import date, datetime
 from decimal import Decimal
 
-from sqlalchemy import Date, DateTime, Enum, ForeignKey, Integer, Numeric, String, Text, text
+from sqlalchemy import JSON, Date, DateTime, Enum, ForeignKey, Integer, Numeric, String, Text, text
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from pgvector.sqlalchemy import Vector
@@ -59,11 +59,17 @@ class UnitType(TimestampMixin, Base):
 
     # ── 楼层差异化加价 ──
     # [{"floor_min": 1, "floor_max": 5, "adjustment": 0}, {"floor_min": 6, "floor_max": 10, "adjustment": 200}]
-    floor_pricing: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    floor_pricing: Mapped[dict | None] = mapped_column(
+        JSON().with_variant(JSONB, "postgresql"), nullable=True
+    )
 
     # ── 配置 ──
-    amenities: Mapped[list[str] | None] = mapped_column(ARRAY(String(50)), nullable=True)
-    image_urls: Mapped[list[str] | None] = mapped_column(ARRAY(String(500)), nullable=True)
+    amenities: Mapped[list[str] | None] = mapped_column(
+        JSON().with_variant(ARRAY(String(50)), "postgresql"), nullable=True
+    )
+    image_urls: Mapped[list[str] | None] = mapped_column(
+        JSON().with_variant(ARRAY(String(500)), "postgresql"), nullable=True
+    )
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     available_from: Mapped[date | None] = mapped_column(Date, nullable=True)
     min_stay_months: Mapped[int] = mapped_column(Integer, default=3, nullable=False)

@@ -21,9 +21,11 @@ from app.models.poi import PropertyPOI
 from app.models.property import Property
 from app.models.property_image import PropertyImage
 from app.models.review import Review
+from app.models.room_commute import RoomCommute
 from app.models.saved_search import SavedSearch
 from app.models.user import User
 from app.models.user_favorite import UserFavorite
+from app.models.university import University
 
 __all__ = [
     "AdImpression", "Advertisement", "AuditLog", "Base", "Booking",
@@ -31,5 +33,5 @@ __all__ = [
     "Institute", "MarketplaceComment", "MarketplaceItem", "MarketplaceItemImage",
     "MarketplaceMessage", "MarketplaceReport", "NewsArticle", "Notification",
     "Payment", "Room", "PropertyImage", "PropertyPOI", "Review",
-    "SavedSearch", "User", "UserFavorite",
+    "RoomCommute", "SavedSearch", "University", "User", "UserFavorite",
 ]

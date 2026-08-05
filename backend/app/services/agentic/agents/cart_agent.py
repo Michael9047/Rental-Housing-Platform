@@ -8,7 +8,6 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.agent_cart import AgentCart, AgentCartItem
-from app.models.property import Property
 
 
 class CartService:
@@ -36,7 +35,9 @@ class CartService:
         self, user_id: int, property_id: int, reason: str | None = None
     ) -> AgentCartItem:
         """加入购物车；重复添加返回已有项。"""
-        prop = await self.session.get(Property, property_id)
+        from app.services.property_service import PropertyService
+
+        prop = await PropertyService(self.session).get(property_id)
         if prop is None:
             raise ValueError("房源不存在")
 

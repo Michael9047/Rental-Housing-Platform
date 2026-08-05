@@ -8,7 +8,7 @@ from datetime import date, datetime, timezone
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import cast, func, select, String, text
+from sqlalchemy import cast, func, or_, select, String, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.property import VALID_STATUS_TRANSITIONS, DepositType, Property, PropertyStatus, PropertyType
@@ -77,9 +77,117 @@ class PropertyService:
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
 
+    @staticmethod
+    def _legacy_read_options(*, existing_columns: set[str] | None = None) -> tuple:
+        """只读取旧库真实存在的房源列，按实际表结构补充兼容字段。"""
+        from sqlalchemy.orm import load_only, selectinload
+
+        property_columns = [
+            Property.id,
+            Property.landlord_id,
+            Property.room_number,
+            Property.institute_id,
+            Property.title,
+            Property.address,
+            Property.district,
+            Property.price_monthly,
+            Property.area_sqm,
+            Property.bedrooms,
+            Property.bathrooms,
+            Property.property_type,
+            Property.deposit_amount,
+            Property.deposit_type,
+            Property.service_fee_rate,
+            Property.description,
+            Property.country,
+            Property.latitude,
+            Property.longitude,
+            Property.rent_type,
+            Property.rental_rules,
+            Property.amenities,
+            Property.embedding,
+            Property.floor,
+            Property.available_from,
+            Property.status,
+            Property.min_stay_months,
+            Property.min_lease_months,
+            Property.max_lease_months,
+            Property.version,
+            Property.deleted_at,
+            Property.created_at,
+            Property.updated_at,
+        ]
+        optional_columns = {
+            "unit_type_id": Property.unit_type_id,
+            "institute_name": Property.institute_name,
+            "institute_amenities": Property.institute_amenities,
+            "female_only": Property.female_only,
+            "safety_score": Property.safety_score,
+            "currency": Property.currency,
+            "building_block": Property.building_block,
+            "special_discount": Property.special_discount,
+            "city": Property.city,
+        }
+        for column_name, attribute in optional_columns.items():
+            if existing_columns and column_name in existing_columns:
+                property_columns.append(attribute)
+
+        return (
+            load_only(*property_columns),
+            selectinload(Property.images),
+        )
+
+    @staticmethod
+    def _apply_legacy_defaults(property_obj: Property) -> Property:
+        """为旧库缺失的新字段填只读默认值，禁止触发延迟查列。"""
+        from sqlalchemy.orm.attributes import set_committed_value
+
+        amenities = list(getattr(property_obj, "amenities", None) or [])
+        defaults = {
+            "unit_type_id": None,
+            "institute_name": None,
+            "institute_amenities": json.dumps(amenities, ensure_ascii=False),
+            "female_only": False,
+            "safety_score": None,
+            "currency": "CNY",
+            "building_block": None,
+            "special_discount": None,
+            "city": property_obj.district,
+        }
+        for field_name, value in defaults.items():
+            if field_name not in property_obj.__dict__:
+                set_committed_value(property_obj, field_name, value)
+        return property_obj
+
+    @staticmethod
+    def _normalize_room_write_payload(payload: dict[str, Any]) -> dict[str, Any]:
+        """把兼容接口字段映射到当前房间表，避免旧字段直接传给 ORM。"""
+        normalized = dict(payload)
+        amenities = normalized.pop("amenities", None)
+        special_offer = normalized.pop("special_offer", None)
+
+        if amenities is not None:
+            normalized["institute_amenities"] = json.dumps(
+                amenities,
+                ensure_ascii=False,
+            )
+        if special_offer is not None:
+            normalized["special_discount"] = str(special_offer)
+
+        column_names = set(Property.__table__.columns.keys())
+        unsupported = sorted(set(normalized) - column_names)
+        if unsupported:
+            logger.warning("忽略房间模型不支持的写入字段: %s", unsupported)
+        return {
+            key: value
+            for key, value in normalized.items()
+            if key in column_names
+        }
+
     async def create(self, property_in: PropertyCreate) -> Property:
         dumped = property_in.model_dump()
         image_urls = dumped.pop("image_urls", None) or []
+        dumped = self._normalize_room_write_payload(dumped)
         logger.info("Creating property: institute_id=%s, keys=%s", dumped.get('institute_id'), list(dumped.keys()))
 
         # AI风险评估
@@ -127,24 +235,35 @@ class PropertyService:
                            "property_address": property_obj.address,
                            "institute_name": getattr(property_obj, "institute_name", None)})
 
+        # 审计写入会提交同一会话；返回前刷新标量字段，避免异步响应序列化触发懒加载。
+        await self.session.refresh(property_obj)
+
         return property_obj
 
     async def get(self, property_id: int) -> Property | None:
-        from sqlalchemy.orm import selectinload
         from app.models.poi import PropertyPOI
+        from sqlalchemy.orm import load_only
         stmt = (select(Property)
                 .where(Property.id == property_id, Property.deleted_at.is_(None))
-                .options(
-                    selectinload(Property.institute),
-                    selectinload(Property.images),
-                ))
+                .options(*self._legacy_read_options()))
         result = await self.session.execute(stmt)
         property_obj = result.scalars().first()
         if property_obj is not None:
-            if property_obj.institute:
-                object.__setattr__(property_obj, 'institute_name', property_obj.institute.name)
+            self._apply_legacy_defaults(property_obj)
             poi_result = await self.session.execute(
-                select(PropertyPOI).where(PropertyPOI.property_id == property_id)
+                select(PropertyPOI)
+                .options(load_only(
+                    PropertyPOI.id,
+                    PropertyPOI.property_id,
+                    PropertyPOI.content,
+                    PropertyPOI.poi_data,
+                    PropertyPOI.generated_at,
+                    PropertyPOI.reviewed,
+                    PropertyPOI.map_poi_data,
+                    PropertyPOI.created_at,
+                    PropertyPOI.updated_at,
+                ))
+                .where(PropertyPOI.property_id == property_id)
             )
             poi = poi_result.scalars().first()
             if poi:
@@ -155,6 +274,7 @@ class PropertyService:
         self,
         *,
         district: str | None = None,
+        country: str | None = None,
         status: str | None = None,
         landlord_id: int | None = None,
         keyword: str | None = None,
@@ -176,6 +296,8 @@ class PropertyService:
 
         if district:
             clauses.append(Property.district.ilike(f"%{district}%"))
+        if country:
+            clauses.append(Property.country.ilike(f"%{country}%"))
         if near_lat is not None and near_lng is not None and near_distance_km is not None:
             # Bounding box 近似预筛选（~111km/度纬度, ~111*cos(lat)km/度经度）
             import math
@@ -186,9 +308,9 @@ class PropertyService:
             clauses.append(Property.longitude >= near_lng - lng_delta)
             clauses.append(Property.longitude <= near_lng + lng_delta)
         if status:
-            clauses.append(Property.status == status)
+            clauses.append(cast(Property.status, String) == status)
         elif landlord_id is None and not include_deleted:
-            clauses.append(Property.status == "available")
+            clauses.append(cast(Property.status, String) == "available")
         if landlord_id is not None:
             clauses.append(Property.landlord_id == landlord_id)
         if keyword and keyword.strip():
@@ -199,7 +321,7 @@ class PropertyService:
                 Property.address.ilike(kw),
             ))
         if property_type:
-            clauses.append(Property.property_type == property_type)
+            clauses.append(cast(Property.property_type, String) == property_type)
         if price_min is not None:
             clauses.append(Property.price_monthly >= price_min)
         if price_max is not None:
@@ -215,6 +337,7 @@ class PropertyService:
         skip: int = 0,
         limit: int = 20,
         district: str | None = None,
+        country: str | None = None,
         status: str | None = None,
         landlord_id: int | None = None,
         keyword: str | None = None,
@@ -228,10 +351,8 @@ class PropertyService:
         include_deleted: bool = False,
     ) -> dict:
         """返回分页结果: {items, total, page, page_size, total_pages}"""
-        from sqlalchemy.orm import selectinload
-
         filter_clauses = self._build_filters(
-            district=district, status=status, landlord_id=landlord_id,
+            district=district, country=country, status=status, landlord_id=landlord_id,
             keyword=keyword, property_type=property_type,
             price_min=price_min, price_max=price_max,
             institute_id=institute_id,
@@ -249,7 +370,7 @@ class PropertyService:
         # Data query
         stmt = (
             select(Property)
-            .options(selectinload(Property.institute))
+            .options(*self._legacy_read_options())
             .order_by(Property.created_at.desc())
             .offset(skip)
             .limit(limit)
@@ -258,10 +379,7 @@ class PropertyService:
             stmt = stmt.where(clause)
 
         result = await self.session.scalars(stmt)
-        properties = list(result)
-        for p in properties:
-            if p.institute and p.institute.name:
-                object.__setattr__(p, 'institute_name', p.institute.name)
+        properties = [self._apply_legacy_defaults(item) for item in result]
 
         page = (skip // limit) + 1 if limit > 0 else 1
         return {
@@ -272,17 +390,31 @@ class PropertyService:
             "total_pages": max(1, (total + limit - 1) // limit) if limit > 0 else 1,
         }
 
-    # 房型值映射（前端 → 后端枚举）
-    _ROOM_TYPE_MAP: dict[str, str] = {
-        "ensuite": "ensuite", "studio": "studio",
-        "1bed": "one_bed", "2bed": "two_bed",
-        "3bed+": "three_bed_plus", "shared": "shared",
-    }
+    @staticmethod
+    def _room_type_filter_clause(room_type: str):
+        """按旧库 property_type 枚举生成房型条件。"""
+        normalized = str(room_type).strip().lower().replace("_", "-")
+        if normalized in {"studio", "单间", "开间"}:
+            legacy_values = ["studio"]
+        elif normalized in {"ensuite", "独卫"}:
+            legacy_values = ["studio", "one_bed", "shared"]
+        elif normalized in {"1bed", "1-bed", "one-bed"}:
+            legacy_values = ["one_bed"]
+        elif normalized in {"2bed", "2-bed", "two-bed"}:
+            legacy_values = ["two_bed"]
+        elif normalized in {"3bed+", "3-bed+", "three-bed-plus"}:
+            return Property.bedrooms >= 3
+        elif normalized in {"shared", "合租"}:
+            legacy_values = ["shared"]
+        else:
+            legacy_values = [normalized]
+        return cast(Property.property_type, String).in_(legacy_values)
 
     async def search_unit_types(
         self,
         *,
         district: str | None = None,
+        country: str | None = None,
         price_min: Decimal | None = None,
         price_max: Decimal | None = None,
         bedrooms: int | None = None,
@@ -302,16 +434,35 @@ class PropertyService:
         返回 [{unit_type, institute, available_rooms, min_price, embedding_score}, ...]
         embedding_score ∈ [0,1]（无向量/该行未生成 embedding 时为 None）。
         """
-        from sqlalchemy.orm import selectinload, defer
+        from sqlalchemy import inspect
+        connection = await self.session.connection()
+        has_unit_types = await connection.run_sync(
+            lambda sync_connection: inspect(sync_connection).has_table("unit_types")
+        )
+        if not has_unit_types:
+            return []
+
+        from sqlalchemy.orm import defer
+        from sqlalchemy.orm.attributes import set_committed_value
         from app.models.unit_type import UnitType, UnitTypeStatus
         from app.models.institute import Institute, InstituteStatus
         from app.models.property import Room, RoomStatus
 
+        available_count_expr = func.count(Room.id).filter(
+            Room.status == RoomStatus.available.value
+        )
+        representative_property_expr = func.min(Room.id).filter(
+            Room.status == RoomStatus.available.value
+        )
+        min_available_price_expr = func.min(Room.price_monthly).filter(
+            Room.status == RoomStatus.available.value
+        )
         select_cols = [
             UnitType,
             Institute,
-            func.count(Room.id).filter(Room.status == RoomStatus.available.value).label("available_rooms"),
-            func.min(Room.price_monthly).label("min_price"),
+            available_count_expr.label("available_rooms"),
+            min_available_price_expr.label("min_price"),
+            representative_property_expr.label("representative_property_id"),
         ]
         # 语义排序下推 DB：cosine 距离与 HNSW(vector_cosine_ops) 索引一致
         distance_expr = None
@@ -333,13 +484,54 @@ class PropertyService:
         )
 
         if district:
-            stmt = stmt.where(Institute.district.ilike(f"%{district}%"))
+            district_pattern = f"%{district}%"
+            stmt = stmt.where(or_(
+                Institute.district.ilike(district_pattern),
+                Institute.city.ilike(district_pattern),
+                Institute.country.ilike(district_pattern),
+                Institute.name.ilike(district_pattern),
+                Institute.name_cn.ilike(district_pattern),
+            ))
+        if country:
+            normalized_country = str(country).strip()
+            country_aliases = {
+                "CN": ("CN", "China", "中国"),
+                "SG": ("SG", "Singapore", "新加坡"),
+                "GB": ("GB", "UK", "United Kingdom", "英国"),
+                "UK": ("GB", "UK", "United Kingdom", "英国"),
+                "US": ("US", "USA", "United States", "美国"),
+                "HK": ("HK", "Hong Kong", "香港"),
+            }.get(normalized_country.upper(), (normalized_country,))
+            stmt = stmt.where(or_(
+                *(Institute.country.ilike(f"%{alias}%") for alias in country_aliases)
+            ))
         if price_min is not None:
             stmt = stmt.where(UnitType.base_rent >= price_min)
         if price_max is not None:
             stmt = stmt.where(UnitType.base_rent <= price_max)
         if bedrooms is not None:
             stmt = stmt.where(UnitType.bedrooms == bedrooms)
+        if property_type:
+            room_type = str(property_type).lower().replace("_", "-")
+            if room_type == "studio":
+                stmt = stmt.where(or_(
+                    UnitType.bedrooms == 0,
+                    UnitType.name.ilike("%studio%"),
+                    UnitType.name.ilike("%单间%"),
+                    UnitType.name.ilike("%开间%"),
+                ))
+            elif room_type in {"1-bed", "1bed", "one-bed"}:
+                stmt = stmt.where(UnitType.bedrooms == 1)
+            elif room_type in {"2-bed", "2bed", "two-bed"}:
+                stmt = stmt.where(UnitType.bedrooms == 2)
+            elif room_type in {"3-bed+", "3bed+", "three-bed-plus"}:
+                stmt = stmt.where(UnitType.bedrooms >= 3)
+            elif room_type in {"shared", "合租"}:
+                stmt = stmt.where(or_(
+                    UnitType.name.ilike("%shared%"),
+                    UnitType.name.ilike("%合租%"),
+                    UnitType.name.ilike("%床位%"),
+                ))
         if female_only is not None:
             stmt = stmt.where(Institute.female_only == female_only)
         # 大学距离 bounding box
@@ -355,30 +547,39 @@ class PropertyService:
             )
 
         # 排序：有查询向量时按语义距离升序（最相似在前）；否则按租金升序
+        stmt = stmt.group_by(UnitType.id, Institute.id).having(available_count_expr > 0)
         if distance_expr is not None:
-            stmt = stmt.group_by(UnitType.id, Institute.id).order_by(distance_expr.asc()).limit(limit)
+            stmt = stmt.order_by(distance_expr.asc().nullslast(), UnitType.base_rent.asc()).limit(limit)
         else:
-            stmt = stmt.group_by(UnitType.id, Institute.id).order_by(UnitType.base_rent.asc()).limit(limit)
+            stmt = stmt.order_by(UnitType.base_rent.asc()).limit(limit)
         result = await self.session.execute(stmt)
         rows = result.all()
-        return [
-            {
-                "unit_type": row[0],
-                "institute": row[1],
+        items: list[dict] = []
+        for row in rows:
+            unit_type, institute = row[0], row[1]
+            # 查询已 JOIN 出 Institute，显式绑定避免响应序列化时触发异步 lazy-load。
+            set_committed_value(unit_type, "institute", institute)
+            items.append({
+                "unit_type": unit_type,
+                "institute": institute,
                 "available_rooms": row[2],
-                "min_price": row[3] or row[0].base_rent,
+                "min_price": row[3] or unit_type.base_rent,
+                "_unit_type_id": int(unit_type.id),
+                "_property_id": int(row[4]),
+                "_source_kind": "unit_type",
                 # cosine 距离 ∈ [0,2] → 相似度 ∈ [0,1]（1-距离，clamp 到非负）
-                "embedding_score": (max(0.0, 1.0 - float(row[4])) if row[4] is not None else None)
-                if distance_expr is not None else None,
-            }
-            for row in rows
-        ]
+                "embedding_score": (
+                    max(0.0, 1.0 - float(row[5])) if row[5] is not None else None
+                ) if distance_expr is not None else None,
+            })
+        return items
 
     async def search(
         self,
         *,
         query: str | None = None,
         district: str | None = None,
+        country: str | None = None,
         price_min: Decimal | None = None,
         price_max: Decimal | None = None,
         bedrooms: int | None = None,
@@ -400,12 +601,11 @@ class PropertyService:
         near_distance_km: float | None = None,
         female_only: bool | None = None,
     ) -> list[tuple[Property, float | None]]:
-        from sqlalchemy.orm import selectinload
-
         # --- Cache check for non-vector searches (cacheable) ---
         if not query:
             cache_params = {
                 "district": district,
+                "country": country,
                 "price_min": str(price_min) if price_min else None,
                 "price_max": str(price_max) if price_max else None,
                 "bedrooms": bedrooms,
@@ -459,7 +659,7 @@ class PropertyService:
                 similarity_expr = Property.embedding.cosine_distance(query_vec).label("similarity")
                 stmt = (
                     select(Property, similarity_expr)
-                    .options(selectinload(Property.institute))
+                    .options(*self._legacy_read_options())
                     .where(Property.embedding.isnot(None), Property.deleted_at.is_(None))
                 )
                 stmt = stmt.order_by(similarity_expr)
@@ -467,20 +667,22 @@ class PropertyService:
                 query_vec = None  # 确保走关键词回退
                 stmt = (
                     select(Property, text("NULL AS similarity"))
-                    .options(selectinload(Property.institute))
+                    .options(*self._legacy_read_options())
                     .where(Property.deleted_at.is_(None))
                 )
                 stmt = stmt.order_by(Property.created_at.desc())
         else:
             stmt = (
                 select(Property, text("NULL AS similarity"))
-                .options(selectinload(Property.institute))
+                .options(*self._legacy_read_options())
                 .where(Property.deleted_at.is_(None))
             )
             stmt = stmt.order_by(Property.created_at.desc())
 
         if district:
             stmt = stmt.where(Property.district.ilike(f"%{district}%"))
+        if country:
+            stmt = stmt.where(Property.country.ilike(f"%{country}%"))
         if price_min is not None:
             stmt = stmt.where(Property.price_monthly >= price_min)
         if price_max is not None:
@@ -488,17 +690,19 @@ class PropertyService:
         if bedrooms is not None:
             stmt = stmt.where(Property.bedrooms == bedrooms)
         if property_type:
-            stmt = stmt.where(Property.property_type == property_type)
+            stmt = stmt.where(cast(Property.property_type, String) == property_type)
         if status:
-            stmt = stmt.where(Property.status == status)
+            stmt = stmt.where(cast(Property.status, String) == status)
 
         # ── 新增筛选条件 ──
         if institute_id is not None:
             stmt = stmt.where(Property.institute_id == institute_id)
-        if female_only is not None:
-            stmt = stmt.where(Property.female_only == female_only)
+        if female_only is True:
+            # 旧库没有性别限制字段，不能把未知数据当成满足硬条件。
+            stmt = stmt.where(text("FALSE"))
         if amenities:
-            stmt = stmt.where(Property.amenities.op("&&")(amenities))
+            for amenity in amenities:
+                stmt = stmt.where(Property.amenities.op("@>")([amenity]))
         # P0 大学距离约束 — bounding box 预筛选
         if near_lat is not None and near_lng is not None and near_distance_km is not None:
             import math as _math
@@ -521,15 +725,7 @@ class PropertyService:
                 Property.available_from < end_date,
             )
         if room_type:
-            mapped_type = PropertyService._ROOM_TYPE_MAP.get(room_type, room_type)
-            from app.models.room_type import RoomType, RoomTypeEnum
-            from sqlalchemy import cast, String
-            # 使用子查询避免 JOIN 产生重复行
-            # PostgreSQL enum 不能直接和 varchar 比较，需要 cast
-            room_sub = select(RoomType.property_id).where(
-                cast(RoomType.room_type, String) == mapped_type
-            ).subquery()
-            stmt = stmt.where(Property.id.in_(select(room_sub)))
+            stmt = stmt.where(self._room_type_filter_clause(room_type))
         if min_lease_months is not None:
             stmt = stmt.where(Property.max_lease_months >= min_lease_months)
         if max_lease_months is not None:
@@ -548,7 +744,7 @@ class PropertyService:
         elif sort_by == "created_at":
             stmt = stmt.order_by(Property.created_at.desc())
 
-        stmt = stmt.where(Property.status == "available")
+        stmt = stmt.where(cast(Property.status, String) == "available")
         stmt = stmt.limit(limit)
         result = await self.session.execute(stmt)
         rows = result.all()
@@ -560,7 +756,7 @@ class PropertyService:
             from sqlalchemy import or_
             fallback_stmt = (
                 select(Property, text("NULL AS similarity"))
-                .options(selectinload(Property.institute))
+                .options(*self._legacy_read_options())
                 .where(Property.deleted_at.is_(None))
             )
             kw = f"%{query}%"
@@ -572,6 +768,8 @@ class PropertyService:
             ))
             if district:
                 fallback_stmt = fallback_stmt.where(Property.district.ilike(f"%{district}%"))
+            if country:
+                fallback_stmt = fallback_stmt.where(Property.country.ilike(f"%{country}%"))
             if price_min is not None:
                 fallback_stmt = fallback_stmt.where(Property.price_monthly >= price_min)
             if price_max is not None:
@@ -579,15 +777,16 @@ class PropertyService:
             if bedrooms is not None:
                 fallback_stmt = fallback_stmt.where(Property.bedrooms == bedrooms)
             if property_type:
-                fallback_stmt = fallback_stmt.where(Property.property_type == property_type)
+                fallback_stmt = fallback_stmt.where(cast(Property.property_type, String) == property_type)
             if status:
-                fallback_stmt = fallback_stmt.where(Property.status == status)
+                fallback_stmt = fallback_stmt.where(cast(Property.status, String) == status)
 
             # ── 新增筛选条件（回退路径）──
             if institute_id is not None:
                 fallback_stmt = fallback_stmt.where(Property.institute_id == institute_id)
             if amenities:
-                fallback_stmt = fallback_stmt.where(Property.amenities.op("&&")(amenities))
+                for amenity in amenities:
+                    fallback_stmt = fallback_stmt.where(Property.amenities.op("@>")([amenity]))
             if available_from:
                 year = int(available_from[:4])
                 month = int(available_from[4:6])
@@ -600,12 +799,7 @@ class PropertyService:
                     Property.available_from < end_date,
                 )
             if room_type:
-                mapped_type = PropertyService._ROOM_TYPE_MAP.get(room_type, room_type)
-                # 使用子查询避免 JOIN 产生重复行
-                room_fb_sub = select(RoomType.property_id).where(
-                    RoomType.room_type == mapped_type
-                ).subquery()
-                fallback_stmt = fallback_stmt.where(Property.id.in_(select(room_fb_sub)))
+                fallback_stmt = fallback_stmt.where(self._room_type_filter_clause(room_type))
             if min_lease_months is not None:
                 fallback_stmt = fallback_stmt.where(Property.max_lease_months >= min_lease_months)
             if max_lease_months is not None:
@@ -616,7 +810,7 @@ class PropertyService:
                 fallback_stmt = fallback_stmt.where(Property.area_sqm >= area_min)
             if area_max is not None:
                 fallback_stmt = fallback_stmt.where(Property.area_sqm <= area_max)
-            fallback_stmt = fallback_stmt.where(Property.status == "available")
+            fallback_stmt = fallback_stmt.where(cast(Property.status, String) == "available")
             fallback_stmt = fallback_stmt.order_by(Property.created_at.desc())
             fallback_stmt = fallback_stmt.limit(limit)
             fallback_result = await self.session.execute(fallback_stmt)
@@ -649,9 +843,10 @@ class PropertyService:
                     except Exception:
                         pass
 
-        for prop, _sim in results:
-            if prop.institute and prop.institute.name:
-                object.__setattr__(prop, 'institute_name', prop.institute.name)
+        results = [
+            (self._apply_legacy_defaults(prop), similarity)
+            for prop, similarity in results
+        ]
 
         return results
 
@@ -677,7 +872,9 @@ class PropertyService:
                     f"允许的流转: {[s.value for s in allowed]}"
                 )
 
-        update_data = property_in.model_dump(exclude_unset=True)
+        update_data = self._normalize_room_write_payload(
+            property_in.model_dump(exclude_unset=True)
+        )
         # version 由服务端自增，不从客户端取值
         update_data.pop("version", None)
 

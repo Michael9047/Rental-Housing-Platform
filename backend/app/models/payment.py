@@ -4,7 +4,7 @@ from datetime import datetime
 
 from decimal import Decimal
 
-from sqlalchemy import BigInteger, DateTime, Enum, ForeignKey, Integer, Numeric, String, UniqueConstraint
+from sqlalchemy import JSON, BigInteger, DateTime, Enum, ForeignKey, Integer, Numeric, String, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -66,7 +66,9 @@ class Payment(TimestampMixin, Base):
     provider_merchant_account: Mapped[str | None] = mapped_column(String(100))
     checkout_url: Mapped[str | None] = mapped_column(String(500))
     idempotency_key: Mapped[str] = mapped_column(String(100), unique=True, nullable=False)
-    snapshot: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
+    snapshot: Mapped[dict] = mapped_column(
+        JSON().with_variant(JSONB, "postgresql"), default=dict, nullable=False
+    )
 
     booking: Mapped["Booking"] = relationship()
     user: Mapped["User"] = relationship()

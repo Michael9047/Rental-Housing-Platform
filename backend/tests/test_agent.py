@@ -1,5 +1,10 @@
+"""Agent 基础接口回归测试。"""
+
 import pytest
 from httpx import AsyncClient
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
+from app.models.institute import Institute, InstituteStatus
 
 
 async def _register_and_login(client: AsyncClient, payload: dict[str, str]) -> tuple[int, dict[str, str]]:
@@ -20,8 +25,22 @@ async def _create_property(
     client: AsyncClient,
     headers: dict[str, str],
     landlord_id: int,
+    session_maker: async_sessionmaker[AsyncSession],
     **overrides,
 ) -> int:
+    async with session_maker() as session:
+        institute = Institute(
+            name="Agent 测试公寓",
+            address="88 University Road",
+            district="SIP",
+            country="CN",
+            status=InstituteStatus.active,
+            created_by=landlord_id,
+        )
+        session.add(institute)
+        await session.commit()
+        await session.refresh(institute)
+
     payload = {
         "title": "Sunny two-bedroom apartment",
         "description": "Near metro with good natural light.",
@@ -34,6 +53,7 @@ async def _create_property(
         "property_type": "apartment",
         "status": "available",
         "landlord_id": landlord_id,
+        "institute_id": institute.id,
         **overrides,
     }
     resp = await client.post("/api/v1/properties", json=payload, headers=headers)
@@ -57,13 +77,37 @@ async def test_create_agent_session(
 
 
 @pytest.mark.asyncio
-async def test_agent_recommend_returns_properties(
+async def test_first_vague_find_house_message_asks_for_location(
     client: AsyncClient,
     landlord_register_payload: dict[str, str],
 ) -> None:
+    _, headers = await _register_and_login(client, landlord_register_payload)
+    created = await client.post("/api/v1/agent/sessions", headers=headers)
+    session_id = created.json()["session_id"]
+
+    response = await client.post(
+        f"/api/v1/agent/sessions/{session_id}/messages",
+        json={"message": "我要找房"},
+        headers=headers,
+    )
+
+    assert response.status_code == 200, response.text
+    data = response.json()
+    assert data["intent"] == "recommend"
+    assert data["recommendations"] == []
+    assert "国家、城市" in data["reply"]
+    assert data["quick_replies"]
+
+
+@pytest.mark.asyncio
+async def test_agent_recommend_returns_properties(
+    client: AsyncClient,
+    session_maker: async_sessionmaker[AsyncSession],
+    landlord_register_payload: dict[str, str],
+) -> None:
     landlord_id, headers = await _register_and_login(client, landlord_register_payload)
-    await _create_property(client, headers, landlord_id, title="低价单间", price_monthly="2500.00", bedrooms=1)
-    await _create_property(client, headers, landlord_id, title="高价公寓", price_monthly="8000.00")
+    await _create_property(client, headers, landlord_id, session_maker, title="低价单间", price_monthly="2500.00", bedrooms=1)
+    await _create_property(client, headers, landlord_id, session_maker, title="高价公寓", price_monthly="8000.00")
 
     session_resp = await client.post("/api/v1/agent/sessions", headers=headers)
     session_id = session_resp.json()["session_id"]
@@ -89,10 +133,11 @@ async def test_agent_recommend_returns_properties(
 @pytest.mark.asyncio
 async def test_agent_recommend_excludes_unavailable(
     client: AsyncClient,
+    session_maker: async_sessionmaker[AsyncSession],
     landlord_register_payload: dict[str, str],
 ) -> None:
     landlord_id, headers = await _register_and_login(client, landlord_register_payload)
-    await _create_property(client, headers, landlord_id, title="已出租房源", status="rented")
+    await _create_property(client, headers, landlord_id, session_maker, title="已出租房源", status="rented")
 
     session_resp = await client.post("/api/v1/agent/sessions", headers=headers)
     session_id = session_resp.json()["session_id"]
@@ -109,10 +154,11 @@ async def test_agent_recommend_excludes_unavailable(
 @pytest.mark.asyncio
 async def test_add_to_cart_and_duplicate(
     client: AsyncClient,
+    session_maker: async_sessionmaker[AsyncSession],
     landlord_register_payload: dict[str, str],
 ) -> None:
     landlord_id, headers = await _register_and_login(client, landlord_register_payload)
-    property_id = await _create_property(client, headers, landlord_id)
+    property_id = await _create_property(client, headers, landlord_id, session_maker)
 
     # 添加成功
     resp = await client.post(
@@ -158,10 +204,11 @@ async def test_add_nonexistent_property_to_cart(
 @pytest.mark.asyncio
 async def test_remove_from_cart(
     client: AsyncClient,
+    session_maker: async_sessionmaker[AsyncSession],
     landlord_register_payload: dict[str, str],
 ) -> None:
     landlord_id, headers = await _register_and_login(client, landlord_register_payload)
-    property_id = await _create_property(client, headers, landlord_id)
+    property_id = await _create_property(client, headers, landlord_id, session_maker)
 
     await client.post(
         "/api/v1/agent/cart/items",
@@ -194,11 +241,12 @@ async def test_compare_empty_cart(
 @pytest.mark.asyncio
 async def test_compare_cart_rule_based(
     client: AsyncClient,
+    session_maker: async_sessionmaker[AsyncSession],
     landlord_register_payload: dict[str, str],
 ) -> None:
     landlord_id, headers = await _register_and_login(client, landlord_register_payload)
-    cheap_id = await _create_property(client, headers, landlord_id, title="便宜房", price_monthly="2000.00")
-    pricey_id = await _create_property(client, headers, landlord_id, title="贵房", price_monthly="9000.00")
+    cheap_id = await _create_property(client, headers, landlord_id, session_maker, title="便宜房", price_monthly="2000.00")
+    pricey_id = await _create_property(client, headers, landlord_id, session_maker, title="贵房", price_monthly="9000.00")
 
     for pid in (cheap_id, pricey_id):
         await client.post("/api/v1/agent/cart/items", json={"property_id": pid}, headers=headers)
@@ -221,10 +269,11 @@ async def test_compare_cart_rule_based(
 @pytest.mark.asyncio
 async def test_agent_add_first_recommendation_via_message(
     client: AsyncClient,
+    session_maker: async_sessionmaker[AsyncSession],
     landlord_register_payload: dict[str, str],
 ) -> None:
     landlord_id, headers = await _register_and_login(client, landlord_register_payload)
-    property_id = await _create_property(client, headers, landlord_id, title="推荐目标房源")
+    property_id = await _create_property(client, headers, landlord_id, session_maker, title="推荐目标房源")
 
     session_resp = await client.post("/api/v1/agent/sessions", headers=headers)
     session_id = session_resp.json()["session_id"]

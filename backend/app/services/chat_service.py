@@ -23,11 +23,18 @@ class ChatService:
 
     # ── Session management ────────────────────────────────────────
 
-    async def create_session(self, user_id: int, title: str | None = None) -> ChatSession:
+    async def create_session(
+        self,
+        user_id: int,
+        title: str | None = None,
+        *,
+        session_kind: str = "chat",
+    ) -> ChatSession:
         chat_session = ChatSession(
             user_id=user_id,
             session_id=uuid.uuid4().hex,
             title=title,
+            session_kind=session_kind,
             status=ChatSessionStatus.active,
         )
         self.session.add(chat_session)
@@ -35,11 +42,19 @@ class ChatService:
         await self.session.refresh(chat_session)
         return chat_session
 
-    async def get_session(self, session_id: int, user_id: int) -> ChatSession | None:
+    async def get_session(
+        self,
+        session_id: int,
+        user_id: int,
+        *,
+        session_kind: str | None = None,
+    ) -> ChatSession | None:
         stmt = select(ChatSession).where(
             ChatSession.id == session_id,
             ChatSession.user_id == user_id,
         )
+        if session_kind is not None:
+            stmt = stmt.where(ChatSession.session_kind == session_kind)
         result = await self.session.scalars(stmt)
         return result.first()
 

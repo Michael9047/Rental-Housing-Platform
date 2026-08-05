@@ -1,6 +1,12 @@
 from app.db.session import Base
 from app.models.advertisement import AdImpression, Advertisement, AdvertisementStatus
 from app.models.agent_cart import AgentCart, AgentCartItem
+from app.models.agent_intelligence import (
+    AgentSearchCandidate,
+    AgentSearchRun,
+    AgentSessionState,
+    AgentUserMemory,
+)
 from app.models.audit_log import AuditLog
 from app.models.booking import Booking, BookingStatus
 from app.models.building_image import BuildingImage
@@ -42,11 +48,13 @@ from app.models.repair import (
 )
 from app.models.review import Review, ReviewStatus
 from app.models.room_transfer import RoomTransfer
+from app.models.room_commute import RoomCommute
 from app.models.saved_search import SavedSearch
 from app.models.tenant import Tenant
 from app.models.unit_type import DepositType, UnitType, UnitTypeStatus, RoomType, RoomTypeEnum, RoomTypeStatus
 from app.models.user import User, UserRole, UserStatus
 from app.models.user_favorite import UserFavorite
+from app.models.university import University
 
 __all__ = [
     "AdImpression",
@@ -54,6 +62,10 @@ __all__ = [
     "AdvertisementStatus",
     "AgentCart",
     "AgentCartItem",
+    "AgentSearchCandidate",
+    "AgentSearchRun",
+    "AgentSessionState",
+    "AgentUserMemory",
     "AuditLog",
     "Base",
     "Booking",
@@ -104,12 +116,14 @@ __all__ = [
     "ReviewStatus",
     "Room",
     "RoomImage",
+    "RoomCommute",
     "RoomStatus",
     "RoomTransfer",
     "SavedSearch",
     "Tenant",
     "UnitType",
     "UnitTypeStatus",
+    "University",
     "User",
     "UserFavorite",
     "UserRole",

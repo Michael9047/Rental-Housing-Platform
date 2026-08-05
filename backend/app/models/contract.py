@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text as SAText, UniqueConstraint
+from sqlalchemy import JSON, DateTime, ForeignKey, Integer, String, Text as SAText, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
@@ -33,7 +33,9 @@ class Contract(TimestampMixin, Base):
     version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
     template_version: Mapped[str] = mapped_column(String(32), default="2026.1", nullable=False)
     content_hash: Mapped[str | None] = mapped_column(String(64), index=True)
-    snapshot: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    snapshot: Mapped[dict | None] = mapped_column(
+        JSON().with_variant(JSONB, "postgresql"), nullable=True
+    )
     generated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     content: Mapped[str] = mapped_column(SAText, nullable=False)
     status: Mapped[str] = mapped_column(

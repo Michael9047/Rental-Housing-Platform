@@ -44,6 +44,7 @@
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import PropertyCard from '@/components/PropertyCard.vue'
+import api from '@/services/api'
 
 const router = useRouter()
 

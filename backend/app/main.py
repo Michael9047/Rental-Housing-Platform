@@ -1,9 +1,12 @@
 from fastapi.staticfiles import StaticFiles
 from pathlib import Path
 
-from fastapi import Depends, FastAPI
+from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.deps import get_db_session
 from app.api.v1.router import api_router
 from app.core.config import get_settings
 from app.core.logging import RequestLoggingMiddleware, register_exception_handlers, setup_logging
@@ -12,6 +15,16 @@ from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoin
 from starlette.requests import Request
 from starlette.responses import Response
 from app.core.monitoring import PrometheusMiddleware, add_metrics_endpoint, install_celery_metrics
+
+
+def _public_room_statement(room_id: int):
+    """生成公开房源详情查询，统一使用当前 properties 表。"""
+    from app.models.property import Property
+
+    return select(Property).where(
+        Property.id == room_id,
+        Property.deleted_at.is_(None),
+    )
 
 
 def create_app() -> FastAPI:
@@ -97,20 +110,22 @@ def create_app() -> FastAPI:
 
     # 临时直出端点 — 绕过 Pydantic schema 兼容问题
     @app.get("/api/v1/public/rooms/{room_id}")
-    async def public_room_detail(room_id: int):
-        from app.db.session import async_session_maker
-        from sqlalchemy import select as sa_select, text
-        async with async_session_maker() as session:
-            r = await session.execute(text(
-                "SELECT r.*, COALESCE(r.safety_score,0) as s_score FROM rooms r WHERE r.id = :id AND r.deleted_at IS NULL"
-            ), {"id": room_id})
-            row = r.first()
-            if not row:
-                from fastapi import HTTPException
-                raise HTTPException(404, "Room not found")
-            # Return as dict using column names
-            cols = r.keys()
-            return dict(zip(cols, row))
+    async def public_room_detail(
+        room_id: int,
+        session: AsyncSession = Depends(get_db_session),
+    ):
+        from app.models.property import Property
+
+        room = await session.scalar(_public_room_statement(room_id))
+        if room is None:
+            raise HTTPException(404, "Room not found")
+
+        payload = {
+            column.name: getattr(room, column.name)
+            for column in Property.__table__.columns
+        }
+        payload["s_score"] = room.safety_score or 0
+        return payload
 
     app.include_router(api_router, prefix=settings.api_v1_prefix)
 

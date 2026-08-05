@@ -1,0 +1,542 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>渐进选房 & 对比评分 联调测试</title>
+<style>
+:root{--bg:#0f1117;--card:#161822;--border:#252836;--text:#cdd6f4;--muted:#6c7086;--accent:#89b4fa;--green:#a6e3a1;--red:#f38ba8;--yellow:#f9e2af;--purple:#cba6f7;--teal:#94e2d5;--orange:#fab387}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:var(--bg);color:var(--text);font:14px/1.6 system-ui;display:flex;height:100vh}
+.left{width:380px;border-right:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden}
+.right{flex:1;display:flex;flex-direction:column;overflow:hidden}
+.panel{border-bottom:1px solid var(--border);padding:12px}
+.panel h3{font-size:13px;color:var(--muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:.5px}
+input,textarea,button,select{background:var(--card);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:8px 12px;font:13px system-ui;outline:none;width:100%}
+input:focus,textarea:focus{border-color:var(--accent)}
+button{cursor:pointer;background:var(--accent);color:var(--bg);font-weight:600;border:none}
+button:disabled{opacity:.4;cursor:default}
+button.sm{padding:4px 10px;font-size:11px;width:auto}
+button.danger{background:var(--red)}
+button.warn{background:var(--orange)}
+.msg-list{flex:1;overflow-y:auto;padding:16px}
+.chip-row{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.chip{display:inline-flex;align-items:center;gap:4px;padding:4px 10px;border-radius:16px;font-size:12px;cursor:pointer;border:1px solid var(--border);background:var(--card);transition:.15s}
+.chip:hover{border-color:var(--accent);background:#1e2233}
+.chip.active{border-color:var(--accent);background:#1a2a38;color:var(--accent)}
+.chip .icon{font-size:14px}
+
+/* Compare view */
+.compare-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px;margin-top:12px}
+.compare-card{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:14px}
+.compare-card .title{font-weight:700;font-size:14px;margin-bottom:4px}
+.compare-card .price{font-size:20px;font-weight:800;color:var(--accent)}
+.compare-card .price small{font-size:12px;font-weight:400;color:var(--muted)}
+.compare-card .total-score{font-size:28px;font-weight:900;margin:8px 0;text-align:center}
+.compare-card .total-score.s1{color:var(--green)}.compare-card .total-score.s2{color:var(--yellow)}.compare-card .total-score.s3{color:var(--orange)}.compare-card .total-score.s4{color:var(--red)}
+
+.dim-row{display:flex;align-items:center;gap:8px;margin:4px 0;font-size:12px}
+.dim-row .dim-label{width:36px;color:var(--muted)}
+.dim-row .bar-bg{flex:1;height:6px;background:#0a0b10;border-radius:3px;overflow:hidden}
+.dim-row .bar-fill{height:100%;border-radius:3px}
+.dim-row .dim-score{width:28px;text-align:right;font-weight:600;font-size:11px}
+
+/* Section headers */
+.section{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:12px;margin-bottom:12px}
+.section h4{font-size:12px;color:var(--muted);margin-bottom:8px}
+
+/* JSON dump */
+pre.json-dump{font-size:11px;color:var(--muted);background:#0a0b10;padding:8px;border-radius:6px;overflow-x:auto;max-height:200px;overflow-y:auto;white-space:pre-wrap;word-break:break-all}
+
+/* Toast */
+.toast{position:fixed;top:12px;right:12px;padding:8px 16px;border-radius:8px;font-size:13px;z-index:999;animation:fadeIn .3s}
+.toast.ok{background:#1a3824;color:var(--green);border:1px solid var(--green)}
+.toast.err{background:#3a1a1a;color:var(--red);border:1px solid var(--red)}
+@keyframes fadeIn{from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:translateY(0)}}
+
+/* Tabs */
+.tabs{display:flex;gap:4px;margin-bottom:8px}
+.tab{padding:4px 12px;border-radius:6px;font-size:12px;cursor:pointer;background:transparent;color:var(--muted);border:1px solid transparent}
+.tab.active{background:var(--card);color:var(--text);border-color:var(--border)}
+
+.poi-dist{font-size:11px;color:var(--teal);margin-top:4px}
+.poi-dist span{display:inline-block;margin-right:8px}
+
+#fileWarn{display:none;position:fixed;top:0;left:0;right:0;z-index:9999;background:#3a1a1a;color:#f38ba8;border-bottom:2px solid #f38ba8;padding:12px 20px;font-size:13px;text-align:center}
+</style>
+</head>
+<body>
+
+<div id="fileWarn">
+  <b>不要双击文件打开！</b> 地址栏输入 <code style="background:#0a0b10;padding:2px 6px;border-radius:4px">http://localhost:8012/TEST_GUIDED_SEARCH.html</code>
+</div>
+
+<div class="left">
+  <div class="panel">
+    <h3>🔌 连接</h3>
+    <input id="baseUrl" value="http://localhost:8012/api/v1" placeholder="Base URL">
+    <div style="display:flex;gap:8px;margin-top:8px">
+      <input id="email" placeholder="邮箱/用户名" style="flex:1">
+      <input id="password" type="password" placeholder="密码" style="flex:1">
+    </div>
+    <div style="display:flex;gap:8px;margin-top:8px">
+      <button id="btnLogin" onclick="doLogin()">登录</button>
+      <button onclick="autoLogin()" style="background:#1a3824;color:var(--green)">🚀 一键登录</button>
+    </div>
+    <div id="loginStatus" style="font-size:11px;color:var(--muted);margin-top:4px"></div>
+  </div>
+
+  <div class="panel">
+    <h3>🧪 渐进选房测试</h3>
+    <div style="font-size:11px;color:var(--muted);margin-bottom:8px">点击发送测试消息，观察返回的 guided_options</div>
+    <div style="display:flex;flex-direction:column;gap:6px">
+      <button class="sm" onclick="testSearch('园区2000以内的单间')" style="text-align:left">🔍 "园区2000以内的单间"</button>
+      <button class="sm" onclick="testSearch('学校附近1500左右能养猫的')" style="text-align:left">🔍 "学校附近1500左右能养猫的"</button>
+      <button class="sm" onclick="testSearch('最好离地铁近一点，预算2500')" style="text-align:left">🔍 "最好离地铁近一点，预算2500"</button>
+      <button class="sm" onclick="testSearch('有没有带独立卫浴的studio')" style="text-align:left">🔍 "有没有带独立卫浴的studio"</button>
+      <button class="sm" onclick="testSearch('想住在有健身房和超市的附近')" style="text-align:left">🔍 "想住在有健身房和超市的附近"</button>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:8px">
+      <input id="customQuery" placeholder="自定义搜索..." style="flex:1" onkeydown="if(event.key==='Enter')testSearch($('customQuery').value)">
+      <button class="sm" onclick="testSearch($('customQuery').value)" style="width:60px">发送</button>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h3>🛒 购物车 & 对比</h3>
+    <div style="display:flex;gap:8px;margin-bottom:8px">
+      <button class="sm" onclick="viewCart()">刷新购物车</button>
+      <button class="sm" onclick="testCompare()" style="background:var(--purple);color:var(--bg)">📊 对比评分</button>
+    </div>
+    <div id="cartInfo" style="font-size:11px;color:var(--muted)">未登录</div>
+    <div id="cartItems" style="margin-top:6px"></div>
+  </div>
+
+  <div class="panel" style="flex:1;overflow-y:auto">
+    <h3>📋 变更文件清单</h3>
+    <div style="font-size:11px;color:var(--muted)">
+      本分支 <code style="background:var(--card);padding:1px 4px;border-radius:3px">feat/agent-search-compare-update</code> 改动：
+      <ul style="margin:6px 0 0 16px;line-height:1.8">
+        <li><b>guided_search.py</b> <span style="color:var(--green)">+181</span> 新增<br>
+          <span style="color:var(--muted)">POI软排序 + 引导chip生成</span></li>
+        <li><b>compare_scoring.py</b> <span style="color:var(--green)">+125</span><br>
+          <span style="color:var(--muted)">四维加权评分（价格/通勤/空间/评价）</span></li>
+        <li><b>search_agent.py</b> <span style="color:var(--green)">+106</span><br>
+          <span style="color:var(--muted)">集成引导搜索 + POI重排</span></li>
+        <li><b>embedding_service.py</b> <span style="color:var(--green)">+56</span><br>
+          <span style="color:var(--muted)">HNSW向量索引 + 语义搜索</span></li>
+        <li><b>dispatcher.py</b> <span style="color:var(--green)">+11</span><br>
+          <span style="color:var(--muted)">新增guided_search路由</span></li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<div class="right">
+  <div class="msg-list" id="messages">
+    <div style="text-align:center;color:var(--muted);padding:60px 0">
+      <div style="font-size:48px">🏠</div>
+      <div style="margin-top:16px;font-size:18px;font-weight:700">渐进选房 + 对比评分 联调测试</div>
+      <div style="margin-top:4px;font-size:13px;color:var(--muted)">
+        测试 <code style="background:var(--card);padding:2px 6px;border-radius:4px">feat/agent-search-compare-update</code> 分支新功能
+      </div>
+      <div style="font-size:11px;color:var(--yellow);margin-top:16px">
+        📋 测试要点：<br>
+        ① 搜索回复是否带 <b>guided_options</b>（引导chips）<br>
+        ② 搜索结果是否按 <b>POI偏好</b> 软排序<br>
+        ③ 对比评分是否展示 <b>四维分数</b> + 总加权分<br>
+        ④ embedding/HNSW 向量相似搜索是否生效
+      </div>
+    </div>
+  </div>
+  <div class="panel">
+    <div style="display:flex;gap:8px">
+      <input id="msgInput" placeholder="输入找房需求，或点击左侧快捷测试..." onkeydown="if(event.key==='Enter')testSearch($('msgInput').value)">
+      <button id="btnSend" onclick="testSearch($('msgInput').value)" style="width:80px" disabled>发送</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ============ 全局状态 ============
+let token = '', sessionId = null, cartId = null;
+let testCount = 0, passCount = 0, failCount = 0;
+
+const $ = id => document.getElementById(id);
+function val(id, text) {
+  const el = $(id); if (!el) return '';
+  if (text !== undefined) { if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') el.value = text; else el.textContent = text; }
+  return el.value || el.textContent || '';
+}
+
+function toast(msg, ok) {
+  const t = document.createElement('div');
+  t.className = 'toast ' + (ok ? 'ok' : 'err');
+  t.textContent = (ok ? '✅ ' : '❌ ') + msg;
+  document.body.appendChild(t);
+  setTimeout(() => t.remove(), 2500);
+}
+
+// ============ 登录 ============
+async function autoLogin() {
+  const base = val('baseUrl');
+  const status = $('loginStatus');
+  status.style.color = 'var(--yellow)';
+  status.textContent = '⏳ 连接中...';
+
+  try {
+    let r = await fetch(`${base}/auth/login`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username_or_email: 'test_agent', password: 'test123456' })
+    });
+
+    if (!r.ok) {
+      status.textContent = '⏳ 注册新账号...';
+      r = await fetch(`${base}/auth/register`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: 'test_agent', email: 'test_agent@test.com', password: 'test123456' })
+      });
+      if (!r.ok) { throw new Error('注册失败: ' + r.status); }
+      r = await fetch(`${base}/auth/login`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username_or_email: 'test_agent', password: 'test123456' })
+      });
+      if (!r.ok) { throw new Error('登录失败: ' + r.status); }
+    }
+
+    const d = await r.json();
+    token = d.access_token;
+    val('email', 'test_agent@test.com');
+    val('password', 'test123456');
+    status.style.color = 'var(--green)';
+    status.textContent = '✅ 已登录 (uid=' + (d.user_id || '?') + ')';
+    $('btnSend').disabled = false;
+
+    // 创建会话
+    r = await fetch(`${base}/agent/sessions`, {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + token }
+    });
+    if (!r.ok) { throw new Error('创建会话失败: ' + r.status); }
+    const sd = await r.json();
+    sessionId = sd.session_id;
+    cartId = sd.cart_id;
+    status.textContent = '✅ 就绪 (会话#' + sessionId + ', 购物车#' + cartId + ')';
+    toast('登录成功，开始测试！', true);
+
+    await viewCart();
+  } catch (e) {
+    status.style.color = 'var(--red)';
+    status.textContent = '❌ ' + e.message;
+    toast(e.message, false);
+  }
+}
+
+async function doLogin() {
+  const base = val('baseUrl');
+  const status = $('loginStatus');
+  status.style.color = 'var(--yellow)';
+  status.textContent = '⏳ 登录中...';
+  try {
+    const r = await fetch(`${base}/auth/login`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username_or_email: val('email'), password: val('password') })
+    });
+    if (!r.ok) {
+      const err = await r.json().catch(() => ({ detail: 'HTTP ' + r.status }));
+      status.style.color = 'var(--red)';
+      status.textContent = '❌ ' + err.detail;
+      return;
+    }
+    const d = await r.json();
+    token = d.access_token;
+    status.style.color = 'var(--green)';
+    status.textContent = '✅ 已登录';
+    $('btnSend').disabled = false;
+
+    const sr = await fetch(`${base}/agent/sessions`, {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + token }
+    });
+    const sd = await sr.json();
+    sessionId = sd.session_id;
+    cartId = sd.cart_id;
+    await viewCart();
+  } catch (e) {
+    status.style.color = 'var(--red)';
+    status.textContent = '❌ ' + e.message;
+  }
+}
+
+// ============ 购物车 ============
+async function viewCart() {
+  if (!token) return;
+  try {
+    const r = await fetch(val('baseUrl') + '/agent/cart', {
+      headers: { 'Authorization': 'Bearer ' + token }
+    });
+    const d = await r.json();
+    const items = d.items || [];
+    $('cartInfo').textContent = items.length ? `${items.length} 件商品` : '购物车为空';
+    const el = $('cartItems');
+    if (items.length) {
+      el.innerHTML = items.map(i =>
+        `<div style="font-size:11px;padding:4px 0;border-bottom:1px solid var(--border)">
+          <span style="color:var(--accent)">#${i.property_id}</span>
+          ${i.property_title || ''}
+        </div>`
+      ).join('');
+    } else {
+      el.innerHTML = '<div style="font-size:11px;color:var(--muted)">—</div>';
+    }
+  } catch (e) { /* ignore */ }
+}
+
+// ============ 核心：搜索测试 ============
+async function testSearch(query) {
+  if (!query || !query.trim()) return;
+  if (!sessionId) { toast('请先登录', false); return; }
+
+  $('msgInput').value = '';
+  testCount++;
+  const id = testCount;
+
+  // 用户消息
+  addSection(`user-${id}`, '🧑 你', query);
+
+  const loader = addSection(`loader-${id}`, '', '⏳ 处理中...');
+
+  const t0 = performance.now();
+  try {
+    const r = await fetch(val('baseUrl') + '/agent/sessions/' + sessionId + '/messages', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: query })
+    });
+    const d = await r.json();
+    const ms = Math.round(performance.now() - t0);
+    loader.remove();
+
+    // Agent 回复
+    addSection(`reply-${id}`, `🤖 Agent 回复 (${ms}ms)`, d.reply || '(空回复)');
+
+    // ── 断言 1：是否有 guided_options ──
+    const guided = d.guided_options || d.data?.guided_options;
+    if (guided && guided.length > 0) {
+      passCount++;
+      let chipsHtml = '<div style="color:var(--green);font-size:11px;margin-bottom:4px">✅ guided_options 存在 (' + guided.length + ' 个)</div>';
+      chipsHtml += '<div class="chip-row">';
+      guided.forEach(g => {
+        chipsHtml += `<div class="chip"><span>${g.icon || '📍'}</span> ${g.label || g.message || JSON.stringify(g)}</div>`;
+      });
+      chipsHtml += '</div>';
+      addSection(`guided-${id}`, '📌 引导选项 (Guided Options)', chipsHtml);
+      toast(`✅ guided_options: ${guided.length}个chips`, true);
+    } else {
+      failCount++;
+      addSection(`guided-${id}`, '📌 引导选项 (Guided Options)',
+        '<div style="color:var(--orange);font-size:11px">⚠️ 未返回 guided_options — 可能后端未集成或候选太少</div>');
+      toast('⚠️ 无 guided_options', false);
+    }
+
+    // ── 断言 2：推荐结果是否有 _poi_score ──
+    const recs = d.recommendations || [];
+    if (recs.length > 0) {
+      let recsHtml = `<div style="color:var(--teal);font-size:11px;margin-bottom:4px">📋 ${recs.length} 套推荐</div>`;
+      recsHtml += '<div class="compare-grid">';
+      recs.slice(0, 6).forEach((rec, i) => {
+        const p = rec.property || rec;
+        const poiScore = rec._poi_score !== undefined ? rec._poi_score : (p._poi_score !== undefined ? p._poi_score : null);
+        const poiDists = rec._poi_distances || p._poi_distances || {};
+        recsHtml += `<div class="compare-card">
+          <div class="title">${p.title || '#' + (p.id || rec.property_id)}</div>
+          <div class="price">¥${p.price_monthly || '?'}<small>/月</small></div>
+          <div style="font-size:11px;color:var(--muted)">${p.district || ''} · ${p.bedrooms || '?'}室</div>
+          ${poiScore !== null ? `<div style="font-size:11px;color:var(--purple);margin-top:4px">🎯 POI分: ${poiScore.toFixed(1)}</div>` : '<div style="font-size:11px;color:var(--muted);margin-top:4px">⚠️ 无 _poi_score</div>'}
+          ${Object.keys(poiDists).length > 0 ? '<div class="poi-dist">' + Object.entries(poiDists).map(([k,v]) => `<span>${k}:${v}m</span>`).join('') + '</div>' : ''}
+        </div>`;
+      });
+      recsHtml += '</div>';
+      addSection(`recs-${id}`, '🏠 搜索结果', recsHtml);
+
+      // 检查 POI score
+      const hasPoiScore = recs.some(r => (r._poi_score !== undefined) || ((r.property || r)._poi_score !== undefined));
+      if (hasPoiScore) {
+        passCount++;
+        toast('✅ POI排序生效（有 _poi_score）', true);
+      }
+    } else {
+      addSection(`recs-${id}`, '🏠 搜索结果', '<div style="color:var(--muted);font-size:11px">无推荐结果</div>');
+    }
+
+    // ── 显示完整响应 JSON ──
+    const jsonStr = JSON.stringify({
+      intent: d.intent,
+      reply_length: (d.reply || '').length,
+      guided_options_count: guided?.length || 0,
+      recommendations_count: recs.length,
+      has_poi_score: recs.some(r => r._poi_score !== undefined),
+      raw_keys: Object.keys(d).filter(k => !['reply', 'recommendations'].includes(k))
+    }, null, 2);
+    addSection(`raw-${id}`, '🔬 响应摘要', `<pre class="json-dump">${escapeHtml(jsonStr)}</pre>`);
+
+  } catch (e) {
+    loader.remove();
+    failCount++;
+    addSection(`err-${id}`, '❌ 错误', `<div style="color:var(--red)">${e.message}</div>`);
+    toast(e.message, false);
+  }
+
+  updateStats();
+  await viewCart();
+}
+
+// ============ 核心：对比评分测试 ============
+async function testCompare() {
+  if (!token) { toast('请先登录', false); return; }
+  testCount++;
+  const id = testCount;
+
+  const loader = addSection(`loader-${id}`, '', '⏳ 对比中...');
+
+  try {
+    const r = await fetch(val('baseUrl') + '/agent/cart/compare', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + token }
+    });
+    const d = await r.json();
+    loader.remove();
+
+    const props = d.properties || d.results || [];
+    if (props.length < 2) {
+      failCount++;
+      addSection(`compare-${id}`, '📊 对比评分',
+        `<div style="color:var(--orange)">⚠️ 购物车内不足2套房源，无法对比（当前 ${props.length} 套）</div>
+         <div style="font-size:11px;color:var(--muted);margin-top:4px">先通过搜索把房源加入购物车再对比</div>`);
+      toast('购物车不足2套，先搜索加购', false);
+      updateStats();
+      return;
+    }
+
+    // ── 断言：每套是否有四维分数 ──
+    let html = `<div style="color:var(--green);font-size:11px;margin-bottom:8px">✅ ${props.length} 套对比</div>`;
+    html += '<div class="compare-grid">';
+
+    props.forEach((p, i) => {
+      const scores = p.scores || p.scoring || {};
+      const total = scores.total ?? p.total_score ?? 0;
+      const bd = scores.breakdown || {};
+      const tier = total >= 85 ? 's1' : total >= 70 ? 's2' : total >= 55 ? 's3' : 's4';
+
+      html += `<div class="compare-card">
+        <div class="title">${p.title || p.name || '#' + (p.property_id || i)}</div>
+        <div class="price">¥${p.price_monthly || p.price || '?'}<small>/月</small></div>
+        <div class="total-score ${tier}">${total}</div>
+        <div style="font-size:10px;color:var(--muted);margin-bottom:4px">加权总分</div>`;
+
+      // 四维条
+      ['price', 'commute', 'space', 'rating'].forEach(dim => {
+        const score = bd[dim] ?? 0;
+        const colors = { price: 'var(--accent)', commute: 'var(--teal)', space: 'var(--purple)', rating: 'var(--yellow)' };
+        const labels = { price: '价格', commute: '通勤', space: '空间', rating: '评价' };
+        html += `<div class="dim-row">
+          <span class="dim-label">${labels[dim]}</span>
+          <div class="bar-bg"><div class="bar-fill" style="width:${score}%;background:${colors[dim]}"></div></div>
+          <span class="dim-score">${score}</span>
+        </div>`;
+      });
+
+      // POI距离
+      if (p.poi_distances && Object.keys(p.poi_distances).length) {
+        html += '<div class="poi-dist" style="margin-top:6px">';
+        Object.entries(p.poi_distances).forEach(([k, v]) => {
+          html += `<span>${k}:${v}m</span>`;
+        });
+        html += '</div>';
+      }
+
+      html += '</div>';
+    });
+    html += '</div>';
+
+    // 检查分数完整性
+    const allHaveScores = props.every(p => {
+      const s = p.scores || p.scoring || {};
+      const bd = s.breakdown || {};
+      return bd.price !== undefined && bd.commute !== undefined && bd.space !== undefined && bd.rating !== undefined;
+    });
+
+    if (allHaveScores) {
+      passCount++;
+      html = '<div style="color:var(--green);font-size:11px;margin-bottom:4px">✅ 四维评分完整 (price/commute/space/rating)</div>' + html;
+      toast('✅ 对比评分四维完整', true);
+    } else {
+      failCount++;
+      html = '<div style="color:var(--orange);font-size:11px;margin-bottom:4px">⚠️ 部分维度缺失，请检查 compare_scoring.compute_scores</div>' + html;
+      toast('⚠️ 部分维度缺失', false);
+    }
+
+    addSection(`compare-${id}`, '📊 对比评分结果', html);
+
+    // 原始JSON
+    addSection(`raw-compare-${id}`, '🔬 对比原始数据',
+      `<pre class="json-dump">${escapeHtml(JSON.stringify(d, null, 2))}</pre>`);
+
+  } catch (e) {
+    loader.remove();
+    failCount++;
+    addSection(`err-${id}`, '❌ 错误', `<div style="color:var(--red)">${e.message}</div>`);
+    toast(e.message, false);
+  }
+
+  updateStats();
+}
+
+// ============ UI ============
+function addSection(id, title, content) {
+  const existing = document.getElementById(id);
+  if (existing) existing.remove();
+
+  const div = document.createElement('div');
+  div.id = id;
+  div.className = 'section';
+  if (title) {
+    div.innerHTML = `<h4>${title}</h4>${content}`;
+  } else {
+    div.innerHTML = content;
+  }
+  $('messages').appendChild(div);
+  div.scrollIntoView({ behavior: 'smooth' });
+  return div;
+}
+
+function updateStats() {
+  const el = document.getElementById('testStats');
+  if (el) {
+    el.innerHTML = `测试: ${testCount} | <span style="color:var(--green)">✅ ${passCount}</span> | <span style="color:var(--red)">❌ ${failCount}</span>`;
+  }
+}
+
+function escapeHtml(s) {
+  const d = document.createElement('div');
+  d.textContent = typeof s === 'string' ? s : JSON.stringify(s);
+  return d.innerHTML;
+}
+
+// 初始化统计条
+(function() {
+  const div = document.createElement('div');
+  div.id = 'testStats';
+  div.style.cssText = 'position:fixed;bottom:60px;right:16px;background:var(--card);border:1px solid var(--border);border-radius:8px;padding:8px 16px;font-size:13px;z-index:99';
+  div.innerHTML = '测试: 0 | <span style="color:var(--green)">✅ 0</span> | <span style="color:var(--red)">❌ 0</span>';
+  document.body.appendChild(div);
+})();
+</script>
+
+<script>
+if (location.protocol === 'file:') {
+  document.getElementById('fileWarn').style.display = 'block';
+}
+</script>
+</body>
+</html>

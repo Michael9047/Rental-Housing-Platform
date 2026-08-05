@@ -99,6 +99,23 @@ class Settings(BaseSettings):
         validation_alias="EMBEDDING_DIMENSIONS",
     )
 
+    # Agent 检索与上下文策略。AGENT_MEMORY_ENABLED 只控制跨会话长期偏好；
+    # 当前会话状态始终保留，否则多轮指代和条件增量会失效。
+    agent_memory_enabled: bool = Field(default=True, validation_alias="AGENT_MEMORY_ENABLED")
+    agent_retrieval_pool_size: int = Field(
+        default=120, ge=30, le=300, validation_alias="AGENT_RETRIEVAL_POOL_SIZE"
+    )
+    agent_min_results: int = Field(default=3, ge=1, le=20, validation_alias="AGENT_MIN_RESULTS")
+    agent_history_char_budget: int = Field(
+        default=8000, ge=1000, le=50000, validation_alias="AGENT_HISTORY_CHAR_BUDGET"
+    )
+    agent_context_char_budget: int = Field(
+        default=12000, ge=2000, le=100000, validation_alias="AGENT_CONTEXT_CHAR_BUDGET"
+    )
+    agent_recommend_temperature: float = Field(
+        default=0.35, ge=0.0, le=2.0, validation_alias="AGENT_RECOMMEND_TEMPERATURE"
+    )
+
     # ========== 高德地图（中国大陆主引擎） ==========
     amap_web_key: str = Field(
         default="",

@@ -2,7 +2,7 @@ import enum
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Integer, String, Text as SAText, Index
+from sqlalchemy import JSON, Boolean, DateTime, Enum, ForeignKey, Integer, String, Text as SAText, Index
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -79,7 +79,9 @@ class NotificationOutbox(TimestampMixin, Base):
     channel: Mapped[str] = mapped_column(String(20), default="email", nullable=False)
     template_version: Mapped[str] = mapped_column(String(20), nullable=False)
     recipient_email: Mapped[str | None] = mapped_column(String(255))
-    payload: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    payload: Mapped[dict] = mapped_column(
+        JSON().with_variant(JSONB, "postgresql"), nullable=False
+    )
     status: Mapped[NotificationOutboxStatus] = mapped_column(Enum(NotificationOutboxStatus, name="notification_outbox_status"), default=NotificationOutboxStatus.pending, nullable=False, index=True)
     attempts: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     retryable: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
