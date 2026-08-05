@@ -1,5 +1,11 @@
 from app.db.session import Base
 from app.models.agent_cart import AgentCart, AgentCartItem
+from app.models.agent_intelligence import (
+    AgentSearchCandidate,
+    AgentSearchRun,
+    AgentSessionState,
+    AgentUserMemory,
+)
 from app.models.audit_log import AuditLog
 from app.models.booking import Booking, BookingStatus
 from app.models.booking_flow_draft import BookingFlowDraft
@@ -42,6 +48,10 @@ from app.models.user_favorite import UserFavorite
 __all__ = [
     "AgentCart",
     "AgentCartItem",
+    "AgentSearchCandidate",
+    "AgentSearchRun",
+    "AgentSessionState",
+    "AgentUserMemory",
     "AuditLog",
     "Base",
     "Booking",

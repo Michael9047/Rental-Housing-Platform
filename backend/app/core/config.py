@@ -92,6 +92,32 @@ class Settings(BaseSettings):
         validation_alias="EMBEDDING_DIMENSIONS",
     )
 
+    # ========== Agent Memory / RAG 配置 ==========
+    agent_memory_enabled: bool = Field(
+        default=True,
+        validation_alias="AGENT_MEMORY_ENABLED",
+    )
+    agent_retrieval_pool_size: int = Field(
+        default=120,
+        validation_alias="AGENT_RETRIEVAL_POOL_SIZE",
+    )
+    agent_min_results: int = Field(
+        default=3,
+        validation_alias="AGENT_MIN_RESULTS",
+    )
+    agent_history_char_budget: int = Field(
+        default=8000,
+        validation_alias="AGENT_HISTORY_CHAR_BUDGET",
+    )
+    agent_context_char_budget: int = Field(
+        default=12000,
+        validation_alias="AGENT_CONTEXT_CHAR_BUDGET",
+    )
+    agent_recommend_temperature: float = Field(
+        default=0.35,
+        validation_alias="AGENT_RECOMMEND_TEMPERATURE",
+    )
+
     # ========== 高德地图（中国大陆主引擎） ==========
     amap_web_key: str = Field(
         default="",

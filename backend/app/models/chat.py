@@ -36,6 +36,9 @@ class ChatSession(TimestampMixin, Base):
         default=ChatSessionStatus.active,
         nullable=False,
     )
+    session_kind: Mapped[str] = mapped_column(
+        String(32), default="chat", nullable=False, index=True
+    )
     accumulated_filters: Mapped[dict | None] = mapped_column(
         JSON, nullable=True, default=None
     )
