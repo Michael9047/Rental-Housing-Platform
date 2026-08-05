@@ -114,7 +114,7 @@ class AgentSearchCandidate(TimestampMixin, Base):
         ForeignKey("unit_types.id", ondelete="SET NULL"), nullable=True, index=True
     )
     property_id: Mapped[int | None] = mapped_column(
-        ForeignKey("properties.id", ondelete="SET NULL"), nullable=True, index=True
+        ForeignKey("unit_types.id", ondelete="SET NULL"), nullable=True, index=True
     )
     rank: Mapped[int] = mapped_column(Integer, nullable=False)
     final_score: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
