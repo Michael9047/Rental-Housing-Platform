@@ -5,7 +5,6 @@ import { compareService } from '@/services/compare'
 import type {
   ComparePriority,
   CompareMessage,
-  DimensionScores,
   EnrichedPropertyData,
 } from '@/types/compare'
 
@@ -13,7 +12,6 @@ export const useCompareStore = defineStore('compare', () => {
   // ── state ──
   const sessionId = ref<number | null>(null)
   const messages = ref<CompareMessage[]>([])
-  const scores = ref<Record<number, DimensionScores>>({})
   const propertyData = ref<Record<number, EnrichedPropertyData>>({})
   const priority = ref<ComparePriority>('balanced')
   const reply = ref('')
@@ -22,10 +20,6 @@ export const useCompareStore = defineStore('compare', () => {
 
   // ── computed ──
   const propertyIds = computed(() => Object.keys(propertyData.value).map(Number))
-  const dimensionKeys = computed(() => {
-    const first = Object.values(scores.value)[0]
-    return first ? Object.keys(first.breakdown) : []
-  })
 
   // ── methods ──
   async function startComparison(ids: number[], prio: ComparePriority = 'balanced') {
@@ -40,7 +34,6 @@ export const useCompareStore = defineStore('compare', () => {
       messages.value = session.messages
       priority.value = (session.priority as ComparePriority) || 'balanced'
       if (session.result_cache) {
-        scores.value = session.result_cache.scores
         propertyData.value = session.result_cache.property_data
         reply.value = session.result_cache.reply
       }
@@ -60,7 +53,6 @@ export const useCompareStore = defineStore('compare', () => {
         message,
         priority: newPriority || null,
       })
-      scores.value = resp.scores
       propertyData.value = resp.property_data
       reply.value = resp.reply
       if (newPriority) priority.value = newPriority
@@ -74,7 +66,6 @@ export const useCompareStore = defineStore('compare', () => {
   function reset() {
     sessionId.value = null
     messages.value = []
-    scores.value = {}
     propertyData.value = {}
     priority.value = 'balanced'
     reply.value = ''
@@ -85,14 +76,12 @@ export const useCompareStore = defineStore('compare', () => {
   return {
     sessionId,
     messages,
-    scores,
     propertyData,
     priority,
     reply,
     loading,
     error,
     propertyIds,
-    dimensionKeys,
     startComparison,
     sendFollowup,
     reset,

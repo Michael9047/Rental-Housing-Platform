@@ -52,7 +52,7 @@
           <button
             :disabled="starting || startupFailed || sending || comparisonCandidateIds.length < 2"
             :title="comparisonCandidateIds.length < 2 ? '当前至少需要 2 套房源才能比较' : '比较当前搜索结果'"
-            @click="send('请对比当前搜索结果里的房源，告诉我哪套更适合')"
+            @click="openCompare(comparisonCandidateIds)"
           >
             <span class="welcome-action-icon"><el-icon><DataAnalysis /></el-icon></span>
             <span>
@@ -78,38 +78,16 @@
             <span>勾选 2–5 套可直接对比</span>
           </div>
           <div class="recommendation-row">
-            <article
+            <RecPropertyCard
               v-for="rec in uniqueRecommendations(message.recommendations)"
               :key="rec.property_id"
-              class="recommendation-card"
-              role="button"
-              tabindex="0"
-              @click="openProperty(rec.property_id)"
-              @keydown.enter.prevent="openProperty(rec.property_id)"
-            >
-              <div class="recommendation-image">
-                <img v-if="imageUrl(rec)" :src="imageUrl(rec)!" :alt="rec.property.title" />
-                <el-icon v-else :size="22"><PictureFilled /></el-icon>
-                <div class="recommendation-check" @click.stop>
-                  <el-checkbox
-                    :model-value="selectedCompareIds.includes(rec.property_id)"
-                    :disabled="!selectedCompareIds.includes(rec.property_id) && selectedCompareIds.length >= 5"
-                    @change="(checked: boolean) => toggleCompare(rec.property_id, checked)"
-                  >
-                    对比
-                  </el-checkbox>
-                </div>
-              </div>
-              <div class="recommendation-copy">
-                <strong :title="rec.property.title">{{ rec.property.title }}</strong>
-                <span>{{ rec.property.district || '区域待确认' }} · {{ formatPrice(rec) }}/月</span>
-                <div class="recommendation-specs">
-                  <span>{{ rec.property.bedrooms ?? '?' }}室{{ rec.property.bathrooms ?? '?' }}卫</span>
-                  <span v-if="rec.property.area_sqm">{{ rec.property.area_sqm }}㎡</span>
-                </div>
-                <p v-if="rec.match_reason">{{ rec.match_reason }}</p>
-              </div>
-            </article>
+              :rec="rec"
+              :selected="selectedCompareIds.includes(rec.property_id)"
+              :in-cart="cartStore.has(rec.property_id)"
+              @toggle-compare="toggleCompare"
+              @toggle-cart="handleToggleCart"
+              @detail="openProperty"
+            />
           </div>
           <div v-if="selectedCompareIds.length" class="compare-selection" aria-live="polite">
             <span>已选 {{ selectedCompareIds.length }} 套</span>
@@ -239,15 +217,15 @@ import {
   Close,
   DataAnalysis,
   Loading,
-  PictureFilled,
   Promotion,
   Search,
 } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
+import RecPropertyCard from '@/components/RecPropertyCard.vue'
 import { agentService } from '@/services/agent'
 import { useAgentChatStore } from '@/stores/agentChat'
-import { getImageUrl } from '@/utils/image'
-import { formatPropertyPrice, getCurrencySymbol } from '@/utils/currency'
+import { useCartStore } from '@/stores/cart'
+import { getCurrencySymbol } from '@/utils/currency'
 import { uniqueAgentRecommendations } from '@/utils/agentRecommendations'
 import type {
   AgentChatMessage,
@@ -273,6 +251,7 @@ const emit = defineEmits<{
 
 const router = useRouter()
 const agentChatStore = useAgentChatStore()
+const cartStore = useCartStore()
 const { sessionId, messages } = storeToRefs(agentChatStore)
 const inputText = ref('')
 const starting = ref(true)
@@ -325,6 +304,7 @@ onMounted(async () => {
   try {
     await Promise.all([
       agentChatStore.ensureSession(),
+      cartStore.fetch(),
       agentService.getFaqs().then((chips) => {
         if (chips.length) faqChips.value = mergeFaqChips(chips)
       }).catch(() => undefined),
@@ -504,40 +484,37 @@ function toggleCompare(propertyId: number, checked: boolean) {
 }
 
 function compareSelected() {
-  if (selectedCompareIds.value.length < 2) {
-    ElMessage.warning('请至少勾选 2 套房源进行对比')
-    return
-  }
-  void send(
-    '请结合我前面说的需求，详细比较这些房源并告诉我哪套更适合。',
-    [...selectedCompareIds.value],
-  )
+  openCompare(selectedCompareIds.value)
 }
 
 function compareLeftSelection() {
-  if (selectedVisibleResultIds.value.length < 2) {
-    ElMessage.warning('请在左侧至少勾选 2 套房源进行对比')
+  openCompare(selectedVisibleResultIds.value)
+}
+
+/** 所有可视化对比入口都回到独立对比页，不在 Agent 对话内生成对比结果。 */
+function openCompare(ids: number[]) {
+  const validIds = [...new Set(ids)]
+    .filter((id) => Number.isInteger(id) && id > 0)
+    .slice(0, 5)
+  if (validIds.length < 2) {
+    ElMessage.warning('请至少选择 2 套房源进行对比')
     return
   }
-  void send(
-    '请结合我前面说的需求，详细比较左侧勾选的房源并告诉我哪套更适合。',
-    [...selectedVisibleResultIds.value],
-  )
+  void router.push({ name: 'compare', query: { ids: validIds.join(',') } })
 }
 
-function imageUrl(rec: AgentRecommendation): string | null {
-  const images = rec.property.images
-  if (!images?.length) return null
-  const primary = images.find((image) => image.is_primary) || images[0]
-  return getImageUrl(primary.filename)
-}
-
-function formatPrice(rec: AgentRecommendation): string {
-  return formatPropertyPrice(
-    rec.property.price_monthly,
-    rec.property.currency,
-    rec.property.country,
-  )
+async function handleToggleCart(rec: AgentRecommendation) {
+  try {
+    if (cartStore.has(rec.property_id)) {
+      await cartStore.remove(rec.property_id)
+      ElMessage.info(`已从候选清单移出「${rec.property.title}」`)
+    } else {
+      await cartStore.add(rec.property_id, rec.match_reason || undefined)
+      ElMessage.success(`已将「${rec.property.title}」加入候选清单`)
+    }
+  } catch {
+    // 接口错误由统一拦截器提示。
+  }
 }
 
 function openProperty(propertyId: number) {
@@ -755,34 +732,7 @@ function openProperty(propertyId: number) {
 .recommendation-head span { color: #7d8997; font-size: 11px; }
 .recommendation-row { display: flex; gap: 10px; padding-bottom: 7px; overflow-x: auto; scroll-snap-type: x proximity; }
 
-.recommendation-card {
-  width: 406px;
-  flex: 0 0 406px;
-  min-height: 150px;
-  padding: 0;
-  display: grid;
-  grid-template-columns: 154px minmax(0, 1fr);
-  text-align: left;
-  background: #fff;
-  border: 1px solid #e2e7ed;
-  border-radius: 10px;
-  overflow: hidden;
-  cursor: pointer;
-  scroll-snap-align: start;
-  transition: border-color 0.15s, box-shadow 0.15s;
-}
-
-.recommendation-card:hover { border-color: #7ba8d4; box-shadow: 0 3px 10px rgba(42, 75, 108, 0.09); }
-.recommendation-image { position: relative; min-height: 150px; display: grid; place-items: center; color: #b2bbc5; background: #eef1f4; }
-.recommendation-image img { width: 100%; height: 100%; object-fit: cover; }
-.recommendation-check { position: absolute; top: 8px; left: 8px; padding: 2px 7px; border-radius: 6px; background: rgba(255, 255, 255, 0.94); box-shadow: 0 1px 5px rgba(38, 52, 69, 0.12); }
-.recommendation-check :deep(.el-checkbox__label) { padding-left: 5px; font-size: 11px; }
-.recommendation-copy { min-width: 0; padding: 13px 14px; display: flex; flex-direction: column; gap: 7px; }
-.recommendation-copy strong { color: #2d3948; font-size: 14.5px; line-height: 1.35; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-.recommendation-copy > span { color: #c64f46; font-size: 13px; font-weight: 700; }
-.recommendation-specs { display: flex; flex-wrap: wrap; gap: 5px; }
-.recommendation-specs span { padding: 3px 6px; border-radius: 5px; color: #53677b; background: #eef3f7; font-size: 10.5px; }
-.recommendation-copy p { margin: 0; color: #6f7b89; font-size: 11.5px; line-height: 1.5; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.recommendation-row :deep(.rec-card) { flex: 0 0 250px; }
 .compare-selection { padding: 8px 10px; display: flex; align-items: center; gap: 6px; border-radius: 8px; color: #47627c; background: #edf6ff; font-size: 12px; }
 .compare-selection > span { margin-right: auto; font-weight: 600; }
 .show-results-btn { width: 100%; }
@@ -832,10 +782,9 @@ function openProperty(propertyId: number) {
 }
 
 @media (max-width: 480px) {
-  .recommendation-card {
+  .recommendation-row :deep(.rec-card) {
     width: calc(100vw - 44px);
     flex-basis: calc(100vw - 44px);
-    grid-template-columns: 132px minmax(0, 1fr);
   }
   .recommendation-head { align-items: flex-start; flex-direction: column; gap: 2px; }
   .welcome-actions { grid-template-columns: 1fr; }

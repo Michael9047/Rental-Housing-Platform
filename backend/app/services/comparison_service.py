@@ -1,8 +1,8 @@
 """对比 Agent 服务 —— 单次 LLM 调用
 
 对 2-5 套房源做深度多维对比分析。
-评分由 compare_scoring 确定性计算（可复现、可审计），
-所有数据一次性批量预加载后内联进提示词，LLM 只负责解释和 trade-off 推理。
+内部顺序由 compare_scoring 确定性计算（可复现、可审计），
+用户侧只返回真实事实、取舍说明和建议，不返回数值评分。
 
 历史：原为 ReAct 工具循环（LLM 逐个调工具取数），每轮对比要 5-10 次串行
 LLM 往返（30-90s），且工具读的都是已预加载的缓存——纯浪费。
@@ -18,11 +18,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.property import Property
 from app.services.compare_scoring import (
-    DIMENSION_LABELS,
     PRIORITY_LABELS,
     compute_scores,
     normalize_priority,
 )
+from app.services.recommendation_visibility import hide_recommendation_scores
 from app.services.comparison_data import (
     EnrichedPropertyData,
     gather_comprehensive_metrics,
@@ -34,7 +34,7 @@ logger = logging.getLogger(__name__)
 
 # ── System Prompt ─────────────────────────────────────────────────
 
-COMPARISON_SYSTEM_PROMPT = """你是租房平台的深度对比分析师。系统已备好全部真实数据和确定性评分，你只负责解释分析——禁止编造任何房源信息，禁止修改或捏造分数。
+COMPARISON_SYSTEM_PROMPT = """你是租房平台的深度对比分析师。系统已备好全部真实数据，你只负责解释分析。禁止编造任何房源信息，也不要展示或编造匹配分、综合分或分项分。
 
 回复结构：
 1. 总览（2-3句）：共几套、价格带、按用户优先级的总体结论
@@ -43,14 +43,14 @@ COMPARISON_SYSTEM_PROMPT = """你是租房平台的深度对比分析师。系�
 
 规则：
 - 中文口语化，用「你」不用「您」
-- 只使用输入中提供的数据和分数
+- 只使用输入中提供的数据
 - 500-800字，纯文字段落，不用 Markdown 标题符号"""
 
 
 # ── Service ───────────────────────────────────────────────────────
 
 class ComparisonService:
-    """深度对比：确定性评分 + 单次 LLM 解释。"""
+    """深度对比：确定性内部排序 + 单次 LLM 解释。"""
 
     def __init__(self, session: AsyncSession) -> None:
         self.db = session
@@ -93,7 +93,6 @@ class ComparisonService:
         Returns:
             {
                 "reply": str,          # LLM 分析回复
-                "scores": dict,        # {property_id: {total, breakdown}} 权威分数（雷达图用）
                 "tool_trail": list,    # 保留字段，恒为空（ReAct 已下线）
                 "property_data": dict, # {property_id: dict} 前端渲染数据
             }
@@ -108,7 +107,15 @@ class ComparisonService:
         scores = compute_scores(metrics, priority)
 
         # 全部数据内联进提示词，一次 LLM 调用出分析
-        reply = await self._gen_reply(property_ids, scores, priority, user_message, conversation_history)
+        reply = hide_recommendation_scores(
+            await self._gen_reply(
+                property_ids,
+                scores,
+                priority,
+                user_message,
+                conversation_history,
+            )
+        )
 
         # 构建前端渲染数据
         property_data: dict[int, dict] = {}
@@ -139,7 +146,6 @@ class ComparisonService:
 
         return {
             "reply": reply,
-            "scores": scores,
             "tool_trail": [],
             "property_data": property_data,
         }
@@ -159,7 +165,6 @@ class ComparisonService:
             d = self._cache.get(pid)
             if not d:
                 continue
-            s = scores.get(pid) or {}
             rating_str = f"{d.rating:.1f}分/{d.review_count}条" if d.rating is not None else "暂无"
             lines.append(
                 f"{i}. [property_id={pid}] {d.title} | 区域: {d.district} | "
@@ -167,14 +172,12 @@ class ComparisonService:
                 f"面积: {d.area_sqm or '未知'}㎡ | 通勤: {d.transit_display or '无数据'} | "
                 f"评价: {rating_str} | 安全: {d.safety_score if d.safety_score is not None else '无数据'} | "
                 f"设施: {', '.join(d.amenities[:6]) or '无'} | "
-                f"简介: {d.description or '无'}\n"
-                f"   系统得分（禁止修改）: 综合 {s.get('total')} | "
-                + " ".join(f"{DIMENSION_LABELS.get(k, k)} {v}" for k, v in (s.get("breakdown") or {}).items())
+                f"简介: {d.description or '无'}"
             )
 
         user_prompt = (
             f"用户优先级：{PRIORITY_LABELS.get(priority, '均衡')}\n\n"
-            f"待对比房源（真实数据 + 系统评分）：\n" + "\n".join(lines)
+            f"待对比房源（真实数据）：\n" + "\n".join(lines)
         )
         if conversation_history:
             user_prompt += f"\n\n用户追问：{user_message}"
@@ -203,14 +206,14 @@ class ComparisonService:
         scores: dict[int, dict],
         priority: str,
     ) -> str:
-        """LLM 不可用/失败时的规则摘要（分数照常返回，雷达图不受影响）。"""
+        """LLM 不可用/失败时按内部排序给出无分数摘要。"""
         valid = [(pid, scores.get(pid, {}).get("total", 0)) for pid in property_ids if pid in self._cache]
         if not valid:
             return "对比数据加载失败，请稍后重试。"
-        winner_pid, winner_total = max(valid, key=lambda x: x[1])
+        winner_pid, _winner_total = max(valid, key=lambda x: x[1])
         winner = self._cache[winner_pid]
         return (
             f"按「{PRIORITY_LABELS.get(priority, '均衡')}」对比 {len(valid)} 套房源，"
-            f"综合得分最高的是「{winner.title}」（{winner_total} 分）。"
-            f"各套分项得分见下方图表。（AI 分析暂不可用，以上为系统评分结果）"
+            f"更建议优先看「{winner.title}」。"
+            f"（AI 分析暂不可用，以上为规则建议）"
         )

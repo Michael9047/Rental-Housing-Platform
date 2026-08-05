@@ -1,4 +1,4 @@
-"""对比 Agent —— 多维度房源对比（评分+LLM解释+7维分析，独立无 AgentService 依赖）
+"""对比 Agent —— 多维度房源对比（内部排序+事实解释，独立无 AgentService 依赖）
 
 Phase 3: 从 AgentService 迁移全部对比逻辑。
 """
@@ -32,12 +32,13 @@ from app.services.compare_scoring import (
     nearest_transit_meters,
     normalize_priority,
 )
+from app.services.recommendation_visibility import hide_recommendation_scores
 
 logger = logging.getLogger(__name__)
 
 AI_UNAVAILABLE_HINT = "（AI 分析暂不可用，已按筛选条件为您检索）"
 
-COMPARE_SYSTEM_PROMPT = """你是面向留学生的海外租房对比助手。系统已计算好每套房的综合得分和分项得分。你的任务是解释分析，不是打分。
+COMPARE_SYSTEM_PROMPT = """你是面向留学生的海外租房对比助手。系统已整理好每套房的真实事实。你的任务是解释取舍并给出建议，不要展示或编造任何匹配分、综合分或分项分。
 
 ══════════════════════════════
 示例（Few-Shot）
@@ -55,10 +56,9 @@ COMPARE_SYSTEM_PROMPT = """你是面向留学生的海外租房对比助手。�
 ══════════════════════════════
 1. 基于给出的真实字段，禁止编造。
 2. 每套房源都要覆盖。
-3. score 原样使用系统计算的得分，禁止修改。
-4. pros/cons 结合价格、通勤、面积、设施来写。
-5. recommendation 呼应用户优先级（通勤优先/预算优先/均衡）。
-6. 口语化，像朋友在给建议，用「你」不是「您」。
+3. pros/cons 结合价格、通勤、面积、设施来写。
+4. recommendation 呼应用户优先级（通勤优先/预算优先/均衡）。
+5. 口语化，像朋友在给建议，用「你」不是「您」。
 
 只输出 JSON，格式：
 {
@@ -68,21 +68,20 @@ COMPARE_SYSTEM_PROMPT = """你是面向留学生的海外租房对比助手。�
       "property_id": 1,
       "pros": ["价格最低", "步行3分钟到地铁"],
       "cons": ["面积较小"],
-      "score": 86,
       "best_for": "预算有限、单人居住"
     }
   ],
   "recommendation": "按您的优先级推荐房源 1，因为..."
 }"""
 
-COMPARE_STREAM_SYSTEM_PROMPT = """你是面向留学生的租房对比顾问。根据系统提供的真实房源字段和确定性得分，直接输出简洁自然的中文对比说明。
+COMPARE_STREAM_SYSTEM_PROMPT = """你是面向留学生的租房对比顾问。根据系统提供的真实房源字段，直接输出简洁自然的中文对比说明。
 
 规则：
 1. 先给结论，再按价格、通勤、空间和评价解释关键差异。
 2. 必须覆盖每套房，并呼应用户的优先级。
-3. 得分和房源字段原样使用，禁止编造设施、通勤、政策或费用。
+3. 禁止展示匹配分、综合分或分项分，也禁止编造设施、通勤、政策或费用。
 4. 缺失数据要明确说「暂无数据」。
-5. 不要输出 JSON，不要重新计算得分，总长度控制在 500 字内。"""
+5. 不要输出 JSON，不要自行打分，总长度控制在 500 字内。"""
 
 
 class CompareAgent(BaseAgent):
@@ -200,19 +199,13 @@ class CompareAgent(BaseAgent):
         for index, prop in enumerate(props, 1):
             data = property_to_dict(prop)
             extra = extras[prop.id]
-            score = scores[prop.id]
             fact_lines.append(
                 f"{index}. {data['title']} [property_id={prop.id}] | "
                 f"月租 {format_property_money(prop, data['price_monthly'])} | "
                 f"{data['bedrooms']}室{data['bathrooms']}卫 | "
                 f"面积 {data['area_sqm'] or '暂无数据'}㎡ | "
                 f"通勤 {extra['commute'] or '暂无数据'} | "
-                f"评价 {extra['rating'] if extra['rating'] is not None else '暂无数据'} | "
-                f"综合得分 {score['total']} | "
-                + " ".join(
-                    f"{DIMENSION_LABELS[key]} {value}"
-                    for key, value in score["breakdown"].items()
-                )
+                f"评价 {extra['rating'] if extra['rating'] is not None else '暂无数据'}"
             )
 
         reply = ""
@@ -332,6 +325,7 @@ class CompareAgent(BaseAgent):
             )
             extras[p.id] = {
                 "commute": format_commute(transit),
+                "commute_meters": transit,
                 "rating": round(rating, 1) if rating is not None else None,
                 "review_count": count,
             }
@@ -352,9 +346,8 @@ class CompareAgent(BaseAgent):
             return {
                 "property_id": pid,
                 "title": by_id[pid].title,
-                "score": scores[pid]["total"],
-                "score_breakdown": scores[pid]["breakdown"],
                 "commute": extras[pid]["commute"],
+                "commute_meters": extras[pid]["commute_meters"],
                 "rating": extras[pid]["rating"],
                 "review_count": extras[pid]["review_count"],
                 "property": by_id[pid],
@@ -366,7 +359,6 @@ class CompareAgent(BaseAgent):
                 for i, p in enumerate(props, 1):
                     d = property_to_dict(p)
                     e = extras[p.id]
-                    s = scores[p.id]
                     lines.append(
                         f"{i}. [property_id={d['property_id']}] {d['title']} | 区域: {d['district']} | "
                         f"月租: {format_property_money(p, d['price_monthly'])} | "
@@ -374,13 +366,11 @@ class CompareAgent(BaseAgent):
                         f"面积: {d['area_sqm'] or '未知'}㎡ | 通勤: {e['commute'] or '无数据'} | "
                         f"设施: {'、'.join(d['amenities']) if d['amenities'] else '无数据'} | "
                         f"评价: {(str(e['rating']) + '分/' + str(e['review_count']) + '条') if e['rating'] is not None else '暂无'} | "
-                        f"简介: {d['description'] or '无'}\n"
-                        f"   系统得分（禁止修改）: 综合 {s['total']} | "
-                        + " ".join(f"{DIMENSION_LABELS[k]} {v}" for k, v in s["breakdown"].items())
+                        f"简介: {d['description'] or '无'}"
                     )
                 user_prompt = (
                     f"用户优先级：{PRIORITY_LABELS[pr]}\n\n"
-                    f"待对比房源（数据库真实数据 + 系统计算得分）：\n" + "\n".join(lines)
+                    f"待对比房源（数据库真实数据）：\n" + "\n".join(lines)
                 )
                 result = await self.llm_service.complete_json(
                     COMPARE_SYSTEM_PROMPT, user_prompt, max_tokens=2000
@@ -403,16 +393,16 @@ class CompareAgent(BaseAgent):
 
                 if parsed:
                     dim_analysis = build_dimension_analysis(props, scores, extras, pr, result)
-                    return {
+                    return hide_recommendation_scores({
                         "summary": str(result.get("summary", "")),
                         "dimension_analysis": dim_analysis,
                         "items": items_out,
                         "recommendation": str(result.get("recommendation", "")),
                         "ai_available": True,
                         "priority": pr,
-                    }
+                    })
             except Exception:
-                logger.exception("LLM 对比解释生成失败，降级为规则解释（得分不变）")
+                logger.exception("LLM 对比解释生成失败，降级为规则解释")
 
         return self._rule_based_compare(props, scores, extras, pr)
 
@@ -462,10 +452,9 @@ class CompareAgent(BaseAgent):
                 "title": p.title,
                 "pros": pros,
                 "cons": cons,
-                "score": scores[p.id]["total"],
-                "score_breakdown": b,
                 "best_for": f"{DIMENSION_LABELS[top_dim]}优先",
                 "commute": extras[p.id]["commute"],
+                "commute_meters": extras[p.id]["commute_meters"],
                 "rating": extras[p.id]["rating"],
                 "review_count": extras[p.id]["review_count"],
                 "property": by_id[p.id],
@@ -480,14 +469,14 @@ class CompareAgent(BaseAgent):
                 f"{format_property_money(priciest, priciest.price_monthly)}。"
             )
         else:
-            price_summary = "包含多个币种，价格得分已统一换算后比较。"
+            price_summary = "包含多个币种，建议顺序已统一换算后比较。"
         winner = max(props, key=lambda p: scores[p.id]["total"])
         fake_result = {
             "summary": (
                 f"按「{PRIORITY_LABELS[priority]}」共对比 {len(props)} 套房源，"
                 f"{price_summary}{AI_UNAVAILABLE_HINT}"
             ),
-            "recommendation": f"按「{PRIORITY_LABELS[priority]}」综合得分最高的是「{winner.title}」（{scores[winner.id]['total']} 分）。",
+            "recommendation": f"按「{PRIORITY_LABELS[priority]}」更建议优先看「{winner.title}」。",
         }
 
         return {

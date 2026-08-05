@@ -177,7 +177,7 @@ def register_default_tools(
 
     registry.register(ToolDef(
         name="score_properties",
-        description="对候选房源进行确定性质量评分（价格匹配度40% + 空间匹配度20% + 设施完整度20% + 基础分20%），返回 top 3 附带亮点理由。",
+        description="按预算、空间与信息完整度对候选房源做内部排序，返回 top 3 及亮点理由；不得向用户展示排序数值。",
         parameters={
             "type": "object",
             "properties": {
@@ -193,7 +193,7 @@ def register_default_tools(
     # ── 对比工具 ──
     registry.register(ToolDef(
         name="compare_dimensions",
-        description="多维度对比房源：价格/通勤/空间/评价四个维度加权评分。返回每套房的综合得分和分项得分。",
+        description="按价格、通勤、空间和评价对房源做内部排序，返回事实取舍与建议；不得向用户展示排序数值。",
         parameters={
             "type": "object",
             "properties": {
@@ -430,8 +430,8 @@ def bind_tool_handlers(
                 {"id": prop.id, "title": prop.title, "district": prop.district,
                  "price_monthly": float(prop.price_monthly), "bedrooms": prop.bedrooms,
                  "property_type": prop.property_type, "area_sqm": float(prop.area_sqm) if prop.area_sqm else None,
-                 "address": prop.address, "similarity": round(sim, 4) if sim else None}
-                for prop, sim in rows
+                 "address": prop.address}
+                for prop, _similarity in rows
             ]
             return {"count": len(results), "rows": results}
         except Exception as exc:
@@ -455,8 +455,7 @@ def bind_tool_handlers(
                      "bedrooms": ut["unit_type"].bedrooms,
                      "property_type": ut["unit_type"].name,
                      "area_sqm": float(ut["unit_type"].area_sqm) if ut["unit_type"].area_sqm else None,
-                     "address": ut["institute"].address or "",
-                     "similarity": None}
+                     "address": ut["institute"].address or ""}
                     for ut in unit_results
                 ]
                 return {"count": len(results), "rows": results}

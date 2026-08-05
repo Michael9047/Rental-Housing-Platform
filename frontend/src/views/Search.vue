@@ -1117,7 +1117,6 @@ function showAgentRecommendations(recommendations: AgentRecommendation[]) {
   const results = uniqueAgentRecommendations(recommendations).map((recommendation) => ({
     ...recommendation.property,
     id: recommendation.property_id,
-    similarity: recommendation.final_score ? recommendation.final_score / 100 : null,
   }))
   propertyStore.setSearchResults(results)
   currentPage.value = 1

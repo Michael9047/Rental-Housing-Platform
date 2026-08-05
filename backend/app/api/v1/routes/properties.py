@@ -91,9 +91,8 @@ async def search_properties(
                      created_at=img.created_at) for img in (prop.images or [])],
             institute_id=prop.institute_id,
             institute_name=getattr(prop, 'institute_name', None),
-            similarity=sim,
         )
-        for prop, sim in results
+        for prop, _similarity in results
     ]
 
 

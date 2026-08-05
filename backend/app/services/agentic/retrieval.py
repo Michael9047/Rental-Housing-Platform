@@ -436,8 +436,10 @@ def recommendation_explanation(item: dict[str, Any], filters: dict[str, Any]) ->
     if filters.get("price_max") is not None and float(unit_type.base_rent) > float(filters["price_max"]):
         cons.append("超出原预算")
     cons = list(dict.fromkeys(cons))[:2]
-    score = float(item.get("_final_score", 0.0))
-    reason = f"综合匹配 {score:.0f} 分 · {institute.name} · {unit_type.bedrooms}室 · {int(item.get('available_rooms', 0) or 0)}间可租"
+    reason = (
+        f"{institute.name} · {unit_type.bedrooms}室 · "
+        f"{int(item.get('available_rooms', 0) or 0)}间可租"
+    )
     return reason, pros, cons
 
 

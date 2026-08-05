@@ -70,7 +70,7 @@ describe('usePropertyStore', () => {
   })
 
   it('fetchSearch populates searchResults', async () => {
-    mockSearch.mockResolvedValue([{ ...sampleProperty, similarity: 0.9 }])
+    mockSearch.mockResolvedValue([sampleProperty])
     const store = usePropertyStore()
     await store.fetchSearch({ q: 'test' })
     expect(store.searchResults).toHaveLength(1)
@@ -96,7 +96,7 @@ describe('usePropertyStore', () => {
   it('remove filters from arrays', async () => {
     mockDelete.mockResolvedValue(undefined)
     const store = usePropertyStore()
-    store.$patch({ properties: [sampleProperty], searchResults: [{ ...sampleProperty, similarity: 0.8 }] })
+    store.$patch({ properties: [sampleProperty], searchResults: [sampleProperty] })
     await store.remove(1)
     expect(store.properties).toHaveLength(0)
     expect(store.searchResults).toHaveLength(0)

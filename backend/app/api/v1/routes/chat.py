@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import get_current_user, get_db_session
 from app.models.user import User
 from app.services.chat_service import ChatService
+from app.services.recommendation_visibility import hide_recommendation_scores
 
 router = APIRouter()
 
@@ -95,8 +96,8 @@ async def get_messages(
             id=m.id,
             session_id=m.session_id,
             role=m.role.value,
-            content=m.content,
-            metadata=m.metadata_,
+            content=hide_recommendation_scores(m.content),
+            metadata=hide_recommendation_scores(m.metadata_),
             created_at=m.created_at.isoformat(),
         )
         for m in messages

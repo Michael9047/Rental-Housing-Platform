@@ -104,8 +104,6 @@ export type AgentIntent =
 export interface AgentRecommendation {
   property_id: number
   rank: number
-  final_score: number
-  score_breakdown: Record<string, number>
   match_reason: string
   pros: string[]
   cons: string[]
@@ -215,13 +213,11 @@ export interface CompareItem {
   title: string
   pros: string[]
   cons: string[]
-  /** 系统确定性加权得分（非 LLM 打分，可复现） */
-  score: number
-  /** 分项得分：price/commute/space/rating */
-  score_breakdown: Record<string, number> | null
   best_for: string
   /** 如 "最近交通站点约500m"（来自 POI 数据） */
   commute: string | null
+  /** 最近交通站点距离（米），用于事实维度比较。 */
+  commute_meters: number | null
   /** 机构真实评价均分（1-5），无评价为 null */
   rating: number | null
   review_count: number

@@ -5,6 +5,37 @@ from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.models.institute import Institute, InstituteStatus
+from app.api.v1.routes.agent import _strip_recommendation_scores
+
+
+def test_recommendation_history_hides_internal_scores() -> None:
+    cleaned = _strip_recommendation_scores({
+        "recommendations": [{
+            "property_id": 1,
+            "final_score": 88.5,
+            "score_breakdown": {"semantic": 90},
+            "similarity": 0.92,
+            "match_reason": "综合匹配 89 分 · 测试公寓 · 1室",
+        }],
+        "score_gap": {"confident": True},
+        "scores": {"1": {"total": 89}},
+        "tool_trail": [{"score": 89, "name": "内部排序"}],
+        "reply": "匹配度：92% · 推荐先看测试公寓",
+        "old_compare_reply": "综合得分最高的是「测试公寓」（89 分）。",
+        "old_ranking": "🥇 测试公寓 — 89 分（价格 90 | 通勤 88）",
+    })
+
+    recommendation = cleaned["recommendations"][0]
+    assert "final_score" not in recommendation
+    assert "score_breakdown" not in recommendation
+    assert "similarity" not in recommendation
+    assert "score_gap" not in cleaned
+    assert "scores" not in cleaned
+    assert "score" not in cleaned["tool_trail"][0]
+    assert recommendation["match_reason"] == "测试公寓 · 1室"
+    assert cleaned["reply"] == "推荐先看测试公寓"
+    assert cleaned["old_compare_reply"] == "更建议优先看「测试公寓」。"
+    assert cleaned["old_ranking"] == "🥇 测试公寓"
 
 
 async def _register_and_login(client: AsyncClient, payload: dict[str, str]) -> tuple[int, dict[str, str]]:
@@ -257,13 +288,14 @@ async def test_compare_cart_rule_based(
     assert data["summary"]
     assert data["recommendation"]
     assert len(data["items"]) == 2
-    # LLM 未配置时走规则解释，但得分来自确定性加权公式
+    # LLM 未配置时走规则解释，内部排序不应泄露到响应。
     assert data["ai_available"] is False
     assert data["priority"] == "balanced"
     by_id = {it["property_id"]: it for it in data["items"]}
     assert "价格最有优势" in by_id[cheap_id]["pros"]
-    assert by_id[cheap_id]["score"] > by_id[pricey_id]["score"]
-    assert set(by_id[cheap_id]["score_breakdown"].keys()) == {"price", "commute", "space", "rating"}
+    assert cheap_id in by_id and pricey_id in by_id
+    assert all("score" not in item and "score_breakdown" not in item for item in data["items"])
+    assert "分" not in data["recommendation"]
 
 
 @pytest.mark.asyncio

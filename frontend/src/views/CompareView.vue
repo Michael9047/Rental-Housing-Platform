@@ -245,16 +245,24 @@ const dims: Dim[] = [
     key: 'price',
     label: '月租金',
     display: (it) => formatRent(it.property),
-    value: (it) => it.score_breakdown?.price ?? null,
-    higherBetter: true,
+    value: (it) => {
+      const properties = items.value
+        .map((item) => item.property)
+        .filter((property): property is PropertySearchResult => property !== null)
+      const currencies = new Set(properties.map((property) => (
+        resolveCurrency(property.currency, property.country)
+      )))
+      return currencies.size === 1 ? toNum(it.property?.price_monthly) : null
+    },
+    higherBetter: false,
     winnerTag: '最便宜',
   },
   {
     key: 'commute',
     label: '通勤',
     display: (it) => it.commute || '暂无数据',
-    value: (it) => it.score_breakdown?.commute ?? null,
-    higherBetter: true,
+    value: (it) => it.commute_meters,
+    higherBetter: false,
     winnerTag: '更近',
   },
   {
@@ -287,7 +295,7 @@ function winnersOf(dim: Dim): Set<number> {
   return new Set(vals.filter((x) => x.v === best).map((x) => x.id))
 }
 
-// 月租金维度：同币种时展示直观差价；跨币种只使用后端统一换算后的价格得分。
+// 月租金维度：同币种时展示直观差价；跨币种不在前端直接判定高低。
 function priceDiffText(it: CompareItem): string | null {
   const properties = items.value
     .map((item) => item.property)
@@ -309,19 +317,6 @@ function priceDiffText(it: CompareItem): string | null {
     return secondMin != null ? `比次低省 ${symbol}${(secondMin - min).toLocaleString()}` : null
   }
   return `贵 ${symbol}${(cur - min).toLocaleString()}`
-}
-
-// 综合得分胜者
-const scoreWinners = computed<Set<number>>(() => {
-  if (items.value.length === 0) return new Set()
-  const best = Math.max(...items.value.map((it) => it.score))
-  return new Set(items.value.filter((it) => it.score === best).map((it) => it.property_id))
-})
-
-function scoreColor(score: number): string {
-  if (score >= 80) return '#67c23a'
-  if (score >= 60) return '#e6a23c'
-  return '#f56c6c'
 }
 
 // ── 配置对比表：字段行 ──────────────────────────────────────────
@@ -567,38 +562,14 @@ function goDetail(pid: number) {
             </div>
           </div>
 
-          <!-- 综合得分 -->
-          <div class="cmp-pk-block">
-            <div class="cmp-pk-dim">综合得分</div>
-            <div
-              class="cmp-pk-row"
-              :style="{ gridTemplateColumns: `repeat(${items.length}, minmax(120px, 1fr))` }"
-            >
-              <div
-                v-for="it in items"
-                :key="it.property_id"
-                class="cmp-pk-cell"
-                :class="{ win: scoreWinners.has(it.property_id) }"
-              >
-                <el-progress
-                  type="dashboard"
-                  :width="76"
-                  :percentage="it.score"
-                  :color="scoreColor(it.score)"
-                />
-                <div v-if="scoreWinners.has(it.property_id)" class="cmp-pk-badge">推荐</div>
-              </div>
-            </div>
-          </div>
-
-          <!-- 旧版对比弹窗同时展示 summary 和 recommendation；综合页也保留完整的 AI 解读。 -->
+          <!-- 综合维度之后固定展示 AI 总结，规则降级时也保留可读结论。 -->
           <div
             v-if="result && (result.summary || result.recommendation)"
             class="cmp-ai-analysis"
           >
             <div class="cmp-ai-head">
               <span class="cmp-ai-icon"><el-icon><Star /></el-icon></span>
-              <strong>{{ result.ai_available ? 'AI 综合分析' : '综合分析' }}</strong>
+              <strong>{{ result.ai_available ? 'AI 总结' : '对比总结' }}</strong>
               <span class="cmp-ai-status" :class="{ fallback: !result.ai_available }">
                 {{ result.ai_available ? 'AI 生成' : '规则分析' }}
               </span>

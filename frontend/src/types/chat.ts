@@ -29,7 +29,6 @@ export interface MatchedProperty {
   bathrooms: number
   area_sqm: number | null
   property_type: string
-  similarity: number | null
 }
 
 export interface SSEEvent {

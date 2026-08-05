@@ -43,6 +43,5 @@ class CompareMessageRequest(BaseModel):
 
 class CompareMessageResponse(BaseModel):
     reply: str
-    scores: dict[int, dict] = {}         # {property_id: {total: int, breakdown: {dim: int}}}
     tool_trail: list[dict] = []          # 调试/审计：工具调用轨迹
     property_data: dict[int, dict] = {}  # {property_id: EnrichedPropertyData}

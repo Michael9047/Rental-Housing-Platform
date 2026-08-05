@@ -86,6 +86,31 @@ class EmbeddingService:
 
         raise RuntimeError("未配置任何 Embedding API Key（ZHIPU_API_KEY 或 OPENAI_API_KEY）")
 
+    async def _do_embed_many(self, texts: list[str]) -> list[list[float]]:
+        """单次请求批量生成向量，并按输入顺序返回。"""
+        if not texts:
+            return []
+        if self._zhipu_client is not None:
+            response = await self._zhipu_client.embeddings.create(
+                model=self._zhipu_model,
+                input=texts,
+                dimensions=self._dimensions,
+            )
+        elif self._openai_client is not None:
+            response = await self._openai_client.embeddings.create(
+                model=self._openai_model,
+                input=texts,
+            )
+        else:
+            raise RuntimeError("未配置任何 Embedding API Key（ZHIPU_API_KEY 或 OPENAI_API_KEY）")
+
+        ordered = sorted(response.data, key=lambda item: item.index)
+        if len(ordered) != len(texts):
+            raise RuntimeError(
+                f"Embedding 批量响应数量不一致：请求 {len(texts)}，返回 {len(ordered)}"
+            )
+        return [item.embedding for item in ordered]
+
     async def generate_embedding(self, text: str) -> list[float]:
         """生成文本向量：先查 Redis 缓存，未命中再调 API 并回写。
 
@@ -103,6 +128,48 @@ class EmbeddingService:
             await self._cache.store_embedding(cache_key, vector)
         return vector
 
+    async def generate_embeddings(
+        self,
+        texts: list[str],
+        *,
+        batch_size: int = 50,
+    ) -> list[list[float]]:
+        """批量生成文本向量，复用缓存并限制单次请求规模。"""
+        if not texts:
+            return []
+        if batch_size < 1:
+            raise ValueError("batch_size 必须大于 0")
+
+        vectors: list[list[float] | None] = [None] * len(texts)
+        missing_indexes: list[int] = []
+        namespace = self._cache_namespace()
+        for index, value in enumerate(texts):
+            cache_key = f"{namespace}:{value}"
+            cached = (
+                await self._cache.get_embedding(cache_key)
+                if self._cache is not None else None
+            )
+            if cached is None:
+                missing_indexes.append(index)
+            else:
+                vectors[index] = cached
+
+        for start in range(0, len(missing_indexes), batch_size):
+            indexes = missing_indexes[start:start + batch_size]
+            chunk_texts = [texts[index] for index in indexes]
+            chunk_vectors = await self._do_embed_many(chunk_texts)
+            for index, vector in zip(indexes, chunk_vectors):
+                vectors[index] = vector
+                if self._cache is not None:
+                    await self._cache.store_embedding(
+                        f"{namespace}:{texts[index]}",
+                        vector,
+                    )
+
+        if any(vector is None for vector in vectors):
+            raise RuntimeError("Embedding 批量生成存在缺失结果")
+        return [vector for vector in vectors if vector is not None]
+
     def _cache_namespace(self) -> str:
         """缓存命名空间：provider + 维度，切换后自然失效。"""
         if self._zhipu_client is not None:
@@ -112,6 +179,15 @@ class EmbeddingService:
     async def generate_property_embedding(self, property_data: dict) -> list[float]:
         text = _build_property_text(property_data)
         return await self.generate_embedding(text)
+
+    async def close(self) -> None:
+        """关闭缓存与 HTTP 客户端，供一次性脚本显式释放资源。"""
+        if self._cache is not None:
+            await self._cache.close()
+        clients = [self._zhipu_client, self._openai_client]
+        for client in clients:
+            if client is not None:
+                await client.close()
 
 
 # ── 单例 ────────────────────────────────────────────────────────────

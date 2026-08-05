@@ -19,7 +19,6 @@ export interface CompareSessionResponse {
 }
 
 export interface CompareResultCache {
-  scores: Record<number, DimensionScores>
   property_data: Record<number, EnrichedPropertyData>
   reply: string
 }
@@ -39,14 +38,8 @@ export interface CompareMessageRequest {
 
 export interface CompareMessageResponse {
   reply: string
-  scores: Record<number, DimensionScores>
   tool_trail: ToolCallRecord[]
   property_data: Record<number, EnrichedPropertyData>
-}
-
-export interface DimensionScores {
-  total: number
-  breakdown: Record<string, number>
 }
 
 export interface EnrichedPropertyData {

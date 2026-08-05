@@ -63,14 +63,10 @@ describe("PropertyCard", () => {
     expect(wrapper.text()).toContain("暂无图片")
   })
 
-  it("shows similarity when enabled", () => {
-    const wrapper = createWrapper({ similarity: 0.85 }, { showSimilarity: true })
-    expect(wrapper.text()).toContain("85%")
-  })
-
-  it("does not show similarity when disabled", () => {
-    const wrapper = createWrapper({ similarity: 0.85 })
-    expect(wrapper.text()).not.toContain("匹配度")
+  it("does not render recommendation scores", () => {
+    const wrapper = createWrapper()
+    expect(wrapper.text()).not.toContain("匹配")
+    expect(wrapper.find(".match-badge").exists()).toBe(false)
   })
 
   it("renders area when available", () => {

@@ -15,6 +15,7 @@ from app.schemas.compare import (
 )
 from app.services.comparison_service import ComparisonService
 from app.services.comparison_session_service import ComparisonSessionService
+from app.services.recommendation_visibility import hide_recommendation_scores
 
 logger = logging.getLogger(__name__)
 
@@ -25,10 +26,17 @@ def _msg_to_read(msg) -> CompareMessageRead:
     return CompareMessageRead(
         id=msg.id,
         role=msg.role,
-        content=msg.content,
-        tool_calls=msg.tool_calls,
+        content=hide_recommendation_scores(msg.content),
+        tool_calls=hide_recommendation_scores(msg.tool_calls),
         created_at=msg.created_at,
     )
+
+
+def _public_result_cache(value: dict | None) -> dict | None:
+    """兼容旧会话缓存，但不再向客户端返回内部评分。"""
+    if value is None:
+        return None
+    return hide_recommendation_scores(value)
 
 
 # ── 会话 ──────────────────────────────────────────────────────────
@@ -67,7 +75,6 @@ async def create_compare_session(
 
     # 4. 缓存结果
     await sess_svc.update_result_cache(compare_sess.id, {
-        "scores": result["scores"],
         "property_data": result["property_data"],
         "reply": result["reply"],
     })
@@ -81,7 +88,7 @@ async def create_compare_session(
         property_ids=compare_sess.property_ids or [],
         priority=compare_sess.priority,
         status=compare_sess.status.value,
-        result_cache=compare_sess.result_cache,
+        result_cache=_public_result_cache(compare_sess.result_cache),
         created_at=compare_sess.created_at,
         messages=[_msg_to_read(m) for m in compare_sess.messages],
     )
@@ -105,7 +112,7 @@ async def get_compare_session(
         property_ids=compare_sess.property_ids or [],
         priority=compare_sess.priority,
         status=compare_sess.status.value,
-        result_cache=compare_sess.result_cache,
+        result_cache=_public_result_cache(compare_sess.result_cache),
         created_at=compare_sess.created_at,
         messages=[_msg_to_read(m) for m in compare_sess.messages],
     )
@@ -152,14 +159,12 @@ async def send_compare_message(
 
     # 更新缓存
     await sess_svc.update_result_cache(session_id, {
-        "scores": result["scores"],
         "property_data": result["property_data"],
         "reply": result["reply"],
     })
 
     return CompareMessageResponse(
         reply=result["reply"],
-        scores=result["scores"],
         tool_trail=result["tool_trail"],
         property_data=result["property_data"],
     )

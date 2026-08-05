@@ -111,7 +111,6 @@ class PropertySearchResult(PropertyBase):
     created_at: datetime
     updated_at: datetime
     images: list[PropertyImageRead] = []
-    similarity: float | None = None
 
     @property
     def primary_image_url(self) -> str | None:

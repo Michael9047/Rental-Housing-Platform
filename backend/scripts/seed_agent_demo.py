@@ -1,11 +1,12 @@
-"""Agent 演示数据脚本：幂等创建测试账号、公寓、房型与可租房间。"""
+"""Agent 演示数据脚本：幂等创建房源，并补齐模拟 POI、通勤与 embedding。"""
 from __future__ import annotations
 
 import asyncio
 import sys
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from pathlib import Path
+from typing import Any
 
 from sqlalchemy import select
 
@@ -15,7 +16,9 @@ sys.path.insert(0, str(BACKEND_ROOT))
 from app.core.security import hash_password
 from app.db.session import async_session_maker
 from app.models.institute import Institute, InstituteStatus
+from app.models.poi import PropertyPOI
 from app.models.property import Property
+from app.models.room_commute import RoomCommute
 from app.models.unit_type import DepositType, UnitType, UnitTypeStatus
 from app.models.university import University
 from app.models.user import User, UserRole, UserStatus
@@ -187,6 +190,125 @@ MARKETS = [
     },
 ]
 
+# 追加更多常用留学市场，整批数据共 11 个公寓、40 个户型、80 间房。
+MARKETS.extend([
+    {
+        "business_id": "DEMO-SG-ONE-NORTH",
+        "name": "One-North Campus Commons",
+        "name_cn": "纬壹校园共享公寓",
+        "address": "8 Ayer Rajah Crescent, Singapore 139939",
+        "district": "纬壹",
+        "city": "新加坡",
+        "country": "SG",
+        "latitude": "1.299900",
+        "longitude": "103.787100",
+        "amenities": ["WiFi", "健身房", "自习室", "共享厨房", "门禁", "近地铁"],
+        "description": "位于纬壹科技园生活圈，适合希望兼顾 NUS 通勤、学习与实习的学生。",
+        "currency": "SGD",
+        "units": [
+            ("Urban Studio", 0, 1, "2080", "27", ["独立卫浴", "开放厨房", "家具齐全"]),
+            ("Study Ensuite", 1, 1, "1620", "21", ["独立卫浴", "共享厨房", "大书桌"]),
+            ("One Bedroom Flex", 1, 1, "2720", "44", ["独立厨房", "洗衣机", "储物间"]),
+            ("Two Bedroom Share", 2, 2, "3520", "69", ["合租", "双卫", "阳台"]),
+        ],
+    },
+    {
+        "business_id": "DEMO-SG-BUKIT-TIMAH",
+        "name": "Bukit Timah Study House",
+        "name_cn": "武吉知马学习公寓",
+        "address": "116 Clementi Road, Singapore 129791",
+        "district": "武吉知马",
+        "city": "新加坡",
+        "country": "SG",
+        "latitude": "1.323200",
+        "longitude": "103.769100",
+        "amenities": ["WiFi", "花园", "阅读室", "洗衣房", "停车位", "近公交"],
+        "description": "安静的低密度学生公寓，适合偏好绿化、阅读空间和稳定公交通勤的租客。",
+        "currency": "SGD",
+        "units": [
+            ("Garden Studio", 0, 1, "1940", "25", ["独立卫浴", "小厨房", "花园景"]),
+            ("Quiet Ensuite", 1, 1, "1510", "19", ["独立卫浴", "共享厨房", "书桌"]),
+            ("One Bedroom Garden", 1, 1, "2480", "42", ["独立厨房", "露台", "洗衣机"]),
+            ("Two Bedroom Courtyard", 2, 1, "3280", "65", ["合租", "独立厨房", "庭院"]),
+        ],
+    },
+    {
+        "business_id": "DEMO-GB-CAMDEN",
+        "name": "Camden Academic Court",
+        "name_cn": "伦敦卡姆登学术公寓",
+        "address": "42 Camden Road, London NW1 9DR",
+        "district": "卡姆登",
+        "city": "伦敦",
+        "country": "GB",
+        "latitude": "51.539600",
+        "longitude": "-0.142600",
+        "amenities": ["WiFi", "门禁", "自习室", "洗衣房", "自行车库", "账单全包"],
+        "description": "卡姆登生活区内的学生公寓，可乘地铁或公交前往 UCL，餐饮采购选择丰富。",
+        "currency": "GBP",
+        "units": [
+            ("Compact Studio", 0, 1, "1720", "20", ["独立卫浴", "独立厨房", "账单全包"]),
+            ("Classic Ensuite", 1, 1, "1320", "17", ["独立卫浴", "共享厨房", "书桌"]),
+            ("Large Ensuite", 1, 1, "1540", "22", ["独立卫浴", "共享厨房", "大窗"]),
+            ("Twin Shared Flat", 2, 1, "2280", "46", ["合租", "独立厨房", "客厅"]),
+        ],
+    },
+    {
+        "business_id": "DEMO-US-SAWTELLE",
+        "name": "Sawtelle Bruin Living",
+        "name_cn": "洛杉矶索特尔学生公寓",
+        "address": "2025 Sawtelle Boulevard, Los Angeles, CA 90025",
+        "district": "Sawtelle",
+        "city": "洛杉矶",
+        "country": "US",
+        "latitude": "34.040400",
+        "longitude": "-118.443700",
+        "amenities": ["WiFi", "健身房", "门禁", "停车位", "洗衣房", "近公交"],
+        "description": "位于 Sawtelle 餐饮生活区，可乘公交前往 UCLA，适合重视生活便利的学生。",
+        "currency": "USD",
+        "units": [
+            ("Micro Studio", 0, 1, "2180", "28", ["独立卫浴", "独立厨房", "空调"]),
+            ("Furnished One Bedroom", 1, 1, "2680", "45", ["独立厨房", "家具齐全", "洗衣机"]),
+            ("One Bedroom Plus", 1, 1, "2920", "52", ["独立厨房", "书房角", "阳台"]),
+            ("Two Bedroom Shared", 2, 2, "3980", "74", ["合租", "双卫", "停车位"]),
+        ],
+    },
+    {
+        "business_id": "DEMO-HK-SAI-YING-PUN",
+        "name": "Sai Ying Pun Campus Homes",
+        "name_cn": "香港西营盘校园公寓",
+        "address": "128 Des Voeux Road West, Sai Ying Pun, Hong Kong",
+        "district": "西营盘",
+        "city": "香港",
+        "country": "HK",
+        "latitude": "22.286400",
+        "longitude": "114.143600",
+        "amenities": ["WiFi", "门禁", "电梯", "自习区", "洗衣房", "近地铁"],
+        "description": "西营盘地铁站生活圈内的学生公寓，前往港大方便，餐饮和日常采购密集。",
+        "currency": "HKD",
+        "units": [
+            ("城市景 Studio", 0, 1, "15800", "20", ["独立卫浴", "开放厨房", "家具齐全"]),
+            ("标准独卫单间", 1, 1, "11800", "15", ["独立卫浴", "共享厨房", "书桌"]),
+            ("宽敞独卫单间", 1, 1, "13600", "19", ["独立卫浴", "共享厨房", "大窗"]),
+            ("两房合租套间", 2, 1, "22600", "41", ["合租", "独立厨房", "客厅"]),
+        ],
+    },
+])
+
+
+COMMUTE_BASES: dict[str, tuple[int, int, int]] = {
+    "DEMO-SG-NUS": (22, 58, 13),
+    "DEMO-SG-DOVER": (18, 48, 12),
+    "DEMO-SG-QUEENSTOWN": (28, 78, 18),
+    "DEMO-SG-ONE-NORTH": (21, 62, 14),
+    "DEMO-SG-BUKIT-TIMAH": (25, 72, 16),
+    "DEMO-GB-UCL": (8, 16, 7),
+    "DEMO-GB-CAMDEN": (19, 38, 14),
+    "DEMO-US-UCLA": (10, 18, 6),
+    "DEMO-US-SAWTELLE": (24, 66, 15),
+    "DEMO-HK-HKU": (12, 24, 8),
+    "DEMO-HK-SAI-YING-PUN": (9, 19, 7),
+}
+
 
 def validate_demo_catalog() -> None:
     """启动写库前校验演示房源名称，避免卡片和对比列表出现重名。"""
@@ -216,6 +338,175 @@ def validate_demo_catalog() -> None:
                 property_titles.add(title)
 
 
+def _simulated_poi_payload(room: Property, market: dict[str, Any]) -> tuple[str, dict, dict]:
+    """按房源 ID 稳定生成一组可复现的周边设施数据。"""
+    seed = int(room.id or 0)
+    district = str(market["district"])
+    lat = float(market["latitude"])
+    lng = float(market["longitude"])
+    distances = {
+        "transit": 180 + seed % 7 * 45,
+        "bus": 90 + seed % 5 * 35,
+        "supermarket": 140 + seed % 6 * 55,
+        "hospital": 520 + seed % 8 * 95,
+        "gym": 260 + seed % 7 * 70,
+        "dining": 110 + seed % 6 * 40,
+    }
+    poi_data = {
+        "交通": [
+            {"name": f"{district}地铁站", "distance": f"{distances['transit']}m", "keyword": "地铁站"},
+            {"name": f"{district}社区巴士站", "distance": f"{distances['bus']}m", "keyword": "公交站"},
+        ],
+        "购物": [
+            {"name": f"{district}生活超市", "distance": f"{distances['supermarket']}m", "keyword": "超市"},
+            {"name": f"{district}便利店", "distance": f"{distances['supermarket'] + 85}m", "keyword": "便利店"},
+        ],
+        "医疗": [
+            {"name": f"{district}社区诊所", "distance": f"{distances['hospital']}m", "keyword": "诊所"},
+            {"name": f"{district}药房", "distance": f"{max(180, distances['hospital'] - 210)}m", "keyword": "药店"},
+        ],
+        "美食": [
+            {"name": f"{district}学生餐厅", "distance": f"{distances['dining']}m", "keyword": "餐厅"},
+            {"name": f"{district}咖啡馆", "distance": f"{distances['dining'] + 95}m", "keyword": "cafe"},
+        ],
+        "生活": [
+            {"name": f"{district}社区健身房", "distance": f"{distances['gym']}m", "keyword": "健身房"},
+            {"name": f"{district}洗衣店", "distance": f"{distances['gym'] + 120}m", "keyword": "洗衣店"},
+        ],
+    }
+
+    category_map = {
+        "交通": "交通",
+        "购物": "购物",
+        "医疗": "医疗",
+        "美食": "美食",
+        "生活": "生活",
+    }
+    map_categories: dict[str, list[dict[str, Any]]] = {}
+    for category, entries in poi_data.items():
+        mapped: list[dict[str, Any]] = []
+        for index, entry in enumerate(entries, 1):
+            distance = int(str(entry["distance"]).rstrip("m"))
+            mapped.append({
+                "id": f"demo-{room.id}-{category}-{index}",
+                "name": entry["name"],
+                "lat": round(lat + (seed % 3 + index) * 0.00012, 6),
+                "lng": round(lng - (seed % 4 + index) * 0.00011, 6),
+                "distance": distance,
+                "line": [],
+            })
+        map_categories[category_map[category]] = mapped
+
+    content = (
+        f"该房源位于{market['address']}。最近公共交通约{min(distances['transit'], distances['bus'])}米，"
+        f"超市约{distances['supermarket']}米，诊所约{distances['hospital']}米，"
+        f"健身房约{distances['gym']}米，餐饮约{distances['dining']}米。"
+    )
+    return content, poi_data, {
+        "search_radius_m": 2000,
+        "categories": map_categories,
+        "source": "simulated_demo",
+    }
+
+
+async def _upsert_simulated_context(
+    session,
+    room: Property,
+    market: dict[str, Any],
+    university: University,
+    *,
+    unit_index: int,
+    room_index: int,
+) -> None:
+    """为一间房幂等写入模拟 POI 和到目标大学的通勤数据。"""
+    content, poi_data, map_poi_data = _simulated_poi_payload(room, market)
+    poi = await session.scalar(
+        select(PropertyPOI).where(PropertyPOI.property_id == room.id)
+    )
+    if poi is None:
+        poi = PropertyPOI(property_id=room.id, content=content)
+        session.add(poi)
+    poi.content = content
+    poi.poi_data = poi_data
+    poi.map_poi_data = map_poi_data
+    poi.generated_at = datetime.now(timezone.utc)
+    poi.reviewed = False
+
+    commute = await session.scalar(
+        select(RoomCommute).where(
+            RoomCommute.room_id == room.id,
+            RoomCommute.university_id == university.id,
+        )
+    )
+    if commute is None:
+        commute = RoomCommute(room_id=room.id, university_id=university.id)
+        session.add(commute)
+    transit_base, walk_base, drive_base = COMMUTE_BASES[str(market["business_id"])]
+    variation = (unit_index + room_index) % 3
+    commute.transit_min = transit_base + variation
+    commute.walk_min = walk_base + variation * 2
+    commute.drive_min = drive_base + variation
+    commute.source = "simulated_demo"
+    commute.computed_at = datetime.now(timezone.utc)
+
+
+async def _sync_demo_embeddings(
+    session,
+    unit_type_ids: list[int],
+    room_ids: list[int],
+) -> tuple[int, int]:
+    """为尚无向量的演示户型和房间批量生成真实 embedding。"""
+    from app.services.agentic.agents.search_agent import (
+        build_search_text,
+        build_unit_type_search_text,
+    )
+    from app.services.embedding_service import EmbeddingService
+
+    service = EmbeddingService()
+    if not service.is_available:
+        print("未配置 embedding 服务，已跳过向量生成。")
+        await service.close()
+        return 0, 0
+    try:
+        unit_rows = (await session.execute(
+            select(UnitType, Institute)
+            .join(Institute, UnitType.institute_id == Institute.id)
+            .where(
+                UnitType.id.in_(unit_type_ids),
+                UnitType.embedding.is_(None),
+            )
+            .order_by(UnitType.id)
+        )).all()
+        if unit_rows:
+            unit_texts = [
+                build_unit_type_search_text(institute, unit_type)
+                for unit_type, institute in unit_rows
+            ]
+            unit_vectors = await service.generate_embeddings(unit_texts)
+            for (unit_type, _institute), vector in zip(unit_rows, unit_vectors):
+                unit_type.embedding = vector
+
+        rooms = list(await session.scalars(
+            select(Property)
+            .where(
+                Property.id.in_(room_ids),
+                Property.embedding.is_(None),
+            )
+            .order_by(Property.id)
+        ))
+        if rooms:
+            room_vectors = await service.generate_embeddings(
+                [build_search_text(room) for room in rooms]
+            )
+            for room, vector in zip(rooms, room_vectors):
+                room.embedding = vector
+
+        await session.commit()
+        return len(unit_rows), len(rooms)
+    finally:
+        await service.close()
+
+
 async def _get_or_create_landlord(session) -> User:
     landlord = await session.scalar(select(User).where(User.username == DEMO_USERNAME))
     if landlord is None:
@@ -238,7 +529,8 @@ async def _get_or_create_landlord(session) -> User:
     return landlord
 
 
-async def _upsert_universities(session) -> None:
+async def _upsert_universities(session) -> dict[str, University]:
+    universities_by_country: dict[str, University] = {}
     for data in UNIVERSITIES:
         university = await session.scalar(
             select(University).where(University.abbreviation == data["abbreviation"])
@@ -250,10 +542,17 @@ async def _upsert_universities(session) -> None:
             setattr(university, field_name, value)
         university.is_active = True
         university.is_hot = True
+        universities_by_country[str(data["country"])] = university
     await session.flush()
+    return universities_by_country
 
 
-async def _upsert_market(session, landlord: User, market: dict) -> tuple[int, int, int]:
+async def _upsert_market(
+    session,
+    landlord: User,
+    market: dict,
+    universities_by_country: dict[str, University],
+) -> tuple[int, int, int, list[int], list[int]]:
     institute = await session.scalar(
         select(Institute).where(Institute.business_id == market["business_id"])
     )
@@ -279,6 +578,9 @@ async def _upsert_market(session, landlord: User, market: dict) -> tuple[int, in
 
     created_units = 0
     created_rooms = 0
+    unit_type_ids: list[int] = []
+    room_ids: list[int] = []
+    university = universities_by_country[str(market["country"])]
     for unit_index, unit_data in enumerate(market["units"], start=1):
         name, bedrooms, bathrooms, rent, area, amenities = unit_data
         unit_type = await session.scalar(
@@ -313,6 +615,7 @@ async def _upsert_market(session, landlord: User, market: dict) -> tuple[int, in
         unit_type.min_stay_months = 3 if unit_index == 1 else 6
         unit_type.status = UnitTypeStatus.available
         await session.flush()
+        unit_type_ids.append(int(unit_type.id))
 
         for room_index in range(1, 3):
             room_number = f"D{institute.id:02d}-{unit_index:02d}-{room_index:02d}"
@@ -352,26 +655,61 @@ async def _upsert_market(session, landlord: User, market: dict) -> tuple[int, in
             room.available_from = unit_type.available_from
             room.min_stay_months = unit_type.min_stay_months
             room.min_lease_months = unit_type.min_stay_months
+            room.max_lease_months = 12
+            room.amenities = list(amenities)
+            room.floor = unit_index * 2 + room_index
+            room.building_block = "A" if room_index == 1 else "B"
             room.status = "available"
+            await session.flush()
+            room_ids.append(int(room.id))
+            await _upsert_simulated_context(
+                session,
+                room,
+                market,
+                university,
+                unit_index=unit_index,
+                room_index=room_index,
+            )
 
-    return created_institute, created_units, created_rooms
+    return created_institute, created_units, created_rooms, unit_type_ids, room_ids
 
 
 async def seed() -> None:
     validate_demo_catalog()
     async with async_session_maker() as session:
         landlord = await _get_or_create_landlord(session)
-        await _upsert_universities(session)
+        universities_by_country = await _upsert_universities(session)
         totals = [0, 0, 0]
+        unit_type_ids: list[int] = []
+        room_ids: list[int] = []
         for market in MARKETS:
-            counts = await _upsert_market(session, landlord, market)
-            totals = [current + added for current, added in zip(totals, counts)]
+            counts = await _upsert_market(
+                session,
+                landlord,
+                market,
+                universities_by_country,
+            )
+            totals = [current + added for current, added in zip(totals, counts[:3])]
+            unit_type_ids.extend(counts[3])
+            room_ids.extend(counts[4])
             unit_count = len(market["units"])
             print(f"同步市场：{market['name_cn']}（{unit_count} 个房型、{unit_count * 2} 间房）")
         await session.commit()
 
+        try:
+            embedded_units, embedded_rooms = await _sync_demo_embeddings(
+                session,
+                unit_type_ids,
+                room_ids,
+            )
+        except Exception as exc:
+            embedded_units, embedded_rooms = 0, 0
+            print(f"Embedding 生成失败，房源数据仍已保存：{exc}")
+
     print("\nAgent 演示数据已就绪")
     print(f"本次新增：{totals[0]} 个公寓、{totals[1]} 个房型、{totals[2]} 间房")
+    print(f"数据覆盖：{len(room_ids)} 间房均有模拟 POI 和通勤数据")
+    print(f"本次生成 embedding：{embedded_units} 个户型、{embedded_rooms} 间房")
     print(f"演示房东账号：{DEMO_USERNAME} / {DEMO_PASSWORD}")
     print("重复执行本脚本会更新同一批数据，不会重复插入。")
 

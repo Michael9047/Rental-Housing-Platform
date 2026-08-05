@@ -18,13 +18,14 @@ from app.schemas.property import PropertySearchResult
 from app.schemas.property_image import PropertyImageRead
 from app.services.llm_service import get_llm_service
 from app.services.property_service import PropertyService
+from app.services.recommendation_visibility import hide_recommendation_scores
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
 
-def _property_to_dict(prop, similarity: float | None = None) -> dict:
+def _property_to_dict(prop) -> dict:
     """将 Property ORM 对象转为字典，用于 LLM 摘要生成"""
     return {
         "title": prop.title,
@@ -36,11 +37,10 @@ def _property_to_dict(prop, similarity: float | None = None) -> dict:
         "bathrooms": prop.bathrooms,
         "property_type": prop.property_type.value if hasattr(prop.property_type, "value") else str(prop.property_type),
         "description": prop.description,
-        "similarity": similarity,
     }
 
 
-def _to_search_result(prop, similarity: float | None = None) -> PropertySearchResult:
+def _to_search_result(prop) -> PropertySearchResult:
     """将 Property ORM 对象转为 PropertySearchResult"""
     return PropertySearchResult(
         id=prop.id,
@@ -73,7 +73,6 @@ def _to_search_result(prop, similarity: float | None = None) -> PropertySearchRe
             )
             for img in (prop.images or [])
         ],
-        similarity=similarity,
     )
 
 
@@ -125,12 +124,12 @@ async def ai_search(
     )
 
     total_count = len(results)
-    search_results = [_to_search_result(prop, sim) for prop, sim in results]
+    search_results = [_to_search_result(prop) for prop, _similarity in results]
 
     # 生成 AI 摘要（Top 3）
     top3 = results[:3]
     top3_ids = [prop.id for prop, _ in top3]
-    top3_dicts = [_property_to_dict(prop, sim) for prop, sim in top3]
+    top3_dicts = [_property_to_dict(prop) for prop, _similarity in top3]
 
     summary = ""
     try:
@@ -150,6 +149,8 @@ async def ai_search(
     except Exception:
         logger.exception("AI 摘要生成失败")
         summary = f"共找到 {total_count} 套匹配房源。"
+
+    summary = hide_recommendation_scores(summary)
 
     return AiSearchResponse(
         summary=summary,

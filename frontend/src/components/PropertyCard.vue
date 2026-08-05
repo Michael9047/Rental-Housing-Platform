@@ -12,10 +12,6 @@
         <el-icon :size="40" color="#c0c4cc"><PictureFilled /></el-icon>
         <span>暂无图片</span>
       </div>
-      <!-- Match Badge -->
-      <span v-if="showSimilarity && property.similarity != null" class="match-badge">
-        匹配 {{ (property.similarity * 100).toFixed(0) }}%
-      </span>
       <!-- District Tag -->
       <span class="district-badge">{{ p.district }}</span>
     </div>
@@ -114,7 +110,6 @@ export interface CommuteInfo {
 
 const props = defineProps<{
   property: Property | PropertySearchResult
-  showSimilarity?: boolean
   showQuickBook?: boolean
   commute?: CommuteInfo | null
   /** 跳转详情页时附加的 query 参数（如 school 信息） */
@@ -285,19 +280,6 @@ function handleBook() {
   gap: 8px;
   color: #c0c4cc;
   font-size: 13px;
-}
-
-.match-badge {
-  position: absolute;
-  top: 10px;
-  left: 10px;
-  background: linear-gradient(135deg, #67c23a, #85ce61);
-  color: #fff;
-  font-size: 12px;
-  font-weight: 700;
-  padding: 4px 10px;
-  border-radius: 20px;
-  box-shadow: 0 2px 8px rgba(103, 194, 58, 0.3);
 }
 
 .district-badge {

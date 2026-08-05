@@ -941,7 +941,6 @@ class Supervisor:
                         "recommendations": structured.get("recommendations", []),
                         "top_picks": structured.get("top_picks", []),
                         "extracted_filters": structured.get("extracted_filters"),
-                        "score_gap": structured.get("score_gap"),
                         "relaxation_level": structured.get("relaxation_level", 0),
                         "candidate_snapshot": structured.get("candidate_snapshot", []),
                         "source_info": structured.get("source_info", ""),
@@ -1067,7 +1066,6 @@ class Supervisor:
         recommendations: list[dict] = []
         top_picks: list[dict] = []
         extracted_filters: dict | None = None
-        score_gap: dict | None = None
         relaxation_level = 0
         candidate_snapshot: list[int] = []
         source_info = ""
@@ -1082,7 +1080,6 @@ class Supervisor:
                     recommendations = recs
                 top_picks = data.get("top_picks", [])
                 extracted_filters = data.get("extracted_filters")
-                score_gap = data.get("score_gap")
                 relaxation_level = data.get("relaxation_level", 0)
                 candidate_snapshot = data.get("candidate_snapshot", [])
                 source_info = data.get("source_info", "")
@@ -1105,7 +1102,6 @@ class Supervisor:
             "needs_refinement": needs_refinement,
             "top_picks": top_picks,
             "funnel_stage": classification.get("stage", "explore"),
-            "score_gap": score_gap,
             "relaxation_level": relaxation_level,
             "candidate_snapshot": candidate_snapshot,
             "source_info": source_info,

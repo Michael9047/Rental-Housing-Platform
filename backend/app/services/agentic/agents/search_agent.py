@@ -218,7 +218,6 @@ from app.services.llm_service import get_llm_service
 from app.services.property_service import PropertyService
 from app.services.currency import resolve_search_price, get_symbol
 from app.services.safe_fallback import SafeFallback
-from app.services.score_gap import detect_score_gap
 
 logger = logging.getLogger(__name__)
 
@@ -359,6 +358,7 @@ RECOMMEND_SYSTEM_PROMPT = """你是面向留学生的租房顾问，像可靠的
 10. institute_amenities / unit_amenities 只证明楼内或公寓配套；只有 poi_distances_m
     才能证明楼外周边距离。用户说“附近/边上有自习室”而候选只列了自习室设施时，
     要明确回答“匹配到楼内/公寓自习室，周边独立自习空间暂未验证”。
+11. 不要展示或编造匹配分、综合分、相似度、分项分或匹配百分比；候选顺序只用自然语言解释。
 
 直接输出回复文本，不要 JSON 包裹。"""
 
@@ -888,8 +888,6 @@ class SearchAgent(BaseAgent):
             return {
                 "property_id": int(item.get("_property_id", item["unit_type"].id)),
                 "rank": int(item.get("_rank", 0)),
-                "final_score": float(item.get("_final_score", 0.0)),
-                "score_breakdown": dict(item.get("_score_breakdown") or {}),
                 "match_reason": reason,
                 "pros": pros,
                 "cons": cons,
@@ -899,8 +897,6 @@ class SearchAgent(BaseAgent):
             }
 
         all_recommendations = [_recommendation(item) for item in reranked]
-        scores = [float(item.get("_final_score", 0.0)) / 100.0 for item in reranked]
-        score_gap = detect_score_gap(scores)
         source_info = (
             f"\n\n数据依据：房源资料、库存"
             f"{'、通勤' if any(item.get('_commute_source') != 'missing' for item in reranked) else ''}"
@@ -922,7 +918,6 @@ class SearchAgent(BaseAgent):
             "guided_options": guided_options,
             "top_picks": all_recommendations[:3],
             "all_recs": all_recommendations,
-            "score_gap": score_gap,
             "relaxation_level": relaxation_level,
             "relaxation_trace": relaxation_trace,
             "candidate_snapshot": [
@@ -1002,7 +997,6 @@ class SearchAgent(BaseAgent):
             "effective_filters": prep["effective_filters"],
             "explicit_filters": prep["explicit_filters"],
             "rewritten_query": prep["understanding"].rewritten_query,
-            "score_gap": prep["score_gap"],
             "relaxation_level": prep["relaxation_level"],
             "relaxation_trace": prep["relaxation_trace"],
             "candidate_snapshot": prep["candidate_snapshot"], "source_info": prep["source_info"],
@@ -1083,7 +1077,6 @@ class SearchAgent(BaseAgent):
             "effective_filters": prep["effective_filters"],
             "explicit_filters": prep["explicit_filters"],
             "rewritten_query": prep["understanding"].rewritten_query,
-            "score_gap": prep["score_gap"],
             "relaxation_level": prep["relaxation_level"],
             "relaxation_trace": prep["relaxation_trace"],
             "candidate_snapshot": prep["candidate_snapshot"],

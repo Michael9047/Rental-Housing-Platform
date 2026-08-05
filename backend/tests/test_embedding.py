@@ -64,6 +64,35 @@ class TestEmbeddingService:
                 await service.generate_embedding("test text")
 
     @pytest.mark.asyncio
+    async def test_generate_embeddings_batches_and_preserves_order(self) -> None:
+        from app.services.embedding_service import EmbeddingService
+
+        vectors = [[0.1] * 1536, [0.2] * 1536]
+        with (
+            patch(
+                "app.services.embedding_service.get_settings",
+                return_value=_fake_settings(zhipu_api_key="test-key"),
+            ),
+            patch("app.services.embedding_service.AsyncOpenAI") as mock_client_class,
+        ):
+            mock_instance = AsyncMock()
+            mock_instance.embeddings.create = AsyncMock(
+                return_value=SimpleNamespace(data=[
+                    SimpleNamespace(index=1, embedding=vectors[1]),
+                    SimpleNamespace(index=0, embedding=vectors[0]),
+                ])
+            )
+            mock_client_class.return_value = mock_instance
+
+            service = EmbeddingService()
+            result = await service.generate_embeddings(["first", "second"])
+
+            _, kwargs = mock_instance.embeddings.create.call_args
+            assert kwargs["input"] == ["first", "second"]
+            assert kwargs["dimensions"] == 1536
+            assert result == vectors
+
+    @pytest.mark.asyncio
     async def test_build_property_text_combines_fields(self) -> None:
         from app.services.embedding_service import _build_property_text
 
@@ -93,4 +122,4 @@ class TestEmbeddingService:
         })
 
         assert "None" not in text
-        assert text == "Studio 1 Main St Gusu apartment"
+        assert text == "Studio 1 Main St Gusu 1-bed"

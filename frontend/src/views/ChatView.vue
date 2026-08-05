@@ -284,7 +284,7 @@
             <el-radio-button value="commute">通勤优先</el-radio-button>
             <el-radio-button value="space">空间优先</el-radio-button>
           </el-radio-group>
-          <span class="compare-priority-hint">得分由真实数据按权重计算，AI 只负责解读</span>
+          <span class="compare-priority-hint">基于真实价格、通勤、空间和评价给出建议</span>
         </div>
 
         <el-alert
@@ -336,13 +336,6 @@
           <el-table-column label="适合人群" min-width="100">
             <template #default="{ row }">{{ row.best_for || '—' }}</template>
           </el-table-column>
-          <el-table-column label="综合得分" width="120" sortable prop="score">
-            <template #default="{ row }">
-              <el-tooltip placement="left" :content="breakdownText(row)">
-                <el-progress :percentage="row.score" :stroke-width="10" :color="scoreColor(row.score)" />
-              </el-tooltip>
-            </template>
-          </el-table-column>
         </el-table>
         <div class="compare-recommendation">
           <el-icon color="#409eff"><Star /></el-icon>
@@ -376,7 +369,6 @@ import { useCartStore } from '@/stores/cart'
 import type {
   AgentChatMessage,
   AgentRecommendation,
-  CompareItem,
   ComparePriority,
   CompareResponse,
   ThinkingStep,
@@ -504,12 +496,6 @@ function goDetail(propertyId: number) {
   router.push(`/property/${propertyId}`)
 }
 
-function scoreColor(score: number): string {
-  if (score >= 85) return '#67c23a'
-  if (score >= 70) return '#409eff'
-  return '#e6a23c'
-}
-
 async function scrollChatToBottom() {
   await nextTick()
   if (chatListRef.value) {
@@ -609,21 +595,6 @@ async function runCompare() {
   } finally {
     comparing.value = false
   }
-}
-
-const dimensionLabels: Record<string, string> = {
-  price: '价格',
-  commute: '通勤',
-  space: '空间',
-  rating: '评价',
-}
-
-function breakdownText(row: CompareItem): string {
-  if (!row.score_breakdown) return `综合 ${row.score} 分`
-  const parts = Object.entries(row.score_breakdown).map(
-    ([k, v]) => `${dimensionLabels[k] ?? k} ${v}`,
-  )
-  return `综合 ${row.score} 分 ｜ ` + parts.join(' · ')
 }
 
 // ── 初始化 ──────────────────────────────────────────────────────

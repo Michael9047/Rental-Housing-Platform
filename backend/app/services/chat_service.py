@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import get_settings
 from app.models.chat import ChatMessage, ChatMessageRole, ChatSession, ChatSessionStatus
 from app.models.property import Property
+from app.services.recommendation_visibility import hide_recommendation_scores
 
 logger = logging.getLogger(__name__)
 
@@ -125,7 +126,7 @@ class ChatService:
         properties_context = []
         matched = []
 
-        for idx, (prop, sim) in enumerate(rows):
+        for idx, (prop, _similarity) in enumerate(rows):
             parts = [
                 f"房源 {idx + 1}:",
                 f"标题: {prop.title}",
@@ -151,7 +152,6 @@ class ChatService:
                 "bathrooms": prop.bathrooms,
                 "area_sqm": float(prop.area_sqm) if prop.area_sqm else None,
                 "property_type": prop.property_type.value,
-                "similarity": round(float(sim), 4) if sim else None,
             })
 
         context = "\n\n".join(properties_context)
@@ -166,7 +166,8 @@ class ChatService:
 2. 如果系统没有匹配到房源，请礼貌地告知用户，并建议他们调整搜索条件（如扩大区域范围、调整预算等）。
 3. 回答要简洁、友好，用中文。
 4. 不要编造任何不存在的房源信息。
-5. 如果用户的问题与租房无关，可以礼貌地引导回租房话题。"""
+5. 不要展示或编造匹配分、综合分、相似度或分项分。
+6. 如果用户的问题与租房无关，可以礼貌地引导回租房话题。"""
 
     def _build_messages(
         self,
@@ -217,7 +218,9 @@ class ChatService:
             temperature=0.7,
             max_tokens=1024,
         )
-        reply_content = response.choices[0].message.content or ""
+        reply_content = hide_recommendation_scores(
+            response.choices[0].message.content or ""
+        )
 
         # Save messages
         user_msg = ChatMessage(
@@ -299,6 +302,7 @@ class ChatService:
                     yield f"data: {json.dumps({'type': 'content', 'content': delta.content})}\n\n"
 
             # Save assistant message
+            full_reply = hide_recommendation_scores(full_reply)
             assistant_msg = ChatMessage(
                 session_id=session_id,
                 role=ChatMessageRole.assistant,

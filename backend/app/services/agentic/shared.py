@@ -103,8 +103,7 @@ def build_dimension_analysis(
     ))
     for p in sorted_commute:
         c = extras[p.id].get("commute") or "暂无数据"
-        s = scores[p.id]["breakdown"].get("commute", 0)
-        lines.append(f"- **{p.title}**：{c}（通勤得分 {s}）")
+        lines.append(f"- **{p.title}**：{c}")
     if sorted_commute:
         best = sorted_commute[0]
         if extras[best.id].get("commute"):
@@ -141,15 +140,14 @@ def build_dimension_analysis(
     currencies = {property_currency(p) for p in props}
     if len(currencies) > 1:
         lines.append(
-            "> 房源包含多个币种；综合价格得分已统一换算，下面仍展示各房源原始币种。"
+            "> 房源包含多个币种；建议顺序会统一换算比较，下面仍展示各房源原始币种。"
         )
     for p in sorted_price:
-        s = scores[p.id]["breakdown"].get("price", 0)
         deposit = getattr(p, "deposit_amount", None)
         deposit_text = f"（押金 {format_property_money(p, deposit)}）" if deposit else ""
         lines.append(
             f"- **{p.title}**：{format_property_money(p, p.price_monthly)}/月 "
-            f"{deposit_text}（价格得分 {s}）"
+            f"{deposit_text}"
         )
     cheapest = sorted_price[0]
     lines.append(
@@ -161,9 +159,8 @@ def build_dimension_analysis(
     lines.append("### 📐 空间户型")
     sorted_space = sorted(props, key=lambda p: float(p.area_sqm or 0), reverse=True)
     for p in sorted_space:
-        s = scores[p.id]["breakdown"].get("space", 0)
         area = f"{p.area_sqm}㎡" if p.area_sqm else "未知"
-        lines.append(f"- **{p.title}**：{area}，{p.bedrooms}室{p.bathrooms}卫（空间得分 {s}）")
+        lines.append(f"- **{p.title}**：{area}，{p.bedrooms}室{p.bathrooms}卫")
     lines.append(f"\n📐 空间最大：**{sorted_space[0].title}**\n")
 
     # 6. 评价与安全
@@ -176,16 +173,13 @@ def build_dimension_analysis(
             lines.append(f"- **{p.title}**：暂无评价数据")
     lines.append("")
 
-    # 7. 综合排序与推荐
-    lines.append("### 🏆 综合排序")
+    # 7. 综合建议顺序；内部权重仅用于排序，不向用户展示数值。
+    lines.append("### 🏆 建议顺序")
     sorted_total = sorted(props, key=lambda p: scores[p.id]["total"], reverse=True)
     rank_emoji = ["🥇", "🥈", "🥉", "4️⃣", "5️⃣"]
     for rank, p in enumerate(sorted_total):
         emoji = rank_emoji[rank] if rank < len(rank_emoji) else f"{rank+1}."
-        total = scores[p.id]["total"]
-        bd = scores[p.id]["breakdown"]
-        dim_parts = [f"{DIMENSION_LABELS.get(k, k)} {v}" for k, v in bd.items()]
-        lines.append(f"{emoji} **{p.title}** — {total} 分（{' | '.join(dim_parts)}）")
+        lines.append(f"{emoji} **{p.title}**")
 
     recommendation = (llm_result or {}).get("recommendation", "") if llm_result else ""
     if recommendation:

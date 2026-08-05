@@ -3,6 +3,13 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from httpx import AsyncClient
 
+from app.schemas.property import PropertySearchResult
+
+
+def test_search_result_does_not_expose_similarity() -> None:
+    """向量距离只用于内部排序，不属于公开房源结构。"""
+    assert "similarity" not in PropertySearchResult.model_fields
+
 
 @pytest.mark.asyncio
 async def test_search_without_query_returns_filtered_results(

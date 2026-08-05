@@ -41,7 +41,6 @@ export interface Property {
   updated_at: string
   images?: PropertyImage[]
   primary_image_url?: string | null
-  similarity?: number | null
 }
 
 export interface PropertyCreate {
@@ -97,9 +96,7 @@ export interface PropertyUpdate {
   version?: number
 }
 
-export interface PropertySearchResult extends Property {
-  similarity: number | null
-}
+export type PropertySearchResult = Property
 
 export interface PropertySearchParams {
   q?: string

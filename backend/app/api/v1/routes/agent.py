@@ -50,10 +50,15 @@ from app.services.agentic.memory import (
     save_user_memory,
 )
 from app.services.chat_service import ChatService
+from app.services.recommendation_visibility import hide_recommendation_scores
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+def _strip_recommendation_scores(value):
+    """清理新旧会话中的内部推荐分，避免历史回放再次展示。"""
+    return hide_recommendation_scores(value)
 
 
 def _to_search_result(prop, property_id_override: int | None = None) -> PropertySearchResult:
@@ -149,7 +154,7 @@ def _unit_type_images(prop, property_id_override: int | None = None) -> list:
 
 def _serialize_meta(meta: dict) -> dict:
     """流式 meta 里的 property 是 UnitType 对象，json.dumps 前统一序列化。"""
-    out = dict(meta)
+    out = _strip_recommendation_scores(dict(meta))
     for key in ("recommendations", "top_picks"):
         recs = out.get(key)
         if not recs:
@@ -280,8 +285,8 @@ async def list_agent_messages(
                 id=message.id,
                 session_id=message.session_id,
                 role=message.role.value,
-                content=message.content,
-                metadata=message.metadata_,
+                content=_strip_recommendation_scores(message.content),
+                metadata=_strip_recommendation_scores(message.metadata_),
                 created_at=message.created_at,
             )
             for message in rows
@@ -388,6 +393,7 @@ async def send_agent_message(
                             context_filters=context_filters,
                             compare_property_ids=body.compare_property_ids,
                             mode=body.mode)
+    result = _strip_recommendation_scores(result)
     await _update_latest_history_metadata(
         session,
         chat_session.id,
@@ -401,8 +407,6 @@ async def send_agent_message(
             AgentRecommendation(
                 property_id=r["property_id"],
                 rank=r.get("rank", 0),
-                final_score=r.get("final_score", 0.0),
-                score_breakdown=r.get("score_breakdown", {}),
                 match_reason=r.get("match_reason", ""),
                 pros=r.get("pros", []),
                 cons=r.get("cons", []),
@@ -416,8 +420,6 @@ async def send_agent_message(
             AgentRecommendation(
                 property_id=tp["property_id"],
                 rank=tp.get("rank", 0),
-                final_score=tp.get("final_score", 0.0),
-                score_breakdown=tp.get("score_breakdown", {}),
                 match_reason=tp.get("match_reason", ""),
                 pros=tp.get("pros", []),
                 cons=tp.get("cons", []),
@@ -615,10 +617,9 @@ async def compare_cart(
                 title=it["title"],
                 pros=it["pros"],
                 cons=it["cons"],
-                score=it["score"],
-                score_breakdown=it.get("score_breakdown"),
                 best_for=it["best_for"],
                 commute=it.get("commute"),
+                commute_meters=it.get("commute_meters"),
                 rating=it.get("rating"),
                 review_count=it.get("review_count", 0),
                 property=_to_search_result(it["property"]) if it.get("property") is not None else None,

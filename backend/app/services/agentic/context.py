@@ -90,8 +90,6 @@ def pack_grounded_candidates(
             "rank": int(item.get("_rank", len(packed["candidates"]) + 1)),
             "id": int(item.get("_property_id", unit_type.id)),
             "unit_type_id": item.get("_unit_type_id"),
-            "final_score": float(item.get("_final_score", 0.0)),
-            "score_breakdown": item.get("_score_breakdown") or {},
             "facts": {
                 "name": unit_type.name,
                 "institute": institute.name,

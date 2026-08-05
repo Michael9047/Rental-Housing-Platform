@@ -586,11 +586,7 @@ def _remember_compare_references(
     ]
     if not compared_ids:
         return
-    best_item = max(
-        compare_items,
-        key=lambda item: float(item.get("score", 0.0) or 0.0),
-    )
-    best_id = int(best_item.get("property_id", compared_ids[0]))
+    best_id = compared_ids[0]
     ctx.runtime.state.reference_map_json = {
         "ordinal_refs": {
             str(index): property_id
@@ -655,7 +651,6 @@ async def _execute_search(ctx: _DispatchContext) -> dict[str, Any]:
             "kind": understanding.query_kind,
             "used_llm": understanding.used_llm,
         },
-        "score_gap": search_result.get("score_gap"),
         "relaxation_level": search_result.get("relaxation_level", 0),
         "candidate_snapshot": search_result.get("candidate_snapshot", []),
         "source_info": search_result.get("source_info", ""),
@@ -787,8 +782,6 @@ async def _execute_non_search(ctx: _DispatchContext) -> dict[str, Any]:
             result["recommendations"] = [{
                 "property_id": int(prop.id),
                 "rank": 1,
-                "final_score": 0.0,
-                "score_breakdown": {},
                 "match_reason": "来自上一轮候选",
                 "pros": [],
                 "cons": [f"{name}待确认" for name in missing],
@@ -956,11 +949,10 @@ async def _execute_compare_stream(ctx: _DispatchContext):
             {
                 **item,
                 "rank": index,
-                "final_score": float(item.get("score", 0.0) or 0.0),
                 "match_reason": str(item.get("best_for") or "对比候选"),
                 "source_metadata": {
                     "property": "properties",
-                    "score": "deterministic_compare_scoring",
+                    "ranking": "deterministic_compare_ranking",
                 },
             }
             for index, item in enumerate(compare_items, 1)
@@ -1059,7 +1051,6 @@ async def _persist_messages(ctx: _DispatchContext, result: dict[str, Any]) -> No
                 {
                     "property_id": item.get("property_id", item.get("id", 0)),
                     "match_reason": item.get("match_reason", ""),
-                    "final_score": item.get("final_score"),
                 }
                 for item in recommendations
             ],
@@ -1222,7 +1213,6 @@ async def dispatch_stream(
         "guided_options": search_meta.get("guided_options", []),
         "sources": search_meta.get("sources", []),
         "relaxation_trace": search_meta.get("relaxation_trace", []),
-        "score_gap": search_meta.get("score_gap"),
         "relaxation_level": search_meta.get("relaxation_level", 0),
         "candidate_snapshot": search_meta.get("candidate_snapshot", []),
         "query_rewrite": {
@@ -1263,7 +1253,7 @@ def _stream_safe_result(result: dict[str, Any]) -> dict[str, Any]:
         "intent", "raw_intent", "stage", "recommendations", "top_picks",
         "cart_changed", "ai_available", "quick_replies", "links",
         "guided_options", "thinking_steps", "sources", "relaxation_trace",
-        "query_rewrite", "reference_resolution", "state_summary", "score_gap",
+        "query_rewrite", "reference_resolution", "state_summary",
         "relaxation_level", "candidate_snapshot", "filter_patch",
     }
     return {key: value for key, value in result.items() if key in allowed}

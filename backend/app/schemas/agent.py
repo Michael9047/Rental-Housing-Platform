@@ -123,8 +123,6 @@ class AgentMemoryUpdateRequest(BaseModel):
 class AgentRecommendation(BaseModel):
     property_id: int
     rank: int = 0
-    final_score: float = 0.0
-    score_breakdown: dict[str, float] = Field(default_factory=dict)
     match_reason: str = ""
     pros: list[str] = Field(default_factory=list)
     cons: list[str] = Field(default_factory=list)
@@ -253,10 +251,9 @@ class CompareItem(BaseModel):
     title: str = ""
     pros: list[str] = []
     cons: list[str] = []
-    score: int = 0                                  # 系统确定性加权得分（非 LLM 打分）
-    score_breakdown: dict[str, int] | None = None   # 分项：price/commute/space/rating
     best_for: str = ""
     commute: str | None = None                      # 如 "最近交通站点约500m"
+    commute_meters: int | None = None               # 最近交通站点距离，供事实对比
     rating: float | None = None                     # 机构真实评价均分（1-5）
     review_count: int = 0
     property: PropertySearchResult | None = None
