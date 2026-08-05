@@ -124,7 +124,7 @@
                 <div class="utc-right">
                   <div class="utc-price">
                     <span class="utc-price-val">{{ currencySym(ut.currency) }}{{ Number(ut.base_rent).toLocaleString() }}</span>
-                    <span class="utc-price-unit">/月</span>
+                    <span class="utc-price-unit">{{ (ut as any).rent_period === 'weekly' ? '/周' : '/月' }}</span>
                   </div>
                   <div class="utc-deposit" v-if="ut.deposit_amount">
                     押金 {{ currencySym(ut.currency) }}{{ Number(ut.deposit_amount).toLocaleString() }}

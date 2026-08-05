@@ -24,6 +24,11 @@ class PropertyType(str, enum.Enum):
     shared = "shared"          # 合租单间
 
 
+class RentPeriod(str, enum.Enum):
+    monthly = "monthly"   # /月
+    weekly = "weekly"     # /周
+
+
 class UnitTypeStatus(str, enum.Enum):
     available = "available"
     rented = "rented"
@@ -68,6 +73,10 @@ class UnitType(TimestampMixin, Base):
     lease_start: Mapped[str | None] = mapped_column(String(50), nullable=True)
     lease_end: Mapped[str | None] = mapped_column(String(50), nullable=True)
     currency: Mapped[str | None] = mapped_column(String(10), nullable=True, server_default=text("'CNY'"))
+    rent_period: Mapped[RentPeriod] = mapped_column(
+        Enum(RentPeriod, name="rent_period"), default=RentPeriod.monthly, nullable=False,
+        server_default=text("'monthly'"),
+    )
     special_offer: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # ── 楼层差异化加价 ──

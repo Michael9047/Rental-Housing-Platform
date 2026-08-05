@@ -118,7 +118,7 @@
               </div>
             </div>
             <div class="ut-price-col">
-              <div class="ut-rent">{{ formatPrice(ut.base_rent, ut.currency) }}<em>/月</em></div>
+              <div class="ut-rent">{{ formatPrice(ut.base_rent, ut.currency) }}<em>{{ ut.rent_period === 'weekly' ? '/周' : '/月' }}</em></div>
               <div class="ut-deposit" v-if="ut.deposit_amount">押金 {{ formatPrice(ut.deposit_amount, ut.currency) }}</div>
               <el-button class="ut-book" @click="handleBook(ut.id)">立即预定</el-button>
             </div>

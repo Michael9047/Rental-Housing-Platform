@@ -170,7 +170,7 @@
                 </div>
                 <div class="rec-card-foot">
                   <span class="rec-card-price">
-                    {{ formatRent(rec.property) }}<i v-if="rec.property.price_monthly != null">/月</i>
+                    {{ formatRent(rec.property) }}<i v-if="rec.property.price_monthly != null">{{ rec.property.rent_period === 'weekly' ? '/周' : '/月' }}</i>
                   </span>
                 </div>
                 <div class="rec-card-acts">
@@ -280,7 +280,7 @@
               <div class="cart-item-info">
                 <div class="cart-item-title" :title="item.property.title">{{ item.property.title }}</div>
                 <div class="cart-item-meta">
-                  {{ item.property.district }} · {{ formatRent(item.property) }}<template v-if="item.property.price_monthly != null">/月</template>
+                  {{ item.property.district }} · {{ formatRent(item.property) }}<template v-if="item.property.price_monthly != null">{{ item.property.rent_period === 'weekly' ? '/周' : '/月' }}</template>
                 </div>
                 <div v-if="item.reason" class="cart-item-reason" :title="item.reason">{{ item.reason }}</div>
               </div>

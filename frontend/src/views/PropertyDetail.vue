@@ -115,7 +115,7 @@
               </div>
               <div class="ut-card-price">
                 <span class="price-value">{{ cur(ut.currency) }}{{ Number(ut.base_rent).toLocaleString() }}</span>
-                <span class="price-period">/月</span>
+                <span class="price-period">{{ ut.rent_period === 'weekly' ? '/周' : '/月' }}</span>
               </div>
               <div class="ut-card-tags" v-if="ut.amenities?.length">
                 <span v-for="a in ut.amenities.slice(0, 4)" :key="a" class="ut-tag">{{ a }}</span>
@@ -179,7 +179,7 @@
         <!-- 预定按钮 -->
         <div class="ut-book-bar">
           <el-button type="primary" size="large" round @click="goBook" style="min-width:200px;font-weight:600">
-            🏠 立即预定 · {{ cur(selectedUnitType.currency) }}{{ Number(selectedUnitType.base_rent).toLocaleString() }}/月
+            🏠 立即预定 · {{ cur(selectedUnitType.currency) }}{{ Number(selectedUnitType.base_rent).toLocaleString() }}{{ selectedUnitType.rent_period === 'weekly' ? '/周' : '/月' }}
           </el-button>
         </div>
       </div>

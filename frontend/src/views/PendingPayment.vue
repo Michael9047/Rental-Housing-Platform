@@ -66,7 +66,7 @@
             </div>
             <div class="preview-price">
               <span class="price-num">{{ formatPrice(propertyInfo.price_monthly, propertyInfo?.currency) }}</span>
-              <span class="price-unit">/月</span>
+              <span class="price-unit">{{ (propertyInfo as any).rent_period === 'weekly' ? '/周' : '/月' }}</span>
             </div>
           </div>
         </div>

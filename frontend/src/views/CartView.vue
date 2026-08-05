@@ -63,7 +63,7 @@
             {{ item.reason }}
           </div>
           <div class="cart-house-foot">
-            <span class="cart-house-price">{{ formatPrice(item.property.price_monthly, item.property.currency) }}<i>/月</i></span>
+            <span class="cart-house-price">{{ formatPrice(item.property.price_monthly, item.property.currency) }}<i>{{ item.property.rent_period === 'weekly' ? '/周' : '/月' }}</i></span>
             <el-button size="small" text type="primary" @click.stop="goDetail(item.property_id)">
               查看详情
             </el-button>

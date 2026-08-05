@@ -91,6 +91,7 @@ def create_app() -> FastAPI:
                 "female_only": bool(b.female_only) if b.female_only is not None else False,
                 "couples_allowed": bool(b.couples_allowed) if b.couples_allowed is not None else False,
                 "unit_type_count": len(b.unit_types) if b.unit_types else 0,
+                "rent_period": (lambda uts: (lambda rp: rp.value if hasattr(rp, 'value') else (rp or 'monthly'))(getattr(uts[0], 'rent_period', None)) if uts else 'monthly')(b.unit_types or []),
                 "primary_image": next(({"id": img.id, "filename": img.filename, "is_primary": img.is_primary}
                     for img in sorted(b.images or [], key=lambda x: x.sort_order)), None),
             } for b in result]

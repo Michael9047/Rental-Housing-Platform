@@ -148,7 +148,7 @@
                 >
                   <el-icon><House /></el-icon>
                   <span class="item-name">{{ prop.title }}</span>
-                  <span class="item-price" v-if="prop.price_monthly">¥{{ prop.price_monthly }}/月</span>
+                  <span class="item-price" v-if="prop.price_monthly">¥{{ prop.price_monthly }}{{ (prop as any).rent_period === 'weekly' ? '/周' : '/月' }}</span>
                 </div>
               </div>
             </div>

@@ -81,6 +81,7 @@ class UnitTypeRead(BaseModel):
     lease_start_date: date | None = None
     lease_end_date: date | None = None
     currency: str | None = None
+    rent_period: str = "monthly"
     special_offer: str | None = None
     floor_pricing: list[dict] | None = None
     amenities: list[str] | None = None

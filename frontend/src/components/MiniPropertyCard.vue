@@ -44,7 +44,7 @@
     </div>
     <div class="mini-card__body mini-card__body--scroll">
       <h4 class="mini-card__title mini-card__title--scroll">{{ property.title }}</h4>
-      <div class="mini-card__price mini-card__price--scroll">{{ fmtPrice }}/月</div>
+      <div class="mini-card__price mini-card__price--scroll">{{ fmtPrice }}{{ (property as any).rent_period === 'weekly' ? '/周' : '/月' }}</div>
       <div class="mini-card__meta--scroll">
         {{ property.area_sqm ? property.area_sqm + '㎡ · ' : '' }}{{ typeLabel }} · {{ property.bedrooms }}室
       </div>

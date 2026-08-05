@@ -387,6 +387,7 @@ def _to_read(ut) -> UnitTypeRead:
         lease_start=ut.lease_start,
         lease_end=ut.lease_end,
         currency=ut.currency,
+        rent_period=_safe_enum(ut.rent_period) or 'monthly',
         special_offer=ut.special_offer,
         floor_pricing=ut.floor_pricing,
         amenities=ut.amenities,

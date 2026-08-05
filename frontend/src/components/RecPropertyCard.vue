@@ -25,7 +25,7 @@
       <div class="rec-title" :title="p.title">{{ p.title }}</div>
 
       <div class="rec-price">
-        {{ currencySymbol }}{{ formatPrice(p.price_monthly) }}<span>/月</span>
+        {{ currencySymbol }}{{ formatPrice(p.price_monthly) }}<span>{{ (p as any).rent_period === 'weekly' ? '/周' : '/月' }}</span>
         <em v-if="p.special_offer" class="rec-offer">{{ p.special_offer }}</em>
       </div>
 

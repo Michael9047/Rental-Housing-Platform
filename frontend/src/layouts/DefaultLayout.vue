@@ -230,9 +230,6 @@
       <!-- 全局侧边栏 -->
       <GlobalSidebar v-if="authStore.isLandlord || authStore.isAdmin || authStore.isMaintenance" />
       <el-main class="layout-main">
-        <div class="back-bar" v-if="route.path !== '/'">
-          <el-button text :icon="ArrowLeft" @click="router.back()">返回上一页</el-button>
-        </div>
         <router-view />
         <GlobalFooter v-if="!route.meta.hideFooter" />
       </el-main>
@@ -245,7 +242,7 @@
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import {
-  Search, User, UserFilled, ArrowDown, ArrowLeft, Setting, SwitchButton,
+  Search, User, UserFilled, ArrowDown, Setting, SwitchButton,
   List, Bell, ChatDotRound, DataAnalysis, Tickets, Loading, ShoppingCart, Grid, Tools,} from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 import { useAgentChatStore } from '@/stores/agentChat'
@@ -833,16 +830,4 @@ watch(
   flex-direction: column;
 }
 
-.back-bar {
-  margin-bottom: 12px;
-}
-
-.back-bar .el-button {
-  font-size: 13px;
-  color: var(--text-secondary, #606266);
-}
-
-.back-bar .el-button:hover {
-  color: var(--primary);
-}
 </style>

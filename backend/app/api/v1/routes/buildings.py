@@ -62,6 +62,12 @@ def _build_card(b: Institute) -> dict:
     pt_set = set(getattr(ut, 'property_type', None) for ut in available_uts)
     pt_vals = [v for v in pt_set if v]
     property_type = pt_vals[0] if len(pt_vals) == 1 else None
+    # 租金周期 — 取第一个可用户型的 rent_period
+    rent_period = "monthly"
+    if available_uts:
+        rp = getattr(available_uts[0], 'rent_period', None)
+        rent_period = rp.value if hasattr(rp, 'value') else (rp or 'monthly')
+
     # 户型标签列表（如 ["studio","1bed","2bed"]）
     pt_labels: dict = {"studio":"Studio","ensuite":"Ensuite","1bed":"一室","2bed":"两室","3bed":"三室","4bed":"四室","5bed+":"五室+","shared":"合租"}
     unit_type_tags = [pt_labels.get(v.value if hasattr(v,'value') else str(v), str(v)) for v in pt_set if v]
@@ -76,6 +82,7 @@ def _build_card(b: Institute) -> dict:
         "couples_allowed": bool(b.couples_allowed) if b.couples_allowed is not None else False,
         "unit_type_count": len(available_uts),
         "unit_type_tags": unit_type_tags,
+        "rent_period": rent_period,
         "min_rent": min_rent, "max_rent": max_rent,
         "avg_bedrooms": 0,
         "property_type": property_type.value if hasattr(property_type, 'value') else str(property_type) if property_type else None,
@@ -483,6 +490,7 @@ async def get_tenant_building_detail(
             "deposit_amount": ut.deposit_amount,
             "deposit_type": _ev(ut, 'deposit_type'),
             "currency": ut.currency,
+            "rent_period": _ev(ut, 'rent_period') or 'monthly',
             "amenities": ut.amenities,
             "image_urls": ut.image_urls,
             "description": ut.description,

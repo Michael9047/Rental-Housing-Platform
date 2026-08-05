@@ -52,7 +52,7 @@
       <div class="card-footer">
         <div class="price-block">
           <span class="card-price">{{ formatPrice(p.price_monthly, p.currency) }}</span>
-          <span class="price-unit">/月</span>
+          <span class="price-unit">{{ property.rent_period === 'weekly' ? '/周' : '/月' }}</span>
         </div>
         <!-- 安全评分 -->
         <div v-if="property.safety_score != null" class="safety-badge" :class="safetyLevel">

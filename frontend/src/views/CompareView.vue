@@ -331,7 +331,7 @@ type SpecRow = {
 }
 
 const specRows: SpecRow[] = [
-  { label: '月租金', get: (it) => (it.property ? `${formatRent(it.property)}/月` : '—') },
+  { label: '租金', get: (it) => (it.property ? `${formatRent(it.property)}${it.property.rent_period === 'weekly' ? '/周' : '/月'}` : '—') },
   {
     label: '户型',
     get: (it) =>
@@ -449,7 +449,7 @@ function goDetail(pid: number) {
             <div v-else class="cmp-add-thumb cmp-thumb-ph">暂无图</div>
             <div class="cmp-select-info">
               <div class="cmp-select-title">{{ p.title }}</div>
-              <div class="cmp-select-meta">{{ p.district }} · {{ formatRent(p) }}/月</div>
+              <div class="cmp-select-meta">{{ p.district }} · {{ formatRent(p) }}{{ p.rent_period === 'weekly' ? '/周' : '/月' }}</div>
             </div>
             <el-button
               size="small"
@@ -505,7 +505,7 @@ function goDetail(pid: number) {
           <div class="cmp-select-info">
             <div class="cmp-select-title">{{ it.property.title }}</div>
             <div class="cmp-select-meta">
-              {{ it.property.district }} · {{ formatRent(it.property) }}/月 ·
+              {{ it.property.district }} · {{ formatRent(it.property) }}{{ it.property.rent_period === 'weekly' ? '/周' : '/月' }} ·
               {{ it.property.bedrooms }}室
             </div>
           </div>
@@ -529,7 +529,7 @@ function goDetail(pid: number) {
             <el-icon><Close /></el-icon>
           </button>
           <div class="cmp-pin-title" @click="goDetail(it.property_id)">{{ it.title }}</div>
-          <div class="cmp-pin-price">{{ formatRent(it.property) }}/月</div>
+          <div class="cmp-pin-price">{{ formatRent(it.property) }}{{ it.property.rent_period === 'weekly' ? '/周' : '/月' }}</div>
         </div>
         <button class="cmp-pin-add" @click="openSelection">
           <el-icon><Plus /></el-icon>
@@ -662,7 +662,7 @@ function goDetail(pid: number) {
               <div v-else class="cmp-image-pic cmp-thumb-ph">图片待补充</div>
               <div class="cmp-image-cap">{{ it.title }}</div>
               <div class="cmp-image-sub">
-                {{ formatRent(it.property) }}/月 ·
+                {{ formatRent(it.property) }}{{ it.property.rent_period === 'weekly' ? '/周' : '/月' }} ·
                 {{ it.property?.area_sqm != null ? it.property.area_sqm + '㎡' : '—' }}
               </div>
             </div>

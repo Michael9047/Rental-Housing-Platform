@@ -49,7 +49,7 @@
     <div class="room-type-row3">
       <div class="footer-price">
         <span class="price-value">¥{{ property.price_monthly }}</span>
-        <span class="price-unit">/月</span>
+        <span class="price-unit">{{ unitType.rent_period === 'weekly' ? '/周' : '/月' }}</span>
       </div>
       <div class="footer-lease">
         <span class="lease-icon">📅</span>

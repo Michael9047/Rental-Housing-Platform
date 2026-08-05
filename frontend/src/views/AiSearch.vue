@@ -60,14 +60,6 @@
             aria-label="打开对话记录与长期记忆"
             @click="mobileSidebarOpen = true"
           />
-          <el-button
-            class="back-to-search-btn"
-            size="small"
-            @click="router.push('/search')"
-          >
-            <el-icon><ArrowLeft /></el-icon>
-            返回搜索
-          </el-button>
           <div>
             <h1><el-icon><MagicStick /></el-icon> AI 智能找房</h1>
             <p>我会结合当前对话、刚推荐的房源和已保存偏好继续回答</p>
@@ -243,7 +235,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
-import { ArrowLeft, ChatLineSquare, CollectionTag, Loading, MagicStick, Plus, Promotion } from '@element-plus/icons-vue'
+import { ChatLineSquare, CollectionTag, Loading, MagicStick, Plus, Promotion } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import RecPropertyCard from '@/components/RecPropertyCard.vue'
 import { agentService } from '@/services/agent'

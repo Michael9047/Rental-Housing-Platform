@@ -24,7 +24,7 @@
         <div class="summary-right">
           <div class="summary-price">
             <span class="price-num">{{ formatPrice(Number(bookingFlow.property.price_monthly) || 0) }}</span>
-            <span class="price-unit">/月</span>
+            <span class="price-unit">{{ bookingFlow.property.rent_period === 'weekly' ? '/周' : '/月' }}</span>
           </div>
         </div>
       </div>

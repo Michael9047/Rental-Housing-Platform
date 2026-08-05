@@ -40,7 +40,7 @@
       </el-table-column>
       <el-table-column prop="area_sqm" label="面积(㎡)" width="90" />
       <el-table-column label="标准租金" width="110">
-        <template #default="{ row }">{{ formatPrice(row.base_rent, row.currency) }}/月</template>
+        <template #default="{ row }">{{ formatPrice(row.base_rent, row.currency) }}{{ (row as any).rent_period === 'weekly' ? '/周' : '/月' }}</template>
       </el-table-column>
       <el-table-column prop="deposit_amount" label="押金" width="100">
         <template #default="{ row }">{{ row.deposit_amount ? formatPrice(row.deposit_amount, row.currency) : '-' }}</template>

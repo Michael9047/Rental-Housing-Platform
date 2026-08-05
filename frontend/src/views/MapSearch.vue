@@ -62,7 +62,7 @@
               <span class="drawer-title">{{ p.title }}</span>
               <span class="drawer-addr">📍 {{ p.district }} · {{ p.address }}</span>
               <span class="drawer-price">
-                ¥{{ numberFormat(p.price_monthly) }}/月 · {{ p.bedrooms }}室{{ p.bathrooms }}卫
+                ¥{{ numberFormat(p.price_monthly) }}{{ (p as any).rent_period === 'weekly' ? '/周' : '/月' }} · {{ p.bedrooms }}室{{ p.bathrooms }}卫
               </span>
             </div>
           </div>
@@ -271,7 +271,7 @@ function buildPopupContent(p: MapProperty): string {
     <div class="map-popup">
       <h4>${escapeHtml(p.title)}</h4>
       <p class="popup-addr">📍 ${escapeHtml(p.district)} · ${escapeHtml(p.address)}</p>
-      <p class="popup-price">¥${numberFormat(p.price_monthly)}/月 · ${p.bedrooms}室${p.bathrooms}卫</p>
+      <p class="popup-price">¥${numberFormat(p.price_monthly)}${(p as any).rent_period === 'weekly' ? '/周' : '/月'} · ${p.bedrooms}室${p.bathrooms}卫</p>
       <a href="/property/${p.id}" class="popup-link">查看详情 →</a>
     </div>
   `

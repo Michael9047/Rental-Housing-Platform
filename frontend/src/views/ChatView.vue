@@ -139,7 +139,7 @@
                   <span v-for="a in getCardAmenities(rec.property).slice(0, 4)" :key="a" class="amenity-dot">{{ a }}</span>
                 </div>
                 <div class="rec-card-foot">
-                  <span class="rec-card-price">¥{{ rec.property.price_monthly }}<i>/月</i></span>
+                  <span class="rec-card-price">¥{{ rec.property.price_monthly }}<i>{{ (rec.property as any).rent_period === 'weekly' ? '/周' : '/月' }}</i></span>
                 </div>
                 <div class="rec-card-acts">
                   <el-button
@@ -236,7 +236,7 @@
               </div>
               <div class="cart-item-info">
                 <div class="cart-item-title" :title="item.property.title">{{ item.property.title }}</div>
-                <div class="cart-item-meta">{{ item.property.district }} · ¥{{ item.property.price_monthly }}/月</div>
+                <div class="cart-item-meta">{{ item.property.district }} · ¥{{ item.property.price_monthly }}{{ (item.property as any).rent_period === 'weekly' ? '/周' : '/月' }}</div>
                 <div v-if="item.reason" class="cart-item-reason" :title="item.reason">{{ item.reason }}</div>
               </div>
               <el-button
