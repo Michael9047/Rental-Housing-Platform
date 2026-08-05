@@ -21,7 +21,7 @@
       <span class="school-count">{{ searchResults.length }} 套</span>
     </div>
 
-    <div class="search-layout">
+    <div class="search-layout" :class="{ 'agent-open': agentOpen }">
       <!-- ════════════════════════════════════════════ -->
       <!--  左侧筛选栏                                 -->
       <!-- ════════════════════════════════════════════ -->
@@ -1335,6 +1335,7 @@ watch(() => route.query, () => { initFromRoute() })
 
 /* ── Agent 三栏布局 ── */
 .search-layout.agent-open {
+  display: grid;
   grid-template-columns: 260px 1fr 390px;
 }
 @media (max-width: 1360px) {
@@ -1348,61 +1349,7 @@ watch(() => route.query, () => { initFromRoute() })
   overflow-y: auto;
   height: calc(100vh - 100px);
   position: sticky;
-  top: 80px;
-}
-.agent-drawer {
-  position: fixed;
-  right: 0;
   top: 0;
-  bottom: 0;
-  width: min(400px, 100vw);
-  height: 100vh;
-  z-index: 2000;
-  box-shadow: -4px 0 20px rgba(0, 0, 0, 0.15);
-}
-.agent-overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.3);
-  z-index: 1999;
-}
-.agent-loading {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  height: 200px;
-  color: var(--el-text-color-secondary);
-  font-size: 14px;
-}
-.agent-toggle-btn {
-  margin-right: 8px;
-}
-.results-compare-status {
-  font-size: 12px;
-  color: var(--el-color-primary);
-  margin-right: 12px;
-  white-space: nowrap;
-}
-</style>
-
-<style>
-
-/* ── Agent 三栏布局 ── */
-.search-layout.agent-open {
-  grid-template-columns: 260px 1fr 390px;
-}
-@media (max-width: 1360px) {
-  .search-layout.agent-open {
-    grid-template-columns: 260px 1fr 350px;
-  }
-}
-.agent-dock {
-  background: var(--el-bg-color);
-  border-left: 1px solid var(--el-border-color-light);
-  overflow-y: auto;
-  height: calc(100vh - 100px);
-  position: sticky;
-  top: 80px;
 }
 .agent-drawer {
   position: fixed;
