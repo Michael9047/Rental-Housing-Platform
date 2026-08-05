@@ -1,11 +1,15 @@
-"""对比 Agent 服务 —— ReAct 模式
+"""对比 Agent 服务 —— 单次 LLM 调用
 
-使用 LLM 工具调用对 2-5 套房源进行深度多维对比分析。
-评分由 compare_scoring 确定性计算，LLM 只负责解释和 trade-off 推理。
+对 2-5 套房源做深度多维对比分析。
+评分由 compare_scoring 确定性计算（可复现、可审计），
+所有数据一次性批量预加载后内联进提示词，LLM 只负责解释和 trade-off 推理。
+
+历史：原为 ReAct 工具循环（LLM 逐个调工具取数），每轮对比要 5-10 次串行
+LLM 往返（30-90s），且工具读的都是已预加载的缓存——纯浪费。
+2026-07 改为单次调用：预加载(~0.3s) + 一次 LLM 生成(~10s)。
 """
 from __future__ import annotations
 
-import json
 import logging
 from typing import Any
 
@@ -30,193 +34,32 @@ logger = logging.getLogger(__name__)
 
 # ── System Prompt ─────────────────────────────────────────────────
 
-COMPARISON_SYSTEM_PROMPT = """你是一个租房平台的深度对比分析师。你的任务是对用户选定的几套房源进行多维度系统性对比，帮助用户做出最终决策。
+COMPARISON_SYSTEM_PROMPT = """你是租房平台的深度对比分析师。系统已备好全部真实数据和确定性评分，你只负责解释分析——禁止编造任何房源信息，禁止修改或捏造分数。
 
-## 工具使用规则
+回复结构：
+1. 总览（2-3句）：共几套、价格带、按用户优先级的总体结论
+2. 逐维度分析（价格/通勤/空间/评价/安全）：引用具体数字做 trade-off 分析，例如"A 虽然贵 200/月，但通勤每天省 30 分钟"；只写有差异的维度，全部持平的维度一句带过
+3. 综合推荐：按用户优先级给出明确首选和理由，并指出值得实地验证的风险点（如某套评价数太少）
 
-你必须使用工具来获取真实数据，绝不能编造任何房源信息、价格或评分。
-典型流程：
-1. 先用 get_property_details 获取每套房的基本信息
-2. 再用 get_commute_data、get_review_summary、get_safety_scores 获取补充数据
-3. 最后用 compute_comparison 获取确定性评分
-4. 综合所有数据，给出结构化的对比分析
-
-## 回复要求
-
-- 使用中文回复（用户是中国留学生）
-- 引用具体数字（价格、距离、分数）来支撑你的分析
-- 重点做 trade-off 分析："A 虽然贵 200/月，但通勤每天省 30 分钟"
-- 根据用户指定的优先级给出推荐
-- 指出值得实地验证的风险点（如某套房评价数太少）
-- 分数由 compute_comparison 工具计算，你绝对不能修改或捏造分数
-- 回复结构清晰：总览 → 逐维度分析 → 综合推荐"""
-
-# ── 工具定义 ──────────────────────────────────────────────────────
-
-def _build_tools(property_ids: list[int]) -> list[dict[str, Any]]:
-    """构建 OpenAI 兼容的工具定义"""
-    return [
-        {
-            "type": "function",
-            "function": {
-                "name": "get_property_details",
-                "description": f"获取指定房源的全部详细信息：价格、面积、户型、设施、押金、楼层、描述、图片数量等。可用房源 ID：{property_ids}",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "property_id": {
-                            "type": "integer",
-                            "description": "房源 ID",
-                            "enum": property_ids,
-                        },
-                    },
-                    "required": ["property_id"],
-                },
-            },
-        },
-        {
-            "type": "function",
-            "function": {
-                "name": "get_commute_data",
-                "description": "获取一批房源的最近交通站点距离（米），用于评估通勤便利度。",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "property_ids": {
-                            "type": "array",
-                            "items": {"type": "integer"},
-                            "description": "房源 ID 列表",
-                        },
-                    },
-                    "required": ["property_ids"],
-                },
-            },
-        },
-        {
-            "type": "function",
-            "function": {
-                "name": "get_review_summary",
-                "description": "获取一批房源的机构评价汇总（均分 + 评价数量）。评价挂靠在管理公司/机构下，不是单套房源的评价。",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "property_ids": {
-                            "type": "array",
-                            "items": {"type": "integer"},
-                            "description": "房源 ID 列表",
-                        },
-                    },
-                    "required": ["property_ids"],
-                },
-            },
-        },
-        {
-            "type": "function",
-            "function": {
-                "name": "get_safety_scores",
-                "description": "获取一批房源所在区域的安全评分（0.0-5.0，越高越安全）。新加坡房源同时返回 om_score（非礼专项评分，3.0-5.0），英国房源仅返回综合 crime 评分。",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "property_ids": {
-                            "type": "array",
-                            "items": {"type": "integer"},
-                            "description": "房源 ID 列表",
-                        },
-                    },
-                    "required": ["property_ids"],
-                },
-            },
-        },
-        {
-            "type": "function",
-            "function": {
-                "name": "get_poi_analysis",
-                "description": "获取指定房源周边的设施分析（超市、餐厅、医院等）。",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "property_id": {"type": "integer", "description": "房源 ID"},
-                    },
-                    "required": ["property_id"],
-                },
-            },
-        },
-        {
-            "type": "function",
-            "function": {
-                "name": "compute_comparison",
-                "description": f"计算所有房源的确定性加权对比评分（五维度：价格/通勤/空间/评价/安全）。你必须使用此工具的分数，不能自己编造。可选优先级：{list(PRIORITY_LABELS.keys())}",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "property_ids": {
-                            "type": "array",
-                            "items": {"type": "integer"},
-                            "description": "所有参与对比的房源 ID",
-                        },
-                        "priority": {
-                            "type": "string",
-                            "enum": list(PRIORITY_LABELS.keys()),
-                            "description": f"用户偏好权重：{json.dumps(PRIORITY_LABELS, ensure_ascii=False)}",
-                        },
-                    },
-                    "required": ["property_ids", "priority"],
-                },
-            },
-        },
-        {
-            "type": "function",
-            "function": {
-                "name": "list_properties",
-                "description": "列出当前对比会话中所有房源的基本信息（ID + 标题 + 区域）。",
-                "parameters": {"type": "object", "properties": {}},
-            },
-        },
-    ]
+规则：
+- 中文口语化，用「你」不用「您」
+- 只使用输入中提供的数据和分数
+- 500-800字，纯文字段落，不用 Markdown 标题符号"""
 
 
 # ── Service ───────────────────────────────────────────────────────
 
 class ComparisonService:
-    """ReAct 对比 Agent"""
+    """深度对比：确定性评分 + 单次 LLM 解释。"""
 
     def __init__(self, session: AsyncSession) -> None:
         self.db = session
         self._llm = get_llm_service()
         self._safety = SafetyScoringService()
-        # 单次 ReAct 循环内的数据缓存
         self._cache: dict[int, EnrichedPropertyData] = {}
-        self._property_ids: list[int] = []
-
-    # ── 工具执行器 ──────────────────────────────────────────────
-
-    async def _execute_tool(self, tool_name: str, args: dict[str, Any]) -> str:
-        """执行一个工具并返回 JSON 字符串结果"""
-        logger.debug("ReAct tool: %s(%s)", tool_name, args)
-        try:
-            if tool_name == "get_property_details":
-                result = await self._tool_get_property_details(args)
-            elif tool_name == "get_commute_data":
-                result = await self._tool_get_commute(args)
-            elif tool_name == "get_review_summary":
-                result = await self._tool_get_reviews(args)
-            elif tool_name == "get_safety_scores":
-                result = await self._tool_get_safety(args)
-            elif tool_name == "get_poi_analysis":
-                result = await self._tool_get_poi(args)
-            elif tool_name == "compute_comparison":
-                result = await self._tool_compute_comparison(args)
-            elif tool_name == "list_properties":
-                result = self._tool_list_properties()
-            else:
-                result = {"error": f"未知工具: {tool_name}"}
-        except Exception as exc:
-            result = {"error": str(exc)}
-        return json.dumps(result, ensure_ascii=False, default=str)
 
     async def _ensure_cache(self, property_ids: list[int]) -> None:
-        """确保缓存中有指定房源的数据"""
+        """批量预加载房源的全部对比数据（POI/评价/安全，一次查询）"""
         missing = [pid for pid in property_ids if pid not in self._cache]
         if not missing:
             return
@@ -230,124 +73,6 @@ class ComparisonService:
         )
         self._cache.update(enriched)
 
-    async def _tool_get_property_details(self, args: dict) -> dict:
-        pid = args["property_id"]
-        await self._ensure_cache([pid])
-        data = self._cache.get(pid)
-        if not data:
-            return {"error": f"房源 {pid} 不存在"}
-        return {
-            "property_id": data.property_id,
-            "title": data.title,
-            "district": data.district,
-            "address": data.address,
-            "price_monthly": data.price_monthly,
-            "area_sqm": data.area_sqm,
-            "bedrooms": data.bedrooms,
-            "bathrooms": data.bathrooms,
-            "property_type": data.property_type,
-            "amenities": data.amenities,
-            "deposit_amount": data.deposit_amount,
-            "deposit_type": data.deposit_type,
-            "service_fee_rate": data.service_fee_rate,
-            "min_lease_months": data.min_lease_months,
-            "floor": data.floor,
-            "room_number": data.room_number,
-            "description": data.description,
-            "image_count": data.image_count,
-        }
-
-    async def _tool_get_commute(self, args: dict) -> dict:
-        pids = args["property_ids"]
-        await self._ensure_cache(pids)
-        return {
-            str(pid): {
-                "transit_meters": self._cache[pid].transit_meters,
-                "display": self._cache[pid].transit_display,
-            }
-            for pid in pids if pid in self._cache
-        }
-
-    async def _tool_get_reviews(self, args: dict) -> dict:
-        pids = args["property_ids"]
-        await self._ensure_cache(pids)
-        return {
-            str(pid): {
-                "rating": self._cache[pid].rating,
-                "review_count": self._cache[pid].review_count,
-            }
-            for pid in pids if pid in self._cache
-        }
-
-    async def _tool_get_safety(self, args: dict) -> dict:
-        pids = args["property_ids"]
-        await self._ensure_cache(pids)
-        return {
-            str(pid): {"safety_score": self._cache[pid].safety_score}
-            for pid in pids if pid in self._cache
-        }
-
-    async def _tool_get_poi(self, args: dict) -> dict:
-        pid = args["property_id"]
-        from app.models.poi import PropertyPOI
-
-        poi = (
-            await self.db.execute(
-                select(PropertyPOI).where(PropertyPOI.property_id == pid)
-            )
-        ).scalar_one_or_none()
-        if not poi:
-            return {"property_id": pid, "poi_data": None, "content": "暂无周边设施数据"}
-        return {
-            "property_id": pid,
-            "poi_data": poi.poi_data,
-            "content": poi.content or "",
-        }
-
-    async def _tool_compute_comparison(self, args: dict) -> dict:
-        pids = args["property_ids"]
-        priority = normalize_priority(args.get("priority", "balanced"))
-        await self._ensure_cache(pids)
-
-        metrics = [self._cache[pid].metrics for pid in pids if pid in self._cache]
-        scores = compute_scores(metrics, priority)
-
-        # 附加维度标签和权重信息
-        from app.services.compare_scoring import PRIORITY_WEIGHTS
-
-        weights = PRIORITY_WEIGHTS.get(priority, {})
-        return {
-            "scores": {
-                str(pid): {
-                    "total": s["total"],
-                    "breakdown": {
-                        DIMENSION_LABELS.get(k, k): v
-                        for k, v in s["breakdown"].items()
-                    },
-                }
-                for pid, s in scores.items()
-            },
-            "priority": priority,
-            "priority_label": PRIORITY_LABELS.get(priority, "未知"),
-            "weights": {
-                DIMENSION_LABELS.get(k, k): w
-                for k, w in weights.items()
-            },
-            "dimensions": list(DIMENSION_LABELS.values()),
-        }
-
-    def _tool_list_properties(self) -> dict:
-        return {
-            "properties": [
-                {
-                    "property_id": pid,
-                    "title": self._cache[pid].title if pid in self._cache else "未知",
-                    "district": self._cache[pid].district if pid in self._cache else "未知",
-                }
-                for pid in self._property_ids
-            ]
-        }
-
     # ── 主入口 ──────────────────────────────────────────────────
 
     async def analyze(
@@ -357,7 +82,7 @@ class ComparisonService:
         priority: str = "balanced",
         conversation_history: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
-        """运行 ReAct 对比循环。
+        """运行一次对比分析。
 
         Args:
             property_ids: 待对比房源 ID 列表（2~5）
@@ -367,38 +92,23 @@ class ComparisonService:
 
         Returns:
             {
-                "reply": str,          # LLM 最终回复
-                "scores": dict,        # {property_id: {total, breakdown}}
-                "tool_trail": list,    # 工具调用轨迹
+                "reply": str,          # LLM 分析回复
+                "scores": dict,        # {property_id: {total, breakdown}} 权威分数（雷达图用）
+                "tool_trail": list,    # 保留字段，恒为空（ReAct 已下线）
                 "property_data": dict, # {property_id: dict} 前端渲染数据
             }
         """
-        self._property_ids = property_ids
         self._cache = {}
 
-        # 预加载所有房源数据（后续工具调用直接走缓存）
+        # 预加载所有房源数据（POI/评价/安全各一次批量查询）
         await self._ensure_cache(property_ids)
 
-        # 构建对话上下文
-        if conversation_history:
-            context = f"当前对比房源: {property_ids}。用户偏好: {priority}。"
-            full_message = f"{context}\n用户追问: {user_message}"
-        else:
-            context = f"请对比分析以下房源: {property_ids}。用户偏好: {PRIORITY_LABELS.get(priority, '均衡')}。"
-            full_message = f"{context}\n{user_message}" if user_message else f"{context}\n请给出全面的对比分析。"
-
-        tools = _build_tools(property_ids)
-
-        reply, tool_trail = await self._llm.run_react_loop(
-            system_prompt=COMPARISON_SYSTEM_PROMPT,
-            user_message=full_message,
-            tools=tools,
-            tool_executor=self._execute_tool,
-        )
-
-        # 确定性计算最终评分（前端需要权威分数用于雷达图）
+        priority = normalize_priority(priority)
         metrics = [self._cache[pid].metrics for pid in property_ids if pid in self._cache]
         scores = compute_scores(metrics, priority)
+
+        # 全部数据内联进提示词，一次 LLM 调用出分析
+        reply = await self._gen_reply(property_ids, scores, priority, user_message, conversation_history)
 
         # 构建前端渲染数据
         property_data: dict[int, dict] = {}
@@ -430,6 +140,77 @@ class ComparisonService:
         return {
             "reply": reply,
             "scores": scores,
-            "tool_trail": tool_trail,
+            "tool_trail": [],
             "property_data": property_data,
         }
+
+    # ── 回复生成 ──────────────────────────────────────────────────
+
+    async def _gen_reply(
+        self,
+        property_ids: list[int],
+        scores: dict[int, dict],
+        priority: str,
+        user_message: str,
+        conversation_history: list[dict[str, Any]] | None,
+    ) -> str:
+        lines = []
+        for i, pid in enumerate(property_ids, 1):
+            d = self._cache.get(pid)
+            if not d:
+                continue
+            s = scores.get(pid) or {}
+            rating_str = f"{d.rating:.1f}分/{d.review_count}条" if d.rating is not None else "暂无"
+            lines.append(
+                f"{i}. [property_id={pid}] {d.title} | 区域: {d.district} | "
+                f"月租: {d.price_monthly} | 户型: {d.bedrooms}室{d.bathrooms}卫 | "
+                f"面积: {d.area_sqm or '未知'}㎡ | 通勤: {d.transit_display or '无数据'} | "
+                f"评价: {rating_str} | 安全: {d.safety_score if d.safety_score is not None else '无数据'} | "
+                f"设施: {', '.join(d.amenities[:6]) or '无'} | "
+                f"简介: {d.description or '无'}\n"
+                f"   系统得分（禁止修改）: 综合 {s.get('total')} | "
+                + " ".join(f"{DIMENSION_LABELS.get(k, k)} {v}" for k, v in (s.get("breakdown") or {}).items())
+            )
+
+        user_prompt = (
+            f"用户优先级：{PRIORITY_LABELS.get(priority, '均衡')}\n\n"
+            f"待对比房源（真实数据 + 系统评分）：\n" + "\n".join(lines)
+        )
+        if conversation_history:
+            user_prompt += f"\n\n用户追问：{user_message}"
+        elif user_message:
+            user_prompt += f"\n\n用户补充：{user_message}"
+
+        if self._llm.is_available:
+            try:
+                reply = (await self._llm.complete_text(
+                    messages=[
+                        {"role": "system", "content": COMPARISON_SYSTEM_PROMPT},
+                        {"role": "user", "content": user_prompt},
+                    ],
+                    max_tokens=1500,
+                ) or "").strip()
+                if len(reply) >= 20:
+                    return reply
+            except Exception:
+                logger.exception("LLM 对比分析失败，降级为规则摘要")
+
+        return self._rule_summary(property_ids, scores, priority)
+
+    def _rule_summary(
+        self,
+        property_ids: list[int],
+        scores: dict[int, dict],
+        priority: str,
+    ) -> str:
+        """LLM 不可用/失败时的规则摘要（分数照常返回，雷达图不受影响）。"""
+        valid = [(pid, scores.get(pid, {}).get("total", 0)) for pid in property_ids if pid in self._cache]
+        if not valid:
+            return "对比数据加载失败，请稍后重试。"
+        winner_pid, winner_total = max(valid, key=lambda x: x[1])
+        winner = self._cache[winner_pid]
+        return (
+            f"按「{PRIORITY_LABELS.get(priority, '均衡')}」对比 {len(valid)} 套房源，"
+            f"综合得分最高的是「{winner.title}」（{winner_total} 分）。"
+            f"各套分项得分见下方图表。（AI 分析暂不可用，以上为系统评分结果）"
+        )
