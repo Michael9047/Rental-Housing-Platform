@@ -102,6 +102,23 @@ class UnitType(TimestampMixin, Base):
     institute: Mapped["Institute"] = relationship(back_populates="unit_types")
     # Room 表已删除，rooms 关系移除
 
+    # ── 向后兼容属性（旧代码引用 Room/Property 字段名）──
+    @property
+    def price_monthly(self) -> Decimal:
+        """兼容旧 Property.price_monthly → UnitType.base_rent。"""
+        return self.base_rent
+
+    @property
+    def title(self) -> str | None:
+        """兼容旧 Property.title → UnitType.name。"""
+        return self.name
+
+    @property
+    def institute_amenities(self) -> list[str] | None:
+        """兼容旧 Property.institute_amenities → Institute.amenities。"""
+        inst = self.institute
+        return inst.amenities if inst else None
+
 # 向后兼容别名
 import enum as _enum
 RoomType = UnitType

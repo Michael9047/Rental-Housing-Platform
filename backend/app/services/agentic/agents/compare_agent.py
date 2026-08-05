@@ -7,8 +7,9 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import func, inspect, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import load_only
 
 from app.models.property import Property
 from app.models.poi import PropertyPOI
@@ -17,6 +18,9 @@ from app.services.agentic.agents.base_agent import BaseAgent
 from app.services.agentic.orchestration.types import AgentContext, AgentResult, AgentError, AgentErrorType
 from app.services.agentic.shared import (
     build_dimension_analysis,
+    comparable_price_cny,
+    format_property_money,
+    property_currency,
     property_to_dict,
 )
 from app.services.compare_scoring import (
@@ -71,6 +75,15 @@ COMPARE_SYSTEM_PROMPT = """你是面向留学生的海外租房对比助手。�
   "recommendation": "按您的优先级推荐房源 1，因为..."
 }"""
 
+COMPARE_STREAM_SYSTEM_PROMPT = """你是面向留学生的租房对比顾问。根据系统提供的真实房源字段和确定性得分，直接输出简洁自然的中文对比说明。
+
+规则：
+1. 先给结论，再按价格、通勤、空间和评价解释关键差异。
+2. 必须覆盖每套房，并呼应用户的优先级。
+3. 得分和房源字段原样使用，禁止编造设施、通勤、政策或费用。
+4. 缺失数据要明确说「暂无数据」。
+5. 不要输出 JSON，不要重新计算得分，总长度控制在 500 字内。"""
+
 
 class CompareAgent(BaseAgent):
     """多维度房源对比 Agent。
@@ -95,6 +108,58 @@ class CompareAgent(BaseAgent):
 
     # ── 核心对比入口 ──────────────────────────────────────────────
 
+    async def _load_properties(self, property_ids: list[int]) -> list[Property]:
+        """按传入顺序读取房源；旧库缺失三层表时使用扁平房源事实。"""
+        ordered_ids = list(dict.fromkeys(property_ids))
+        if not ordered_ids:
+            return []
+        from app.services.property_service import PropertyService
+
+        property_service = PropertyService(self.session)
+        connection = await self.session.connection()
+        existing_columns = await connection.run_sync(
+            lambda sync_connection: {
+                column["name"]
+                for column in inspect(sync_connection).get_columns(
+                    Property.__tablename__
+                )
+            }
+        )
+        rows = list(await self.session.scalars(
+            select(Property)
+            .where(Property.id.in_(ordered_ids))
+            .options(*property_service._legacy_read_options(
+                existing_columns=existing_columns
+            ))
+        ))
+        rows = [property_service._apply_legacy_defaults(prop) for prop in rows]
+        by_id = {prop.id: prop for prop in rows}
+        return [by_id[property_id] for property_id in ordered_ids if property_id in by_id]
+
+    async def _resolve_compare_properties(
+        self,
+        user_id: int,
+        property_ids: list[int] | None,
+        cart_agent: CartService | None,
+    ) -> list[Property]:
+        """按显式 ID 或候选清单解析待对比房源。"""
+        if property_ids:
+            props = await self._load_properties(property_ids)
+            if len(props) < 2:
+                raise ValueError("请至少选择 2 套有效房源进行对比")
+            return props
+
+        if cart_agent is None:
+            raise ValueError("购物车对比需要提供 cart_agent")
+        _cart, items = await cart_agent.get_cart_items(user_id)
+        if not items:
+            raise ValueError("购物车为空，请先添加房源再对比")
+
+        props = await self._load_properties([item.property_id for item in items])
+        if not props:
+            raise ValueError("购物车中的房源已不存在")
+        return props
+
     async def compare(
         self,
         user_id: int,
@@ -108,32 +173,92 @@ class CompareAgent(BaseAgent):
         - 未传：对比整个购物车（需要 cart_agent）。
         - priority：用户优先级（balanced/budget/commute/space）。
         """
-        if property_ids:
-            props: list[Property] = []
-            for pid in dict.fromkeys(property_ids):
-                prop = await self.session.get(Property, pid)
-                if prop is not None:
-                    props.append(prop)
-            if len(props) < 2:
-                raise ValueError("请至少选择 2 套有效房源进行对比")
-            return await self._compare_props(props, priority)
-
-        # 从购物车取
-        if cart_agent is None:
-            raise ValueError("购物车对比需要提供 cart_agent")
-        _cart, items = await cart_agent.get_cart_items(user_id)
-        if not items:
-            raise ValueError("购物车为空，请先添加房源再对比")
-
-        props = []
-        for item in items:
-            prop = await self.session.get(Property, item.property_id)
-            if prop is not None:
-                props.append(prop)
-        if not props:
-            raise ValueError("购物车中的房源已不存在")
-
+        props = await self._resolve_compare_properties(
+            user_id, property_ids, cart_agent
+        )
         return await self._compare_props(props, priority)
+
+    async def compare_stream(
+        self,
+        user_id: int,
+        property_ids: list[int] | None = None,
+        priority: str | None = None,
+        cart_agent: CartService | None = None,
+    ):
+        """对比卡片使用确定性计算，用户可见说明直接透传上游 LLM token。"""
+        props = await self._resolve_compare_properties(
+            user_id, property_ids, cart_agent
+        )
+        normalized_priority = normalize_priority(priority)
+        metrics, extras = await self._gather_compare_metrics(props)
+        scores = compute_scores(metrics, normalized_priority)
+        structured = self._rule_based_compare(
+            props, scores, extras, normalized_priority
+        )
+
+        fact_lines: list[str] = []
+        for index, prop in enumerate(props, 1):
+            data = property_to_dict(prop)
+            extra = extras[prop.id]
+            score = scores[prop.id]
+            fact_lines.append(
+                f"{index}. {data['title']} [property_id={prop.id}] | "
+                f"月租 {format_property_money(prop, data['price_monthly'])} | "
+                f"{data['bedrooms']}室{data['bathrooms']}卫 | "
+                f"面积 {data['area_sqm'] or '暂无数据'}㎡ | "
+                f"通勤 {extra['commute'] or '暂无数据'} | "
+                f"评价 {extra['rating'] if extra['rating'] is not None else '暂无数据'} | "
+                f"综合得分 {score['total']} | "
+                + " ".join(
+                    f"{DIMENSION_LABELS[key]} {value}"
+                    for key, value in score["breakdown"].items()
+                )
+            )
+
+        reply = ""
+        stream_failed = False
+        if self.llm_service.is_available:
+            try:
+                async for token in self.llm_service.complete_text_stream(
+                    [
+                        {"role": "system", "content": COMPARE_STREAM_SYSTEM_PROMPT},
+                        {
+                            "role": "user",
+                            "content": (
+                                f"用户优先级：{PRIORITY_LABELS[normalized_priority]}\n\n"
+                                + "\n".join(fact_lines)
+                            ),
+                        },
+                    ],
+                    temperature=0.3,
+                    max_tokens=900,
+                ):
+                    if not token:
+                        continue
+                    reply += token
+                    yield {"type": "token", "text": token}
+            except Exception:
+                stream_failed = True
+                logger.exception("LLM 流式对比说明中断，降级为确定性分析")
+
+        if not reply or stream_failed:
+            fallback = str(
+                structured.get("dimension_analysis") or structured["summary"]
+            )
+            continuation = f"\n\n{fallback}" if reply else fallback
+            reply += continuation
+            yield {"type": "token", "text": continuation}
+            structured["ai_available"] = False
+        else:
+            structured["ai_available"] = True
+            structured["summary"] = reply
+            structured["dimension_analysis"] = reply
+
+        yield {
+            "type": "meta",
+            "reply": reply,
+            **structured,
+        }
 
     # ── 指标聚合 ──────────────────────────────────────────────────
 
@@ -145,10 +270,24 @@ class CompareAgent(BaseAgent):
 
         pois: dict[int, PropertyPOI] = {}
         try:
-            rows = await self.session.scalars(
-                select(PropertyPOI).where(PropertyPOI.property_id.in_(ids))
-            )
-            pois = {poi.property_id: poi for poi in rows}
+            # 可选周边字段缺失时只回滚 savepoint，不污染整轮 Agent 会话。
+            async with self.session.begin_nested():
+                rows = await self.session.scalars(
+                    select(PropertyPOI)
+                    .options(load_only(
+                        PropertyPOI.id,
+                        PropertyPOI.property_id,
+                        PropertyPOI.content,
+                        PropertyPOI.poi_data,
+                        PropertyPOI.generated_at,
+                        PropertyPOI.reviewed,
+                        PropertyPOI.map_poi_data,
+                        PropertyPOI.created_at,
+                        PropertyPOI.updated_at,
+                    ))
+                    .where(PropertyPOI.property_id.in_(ids))
+                )
+                pois = {poi.property_id: poi for poi in rows}
         except Exception:
             logger.exception("加载 POI 数据失败，通勤维度取中性分")
 
@@ -156,19 +295,20 @@ class CompareAgent(BaseAgent):
         inst_ids = {p.institute_id for p in props if p.institute_id}
         if inst_ids:
             try:
-                rows = await self.session.execute(
-                    select(
-                        Review.institute_id,
-                        func.avg(Review.rating),
-                        func.count(Review.id),
+                async with self.session.begin_nested():
+                    rows = await self.session.execute(
+                        select(
+                            Review.institute_id,
+                            func.avg(Review.rating),
+                            func.count(Review.id),
+                        )
+                        .where(
+                            Review.institute_id.in_(inst_ids),
+                            Review.status == ReviewStatus.approved,
+                        )
+                        .group_by(Review.institute_id)
                     )
-                    .where(
-                        Review.institute_id.in_(inst_ids),
-                        Review.status == ReviewStatus.approved,
-                    )
-                    .group_by(Review.institute_id)
-                )
-                rating_by_inst = {r[0]: (float(r[1]), int(r[2])) for r in rows}
+                    rating_by_inst = {r[0]: (float(r[1]), int(r[2])) for r in rows}
             except Exception:
                 logger.exception("加载评价聚合失败，评分维度取中性分")
 
@@ -183,7 +323,7 @@ class CompareAgent(BaseAgent):
             metrics.append(
                 PropertyMetrics(
                     property_id=p.id,
-                    price=float(p.price_monthly),
+                    price=comparable_price_cny(p),
                     area=float(p.area_sqm) if p.area_sqm else None,
                     transit_meters=transit,
                     rating=rating,
@@ -229,8 +369,10 @@ class CompareAgent(BaseAgent):
                     s = scores[p.id]
                     lines.append(
                         f"{i}. [property_id={d['property_id']}] {d['title']} | 区域: {d['district']} | "
-                        f"月租: ¥{d['price_monthly']} | 户型: {d['bedrooms']}室{d['bathrooms']}卫 | "
+                        f"月租: {format_property_money(p, d['price_monthly'])} | "
+                        f"户型: {d['bedrooms']}室{d['bathrooms']}卫 | "
                         f"面积: {d['area_sqm'] or '未知'}㎡ | 通勤: {e['commute'] or '无数据'} | "
+                        f"设施: {'、'.join(d['amenities']) if d['amenities'] else '无数据'} | "
                         f"评价: {(str(e['rating']) + '分/' + str(e['review_count']) + '条') if e['rating'] is not None else '暂无'} | "
                         f"简介: {d['description'] or '无'}\n"
                         f"   系统得分（禁止修改）: 综合 {s['total']} | "
@@ -329,10 +471,22 @@ class CompareAgent(BaseAgent):
                 "property": by_id[p.id],
             })
 
-        prices = [float(p.price_monthly) for p in props]
+        currencies = {property_currency(p) for p in props}
+        if len(currencies) == 1:
+            cheapest = min(props, key=lambda p: float(p.price_monthly))
+            priciest = max(props, key=lambda p: float(p.price_monthly))
+            price_summary = (
+                f"价格区间 {format_property_money(cheapest, cheapest.price_monthly)} - "
+                f"{format_property_money(priciest, priciest.price_monthly)}。"
+            )
+        else:
+            price_summary = "包含多个币种，价格得分已统一换算后比较。"
         winner = max(props, key=lambda p: scores[p.id]["total"])
         fake_result = {
-            "summary": f"按「{PRIORITY_LABELS[priority]}」共对比 {len(props)} 套房源，价格区间 ¥{min(prices):.0f} - ¥{max(prices):.0f}。{AI_UNAVAILABLE_HINT}",
+            "summary": (
+                f"按「{PRIORITY_LABELS[priority]}」共对比 {len(props)} 套房源，"
+                f"{price_summary}{AI_UNAVAILABLE_HINT}"
+            ),
             "recommendation": f"按「{PRIORITY_LABELS[priority]}」综合得分最高的是「{winner.title}」（{scores[winner.id]['total']} 分）。",
         }
 
