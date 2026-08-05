@@ -22,6 +22,13 @@ logger = logging.getLogger(__name__)
 FOOD_RADIUS_M = 1000       # 日常消费关键词
 FACILITY_RADIUS_M = 2000   # 设施/交通/地标
 
+# 单个关键词自定义半径（米）—— 覆盖默认半径
+KW_RADIUS_OVERRIDE: dict[str, int] = {
+    "公交站": 500,
+    "公交车站": 500,
+    "超市": 500,
+}
+
 # 母类→子类分组
 CATEGORIES: dict[str, list[str]] = {
     "交通": ["地铁站", "公交站"],
@@ -205,22 +212,28 @@ class GooglePOIService:
         self, kw: str, lat: float, lng: float, _radius_m: int, sem: asyncio.Semaphore,
     ) -> tuple[str, list[POIItem]]:
         async with sem:
+            # 自定义半径覆盖
+            custom_r = KW_RADIUS_OVERRIDE.get(kw)
+
             # 路径A：小贩中心（2km 单次 searchText + includedType:food_court）
             if kw == "小贩中心":
-                pois = await self._search_hawker_centre(lat, lng, FACILITY_RADIUS_M)
-                fb_radius = FACILITY_RADIUS_M
+                r = custom_r or FACILITY_RADIUS_M
+                pois = await self._search_hawker_centre(lat, lng, r)
+                fb_radius = r
             # 路径B：searchText 1×1 网格（日常消费关键词，1km）
             elif kw in GM_ST:
                 en = GM_ST[kw]
                 queries = en if isinstance(en, list) else [en]
                 max_pages = ST_PAGES.get(kw, 2)
-                pois = await self._search_text_grid(lat, lng, queries, FOOD_RADIUS_M, max_pages, grid=1)
-                fb_radius = FOOD_RADIUS_M
+                r = custom_r or FOOD_RADIUS_M
+                pois = await self._search_text_grid(lat, lng, queries, r, max_pages, grid=1)
+                fb_radius = r
             # 路径C：searchNearby（低密度结构化类型，2km 圆形）
             elif kw in GM_NS:
                 types = GM_NS[kw]
-                pois = await self._search_nearby_circle(lat, lng, types, FACILITY_RADIUS_M) if types else []
-                fb_radius = FACILITY_RADIUS_M
+                r = custom_r or FACILITY_RADIUS_M
+                pois = await self._search_nearby_circle(lat, lng, types, r) if types else []
+                fb_radius = r
             else:
                 pois = []
                 fb_radius = FACILITY_RADIUS_M
