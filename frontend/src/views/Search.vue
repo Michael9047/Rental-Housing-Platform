@@ -144,6 +144,24 @@
       <main class="results-area" :class="{ 'map-layout': viewMode === 'map' }">
         <div class="results-top">
           <span class="results-count">共 <strong>{{ filteredAndSortedResults.length }}</strong> 套房源</span>
+
+          <div class="results-top-actions">
+            <el-tooltip content="AI 租房管家 — 结合当前筛选帮你找房" placement="bottom">
+              <el-button
+                class="agent-toggle-btn"
+                :type="agentOpen ? 'primary' : 'default'"
+                size="small"
+                @click="toggleAgent"
+              >
+                <el-icon :size="16"><ChatDotRound /></el-icon>
+                <span>AI 管家</span>
+              </el-button>
+            </el-tooltip>
+
+            <span v-if="selectedResultIds.length" class="results-compare-status">
+              已选 {{ selectedResultIds.length }} 套待对比
+            </span>
+          </div>
         </div>
 
         <div v-if="loading" class="loading-wrap">
