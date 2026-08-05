@@ -209,13 +209,9 @@
     />
 
     <!-- Agent 遮罩（窄屏） -->
-    <div
-      v-if="agentOpen && isNarrowScreen"
-      class="agent-overlay"
-      @click="agentOpen = false"
-    />
+    <div v-if="agentOpen" class="agent-overlay" @click="agentOpen = false" />
     <!-- Agent 侧边栏 -->
-    <aside v-if="agentOpen" class="agent-dock" :class="{ 'agent-drawer': isNarrowScreen }">
+    <aside v-if="agentOpen" class="agent-dock">
       <Suspense>
         <SearchAgentPanel
           :filters="agentFilters"
@@ -700,8 +696,6 @@ function toggleResultCompare(propertyId: number, checked: boolean) {
     selectedResultIds.value = selectedResultIds.value.filter((id) => id !== propertyId)
   }
 }
-
-const isNarrowScreen = computed(() => window.innerWidth <= 1100)
 
 /** 打开/关闭 Agent 面板 */
 function toggleAgent() {
@@ -1333,55 +1327,58 @@ watch(() => route.query, () => { initFromRoute() })
   .card-grid { grid-template-columns: 1fr; }
 }
 
-/* ── Agent 三栏布局 ── */
-.search-layout.agent-open {
-  display: grid;
-  grid-template-columns: 260px 1fr 390px;
-}
-@media (max-width: 1360px) {
-  .search-layout.agent-open {
-    grid-template-columns: 260px 1fr 350px;
-  }
+/* ── Agent 三栏布局（flex 第三子元素，不切换 grid）── */
+.search-layout.agent-open .card-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 .agent-dock {
+  width: 390px;
+  flex: 0 0 390px;
+  min-height: 0;
   background: var(--el-bg-color);
   border-left: 1px solid var(--el-border-color-light);
   overflow-y: auto;
-  height: calc(100vh - 100px);
+  max-height: calc(100vh - 90px);
   position: sticky;
   top: 0;
 }
-.agent-drawer {
-  position: fixed;
-  right: 0;
-  top: 0;
-  bottom: 0;
-  width: min(400px, 100vw);
-  height: 100vh;
-  z-index: 2000;
-  box-shadow: -4px 0 20px rgba(0, 0, 0, 0.15);
-}
-.agent-overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.3);
-  z-index: 1999;
-}
+.agent-overlay { display: none; }
 .agent-loading {
+  height: 100%;
   display: flex;
   align-items: center;
   justify-content: center;
-  height: 200px;
   color: var(--el-text-color-secondary);
   font-size: 14px;
 }
-.agent-toggle-btn {
-  margin-right: 8px;
-}
+.agent-toggle-btn { margin-right: 8px; }
 .results-compare-status {
   font-size: 12px;
   color: var(--el-color-primary);
   margin-right: 12px;
   white-space: nowrap;
+}
+
+@media (max-width: 1360px) {
+  .agent-dock { width: 350px; flex-basis: 350px; }
+}
+@media (max-width: 1100px) {
+  .agent-dock {
+    position: fixed;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 2000;
+    width: min(400px, 100vw);
+    box-shadow: -4px 0 20px rgba(0, 0, 0, 0.15);
+  }
+  .agent-overlay {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 1999;
+    background: rgba(0, 0, 0, 0.3);
+  }
+  .search-layout.agent-open .card-grid { grid-template-columns: 1fr; }
 }
 </style>
