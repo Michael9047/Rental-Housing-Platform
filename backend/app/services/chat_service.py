@@ -23,12 +23,13 @@ class ChatService:
 
     # ── Session management ────────────────────────────────────────
 
-    async def create_session(self, user_id: int, title: str | None = None) -> ChatSession:
+    async def create_session(self, user_id: int, title: str | None = None, session_kind: str = "chat") -> ChatSession:
         chat_session = ChatSession(
             user_id=user_id,
             session_id=uuid.uuid4().hex,
             title=title,
             status=ChatSessionStatus.active,
+            session_kind=session_kind,
         )
         self.session.add(chat_session)
         await self.session.commit()
