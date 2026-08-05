@@ -972,6 +972,8 @@ async function doSearch() {
   currentPage.value = 1
   const p: PropertySearchParams = {}
 
+  // 地点筛选
+  if (filters.country) p.country = filters.country
   if (filters.institute_id) p.institute_id = filters.institute_id
   else if (filters.city) p.city = filters.city
   else if (filters.district) p.district = filters.district
@@ -991,8 +993,23 @@ async function doSearch() {
   }
   if (filters.price_min != null) p.price_min = filters.price_min
   if (filters.price_max != null) p.price_max = filters.price_max
+  if (filters.bedrooms != null) p.bedrooms = filters.bedrooms
   if (filters.property_type) p.property_type = filters.property_type as PropertyType
-  if (filters.amenities?.length) p.amenities = filters.amenities
+  if (filters.room_type) p.room_type = filters.room_type
+  if (filters.move_in_month) p.available_from = String(filters.move_in_month)
+
+  // 合并 features + amenities + location_tags
+  const allAmenities = [
+    ...(filters.features || []),
+    ...(filters.amenities || []),
+    ...(filters.location_tags || []),
+  ]
+  if (allAmenities.length > 0) p.amenities = allAmenities
+
+  // 租期筛选
+  if (durationFilter.value === 'short') p.max_lease_months = 3
+  else if (durationFilter.value === 'medium') { p.min_lease_months = 3; p.max_lease_months = 6 }
+  else if (durationFilter.value === 'long') p.min_lease_months = 12
 
   // 半径搜索：大学坐标 → 地图中心
   if (uniLat.value != null && uniLng.value != null) {
@@ -1004,8 +1021,6 @@ async function doSearch() {
   if (sortBy.value && !['commute_time', 'commute_dist'].includes(sortBy.value)) {
     p.sort_by = sortBy.value
   }
-
-  // limit 由后端默认值控制，不需前端写死
 
   propertyStore.fetchSearch(p)
 }

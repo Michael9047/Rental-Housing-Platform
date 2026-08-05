@@ -15,7 +15,7 @@ router = APIRouter()
 
 @router.get("/schools")
 async def search_schools(
-    q: str = Query(..., min_length=1),
+    q: str = Query(default="", min_length=0),
     limit: int = Query(20, ge=1, le=50),
     db: AsyncSession = Depends(get_db_session),
 ):
