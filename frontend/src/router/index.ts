@@ -16,6 +16,7 @@ const routes: RouteRecordRaw[] = [
         path: 'search',
         name: 'search',
         component: () => import('@/views/Search.vue'),
+        meta: { hideFooter: true },
       },
       {
         path: 'ai-search',
