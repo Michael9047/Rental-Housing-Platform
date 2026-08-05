@@ -207,27 +207,27 @@
       :property-price="selectedProperty?.price_monthly"
       @confirm="handleBookingConfirm"
     />
-
-    <!-- Agent 遮罩（窄屏） -->
-    <div v-if="agentOpen" class="agent-overlay" @click="agentOpen = false" />
-    <!-- Agent 侧边栏 -->
-    <aside v-if="agentOpen" class="agent-dock">
-      <Suspense>
-        <SearchAgentPanel
-          :filters="agentFilters"
-          :result-count="agentComparableResults.length"
-          :result-ids="agentComparableResults.map((property: any) => property.id)"
-          :selected-result-ids="selectedResultIds"
-          @close="agentOpen = false"
-          @apply-filter-patch="applyAgentFilterPatch"
-          @show-recommendations="showAgentRecommendations"
-        />
-        <template #fallback>
-          <div class="agent-loading">AI 管家启动中...</div>
-        </template>
-      </Suspense>
-    </aside>
   </div>
+
+  <!-- Agent 遮罩（窄屏） -->
+  <div v-if="agentOpen" class="agent-overlay" @click="agentOpen = false" />
+  <!-- Agent 侧边栏 -->
+  <aside v-if="agentOpen" class="agent-dock">
+    <Suspense>
+      <SearchAgentPanel
+        :filters="agentFilters"
+        :result-count="agentComparableResults.length"
+        :result-ids="agentComparableResults.map((property: any) => property.id)"
+        :selected-result-ids="selectedResultIds"
+        @close="agentOpen = false"
+        @apply-filter-patch="applyAgentFilterPatch"
+        @show-recommendations="showAgentRecommendations"
+      />
+      <template #fallback>
+        <div class="agent-loading">AI 管家启动中...</div>
+      </template>
+    </Suspense>
+  </aside>
 </template>
 
 <script setup lang="ts">
@@ -1327,20 +1327,24 @@ watch(() => route.query, () => { initFromRoute() })
   .card-grid { grid-template-columns: 1fr; }
 }
 
-/* ── Agent 三栏布局（flex 第三子元素，不切换 grid）── */
+/* ── Agent 侧边栏（独立于 .search-layout，固定定位在右侧）── */
+.search-layout.agent-open {
+  margin-right: 390px;
+}
 .search-layout.agent-open .card-grid {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 .agent-dock {
+  position: fixed;
+  top: 60px;
+  right: 0;
+  bottom: 0;
   width: 390px;
-  flex: 0 0 390px;
-  min-height: 0;
-  background: var(--el-bg-color);
-  border-left: 1px solid var(--el-border-color-light);
+  z-index: 100;
+  background: #fff;
+  border-left: 1px solid #e4e7ed;
   overflow-y: auto;
-  max-height: calc(100vh - 90px);
-  position: sticky;
-  top: 0;
+  box-shadow: -2px 0 8px rgba(0, 0, 0, 0.06);
 }
 .agent-overlay { display: none; }
 .agent-loading {
@@ -1348,7 +1352,7 @@ watch(() => route.query, () => { initFromRoute() })
   display: flex;
   align-items: center;
   justify-content: center;
-  color: var(--el-text-color-secondary);
+  color: #909399;
   font-size: 14px;
 }
 .agent-toggle-btn { margin-right: 8px; }
@@ -1360,16 +1364,14 @@ watch(() => route.query, () => { initFromRoute() })
 }
 
 @media (max-width: 1360px) {
-  .agent-dock { width: 350px; flex-basis: 350px; }
+  .search-layout.agent-open { margin-right: 350px; }
+  .agent-dock { width: 350px; }
 }
 @media (max-width: 1100px) {
+  .search-layout.agent-open { margin-right: 0; }
   .agent-dock {
-    position: fixed;
-    top: 0;
-    right: 0;
-    bottom: 0;
-    z-index: 2000;
     width: min(400px, 100vw);
+    z-index: 2000;
     box-shadow: -4px 0 20px rgba(0, 0, 0, 0.15);
   }
   .agent-overlay {
