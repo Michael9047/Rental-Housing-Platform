@@ -392,23 +392,40 @@ class PropertyService:
 
     @staticmethod
     def _room_type_filter_clause(room_type: str):
-        """按旧库 property_type 枚举生成房型条件。"""
+        """按三层模型中的户型表生成房型条件。"""
+        from app.models.unit_type import UnitType
+
         normalized = str(room_type).strip().lower().replace("_", "-")
         if normalized in {"studio", "单间", "开间"}:
-            legacy_values = ["studio"]
+            unit_type_clause = or_(
+                UnitType.bedrooms == 0,
+                UnitType.name.ilike("%studio%"),
+                UnitType.name.ilike("%单间%"),
+                UnitType.name.ilike("%开间%"),
+            )
         elif normalized in {"ensuite", "独卫"}:
-            legacy_values = ["studio", "one_bed", "shared"]
+            unit_type_clause = or_(
+                UnitType.name.ilike("%ensuite%"),
+                UnitType.name.ilike("%独卫%"),
+                UnitType.name.ilike("%独立卫浴%"),
+            )
         elif normalized in {"1bed", "1-bed", "one-bed"}:
-            legacy_values = ["one_bed"]
+            unit_type_clause = UnitType.bedrooms == 1
         elif normalized in {"2bed", "2-bed", "two-bed"}:
-            legacy_values = ["two_bed"]
+            unit_type_clause = UnitType.bedrooms == 2
         elif normalized in {"3bed+", "3-bed+", "three-bed-plus"}:
-            return Property.bedrooms >= 3
+            unit_type_clause = UnitType.bedrooms >= 3
         elif normalized in {"shared", "合租"}:
-            legacy_values = ["shared"]
+            unit_type_clause = or_(
+                UnitType.name.ilike("%shared%"),
+                UnitType.name.ilike("%合租%"),
+                UnitType.name.ilike("%床位%"),
+            )
         else:
-            legacy_values = [normalized]
-        return cast(Property.property_type, String).in_(legacy_values)
+            unit_type_clause = UnitType.name.ilike(f"%{normalized}%")
+
+        unit_type_ids = select(UnitType.id).where(unit_type_clause)
+        return Property.unit_type_id.in_(unit_type_ids)
 
     async def search_unit_types(
         self,
