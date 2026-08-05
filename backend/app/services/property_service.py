@@ -76,6 +76,23 @@ async def _bump_search_cache_version() -> None:
 class PropertyService:
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
+        self._property_columns_cache: set[str] | None = None
+
+    async def _existing_property_columns(self) -> set[str]:
+        """读取真实房源表字段并在当前服务实例内缓存，兼容不同历史库结构。"""
+        if self._property_columns_cache is not None:
+            return self._property_columns_cache
+
+        from sqlalchemy import inspect
+
+        connection = await self.session.connection()
+        self._property_columns_cache = await connection.run_sync(
+            lambda sync_connection: {
+                column["name"]
+                for column in inspect(sync_connection).get_columns("properties")
+            }
+        )
+        return self._property_columns_cache
 
     @staticmethod
     def _legacy_read_options(*, existing_columns: set[str] | None = None) -> tuple:
@@ -243,9 +260,10 @@ class PropertyService:
     async def get(self, property_id: int) -> Property | None:
         from app.models.poi import PropertyPOI
         from sqlalchemy.orm import load_only
+        existing_columns = await self._existing_property_columns()
         stmt = (select(Property)
                 .where(Property.id == property_id, Property.deleted_at.is_(None))
-                .options(*self._legacy_read_options()))
+                .options(*self._legacy_read_options(existing_columns=existing_columns)))
         result = await self.session.execute(stmt)
         property_obj = result.scalars().first()
         if property_obj is not None:
@@ -351,6 +369,7 @@ class PropertyService:
         include_deleted: bool = False,
     ) -> dict:
         """返回分页结果: {items, total, page, page_size, total_pages}"""
+        existing_columns = await self._existing_property_columns()
         filter_clauses = self._build_filters(
             district=district, country=country, status=status, landlord_id=landlord_id,
             keyword=keyword, property_type=property_type,
@@ -370,7 +389,7 @@ class PropertyService:
         # Data query
         stmt = (
             select(Property)
-            .options(*self._legacy_read_options())
+            .options(*self._legacy_read_options(existing_columns=existing_columns))
             .order_by(Property.created_at.desc())
             .offset(skip)
             .limit(limit)
@@ -618,6 +637,7 @@ class PropertyService:
         near_distance_km: float | None = None,
         female_only: bool | None = None,
     ) -> list[tuple[Property, float | None]]:
+        existing_columns = await self._existing_property_columns()
         # --- Cache check for non-vector searches (cacheable) ---
         if not query:
             cache_params = {
@@ -676,7 +696,7 @@ class PropertyService:
                 similarity_expr = Property.embedding.cosine_distance(query_vec).label("similarity")
                 stmt = (
                     select(Property, similarity_expr)
-                    .options(*self._legacy_read_options())
+                    .options(*self._legacy_read_options(existing_columns=existing_columns))
                     .where(Property.embedding.isnot(None), Property.deleted_at.is_(None))
                 )
                 stmt = stmt.order_by(similarity_expr)
@@ -684,14 +704,14 @@ class PropertyService:
                 query_vec = None  # 确保走关键词回退
                 stmt = (
                     select(Property, text("NULL AS similarity"))
-                    .options(*self._legacy_read_options())
+                    .options(*self._legacy_read_options(existing_columns=existing_columns))
                     .where(Property.deleted_at.is_(None))
                 )
                 stmt = stmt.order_by(Property.created_at.desc())
         else:
             stmt = (
                 select(Property, text("NULL AS similarity"))
-                .options(*self._legacy_read_options())
+                .options(*self._legacy_read_options(existing_columns=existing_columns))
                 .where(Property.deleted_at.is_(None))
             )
             stmt = stmt.order_by(Property.created_at.desc())
@@ -715,8 +735,11 @@ class PropertyService:
         if institute_id is not None:
             stmt = stmt.where(Property.institute_id == institute_id)
         if female_only is True:
-            # 旧库没有性别限制字段，不能把未知数据当成满足硬条件。
-            stmt = stmt.where(text("FALSE"))
+            # 旧库没有性别限制字段时，不能把未知数据当成满足硬条件。
+            if "female_only" in existing_columns:
+                stmt = stmt.where(Property.female_only.is_(True))
+            else:
+                stmt = stmt.where(text("FALSE"))
         if amenities:
             for amenity in amenities:
                 stmt = stmt.where(Property.amenities.op("@>")([amenity]))
@@ -773,7 +796,7 @@ class PropertyService:
             from sqlalchemy import or_
             fallback_stmt = (
                 select(Property, text("NULL AS similarity"))
-                .options(*self._legacy_read_options())
+                .options(*self._legacy_read_options(existing_columns=existing_columns))
                 .where(Property.deleted_at.is_(None))
             )
             kw = f"%{query}%"
