@@ -53,6 +53,7 @@ export interface RepairRead {
   landlord_name: string | null
   worker_name: string | null
   property_title: string | null
+  institute_contact?: string | null
 }
 
 export const SEVERITY_LABELS: Record<RepairSeverity, string> = {
@@ -113,7 +114,7 @@ export const REPAIR_STATUS_LABELS: Record<RepairStatus, string> = {
   pending: '待处理',
   pending_escalated: '待后台派单',
   assigned: '已派单',
-  in_progress: '维修中',
+  in_progress: '处理中',
   completed: '待确认',
   confirmed: '已确认',
   rejected: '已拒绝',
@@ -124,8 +125,8 @@ export const REPAIR_STATUS_TAGS: Record<RepairStatus, string> = {
   pending: 'danger',
   pending_escalated: 'warning',
   assigned: 'warning',
-  in_progress: '',
-  completed: 'warning',
+  in_progress: 'warning',
+  completed: '',
   confirmed: 'success',
   rejected: 'info',
   cancelled: 'info',

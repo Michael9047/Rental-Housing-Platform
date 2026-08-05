@@ -27,7 +27,7 @@
         </el-descriptions-item>
         <el-descriptions-item label="报修人">{{ repair.tenant_name || '-' }}</el-descriptions-item>
         <el-descriptions-item label="房东">{{ repair.landlord_name || '-' }}</el-descriptions-item>
-        <el-descriptions-item label="维修师傅">{{ repair.worker_name || '待派单' }}</el-descriptions-item>
+        <el-descriptions-item label="公寓联系人">{{ repair.institute_contact || '未填写' }}</el-descriptions-item>
         <el-descriptions-item label="预约时间">{{ repair.scheduled_time || '未指定' }}</el-descriptions-item>
         <el-descriptions-item label="问题描述" :span="2">{{ repair.description }}</el-descriptions-item>
       </el-descriptions>

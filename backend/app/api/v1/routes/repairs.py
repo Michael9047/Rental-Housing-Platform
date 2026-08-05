@@ -6,6 +6,7 @@ from app.api.deps import (
     get_current_user,
     get_db_session,
     require_admin,
+    require_bd_manager,
     require_landlord,
     require_maintenance,
     require_tenant,
@@ -26,6 +27,21 @@ async def _repair_to_read(repair) -> RepairRead:
     landlord = await repair.awaitable_attrs.landlord if hasattr(repair, 'awaitable_attrs') and repair.landlord_id else None
     worker = await repair.awaitable_attrs.assigned_worker if hasattr(repair, 'awaitable_attrs') and repair.assigned_worker_id else None
     prop = await repair.awaitable_attrs.property if hasattr(repair, 'awaitable_attrs') and repair.property_id else None
+
+    # 公寓联系人
+    institute_contact = None
+    from app.db.session import async_session_maker
+    if prop is not None and getattr(prop, 'institute_id', None):
+        try:
+            async with async_session_maker() as s:
+                from sqlalchemy import select
+                from app.models.institute import Institute
+                r = await s.execute(select(Institute).where(Institute.id == prop.institute_id))
+                inst = r.scalar_one_or_none()
+                if inst:
+                    institute_contact = inst.contact_phone
+        except Exception:
+            institute_contact = None
 
     return RepairRead(
         id=repair.id,
@@ -49,6 +65,7 @@ async def _repair_to_read(repair) -> RepairRead:
         landlord_name=landlord.username if landlord else None,
         worker_name=worker.username if worker else None,
         property_title=getattr(prop, 'title', getattr(prop, 'room_number', None)) if prop else None,
+        institute_contact=institute_contact,
     )
 
 
@@ -88,7 +105,7 @@ async def list_repairs(
         landlord_id = current_user.id
     elif current_user.role == UserRole.maintenance_worker:
         worker_id = current_user.id
-    # admin 可以看到全部
+    # bd_manager / admin 可以看到全部报修
 
     status_enum = RepairStatus(status_filter) if status_filter else None
 
@@ -191,15 +208,13 @@ async def assign_worker(
 async def start_repair(
     repair_id: int,
     session: AsyncSession = Depends(get_db_session),
-    current_user: User = Depends(require_maintenance),
+    current_user: User = Depends(require_bd_manager),
 ):
-    """维修师傅标记开始工作"""
+    """BD 标记开始处理"""
     svc = RepairService(session)
     repair = await svc.get_repair(repair_id)
     if not repair:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repair not found")
-    if repair.assigned_worker_id != current_user.id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
 
     repair = await svc.start_work(repair_id)
     return await _repair_to_read(repair)
@@ -211,15 +226,13 @@ async def complete_repair(
     work_record: str = Query(...),
     work_images: str | None = Query(default=None),
     session: AsyncSession = Depends(get_db_session),
-    current_user: User = Depends(require_maintenance),
+    current_user: User = Depends(require_bd_manager),
 ):
-    """维修师傅完成工单，填写维修记录，可附维修照片"""
+    """BD 标记维修完成，填写处理记录，可附照片"""
     svc = RepairService(session)
     repair = await svc.get_repair(repair_id)
     if not repair:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Repair not found")
-    if repair.assigned_worker_id != current_user.id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
 
     import json as _json
     images = None

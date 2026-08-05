@@ -302,6 +302,12 @@ const routes: RouteRecordRaw[] = [
         component: () => import('@/views/bd-manager/BdDashboard.vue'),
         meta: { requiresAuth: true, requiresBdManager: true },
       },
+      {
+        path: 'bd/repairs',
+        name: 'bd-repairs',
+        component: () => import('@/views/bd-manager/BdRepairs.vue'),
+        meta: { requiresAuth: true, requiresBdManager: true },
+      },
     ],
   },
   // ── 管理后台（独立布局）──

@@ -17,25 +17,24 @@ class RepairService:
     async def create_repair(
         self, tenant_id: int, repair_in: RepairCreate
     ) -> RepairRequest:
-        """租客创建报修申请（自动检测房东是否有维修工）"""
-        # 查找房源和房东
+        """租客创建报修（直达 bd_manager）"""
+        # 查找房源和公寓联系人
         stmt = select(Property).where(Property.id == repair_in.property_id)
         result = await self.session.execute(stmt)
         property_obj = result.scalar_one_or_none()
         if not property_obj:
             raise ValueError("Property not found")
 
-        # 检测房东是否有自己的维修工
-        from app.models.repair import RepairWorker, WorkerScope
-        worker_stmt = select(RepairWorker).where(
-            (RepairWorker.manager_id == property_obj.landlord_id) &
-            (RepairWorker.scope == WorkerScope.apartment)
-        )
-        worker_result = await self.session.execute(worker_stmt)
-        has_workers = worker_result.first() is not None
-
-        # 无维修工 → 跳过房东，进入Admin待派单
-        initial_status = RepairStatus.pending if has_workers else RepairStatus.pending_escalated
+        # 获取公寓联系人电话（从 institute 取）
+        institute_contact = None
+        from app.models.institute import Institute
+        inst_id = getattr(property_obj, 'institute_id', None)
+        if inst_id:
+            inst_stmt = select(Institute).where(Institute.id == inst_id)
+            inst_result = await self.session.execute(inst_stmt)
+            inst = inst_result.scalar_one_or_none()
+            if inst:
+                institute_contact = inst.contact_phone
 
         repair = RepairRequest(
             property_id=repair_in.property_id,
@@ -46,7 +45,7 @@ class RepairService:
             description=repair_in.description,
             images=repair_in.images,
             scheduled_time=repair_in.scheduled_time,
-            status=initial_status,
+            status=RepairStatus.pending,
         )
         self.session.add(repair)
         await self.session.commit()
@@ -54,43 +53,32 @@ class RepairService:
         notif_svc = NotificationService(self.session)
         prop_label = getattr(property_obj, 'title', getattr(property_obj, 'room_number', f'#{property_obj.id}'))
         sev_label = {"low": "低", "medium": "中", "high": "高"}.get(repair_in.severity.value, "中")
+        contact_str = f"，公寓联系人：{institute_contact}" if institute_contact else ""
 
-        if has_workers:
-            # 通知房东
+        # 通知所有 bd_manager
+        from app.models.user import User, UserRole
+        bd_stmt = select(User).where(User.role == UserRole.bd_manager, User.status == "active")
+        bd_result = await self.session.execute(bd_stmt)
+        bd_managers = bd_result.scalars().all()
+        for bd in bd_managers:
             await notif_svc.create_notification(
-                user_id=property_obj.landlord_id,
+                user_id=bd.id,
                 type=NotificationType.repair_created,
                 title="新报修申请",
-                content=f"[{sev_label}严重] 租客对房源「{prop_label}」提交了报修：{repair_in.description[:50]}",
+                content=f"[{sev_label}严重] 租客对房源「{prop_label}」提交了报修：{repair_in.description[:50]}{contact_str}",
             )
-        else:
-            # 通知所有Admin：有新工单待派单
-            from app.models.user import User, UserRole
-            admin_stmt = select(User).where(User.role == UserRole.admin)
+
+        # 高严重程度 → 额外通知所有 Admin 兜底
+        if repair_in.severity == RepairSeverity.high:
+            admin_stmt = select(User).where(User.role == UserRole.admin, User.status == "active")
             admin_result = await self.session.execute(admin_stmt)
             admins = admin_result.scalars().all()
             for admin in admins:
                 await notif_svc.create_notification(
                     user_id=admin.id,
                     type=NotificationType.repair_created,
-                    title="新报修待派单（房东无维修工）",
-                    content=f"[{sev_label}严重] 租客对房源「{prop_label}」提交了报修，房东无维修工，请分配平台工人：{repair_in.description[:50]}",
-                )
-
-        # 高严重程度 → 额外通知所有 Admin + BD经理（即使房东有工人）
-        if repair_in.severity == RepairSeverity.high:
-            from app.models.user import User, UserRole
-            mgmt_stmt = select(User).where(User.role.in_([UserRole.admin, UserRole.bd_manager]))
-            mgmt_result = await self.session.execute(mgmt_stmt)
-            managers = mgmt_result.scalars().all()
-            for m in managers:
-                if m.id == property_obj.landlord_id:
-                    continue  # 房东已通知
-                await notif_svc.create_notification(
-                    user_id=m.id,
-                    type=NotificationType.repair_created,
                     title="⚠️ 高严重程度报修",
-                    content=f"[高严重] 租客对房源「{prop_label}」提交了紧急报修：{repair_in.description[:50]}",
+                    content=f"[高严重] 租客对房源「{prop_label}」提交了紧急报修：{repair_in.description[:50]}{contact_str}",
                 )
 
         # Reload with relationships
@@ -226,25 +214,12 @@ class RepairService:
         work_record: str,
         work_images: list[str] | None = None,
     ) -> RepairRequest | None:
-        """维修师傅完成工单"""
+        """BD 标记维修完成，通知租客确认"""
         from datetime import datetime, timezone
 
         repair = await self.get_repair(repair_id)
         if not repair:
             return None
-
-        from app.models.repair import RepairWorker, WorkerStatus
-
-        # 恢复维修师傅状态
-        if repair.assigned_worker_id:
-            worker_stmt = select(RepairWorker).where(
-                RepairWorker.user_id == repair.assigned_worker_id
-            )
-            worker_result = await self.session.execute(worker_stmt)
-            worker = worker_result.scalar_one_or_none()
-            if worker:
-                worker.status = WorkerStatus.available
-                worker.total_jobs += 1
 
         repair.status = RepairStatus.completed
         repair.work_record = work_record
@@ -253,13 +228,13 @@ class RepairService:
 
         await self.session.commit()
 
-        # 通知租客
+        # 通知租客确认
         notif_svc = NotificationService(self.session)
         await notif_svc.create_notification(
             user_id=repair.tenant_id,
             type=NotificationType.repair_completed,
-            title="维修已完成",
-            content=f"维修师傅已完成工单，维修记录：{work_record[:100]}",
+            title="维修已完成，请确认",
+            content=f"BD已处理维修，请确认是否修好。处理记录：{work_record[:100]}",
         )
 
         return await self.get_repair(repair.id)
@@ -285,19 +260,7 @@ class RepairService:
         repair.status = RepairStatus.confirmed
         await self.session.commit()
 
-        # 更新维修师傅评分
-        if repair.assigned_worker_id:
-            from app.models.repair import RepairWorker
-            worker_stmt = select(RepairWorker).where(
-                RepairWorker.user_id == repair.assigned_worker_id
-            )
-            worker_result = await self.session.execute(worker_stmt)
-            worker = worker_result.scalar_one_or_none()
-            if worker and worker.total_jobs > 0:
-                # 简单评分：每次确认 +0.1，上限 5.0
-                worker.rating = min(5.0, round(worker.rating + 0.1, 1))
-
-        # 通知房东
+        # 通知房东（公寓归属人）
         notif_svc = NotificationService(self.session)
         await notif_svc.create_notification(
             user_id=repair.landlord_id,
@@ -323,34 +286,15 @@ class RepairService:
         repair.status = RepairStatus.in_progress
         repair.reject_reason = reason
 
-        # 维修师傅回到工作中
-        if repair.assigned_worker_id:
-            from app.models.repair import RepairWorker, WorkerStatus
-            worker_stmt = select(RepairWorker).where(
-                RepairWorker.user_id == repair.assigned_worker_id
-            )
-            worker_result = await self.session.execute(worker_stmt)
-            worker = worker_result.scalar_one_or_none()
-            if worker:
-                worker.status = WorkerStatus.working
-
         await self.session.commit()
 
-        # 通知原维修师傅
+        # 通知房东（公寓归属人）
         notif_svc = NotificationService(self.session)
-        if repair.assigned_worker_id:
-            await notif_svc.create_notification(
-                user_id=repair.assigned_worker_id,
-                type=NotificationType.repair_status_change,
-                title="维修被驳回",
-                content=f"租客驳回了维修，请重新处理。原因：{reason}",
-            )
-        # 通知房东
         await notif_svc.create_notification(
             user_id=repair.landlord_id,
             type=NotificationType.repair_status_change,
             title="维修被驳回",
-            content=f"租客驳回了工单#{repair.id}的维修。原因：{reason}",
+            content=f"租客驳回了工单#{repair.id}的维修，请重新处理。原因：{reason}",
         )
 
         return await self.get_repair(repair.id)

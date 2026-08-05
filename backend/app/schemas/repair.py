@@ -51,6 +51,7 @@ class RepairRead(BaseModel):
     landlord_name: str | None = None
     worker_name: str | None = None
     property_title: str | None = None
+    institute_contact: str | None = None  # 公寓联系人电话
 
     model_config = {"from_attributes": True}
 

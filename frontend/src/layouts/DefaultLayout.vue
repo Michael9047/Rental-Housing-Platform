@@ -179,16 +179,13 @@
                     <el-icon><Plus /></el-icon> 发布房源
                   </el-dropdown-item>
                 </template>
-                <!-- 维修师傅菜单 -->
-                <template v-if="authStore.isMaintenance">
-                  <el-dropdown-item @click="router.push('/worker/dashboard')">
-                    <el-icon><DataAnalysis /></el-icon> 工单中心
-                  </el-dropdown-item>
-                </template>
                 <!-- BD经理菜单 -->
                 <template v-if="authStore.isBdManager">
                   <el-dropdown-item @click="router.push('/bd/dashboard')">
                     <el-icon><DataAnalysis /></el-icon> 数据台
+                  </el-dropdown-item>
+                  <el-dropdown-item @click="router.push('/bd/repairs')">
+                    <el-icon><Tools /></el-icon> 报修管理
                   </el-dropdown-item>
                   <el-dropdown-item @click="router.push('/property/manage')">
                     <el-icon><Setting /></el-icon> 房源管理
@@ -199,12 +196,6 @@
                 </template>
                 <el-dropdown-item v-if="authStore.isAdmin" @click="router.push('/admin')">
                   <el-icon><DataAnalysis /></el-icon> 系统管理
-                </el-dropdown-item>
-                <el-dropdown-item v-if="authStore.isAdmin" @click="router.push('/admin/escalated-repairs')">
-                  <el-icon><Tickets /></el-icon> 待派单工单
-                </el-dropdown-item>
-                <el-dropdown-item v-if="authStore.isAdmin" @click="router.push('/admin/landlord-workers')">
-                  <el-icon><List /></el-icon> 房东维修工看板
                 </el-dropdown-item>
                 <el-dropdown-item divided @click="authStore.logout()">
                   <el-icon><SwitchButton /></el-icon> 退出登录
@@ -240,7 +231,7 @@ import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import {
   Search, User, UserFilled, ArrowDown, ArrowLeft, Setting, SwitchButton,
-  Plus, List, Bell, ChatDotRound, DataAnalysis, Tickets, Loading, ShoppingCart,} from '@element-plus/icons-vue'
+  Plus, List, Bell, ChatDotRound, DataAnalysis, Tickets, Loading, ShoppingCart, Tools,} from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 import { useAgentChatStore } from '@/stores/agentChat'
 import { useCartStore } from '@/stores/cart'

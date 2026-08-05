@@ -37,18 +37,6 @@
           <span>批量导入</span>
         </el-menu-item>
 
-        <el-sub-menu index="repairs-group">
-          <template #title>
-            <el-icon><Tools /></el-icon>
-            <span>维修管理</span>
-          </template>
-          <el-menu-item index="/admin/escalated-repairs">
-            <span>待派单工单</span>
-          </el-menu-item>
-          <el-menu-item index="/admin/landlord-workers">
-            <span>房东维修工看板</span>
-          </el-menu-item>
-        </el-sub-menu>
 
         <el-sub-menu index="system-group">
           <template #title>
@@ -96,7 +84,7 @@
 import { computed } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import {
-  DataAnalysis, House, User, Upload, Tools, Monitor,
+  DataAnalysis, House, User, Upload, Monitor,
   ArrowLeft, SwitchButton,
 } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
@@ -115,8 +103,6 @@ const pageTitle = computed(() => {
     '/admin/import': '批量导入',
     '/admin/logs': '审计日志',
     '/admin/embeddings': '向量索引',
-    '/admin/escalated-repairs': '待派单工单',
-    '/admin/landlord-workers': '房东维修工看板',
   }
   return titles[route.path] || '管理后台'
 })
