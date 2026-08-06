@@ -24,18 +24,10 @@
 
         <!-- Tab1: 我的合同 -->
         <el-tab-pane label="📄 我的合同" name="contracts">
-          <div class="tab-toolbar">
-            <el-radio-group v-model="contractFilter" size="small">
-              <el-radio-button value="pending_effective">待生效</el-radio-button>
-              <el-radio-button value="effective">已生效</el-radio-button>
-              <el-radio-button value="expiring_soon">临期失效</el-radio-button>
-              <el-radio-button value="invalid">已失效</el-radio-button>
-            </el-radio-group>
-          </div>
           <el-alert v-if="contractsError" type="error" :closable="false" title="合同列表加载失败" show-icon><template #default><el-button text @click="fetchAll">重试</el-button></template></el-alert>
-          <el-empty v-else-if="filteredContracts.length === 0" description="当前分类暂无合同" />
+          <el-empty v-else-if="contracts.length === 0" description="暂无合同" />
           <div v-else class="contract-list">
-            <el-card v-for="row in filteredContracts" :key="row.agreement_id" shadow="never" class="contract-card">
+            <el-card v-for="row in contracts" :key="row.agreement_id" shadow="never" class="contract-card">
               <div class="contract-card-grid">
                 <img v-if="row.property_image_url" :src="row.property_image_url" :alt="row.property_name" class="contract-property-image" />
                 <div v-else class="contract-property-image placeholder">暂无图片</div>
@@ -44,7 +36,6 @@
                   <p>{{ row.property_address }}</p>
                   <p>合同：{{ row.agreement_number }} · 订单：{{ row.order_id }}</p>
                   <p>签署：{{ contractDateTime(row.signed_at) }} · 租期：{{ row.lease_start_date || '—' }} 至 {{ row.lease_end_date || '—' }}（{{ row.lease_months || '—' }}个月）</p>
-                  <div class="contract-tags"><el-tag v-for="label in row.status_labels" :key="label" size="small">{{ label }}</el-tag></div>
                   <el-alert v-if="row.invalid_reason" type="warning" :closable="false" :title="row.invalid_reason" />
                   <p v-if="row.settlement_currency">实际支付金额：{{ contractMoney(row.settlement_amount_minor, row.settlement_currency) }}</p>
                   <p v-if="row.remaining_payment_seconds !== null">剩余支付时间：{{ duration(row.remaining_payment_seconds) }}</p>
@@ -65,16 +56,10 @@
 
         <!-- Tab2: 我的账单 / 我的订单 -->
         <el-tab-pane label="💳 我的账单 / 订单" name="bills">
-          <div class="tab-toolbar">
-            <el-radio-group v-model="billTab" size="small">
-              <el-radio-button value="pending">待处理</el-radio-button>
-              <el-radio-button value="successful">已成功</el-radio-button>
-            </el-radio-group>
-          </div>
           <el-alert v-if="ordersError" type="error" :closable="false" title="订单列表加载失败" show-icon><template #default><el-button text @click="fetchAll">重试</el-button></template></el-alert>
-          <el-empty v-else-if="filteredOrders.length === 0" description="当前分类暂无订单" />
+          <el-empty v-else-if="orders.length === 0" description="暂无订单" />
           <div v-else class="order-list">
-            <el-card v-for="order in filteredOrders" :key="order.booking_id" shadow="never" class="order-card">
+            <el-card v-for="order in orders" :key="order.booking_id" shadow="never" class="order-card" @click="router.push(`/my-orders/${order.booking_id}`)">
               <div class="order-card-grid">
                 <img v-if="order.property_image_url" :src="order.property_image_url" :alt="order.property_name" class="order-image" />
                 <div v-else class="order-image placeholder">暂无图片</div>
@@ -85,14 +70,12 @@
                   <p>入住：{{ order.lease_start_date || '—' }} 至 {{ order.lease_end_date || '—' }} · {{ order.lease_months || '—' }}个月</p>
                   <p>当前应付：{{ contractMoney(order.settlement_amount_minor, order.settlement_currency) }} · 人民币：{{ contractMoney(order.cny_reference_amount_minor, 'CNY') }}</p>
                   <p>当地货币：{{ contractMoney(order.property_amount_minor, order.property_currency) }}</p>
-                  <div class="order-tags"><el-tag size="small">订单：{{ order.status_label }}</el-tag><el-tag size="small">支付：{{ order.status_label }}</el-tag><el-tag size="small" :type="order.booking_status === 'confirmed' ? 'success' : 'info'">预订：{{ order.booking_status === 'confirmed' ? '成功' : '未成功' }}</el-tag></div>
                   <p>创建：{{ contractDateTime(order.created_at) }} · 截止：{{ contractDateTime(order.expires_at) }}</p>
-                  <p v-if="remainingSeconds(order) > 0 && order.booking_status !== 'confirmed'">倒计时：{{ duration(remainingSeconds(order)) }}</p>
+                  <p v-if="remainingSeconds(order) > 0 && order.payment_status !== 'paid'">倒计时：{{ duration(remainingSeconds(order)) }}</p>
                   <el-alert v-if="order.failure_reason" :closable="false" type="warning" :title="order.failure_reason" />
                 </div>
               </div>
-              <div class="contract-actions">
-                <el-button text type="primary" @click="router.push(`/my-orders/${order.booking_id}`)">查看详情</el-button>
+              <div class="contract-actions" @click.stop>
                 <el-button text @click="router.push(`/building/${order.property_id}`)">查看房源</el-button>
                 <el-button v-if="order.agreement_id && order.booking_status !== 'confirmed'" text @click="router.push(`/my-contracts/${order.agreement_id}`)">查看合同</el-button>
                 <el-button v-if="order.payment_status === 'payment_processing'" text @click="refreshOrders">刷新状态</el-button>
@@ -260,7 +243,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onBeforeUnmount, onMounted } from 'vue'
+import { ref, onBeforeUnmount, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { UserFilled } from '@element-plus/icons-vue'
@@ -283,8 +266,6 @@ const { user } = storeToRefs(authStore)
 
 const activeTab = ref((route.query.tab as string) || 'bills')
 const pageLoading = ref(false)
-const contractFilter = ref('pending_effective')
-const billTab = ref('pending')
 
 const contracts = ref<TenantContractItem[]>([])
 const orders = ref<TenantOrderItem[]>([])
@@ -462,16 +443,6 @@ async function fetchTenants() {
 const notifSite = ref(true)
 const notifSms = ref(true)
 
-// ── Computed ──
-const filteredContracts = computed(() => {
-  return contracts.value.filter(c => c.category === contractFilter.value)
-})
-
-const successfulOrderStatuses = new Set(['paid', 'success', 'confirmed'])
-const filteredOrders = computed(() => orders.value.filter(order => billTab.value === 'successful'
-  ? order.booking_status === 'confirmed' && successfulOrderStatuses.has(order.payment_status)
-  : order.booking_status !== 'confirmed'))
-
 // ── Actions ──
 async function fetchAll() {
   pageLoading.value = true
@@ -536,7 +507,6 @@ onBeforeUnmount(() => {
 .contract-main { min-width: 0; }
 .contract-main p { margin: 7px 0; color: var(--text-secondary); line-height: 1.5; }
 .contract-title { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 17px; }
-.contract-tags { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0; }
 .contract-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 4px; margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border-light); }
 
 .order-list { display: flex; flex-direction: column; gap: 16px; }
@@ -546,7 +516,8 @@ onBeforeUnmount(() => {
 .order-main { min-width: 0; }
 .order-main p { margin: 7px 0; color: var(--text-secondary); line-height: 1.5; }
 .order-title { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 17px; }
-.order-tags { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0; }
+.order-card { cursor: pointer; transition: border-color 0.2s; }
+.order-card:hover { border-color: var(--primary); }
 
 .setting-card { margin-bottom: 16px; }
 .security-value { font-size: 14px; color: var(--text-primary); font-weight: 500; }

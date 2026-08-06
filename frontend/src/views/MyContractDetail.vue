@@ -22,7 +22,7 @@
           <div class="hash"><dt>合同哈希</dt><dd>{{ contract.agreement_content_hash }}</dd></div>
           <div><dt>合同状态</dt><dd>{{ contract.category_label }}</dd></div>
           <div><dt>支付状态</dt><dd>{{ paymentLabel }}</dd></div>
-          <div><dt>预订状态</dt><dd>{{ contract.reservation_status === 'confirmed' ? '预订成功' : '预订未成功' }}</dd></div>
+          <div><dt>预订状态</dt><dd>{{ reservationLabel(contract.reservation_status) }}</dd></div>
           <div><dt>房源</dt><dd><router-link :to="`/property/${contract.property_id}`">{{ contract.property_name }}</router-link></dd></div>
         </dl>
       </el-card>
@@ -53,6 +53,7 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useRoute, useRouter } from 'vue-router'
 import { contractService, type TenantContractDetail } from '@/services/contract'
+import { reservationLabel } from '@/utils/orderPresentation'
 
 const route = useRoute()
 const router = useRouter()

@@ -30,7 +30,7 @@
         <dl>
           <dt>订单编号</dt><dd>{{ order.order_id }}</dd><dt>合同编号</dt><dd>{{ order.agreement_number }}</dd>
           <dt>订单状态</dt><dd>{{ order.order_status }}</dd><dt>支付状态</dt><dd>{{ order.status_label }}</dd>
-          <dt>预订状态</dt><dd>{{ order.booking_status === 'confirmed' ? '预订成功' : '预订未成功' }}</dd>
+          <dt>预订状态</dt><dd>{{ reservationLabel(order.order_status) }}</dd>
           <dt>押金</dt><dd>{{ money(order.deposit_amount_minor, order.property_currency) }}</dd><dt>服务费</dt><dd>{{ money(order.service_fee_amount_minor, order.property_currency) }}</dd>
           <dt>税费</dt><dd>{{ money(order.tax_amount_minor, order.property_currency) }}</dd><dt>当前总计</dt><dd>{{ money(order.settlement_amount_minor, order.settlement_currency) }}</dd>
           <dt>实际扣款币种</dt><dd>{{ order.settlement_currency }}</dd><dt>人民币金额</dt><dd>{{ money(order.cny_reference_amount_minor, 'CNY') }}</dd>
@@ -39,13 +39,13 @@
           <dt>支付截止</dt><dd>{{ dateTime(order.expires_at) }}</dd><dt>状态更新时间</dt><dd>{{ dateTime(order.status_updated_at) }}</dd>
           <dt>支付成功时间</dt><dd>{{ order.paid_at ? dateTime(order.paid_at) : '—' }}</dd><dt>支付流水号</dt><dd>{{ order.transaction_id_masked || '—' }}</dd>
         </dl>
-        <p v-if="remaining > 0 && order.booking_status !== 'confirmed'" class="countdown">剩余支付时间：{{ duration(remaining) }}</p>
+        <p v-if="remaining > 0 && order.payment_status !== 'paid'" class="countdown">剩余支付时间：{{ duration(remaining) }}</p>
       </el-card>
       <footer>
         <el-button @click="router.push(`/my-contracts/${order.agreement_id}`)">查看合同</el-button>
         <el-button :disabled="!order.agreement_id" @click="downloadContract">下载合同</el-button>
         <el-button @click="router.push(`/property/${order.property_id}`)">查看房源</el-button>
-        <el-button v-if="order.booking_status !== 'confirmed'" :loading="refreshing" @click="load">刷新支付状态</el-button>
+        <el-button v-if="order.payment_status !== 'paid'" :loading="refreshing" @click="load">刷新支付状态</el-button>
         <el-button v-if="['payment_expired','cancelled'].includes(order.payment_status)" @click="router.push(`/booking/${order.property_id}/move-in-date`)">重新预订该房源</el-button>
         <el-button v-if="order.can_pay" type="primary" :loading="validating" @click="enterPayment">{{ order.payment_action_label }}</el-button>
         <el-button @click="router.push('/customer-service')">联系客服</el-button>
@@ -61,7 +61,7 @@ import { ElMessage } from 'element-plus'
 import { useRoute, useRouter } from 'vue-router'
 import { contractService } from '@/services/contract'
 import { paymentService, type TenantOrderDetail } from '@/services/payment'
-import { remainingPaymentSeconds } from '@/utils/orderPresentation'
+import { remainingPaymentSeconds, reservationLabel } from '@/utils/orderPresentation'
 
 const route=useRoute(),router=useRouter();const order=ref<TenantOrderDetail>();const loading=ref(true),refreshing=ref(false),validating=ref(false),error=ref(''),now=ref(Date.now());let timer=0
 const remaining=computed(()=>remainingPaymentSeconds(order.value?.expires_at||'',now.value))
