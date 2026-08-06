@@ -42,10 +42,6 @@
           <el-icon><Grid /></el-icon>
           <span>户型管理</span>
         </el-menu-item>
-        <el-menu-item index="/property/history">
-          <el-icon><Clock /></el-icon>
-          <span>修改记录</span>
-        </el-menu-item>
         <el-menu-item index="/bookings/landlord">
           <el-icon><Tickets /></el-icon>
           <span>预约管理</span>
