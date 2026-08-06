@@ -910,20 +910,14 @@ class SearchAgent(BaseAgent):
         stream_failed = False
         if llm.is_available and prep["unit_results"]:
             try:
-                _lap("pipeline_done→llm_start")
                 msg = self._reply_messages(prep)
-                prompt_chars = sum(len(m["content"]) for m in msg)
-                _lap(f"reply_prompt_built ({prompt_chars} chars)")
                 async for tok in llm.complete_text_stream(
                     msg,
                     temperature=float(get_settings().agent_recommend_temperature),
                     max_tokens=1200,
                 ):
-                    if not reply:
-                        _lap("llm_first_token")
                     reply += tok
                     yield {"type": "token", "text": tok}
-                _lap(f"llm_done ({len(reply)} chars)")
             except Exception as e:
                 stream_failed = True
                 # 避免 logger.exception 因 Windows GBK 编码再次抛异常

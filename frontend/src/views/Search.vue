@@ -126,7 +126,7 @@
             <el-checkbox
               v-for="a in visibleAmenities"
               :key="a"
-              :model-value="filters.amenities || []"
+              :model-value="(filters.amenities || []).includes(a)"
               :label="a"
               size="small"
               @change="(checked: boolean) => toggleAmenity(a, checked)"
