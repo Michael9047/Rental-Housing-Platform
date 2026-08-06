@@ -1230,17 +1230,20 @@ function restoreSearchState() {
 }
 
 onMounted(() => {
+  // 有新搜索参数 → 优先用路由参数
+  if (Object.keys(route.query).length > 0) {
+    initFromRoute()
+    return
+  }
+  // 无参数 → 恢复上次状态
   const restored = restoreSearchState()
   if (restored) {
     if (fromAgent.value) {
-      // AI 结果还在 Pinia store 里，不重新搜索
       restoringFromNavigation = true
     } else {
       restoringFromNavigation = true
       doSearch()
     }
-  } else {
-    initFromRoute()
   }
 })
 onUnmounted(() => {
