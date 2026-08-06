@@ -6,7 +6,7 @@ from app.api.v1.routes import (
     building_staff, buildings, chat, commute, contracts,
     dashboard, favorites, geocoding, health,
     imports, map_routes, notifications,
-    payments, pois, repair_workers, repairs,
+    payments, pois, repair_workers, repairs, room_confirmations,
     search_suggestions, tenants,
     unit_types, universities, upload, users, wechat,
 )
@@ -36,6 +36,7 @@ api_router.include_router(wechat.router, tags=["wechat"])
 api_router.include_router(search_suggestions.router, prefix="/search", tags=["search"])
 api_router.include_router(universities.router, prefix="/universities", tags=["universities"])
 api_router.include_router(contracts.router, prefix="/contracts", tags=["contracts"])
+api_router.include_router(room_confirmations.router, prefix="/room-confirmations", tags=["room-confirmations"])
 api_router.include_router(payments.router, prefix="/payments", tags=["payments"])
 api_router.include_router(favorites.router, prefix="/favorites", tags=["favorites"])
 api_router.include_router(upload.router, tags=["upload"])
