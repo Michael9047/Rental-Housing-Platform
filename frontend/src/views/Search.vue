@@ -1230,10 +1230,16 @@ function restoreSearchState() {
 
 onMounted(() => {
   const restored = restoreSearchState()
-  if (!restored) initFromRoute()
+  if (restored) {
+    // 恢复筛选后重新搜索（store 在刷新后会清空）
+    restoringFromNavigation = true
+    doSearch()
+  } else {
+    initFromRoute()
+  }
 })
 onUnmounted(() => {
-  saveSearchState()
+  if (searchResults.value.length > 0) saveSearchState()
   destroyMap()
 })
 watch(() => route.query, () => { initFromRoute() })
