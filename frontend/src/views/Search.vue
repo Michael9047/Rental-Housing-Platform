@@ -1186,12 +1186,46 @@ async function initFromRoute() {
   if (q.property_type) filters.property_type = q.property_type as PropertyType
   doSearch()
 }
-onMounted(() => {
+// ── 导航状态保存/恢复 ──
+const SESSION_KEY = 'searchPageState'
 
-  initFromRoute()
+function saveSearchState() {
+  sessionStorage.setItem(SESSION_KEY, JSON.stringify({
+    filters: { ...filters },
+    searchMode: searchMode.value,
+    uniId: uniId.value, uniName: uniName.value, uniLat: uniLat.value, uniLng: uniLng.value,
+    uniRadius: uniRadius.value, schoolId: schoolId.value, schoolName: schoolName.value,
+    sortField: sortField.value, sortAsc: sortAsc.value,
+    agentOpen: agentOpen.value,
+    hasAgentSession: agentChatStore.sessionId !== null,
+  }))
+}
+
+function restoreSearchState() {
+  const raw = sessionStorage.getItem(SESSION_KEY)
+  if (!raw) return false
+  try {
+    const s = JSON.parse(raw)
+    sessionStorage.removeItem(SESSION_KEY)
+    // 恢复筛选
+    if (s.filters) Object.assign(filters, s.filters)
+    if (s.searchMode) searchMode.value = s.searchMode
+    if (s.uniId) { uniId.value = s.uniId; uniName.value = s.uniName; uniLat.value = s.uniLat; uniLng.value = s.uniLng; uniRadius.value = s.uniRadius }
+    if (s.schoolId) { schoolId.value = s.schoolId; schoolName.value = s.schoolName }
+    if (s.sortField) sortField.value = s.sortField
+    if (s.sortAsc != null) sortAsc.value = s.sortAsc
+    // 恢复 Agent 面板
+    if (s.agentOpen) agentOpen.value = true
+    return true
+  } catch { return false }
+}
+
+onMounted(() => {
+  const restored = restoreSearchState()
+  if (!restored) initFromRoute()
 })
 onUnmounted(() => {
-
+  saveSearchState()
   destroyMap()
 })
 watch(() => route.query, () => { initFromRoute() })
