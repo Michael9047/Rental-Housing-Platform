@@ -257,7 +257,7 @@ async def confirm_booking_with_policies(
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="All current policies must be accepted")
     for key, policy in POLICIES.items():
         acceptance = acceptance_map[key]
-        if acceptance.version != int(policy.version.split(".")[0]) or acceptance.content_hash != policy.content_hash:
+        if acceptance.version != policy.version or acceptance.content_hash != policy.content_hash:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail=f"Policy {key} has changed; please review the latest version",
