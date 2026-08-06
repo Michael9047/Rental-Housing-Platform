@@ -148,13 +148,9 @@ def merge_dialogue_filters(
         existing = merged.get(key)
         if not isinstance(existing, list):
             continue
-        remove_markers = {
-            json.dumps(v, ensure_ascii=False, sort_keys=True, default=str) for v in values
-        }
-        merged[key] = [
-            v for v in existing
-            if json.dumps(v, ensure_ascii=False, sort_keys=True, default=str) not in remove_markers
-        ]
+        # 直接用字符串比较，避免 JSON 序列化中文不一致
+        remove_set = {str(v).strip() for v in values}
+        merged[key] = [v for v in existing if str(v).strip() not in remove_set]
         if not merged[key]:
             merged.pop(key, None)
 
