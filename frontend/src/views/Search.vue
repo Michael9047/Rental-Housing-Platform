@@ -332,7 +332,7 @@ const viewMode = ref<'grid' | 'list'>('grid')
 /** 是否来自 Agent 推荐（显示 AI 推荐横幅） */
 const fromAgent = ref(false)
 const agentContext = ref<{ filters?: Record<string, unknown>; total?: number } | null>(null)
-const { searchPanelOpen: agentOpen } = storeToRefs(agentChatStore)
+const agentOpen = ref(false)
 
 const selectedResultIds = ref<number[]>([])
 
