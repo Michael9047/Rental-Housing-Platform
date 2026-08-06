@@ -50,6 +50,14 @@
           <el-icon><Tickets /></el-icon>
           <span>预约管理</span>
         </el-menu-item>
+        <el-menu-item index="/contracts/landlord">
+          <el-icon><Document /></el-icon>
+          <span>合约管理</span>
+        </el-menu-item>
+        <el-menu-item index="/tenants/manage">
+          <el-icon><User /></el-icon>
+          <span>租客管理</span>
+        </el-menu-item>
         <el-menu-item index="/notifications">
           <el-icon><Bell /></el-icon>
           <span>消息通知</span>
