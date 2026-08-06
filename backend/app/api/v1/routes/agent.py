@@ -82,7 +82,7 @@ def _to_search_result(prop, property_id_override: int | None = None) -> Property
         return PropertySearchResult(
             id=property_id_override or prop.id,
             landlord_id=0,  # UnitType 没有 landlord，填 0
-            title=prop.name,
+            title=getattr(inst, 'name', None) or prop.name,  # 公寓名优先
             description=getattr(prop, 'description', None),
             address=getattr(inst, 'address', None) if inst else None,
             district=getattr(inst, 'district', None) if inst else None,
