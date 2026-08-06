@@ -18,8 +18,9 @@ class EmbeddingJob(Base):
     __tablename__ = "embedding_jobs"
 
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    # 三层架构后 Property 即 UnitType，外键指向 unit_types（原指向已删除的 properties 表）
     property_id: Mapped[int] = mapped_column(
-        ForeignKey("properties.id", ondelete="CASCADE"), index=True
+        ForeignKey("unit_types.id", ondelete="CASCADE"), index=True
     )
     status: Mapped[EmbeddingJobStatus] = mapped_column(
         Enum(EmbeddingJobStatus, name="embedding_job_status"),
