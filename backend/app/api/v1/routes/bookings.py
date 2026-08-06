@@ -394,9 +394,9 @@ async def get_policy(key: str) -> dict:
     policy = POLICIES[key]
     return {
         "key": policy.key,
-        "title": policy.title_zh,
-        "version": int(policy.version.split(".")[0]),
-        "content": policy.summary_zh,
+        "title": policy.title,
+        "version": policy.version,
+        "content": policy.content,
         "content_hash": policy.content_hash,
     }
 
