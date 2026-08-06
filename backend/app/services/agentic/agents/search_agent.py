@@ -522,8 +522,7 @@ class SearchAgent(BaseAgent):
         # country + district，说明主搜索页已经完成了地理定位，无需重复。
         uni_info: dict[str, Any] | None = None
         distance_km = 20.0
-        context_has_location = bool(active_filters.get("country") and active_filters.get("district"))
-        if institution_name and not context_has_location:
+        if institution_name:
             try:
                 async with self.session.begin_nested():
                     uni_info = await self._lookup_institution(str(institution_name))
