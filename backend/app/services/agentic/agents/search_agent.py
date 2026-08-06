@@ -924,9 +924,10 @@ class SearchAgent(BaseAgent):
                     reply += tok
                     yield {"type": "token", "text": tok}
                 _lap(f"llm_done ({len(reply)} chars)")
-            except Exception:
+            except Exception as e:
                 stream_failed = True
-                logger.exception("LLM 流式推荐失败，降级为规则摘要")
+                # 避免 logger.exception 因 Windows GBK 编码再次抛异常
+                logger.error("LLM 流式推荐失败: type=%s msg=%s", type(e).__name__, str(e)[:200])
                 # 已经 yield 给客户端的 token 无法撤回，必须保留在完整回复中，
                 # 否则界面展示文本会与历史持久化内容不一致。
         if len(reply.strip()) < 20:
