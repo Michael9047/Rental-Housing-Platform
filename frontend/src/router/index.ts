@@ -261,7 +261,13 @@ const routes: RouteRecordRaw[] = [
         component: () => import('@/views/admin/AdminWorkspace.vue'),
         meta: { requiresAuth: true, requiresLandlord: true },
       },
-      // ---- 报修详情（通用）----
+      // ---- 报修（通用）----
+      {
+        path: 'repairs',
+        name: 'repair-list',
+        component: () => import('@/views/repair/RepairList.vue'),
+        meta: { requiresAuth: true },
+      },
       {
         path: 'repairs/:id',
         name: 'repair-detail',

@@ -10,11 +10,11 @@
           </div>
           <div class="hd-right">
             <div class="score-card safety">
-              <span class="sc-label">安全评分</span>
-              <span class="sc-num">{{ building.safety_score ?? '--' }}</span>
-              <span class="sc-sub">/10</span>
+              <span class="sc-label">安全</span>
+              <span class="sc-num">{{ building.safety_score != null ? building.safety_score.toFixed(1) : '--' }}</span>
+              <span class="sc-sub">/5</span>
             </div>
-            <el-button type="primary" size="large" class="hd-book-btn" @click="showContactDialog = true">📅 预约看房</el-button>
+            <el-button type="primary" size="large" class="hd-book-btn" @click="showContactDialog = true">预约看房</el-button>
           </div>
         </div>
       </section>
@@ -72,13 +72,16 @@
         </div>
       </section>
 
-      <!-- ═══ 5. 地理位置 ═══ -->
-      <section class="bd-map">
-        <h2 class="sec-title">📍 地理位置</h2>
-        <p class="map-addr">{{ building.address || '地址未设置' }}</p>
-        <div v-if="building.latitude" ref="mapContainer" class="map-box"></div>
-        <p v-else class="map-empty">暂无地图坐标</p>
-      </section>
+      <!-- ═══ 5. 地理位置 + 周边设施 ═══ -->
+      <PropertyMapCard
+        v-if="building.latitude && building.longitude"
+        :property-id="building.id"
+        :property-lat="building.latitude"
+        :property-lng="building.longitude"
+        :property-title="building.name"
+        :property-address="building.address || '地址未设置'"
+        :country="building.country || undefined"
+      />
 
       <!-- ═══ 6. 特别说明 ═══ -->
       <section class="bd-special" v-if="specialMarkers.length">
@@ -160,27 +163,17 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, nextTick, watch } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import api from '@/services/api'
-import L from 'leaflet'
 import { formatPrice } from '@/data/currency'
-import 'leaflet/dist/leaflet.css'
-
-delete (L.Icon.Default.prototype as any)._getIconUrl
-L.Icon.Default.mergeOptions({
-  iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
-  iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
-  shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
-})
+import PropertyMapCard from '@/components/PropertyMapCard.vue'
 
 const route = useRoute(); const router = useRouter()
 const loading = ref(true); const error = ref('')
 const building = ref<any>(null); const showContactDialog = ref(false)
 const descExpanded = ref(false)
-const mapContainer = ref<HTMLElement | null>(null); let mapInstance: L.Map | null = null
-
 // 预约看房表单
 const visitFormRef = ref()
 const visitSubmitting = ref(false)
@@ -207,10 +200,6 @@ async function submitVisit() {
 }
 
 const imgUrl = (fn: string) => '/api/v1/uploads/' + fn
-
-watch(building, async (val) => {
-  if (val?.latitude) { await nextTick(); setTimeout(() => { initMap(); mapInstance?.invalidateSize() }, 400) }
-})
 
 const CATS: Record<string, { name: string; icon: string; items: string[] }> = {
   '安保': { name:'安保设施', icon:'🛡️', items:['24小时安保','监控系统(CCTV)','智能门禁','门禁系统','电子门锁','前台/礼宾','消防系统','夜间巡逻'] },
@@ -277,14 +266,6 @@ function openLightbox(index: number) {
   cl.onclick=(e)=>{e.stopPropagation();o.remove()}; o.appendChild(cl); o.onclick=()=>o.remove(); document.body.appendChild(o)
 }
 
-function initMap() {
-  if (!building.value?.latitude || !mapContainer.value) return
-  mapInstance?.remove(); mapInstance = null
-  mapInstance = L.map(mapContainer.value, { center:[building.value.latitude,building.value.longitude], zoom:15, scrollWheelZoom:true, dragging:true })
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution:'© OpenStreetMap' }).addTo(mapInstance)
-  L.marker([building.value.latitude,building.value.longitude]).addTo(mapInstance)
-}
-
 onMounted(async () => {
   try { const r = await api.get(`/buildings/${route.params.id}/tenant-detail`); building.value = r.data }
   catch (e: any) { error.value = e?.response?.status === 404 ? '公寓不存在' : '加载失败' }
@@ -305,11 +286,13 @@ onMounted(async () => {
 .hd-title { font-size: 32px; font-weight: 800; margin: 0 0 6px; color: #1a1a2e; letter-spacing: .5px; line-height: 1.2 }
 .hd-addr { font-size: 15px; color: #888; margin: 0 }
 .hd-desc { color: #555; line-height: 1.7; font-size: 16px; margin: 0; white-space: pre-wrap; max-height: 180px; overflow: auto }
-.score-card { display:flex; flex-direction:column; align-items:center; justify-content:center;  border-radius:14px; background:#fff; box-shadow:0 2px 12px rgba(0,0,0,.06); transition:transform .2s }
-.score-card.safety { border:2px solid #e8f5e9; background:linear-gradient(135deg,#f1f8e9,#fff) }
-.sc-num { font-size:30px; font-weight:800; color:#1a1a2e; line-height:1 }
-.sc-sub { font-size:11px; color:#999;  }
-.hd-book-btn { font-size: 16px; padding: 14px 0; border-radius: 10px; font-weight: 600; letter-spacing: 2px; width: 100% }
+.score-card { display:flex; flex-direction:column; align-items:center; justify-content:center; border-radius:14px; background:#fff; box-shadow:0 2px 12px rgba(0,0,0,.06); transition:transform .2s; height:72px; box-sizing:border-box; flex-shrink:0 }
+.score-card.safety { border:2px solid #e8f5e9; background:linear-gradient(135deg,#f1f8e9,#fff); width:72px; padding:8px 4px }
+.sc-label { font-size:12px; color:#888; line-height:1.3 }
+.sc-num { font-size:24px; font-weight:800; color:#1a1a2e; line-height:1.2 }
+.sc-sub { font-size:11px; color:#999; line-height:1.3 }
+.hd-book-btn { font-size:16px; font-weight:600; letter-spacing:2px; height:72px; width:130px; flex-shrink:0; border-radius:36px; border:none; background:linear-gradient(135deg,#FF6B35,#ff8c5a) }
+.hd-book-btn:hover { background:linear-gradient(135deg,#e55a2b,#ff6B35); box-shadow:0 4px 14px rgba(255,107,53,.3) }
 
 /* ═══ 2. 图片轮播 ═══ */
 .bd-gallery { margin-bottom: 24px }

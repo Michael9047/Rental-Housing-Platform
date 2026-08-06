@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_db_session
-from app.models.property import Property
+from app.models.institute import Institute
 from app.schemas.poi import POIResponse, MapPOIResponse
 from app.services.google_poi_service import GooglePOIService
 
@@ -15,7 +15,7 @@ async def generate_poi(
     session: AsyncSession = Depends(get_db_session),
 ) -> POIResponse:
     """手动触发 POI 生成（强制 Google Maps 重新搜索）。"""
-    prop = await session.get(Property, property_id)
+    prop = await session.get(Institute, property_id)
     if not prop:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Property not found")
 
@@ -38,7 +38,7 @@ async def get_poi(
     session: AsyncSession = Depends(get_db_session),
 ) -> POIResponse | None:
     """获取房源 POI 数据，不存在时自动生成。"""
-    prop = await session.get(Property, property_id)
+    prop = await session.get(Institute, property_id)
     if not prop:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Property not found")
 
@@ -61,7 +61,7 @@ async def get_map_pois(
     session: AsyncSession = Depends(get_db_session),
 ) -> MapPOIResponse:
     """获取房源地图 POI 预生成数据（PropertyMapCard 小地图用）。"""
-    prop = await session.get(Property, property_id)
+    prop = await session.get(Institute, property_id)
     if not prop:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Property not found")
 

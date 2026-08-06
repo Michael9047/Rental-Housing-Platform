@@ -158,7 +158,7 @@ class TenantOrderService:
             agreement_id=contract.id,
             agreement_number=contract.agreement_number or contract.id,
             property_id=unit_type.id,
-            property_name=getattr(ut, 'name', None) or unit_type.room_number or f"Room #{unit_type.id}",
+            property_name=getattr(ut, 'name', None) or getattr(unit_type, 'room_number', None) or f"Room #{unit_type.id}",
             property_image_url=f"/api/v1/uploads/{image.filename}" if image else None,
             property_city=getattr(inst, 'city', None) or '',
             property_address=getattr(inst, 'address', None) or '',
@@ -197,7 +197,7 @@ class TenantOrderService:
             if not contract or not unit_type:
                 continue
             image = await self.session.scalar(
-                select(PropertyImage).where(PropertyImage.room_id == unit_type.id)
+                select(PropertyImage).where(PropertyImage.institute_id == unit_type.institute_id)
                 .order_by(PropertyImage.is_primary.desc(), PropertyImage.sort_order, PropertyImage.id)
             )
             result.append(await self._item(booking, payment, contract, unit_type, image))
@@ -219,7 +219,7 @@ class TenantOrderService:
         if not contract or not unit_type or not tenant:
             raise LookupError("订单关联数据不完整")
         image = await self.session.scalar(
-            select(PropertyImage).where(PropertyImage.room_id == unit_type.id)
+            select(PropertyImage).where(PropertyImage.institute_id == unit_type.institute_id)
             .order_by(PropertyImage.is_primary.desc(), PropertyImage.sort_order, PropertyImage.id)
         )
         item = await self._item(booking, payment, contract, unit_type, image)

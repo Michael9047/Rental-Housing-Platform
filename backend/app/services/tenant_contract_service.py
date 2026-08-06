@@ -58,7 +58,8 @@ class TenantContractService:
         )
 
     async def _build_item(self, booking, contract, payment, room, image):
-        ut = getattr(room, 'unit_type', None)
+        # Room 即 UnitType（三层架构后 Room 映射到 unit_types 表）
+        ut = room
         inst = getattr(ut, 'institute', None) if ut else None
         payment_status = payment_status_value(
             payment.status if payment else None, booking.status
@@ -127,13 +128,13 @@ class TenantContractService:
             if not contract:
                 continue
             room = (await self.session.scalars(
-                select(Room).where(Room.id == booking.property_id).options(selectinload(Room.unit_type).selectinload(UnitType.institute))
+                select(Room).where(Room.id == booking.unit_type_id).options(selectinload(UnitType.institute))
             )).unique().first()
             if not room:
                 continue
             payment = await self._latest_payment(booking.id)
             image = await self.session.scalar(
-                select(RoomImage).where(RoomImage.room_id == room.id)
+                select(RoomImage).where(RoomImage.institute_id == room.institute_id)
                 .order_by(RoomImage.is_primary.desc(), RoomImage.sort_order, RoomImage.id)
             )
             item = await self._build_item(booking, contract, payment, room, image)
@@ -150,12 +151,12 @@ class TenantContractService:
         booking = await self.session.get(Booking, contract.booking_id)
         if not booking:
             raise LookupError("订单不存在")
-        room = await self.session.get(Room, booking.property_id)
+        room = await self.session.get(Room, booking.unit_type_id)
         if not room:
             raise LookupError("房源不存在")
         payment = await self._latest_payment(booking.id)
         image = await self.session.scalar(
-            select(RoomImage).where(RoomImage.room_id == room.id)
+            select(RoomImage).where(RoomImage.institute_id == room.institute_id)
             .order_by(RoomImage.is_primary.desc(), RoomImage.sort_order, RoomImage.id)
         )
         item = await self._build_item(booking, contract, payment, room, image)

@@ -23,8 +23,9 @@ class Tenant(Base):
         ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False
     )
     label: Mapped[str | None] = mapped_column(String(100), nullable=True, comment="租客标签")
+    is_default: Mapped[bool] = mapped_column(default=False, nullable=False, comment="是否默认租客")
 
-    # ── 个人信息（14 字段，名复用 booking_flow_drafts.personal_info JSONB 的 key）──
+    # ── 个人信息 ──
     chinese_name:      Mapped[str | None] = mapped_column(String(100), nullable=True)
     given_name_pinyin: Mapped[str | None] = mapped_column(String(100), nullable=True)
     surname_pinyin:    Mapped[str | None] = mapped_column(String(100), nullable=True)
@@ -36,6 +37,17 @@ class Tenant(Base):
     school_name:       Mapped[str | None] = mapped_column(String(200), nullable=True)
     enrollment_grade:  Mapped[str | None] = mapped_column(String(100), nullable=True)
     major_english:     Mapped[str | None] = mapped_column(String(200), nullable=True)
+    enrollment_level:          Mapped[str | None] = mapped_column(String(50), nullable=True)
+    enrollment_term:           Mapped[str | None] = mapped_column(String(20), nullable=True)
+    student_classification:    Mapped[str | None] = mapped_column(String(50), nullable=True)
+    preferred_name:            Mapped[str | None] = mapped_column(String(100), nullable=True)
+    is_international:          Mapped[bool] = mapped_column(default=True, nullable=False)
+    visa_type:                 Mapped[str | None] = mapped_column(String(50), nullable=True)
+    visa_expiry:               Mapped[date | None] = mapped_column(Date, nullable=True)
+    citizenship_country:       Mapped[str | None] = mapped_column(String(100), nullable=True)
+    disability_needs:          Mapped[str | None] = mapped_column(String(500), nullable=True)
+    dietary_needs:             Mapped[str | None] = mapped_column(String(500), nullable=True)
+    gender_identity:           Mapped[str | None] = mapped_column(String(100), nullable=True)
     region:            Mapped[str | None] = mapped_column(String(200), nullable=True)
     address_detail:    Mapped[str | None] = mapped_column(String(500), nullable=True)
     postal_code:       Mapped[str | None] = mapped_column(String(20), nullable=True)

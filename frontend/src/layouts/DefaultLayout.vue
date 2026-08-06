@@ -9,11 +9,7 @@
         </router-link>
       </div>
 
-      <div class="header-center">
-        <!-- 候选清单入口 -->
-        <el-badge v-if="authStore.isLoggedIn" :value="cartStore.count" :hidden="cartStore.count === 0" :max="99" class="cart-badge">
-          <el-button :icon="ShoppingCart" circle class="cart-btn" @click="router.push('/cart')" />
-        </el-badge>
+      <div class="header-center" v-if="route.path !== '/'">
         <div class="header-search-area">
           <div class="header-search-wrapper" :class="{ focused: searchFocused }">
             <el-input
@@ -28,7 +24,7 @@
               @blur="onSearchBlur"
               @input="onSearchInput"
             />
-            <el-button type="primary" @click="handleSearchSubmit" class="search-btn">搜索</el-button>
+            <el-button type="primary" @click="handleSearchSubmit" class="search-btn" aria-label="搜索"><el-icon :size="18"><Search /></el-icon></el-button>
           </div>
 
           <!-- 搜索建议下拉 -->
@@ -133,7 +129,7 @@
                       @mousedown.prevent="selectProperty(prop)"
                     >
                       <span class="card-name">{{ prop.title }}</span>
-                      <span class="card-sub">{{ prop.district }} · {{ formatPrice(prop.price_monthly, prop.currency) }}/月</span>
+                      <span class="card-sub">{{ prop.district || '' }}</span>
                     </div>
                   </div>
                 </div>
@@ -149,6 +145,10 @@
       </div>
 
       <div class="header-right">
+        <!-- 候选清单入口 -->
+        <el-badge v-if="authStore.isLoggedIn" :value="cartStore.count" :hidden="cartStore.count === 0" :max="99" class="cart-badge">
+          <el-button :icon="ShoppingCart" circle class="cart-btn" @click="router.push('/cart')" />
+        </el-badge>
         <template v-if="authStore.isLoggedIn">
           <el-tag v-if="authStore.isAdmin" type="danger" size="small" effect="dark">管理员</el-tag>
           <el-tag v-else-if="authStore.isLandlord" type="warning" size="small" effect="dark">公寓运营商</el-tag>
@@ -174,6 +174,12 @@
                   </el-dropdown-item>
                   <el-dropdown-item @click="router.push('/bookings/tenant')">
                     <el-icon><List /></el-icon> 我的预订
+                  </el-dropdown-item>
+                  <el-dropdown-item @click="router.push('/repairs')">
+                    <el-icon><Tools /></el-icon> 报修
+                  </el-dropdown-item>
+                  <el-dropdown-item @click="router.push('/notifications')">
+                    <el-icon><Bell /></el-icon> 消息
                   </el-dropdown-item>
                 </template>
                 <!-- 房东菜单 -->
@@ -243,12 +249,13 @@ import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import {
   Search, User, UserFilled, ArrowDown, ArrowLeft, Setting, SwitchButton,
-  List, Bell, ChatDotRound, DataAnalysis, Tickets, Loading, ShoppingCart, Grid,} from '@element-plus/icons-vue'
+  List, Bell, ChatDotRound, DataAnalysis, Tickets, Loading, ShoppingCart, Grid, Tools,} from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 import { useAgentChatStore } from '@/stores/agentChat'
 import { useCartStore } from '@/stores/cart'
 import { notificationService } from '@/services/notification'
 import api from '@/services/api'
+import { propertyService } from '@/services/property'
 import GlobalFooter from '@/components/GlobalFooter.vue'
 import GlobalSidebar from '@/components/GlobalSidebar.vue'
 import { formatPrice } from '@/data/currency'
@@ -439,21 +446,35 @@ function selectSchool(school: SuggestionSchool) {
 function selectCity(city: SuggestionCity) {
   showSuggestions.value = false
   searchQuery.value = city.name
-  router.push({ name: 'search', query: { district: city.name } })
+  router.push({ name: 'search', query: { city: city.name } })
 }
 
 function selectProperty(prop: SuggestionProperty) {
   showSuggestions.value = false
-  router.push({ name: 'property-detail', params: { id: prop.id } })
+  router.push({ name: 'building-detail', params: { id: prop.id } })
 }
 
 // ── 搜索提交 ─────────────────────────────
 
-function handleSearchSubmit() {
+async function handleSearchSubmit() {
+  const q = searchQuery.value.trim()
+  if (!q) return
   showSuggestions.value = false
-  if (searchQuery.value.trim()) {
-    router.push({ name: 'search', query: { q: searchQuery.value.trim() } })
-  }
+  // 地理编码：把地址文本转为坐标 → 直接传给搜索结果页做半径搜索
+  try {
+    const geo = await propertyService.geocodeAddress(q)
+    if (geo.latitude && geo.longitude) {
+      const query: Record<string, string> = {
+        q, lat: String(geo.latitude), lng: String(geo.longitude), radius: '5',
+      }
+      // 传递城市信息作为补充筛选
+      if (geo.city) query.geo_city = geo.city
+      if (geo.district) query.geo_district = geo.district
+      router.push({ name: 'search', query })
+      return
+    }
+  } catch { /* 地理编码失败则走纯文本搜索 */ }
+  router.push({ name: 'search', query: { q } })
 }
 
 // ── 通知 ─────────────────────────────────
@@ -509,7 +530,6 @@ watch(
 .layout-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   background: var(--bg-white);
   border-bottom: 1px solid var(--border);
   padding: 0 24px;
@@ -518,6 +538,20 @@ watch(
   top: 0;
   z-index: 100;
   box-shadow: var(--shadow-sm);
+}
+
+/* ── 三栏等宽布局，确保搜索栏真正居中 ── */
+
+.header-left {
+  flex: 1;
+  display: flex;
+  justify-content: flex-start;
+}
+
+.header-right {
+  flex: 1;
+  display: flex;
+  justify-content: flex-end;
 }
 
 .header-left .logo {
@@ -539,12 +573,10 @@ watch(
 }
 
 .header-center {
-  flex: 1;
+  flex: 0 1 640px;
   max-width: 640px;
-  margin: 0 auto;
   display: flex;
   align-items: center;
-  gap: 12px;
   justify-content: center;
 }
 
@@ -567,6 +599,7 @@ watch(
 }
 
 .header-search-area {
+  width: 100%;
   position: static;
 }
 
@@ -581,7 +614,7 @@ watch(
 }
 
 .header-search-wrapper.focused {
-  box-shadow: 0 0 0 3px rgba(64, 158, 255, 0.15);
+  box-shadow: 0 0 0 3px rgba(108, 92, 231, 0.15);
 }
 
 .search-input {
@@ -593,10 +626,19 @@ watch(
 .search-input :deep(.el-input__wrapper) {
   border-radius: 36px 0 0 36px !important;
   background: var(--bg-white) !important;
-  border: 2px solid var(--primary) !important;
+  border: 2px solid #d0c8f0 !important;
   box-shadow: none !important;
   height: 48px;
   padding-left: 16px;
+  transition: border-color 0.2s;
+}
+
+.search-input :deep(.el-input__wrapper:hover) {
+  border-color: #6c5ce7 !important;
+}
+
+.search-input :deep(.el-input__wrapper.is-focus) {
+  border-color: #6c5ce7 !important;
 }
 
 .search-input :deep(.el-input__inner) {
@@ -609,18 +651,19 @@ watch(
 
 .search-btn {
   height: 48px !important;
-  border: 2px solid var(--primary) !important;
+  border: 2px solid #6c5ce7 !important;
   border-radius: 0 36px 36px 0 !important;
-  background: var(--primary) !important;
+  background: linear-gradient(135deg, #6c5ce7, #e94560) !important;
   color: #fff !important;
   font-size: 15px;
   font-weight: 600;
   margin-left: -2px;
-  padding: 0 20px !important;
+  padding: 0 18px !important;
+  transition: opacity 0.2s;
 }
 
 .search-btn:hover {
-  background: var(--primary-light) !important;
+  opacity: 0.9 !important;
 }
 
 /* ── 搜索建议下拉 ─────────────────────────── */

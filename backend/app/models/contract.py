@@ -48,6 +48,11 @@ class Contract(TimestampMixin, Base):
     tenant: Mapped["User"] = relationship(foreign_keys=[tenant_id])
     unit_type: Mapped["UnitType"] = relationship()
 
+    @property
+    def property_id(self) -> int | None:
+        """三层架构兼容：旧 schema 用 property_id，实际映射到 unit_type_id"""
+        return self.unit_type_id
+
 
 class ContractSignature(TimestampMixin, Base):
     """租客对特定不可变合同版本的电子签名证据。"""

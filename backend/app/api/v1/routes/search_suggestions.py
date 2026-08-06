@@ -27,7 +27,7 @@ async def search_schools(
         .where(University.is_active == True, or_(
             University.name.ilike(term), University.name_cn.ilike(term),
             University.abbreviation.ilike(term)))
-        .order_by(University.is_hot.desc(), University.id).limit(limit))
+        .order_by(University.sort_order.asc().nulls_last(), University.is_hot.desc(), University.id).limit(limit))
     return [{"id": row[0], "name": row[1], "name_cn": row[2], "abbreviation": row[3],
              "latitude": float(row[4]) if row[4] else None, "longitude": float(row[5]) if row[5] else None}
             for row in r.all()]
@@ -62,6 +62,7 @@ async def get_school_info(
 async def get_search_suggestions(
     q: Optional[str] = Query(None, description="搜索关键词"),
     limit: int = Query(10, ge=1, le=50, description="每类建议的最大数量"),
+    country: Optional[str] = Query(None, description="按国家筛选大学"),
     db: AsyncSession = Depends(get_db_session),
 ):
     """获取搜索建议 — 基于 UnitType + Institute JOIN"""
@@ -136,12 +137,15 @@ async def get_search_suggestions(
         ]
 
         # 热门大学（全部 active 大学，is_hot 优先）
+        uni_conditions = [University.is_active.is_(True)]
+        if country:
+            uni_conditions.append(University.country == country)
         uni_query = (
             select(University.id, University.name, University.name_cn,
                    University.abbreviation, University.city, University.country,
                    University.latitude, University.longitude)
-            .where(University.is_active.is_(True))
-            .order_by(University.is_hot.desc(), University.name.asc())
+            .where(*uni_conditions)
+            .order_by(University.sort_order.asc().nulls_last(), University.is_hot.desc(), University.name.asc())
             .limit(limit * 3)  # 多取以支持国家筛选
         )
         uni_results = await db.execute(uni_query)
@@ -221,20 +225,23 @@ async def get_search_suggestions(
         ]
 
         # 匹配的大学
+        uni_conditions = [
+            University.is_active.is_(True),
+            or_(
+                University.name.ilike(search_term),
+                University.name_cn.ilike(search_term),
+                University.abbreviation.ilike(search_term),
+                University.aliases.any(func.lower(q.strip())),
+            ),
+        ]
+        if country:
+            uni_conditions.append(University.country == country)
         uni_query = (
             select(University.id, University.name, University.name_cn,
                    University.abbreviation, University.city, University.country,
                    University.latitude, University.longitude)
-            .where(
-                University.is_active.is_(True),
-                or_(
-                    University.name.ilike(search_term),
-                    University.name_cn.ilike(search_term),
-                    University.abbreviation.ilike(search_term),
-                    University.aliases.any(func.lower(q.strip())),
-                ),
-            )
-            .order_by(University.is_hot.desc(), University.name.asc())
+            .where(*uni_conditions)
+            .order_by(University.sort_order.asc().nulls_last(), University.is_hot.desc(), University.name.asc())
             .limit(limit)
         )
         uni_results = await db.execute(uni_query)
@@ -250,19 +257,18 @@ async def get_search_suggestions(
             for r in uni_results.all()
         ]
 
-        # 匹配的户型（名称或地址）
+        # 匹配的公寓（名称或地址）
         property_query = (
-            select(UnitType)
-            .join(Institute, Institute.id == UnitType.institute_id)
+            select(Institute)
             .where(
-                UnitType.status == "available",
-                UnitType.deleted_at.is_(None),
+                Institute.status == "active",
                 or_(
-                    UnitType.name.ilike(search_term),
-                    Institute.address.ilike(search_term),
                     Institute.name.ilike(search_term),
+                    Institute.name_cn.ilike(search_term),
+                    Institute.address.ilike(search_term),
                 ),
             )
+            .order_by(Institute.id.desc())
             .limit(limit)
         )
         property_results = await db.execute(property_query)
@@ -270,9 +276,9 @@ async def get_search_suggestions(
             {
                 "type": "property",
                 "id": r.id,
-                "title": r.name,
-                "district": getattr(getattr(r, 'institute', None), 'district', None),
-                "price_monthly": float(r.base_rent) if r.base_rent else None,
+                "title": r.name_cn or r.name,
+                "district": r.district,
+                "price_monthly": None,
                 "query": {"property_id": r.id},
             }
             for r in property_results.scalars().all()

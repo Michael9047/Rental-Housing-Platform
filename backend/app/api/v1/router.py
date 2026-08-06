@@ -5,8 +5,8 @@ from app.api.v1.routes import (
     admin, agent, auth, bookings,
     building_staff, buildings, chat, commute, contracts,
     dashboard, favorites, geocoding, health,
-    imports, map_routes, notifications,
-    payments, repair_workers, repairs,
+    imports, map_routes, me, notifications,
+    payments, pois, repair_workers, repairs,
     search_suggestions, tenants,
     unit_types, universities, upload, users, wechat,
 )
@@ -17,6 +17,7 @@ api_router = APIRouter()
 api_router.include_router(health.router, tags=["health"])
 api_router.include_router(auth.router, prefix="/auth", tags=["auth"])
 api_router.include_router(users.router, prefix="/users", tags=["users"])
+api_router.include_router(me.router, prefix="/me", tags=["me"])
 
 # 三层架构核心
 api_router.include_router(buildings.router, tags=["buildings"])
@@ -44,8 +45,8 @@ api_router.include_router(dashboard.router, tags=["dashboard"])
 # 以下模块暂不启用（本初版搁置，或依赖未迁移的模型）
 # api_router.include_router(ai_search.router, prefix="/ai-search", tags=["ai-search"])
 api_router.include_router(geocoding.router, prefix="/geo", tags=["geo"])
-# api_router.include_router(pois.router, prefix="/pois", tags=["pois"])
-# api_router.include_router(map_routes.router, prefix="/map", tags=["map"])  # 依赖 Property
+api_router.include_router(pois.router, prefix="/pois", tags=["pois"])
+api_router.include_router(map_routes.router, prefix="/map", tags=["map"])
 api_router.include_router(agent.router, prefix="/agent", tags=["agent"])
 # api_router.include_router(ml.router, tags=["ml"])
 api_router.include_router(repairs.router, tags=["repairs"])

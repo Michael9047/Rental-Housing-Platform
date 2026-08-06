@@ -22,3 +22,4 @@ class University(Base):
     longitude: Mapped[float] = mapped_column(Numeric(9, 6), nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     is_hot: Mapped[bool] = mapped_column(Boolean, default=False)
+    sort_order: Mapped[int | None] = mapped_column(default=None, nullable=True, comment="手动排序，越小越靠前，NULL 排在最后")

@@ -28,6 +28,41 @@
         <div v-if="loading" class="map-loading-overlay">
           <el-icon class="is-loading" :size="28"><Loading /></el-icon>
         </div>
+
+        <!-- 大学搜索栏（地图左上角覆盖） -->
+        <div v-if="activeCategory === 'school'" class="map-school-search">
+          <el-input
+            v-model="schoolSearchQuery"
+            placeholder="搜索大学..."
+            size="small"
+            clearable
+            @input="onSchoolSearchInput"
+            @focus="schoolSearchFocused = true"
+            @blur="onSearchBlur"
+            class="school-search-input"
+          >
+            <template #prefix>
+              <el-icon :size="14"><Search /></el-icon>
+            </template>
+          </el-input>
+          <div v-if="schoolSearchFocused && schoolSearchResults.length > 0" class="school-search-dropdown">
+            <div
+              v-for="school in schoolSearchResults"
+              :key="'s-' + school.id"
+              class="school-search-item"
+              @mousedown.prevent="selectSchoolResult(school)"
+            >
+              <span class="ssi-icon">🎓</span>
+              <div class="ssi-info">
+                <span class="ssi-name">{{ school.name_cn || school.name }}</span>
+                <span v-if="school.abbreviation" class="ssi-abbr">{{ school.abbreviation }}</span>
+              </div>
+            </div>
+          </div>
+          <div v-else-if="schoolSearchFocused && schoolSearchQuery.trim() && !schoolSearchLoading && schoolSearchResults.length === 0" class="school-search-dropdown">
+            <div class="school-search-empty">未找到匹配学校</div>
+          </div>
+        </div>
       </div>
 
       <!-- 左下角地图控件：缩放 +/- + 回房源 -->
@@ -166,11 +201,13 @@ const POI_COLOR      = '#3DA5A0'  // 青石绿 ── 周边设施
 interface CatDef { key: string; label: string; emoji: string }
 const categories: CatDef[] = [
   { key: 'school',          label: '大学',     emoji: '🎓' },
-  { key: 'bus_station',     label: '公交车站', emoji: '🚌' },
   { key: 'subway_station',  label: '地铁站',   emoji: '🚇' },
+  { key: 'bus_station',     label: '公交车站', emoji: '🚌' },
   { key: 'supermarket',     label: '超市',     emoji: '🛒' },
   { key: 'restaurant',      label: '餐厅',     emoji: '🍽️' },
   { key: 'pharmacy',        label: '药房',     emoji: '💊' },
+  { key: 'hospital',        label: '医院',     emoji: '🏥' },
+  { key: 'sports',          label: '运动',     emoji: '🏋️' },
 ]
 
 const activeCategory = ref('')
@@ -192,13 +229,18 @@ interface SchoolSearchResult {
   abbreviation: string | null
   latitude: number | null
   longitude: number | null
-  count: number
 }
 
 const schoolSearchQuery = ref('')
 const schoolSearchResults = ref<SchoolSearchResult[]>([])
 const schoolSearchLoading = ref(false)
+const schoolSearchFocused = ref(false)
 let schoolSearchTimer: ReturnType<typeof setTimeout> | null = null
+
+function onSearchBlur() {
+  // 延迟关闭，让 mousedown 能触发
+  setTimeout(() => { schoolSearchFocused.value = false }, 150)
+}
 
 /** 侧边栏当前显示模式：'poi' 显示视口 POI，'search' 显示学校搜索结果 */
 const sidebarMode = computed<'poi' | 'search'>(() => {
@@ -221,8 +263,11 @@ function onSchoolSearchInput() {
 async function fetchSchoolSearch(q: string) {
   schoolSearchLoading.value = true
   try {
-    const resp = await api.get('/search/suggestions', { params: { q, limit: 10 } })
-    schoolSearchResults.value = resp.data.matching_schools || []
+    const params: any = { q, limit: 10 }
+    if (props.country) params.country = props.country
+    const resp = await api.get('/search/suggestions', { params })
+    // 用 matching_universities（University 表，支持别名/缩写/中英文）
+    schoolSearchResults.value = resp.data.matching_universities || []
   } catch {
     schoolSearchResults.value = []
   } finally {
@@ -230,11 +275,20 @@ async function fetchSchoolSearch(q: string) {
   }
 }
 
+// 搜索结果产生的学校标记（同时只保留一个）
+let schoolResultMarker: L.Marker | null = null
+
 /** 点击搜索结果 → 飞到学校位置 */
 function selectSchoolResult(school: SchoolSearchResult) {
   if (!map || school.latitude == null || school.longitude == null) return
 
-  // 在目标位置放一个临时高亮标记
+  // 移除上一个搜索结果标记
+  if (schoolResultMarker) {
+    map.removeLayer(schoolResultMarker)
+    schoolResultMarker = null
+  }
+
+  // 在目标位置放高亮标记
   const tempIcon = L.divIcon({
     className: 'custom-poi-icon',
     html: `<div style="
@@ -250,7 +304,7 @@ function selectSchoolResult(school: SchoolSearchResult) {
     popupAnchor: [0, -20],
   })
 
-  const tempMarker = L.marker([school.latitude, school.longitude], { icon: tempIcon })
+  schoolResultMarker = L.marker([school.latitude, school.longitude], { icon: tempIcon })
     .bindTooltip(school.name_cn || school.name, {
       permanent: true,
       direction: 'bottom',
@@ -260,11 +314,6 @@ function selectSchoolResult(school: SchoolSearchResult) {
     .addTo(map)
 
   map.flyTo([school.latitude, school.longitude], 15, { duration: 0.8 })
-
-  // 3 秒后移除临时标记
-  setTimeout(() => {
-    if (map) map.removeLayer(tempMarker)
-  }, 5000)
 }
 
 // ── divIcon 工厂 ──
@@ -348,6 +397,11 @@ function clearPOIs() {
   poiMarkerMap.clear()
   restoreHighlighted()
   selectedPoiId.value = null
+  // 同时清除搜索结果标记
+  if (schoolResultMarker) {
+    map!.removeLayer(schoolResultMarker)
+    schoolResultMarker = null
+  }
 }
 
 function renderPOIs(pois: OverpassPOI[]) {
@@ -480,38 +534,44 @@ function filterLocalPOIs() {
 
 // ── 从后端加载预生成 POI ──
 
-async function loadAllMapPOIs() {
-  try {
-    const data = await propertyService.getMapPOIs(props.propertyId)
-    if (data && data.categories) {
-      allMapPOIs.value = data.categories
-      mapPOIsLoaded.value = true
-      return
-    }
-  } catch {
-    // 后端数据不可用，回退到前端直接调 API（兼容存量房源未预生成的情况）
-  }
+/** 后端中文父分类 → 前端英文 Tab key 映射（兼容旧缓存） */
+const CN_TO_TAB: Record<string, string[]> = {
+  '交通': ['subway_station', 'bus_station'],
+  '医疗': ['hospital', 'pharmacy'],
+  '购物': ['supermarket'],
+  '美食': ['restaurant'],
+  '生活': ['sports', 'supermarket'],
+  '地标': ['restaurant'],
+}
 
-  // 回退：首次访问时后端实时生成并返回，重试一次
-  try {
+async function loadAllMapPOIs() {
+  const doLoad = async () => {
     const data = await propertyService.getMapPOIs(props.propertyId)
-    if (data && data.categories) {
-      allMapPOIs.value = data.categories
-      mapPOIsLoaded.value = true
-      return
+    if (!data?.categories) return false
+    const mapped: Record<string, any[]> = {}
+    for (const [rawKey, pois] of Object.entries(data.categories)) {
+      // 中文键 → 展开到前端 Tab key，英文键直接用
+      const keys = CN_TO_TAB[rawKey] || [rawKey]
+      for (const k of keys) {
+        if (!mapped[k]) mapped[k] = []
+        mapped[k].push(...(pois as any[]))
+      }
     }
-  } catch {
-    mapPOIsLoaded.value = false
+    allMapPOIs.value = mapped
+    mapPOIsLoaded.value = true
+    return true
   }
+  try { if (await doLoad()) return } catch { /* retry */ }
+  try { if (await doLoad()) return } catch { mapPOIsLoaded.value = false }
 }
 
 function formatDist(m?: number) { return m != null ? metersToKm(m) : '' }
 
 // ── 生命周期 ──
 onMounted(() => {
-  nextTick(() => {
-    initMap()
-    loadAllMapPOIs()
+  nextTick(async () => {
+    try { await initMap() } catch { /* 地图初始化失败 */ }
+    try { await loadAllMapPOIs() } catch { /* POI 加载失败 */ }
   })
 })
 onUnmounted(() => {
@@ -569,7 +629,34 @@ onUnmounted(() => {
 .map-ctrl-btn:hover { background: var(--primary-light); border-color: var(--primary); color: var(--primary); }
 .map-ctrl-home { font-size: 15px; }
 
-/* ── 学校搜索框 ── */
+/* ── 地图左上角大学搜索覆盖层 ── */
+.map-school-search {
+  position: absolute; top: 8px; left: 8px; z-index: 900;
+  width: 200px;
+}
+.school-search-input :deep(.el-input__wrapper) {
+  background: rgba(255,255,255,0.95); border-radius: 8px;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.12);
+}
+.school-search-dropdown {
+  background: #fff; border-radius: 8px; box-shadow: 0 4px 16px rgba(0,0,0,0.12);
+  margin-top: 4px; max-height: 240px; overflow-y: auto;
+}
+.school-search-item {
+  display: flex; align-items: center; gap: 8px; padding: 8px 10px;
+  cursor: pointer; transition: background 0.15s;
+}
+.school-search-item:hover { background: #f0f4ff; }
+.school-search-item:first-child { border-radius: 8px 8px 0 0; }
+.school-search-item:last-child { border-radius: 0 0 8px 8px; }
+.ssi-icon { font-size: 16px; flex-shrink: 0; }
+.ssi-info { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.ssi-name { font-size: 13px; color: #303133; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ssi-abbr { font-size: 11px; color: #909399; }
+.ssi-count { font-size: 11px; color: #909399; flex-shrink: 0; }
+.school-search-empty { padding: 16px; text-align: center; font-size: 13px; color: #c0c4cc; }
+
+/* ── 学校搜索框（侧边栏内）── */
 .school-search-box { padding: 8px 10px; border-bottom: 1px solid var(--border-light); }
 
 /* ── 右侧 POI 列表 ── */

@@ -43,7 +43,8 @@ class ContractService:
     async def _build_source_snapshot(self, booking: Booking) -> dict:
         tenant = await self.session.get(User, booking.tenant_id)
         landlord = await self.session.get(User, booking.bm_id)
-        property_obj = await self.session.get(Property, booking.institute_id)
+        # 三层架构：Booking 关联 unit_type_id → UnitType（Property 别名）
+        property_obj = await self.session.get(Property, booking.unit_type_id)
         if not property_obj:
             raise ValueError("Property not found")
 
@@ -119,11 +120,11 @@ class ContractService:
             "platform_role": PLATFORM_ROLE,
             "tenant_name_cn": tenant_cn,
             "tenant_name_en": tenant_en,
-            "property_name": getattr(getattr(property_obj, 'unit_type', None), 'name', property_obj.room_number or ''),
-            "property_address": getattr(getattr(getattr(property_obj, 'unit_type', None), 'institute', None), 'address', ''),
+            "property_name": property_obj.name or '',
+            "property_address": getattr(getattr(property_obj, 'institute', None), 'address', ''),
             "property_id": property_obj.id,
-            "room_type": getattr(getattr(property_obj, 'unit_type', None), 'name', '') or '',
-            "occupancy_limit": property_rules.get("occupancy_limit") or max(1, getattr(getattr(property_obj, 'unit_type', None), 'bedrooms', 0) or 1),
+            "room_type": property_obj.name or '',
+            "occupancy_limit": property_rules.get("occupancy_limit") or max(1, property_obj.bedrooms or 1),
             "commencement_date": commencement,
             "expiry_date": option["end_date"],
             "tenancy_months": booking.lease_months,
@@ -204,7 +205,7 @@ class ContractService:
         ).hexdigest()
         snapshot["content_hash"] = content_hash
         contract = Contract(
-            booking_id=booking.id, tenant_id=booking.tenant_id, property_id=booking.institute_id,
+            booking_id=booking.id, tenant_id=booking.tenant_id, unit_type_id=booking.unit_type_id,
             template_name="housing_reservation_tenancy_bilingual", agreement_number=agreement_number,
             version=version, template_version=TEMPLATE_VERSION, content_hash=content_hash,
             snapshot=snapshot, generated_at=generated_at, content=content, status="generated",
