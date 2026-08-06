@@ -346,8 +346,6 @@ const SearchAgentPanel = defineAsyncComponent(() => import("@/components/search/
 const authStore = useAuthStore()
 const agentChatStore = useAgentChatStore()
 const lastAgentSearchKey = ref('')
-let restoringFromNavigation = false
-
 // ── 模式 ──
 const searchMode = ref<'city' | 'school' | 'uni' | 'agent'>('city')
 const schoolId = ref<number | null>(null)
@@ -1179,29 +1177,25 @@ async function doSearch() {
     p.sort_by = sortAsc.value ? 'price_asc' : 'price_desc'
   }
 
-  // 从详情页返回时不触发新会话（保留对话历史）
-  if (!restoringFromNavigation) {
-    // 切换城市/学校/国家 → 自动新 Agent 会话，避免跨市场对话串扰
-    if (agentChatStore.sessionId !== null) {
-      const currentKey = JSON.stringify({
-        country: filters.country,
-        city: filters.city,
-        district: filters.district,
-        institute_id: filters.institute_id,
-        uniId: uniId.value,
-        uniName: uniName.value,
-        searchMode: searchMode.value,
-      })
-      if (currentKey && currentKey !== lastAgentSearchKey.value) {
-        lastAgentSearchKey.value = currentKey
-        // 已有实质对话时才创新会话（空对话没必要重建）
-        const hasRealMessages = agentChatStore.messages.some(m => m.role === 'user')
-        if (hasRealMessages) agentChatStore.newSession().catch(() => {})
-      }
+  // 切换城市/学校/国家 → 自动新 Agent 会话
+  if (agentChatStore.sessionId !== null) {
+    const currentKey = JSON.stringify({
+      country: filters.country,
+      city: filters.city,
+      district: filters.district,
+      institute_id: filters.institute_id,
+      uniId: uniId.value,
+      uniName: uniName.value,
+      searchMode: searchMode.value,
+    })
+    if (currentKey && currentKey !== lastAgentSearchKey.value) {
+      lastAgentSearchKey.value = currentKey
+      const hasRealMessages = agentChatStore.messages.some(m => m.role === 'user')
+      if (hasRealMessages) agentChatStore.newSession().catch(() => {})
     }
   }
-  restoringFromNavigation = false
 
+  fromAgent.value = false
   propertyStore.fetchSearch(p)
 }
 
@@ -1242,7 +1236,6 @@ function resetFilters() {
 
 // ── 路由初始化 ──
 async function initFromRoute() {
-  restoringFromNavigation = true
   const q = route.query
 
   // 优先检查是否来自 Agent 推荐（sessionStorage 中预存了结果）
@@ -1364,21 +1357,19 @@ function restoreSearchState() {
 }
 
 onMounted(() => {
-  // 有新搜索参数 → 优先用路由参数
+  // 有新搜索参数 → 优先用路由
   if (Object.keys(route.query).length > 0) {
     initFromRoute()
     return
   }
-  // 无参数 → 恢复上次状态
+  // 无参数 → 尝试恢复上次状态
   const restored = restoreSearchState()
-  if (restored) {
-    if (fromAgent.value) {
-      restoringFromNavigation = true
-    } else {
-      restoringFromNavigation = true
-      doSearch()
-    }
+  if (!restored) {
+    initFromRoute()
+  } else if (!fromAgent.value) {
+    doSearch()
   }
+  // fromAgent=true 时不调 doSearch，保留 store 中的 AI 结果
 })
 onUnmounted(() => {
   saveSearchState()
