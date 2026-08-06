@@ -1110,6 +1110,8 @@ async def dispatch_stream(
     mode: str | None = None,
 ):
     """流式分发；先发执行状态，再逐 token 发有据回答，最后发卡片元数据。"""
+    import time
+    t0 = time.perf_counter()
     ctx = await _prepare_context(
         session=session,
         chat_session=chat_session,
@@ -1120,6 +1122,8 @@ async def dispatch_stream(
         compare_property_ids=compare_property_ids,
         mode=mode,
     )
+    logger.info("[TIMING] dispatch: _prepare_context total=%.0fms intent=%s",
+                (time.perf_counter() - t0) * 1000, ctx.intent)
     yield None, {
         "event": "status",
         "intent": _public_intent(ctx.intent, str(ctx.classification.get("sub_intent", ""))),

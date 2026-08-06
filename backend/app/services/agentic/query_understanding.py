@@ -22,13 +22,13 @@ QUERY_UNDERSTANDING_PROMPT = """你是海外租房搜索的查询理解模块。
 - room_type: studio/ensuite/1bed/2bed/3bed+/shared
 - commute_mode: walking/bicycling/driving/transit
 - amenities 使用标准值：独立卫浴、独立厨房、宠物友好、WiFi、空调、洗衣机、阳台、电梯、健身房、自习室、泳池、家具齐全
-- “1500左右”可转成 price_min=1350, price_max=1650
-- “短租/短期租住”固定转成 min_lease_months=1, max_lease_months=3
-- “中租”固定转成 min_lease_months=3, max_lease_months=6；“长租”转成 min_lease_months=12
-- “便宜一点”结合当前 price_max 下调约 15%；“预算提高一点”上调约 15%
-- “不要独卫了”放 remove_values.amenities=["独立卫浴"]，不要输出 amenities=[]
-- 用户说“必须/一定/只要”时，把对应字段名放进 extracted_filters.hard_filters；
-  用户说“最好/尽量/优先”时放进 extracted_filters.soft_preferences
+- "1500左右"可转成 price_min=1350, price_max=1650
+- "短租/短期租住"固定转成 min_lease_months=1, max_lease_months=3
+- "中租"固定转成 min_lease_months=3, max_lease_months=6；"长租"转成 min_lease_months=12
+- "便宜一点"结合当前 price_max 下调约 15%；"预算提高一点"上调约 15%
+- "不要独卫了"放 remove_values.amenities=["独立卫浴"]，不要输出 amenities=[]
+- 用户说"必须/一定/只要"时，把对应字段名放进 extracted_filters.hard_filters；
+  用户说"最好/尽量/优先"时放进 extracted_filters.soft_preferences
 - 不确定的字段不要输出，禁止用 null 覆盖旧状态
 
 输出格式：
@@ -41,7 +41,7 @@ QUERY_UNDERSTANDING_PROMPT = """你是海外租房搜索的查询理解模块。
   "explicit_memory_fields": []
 }
 
-当前会话状态由用户此前明确表达而来，可用于消解“再便宜点、学校附近、还是单间”等省略；如果本轮与状态冲突，以本轮为准。"""
+当前会话状态由用户此前明确表达而来，可用于消解"再便宜点、学校附近、还是单间"等省略；如果本轮与状态冲突，以本轮为准。"""
 
 _VALID_FILTER_FIELDS = frozenset({
     "country", "district", "price_min", "price_max", "bedrooms",
@@ -128,7 +128,7 @@ def _apply_explicit_location_hints(message: str, extracted: dict[str, Any]) -> N
                 extracted["country"] = country
                 break
 
-    # “新加坡”在当前数据模型中是国家市场，不应再作为中文 district 与
+    # "新加坡"在当前数据模型中是国家市场，不应再作为中文 district 与
     # 英文 Singapore 城市值做一次相互冲突的精确筛选。
     if extracted.get("country") == "SG" and str(extracted.get("district") or "").lower() in {
         "新加坡", "singapore",
@@ -156,7 +156,7 @@ def _apply_explicit_lease_hints(
     extracted: dict[str, Any],
     remove_fields: list[str] | None = None,
 ) -> None:
-    """确定性识别租期口语，避免模型漏掉“短租”等搜索页可见条件。"""
+    """确定性识别租期口语，避免模型漏掉"短租"等搜索页可见条件。"""
     removed = remove_fields if remove_fields is not None else []
     exact_months = re.search(
         r"(?:租|住|租期(?:是|为)?)\s*(\d{1,2})\s*(?:个)?月",
@@ -211,7 +211,7 @@ def _rule_fallback(message: str, previous_filters: dict[str, Any]) -> QueryUnder
     if re.search(r"(不限区域|区域无所谓|取消地区)", message):
         remove_fields.append("district")
 
-    # 常见绝对预算；“左右”生成区间，“以上/至少”作为下限，其余作为上限。
+    # 常见绝对预算；"左右"生成区间，"以上/至少"作为下限，其余作为上限。
     money_match = re.search(
         r"(?:预算|月租|租金)?\s*(至少|不低于)?\s*"
         r"([0-9]+(?:\.[0-9]+)?)\s*(万|千|[kK])?\s*"
@@ -407,6 +407,7 @@ async def understand_query(
             user_prompt,
             temperature=0.0,
             max_tokens=900,
+            model="deepseek-v4-flash",
         )
     except Exception:
         return _rule_fallback(message, previous_filters)

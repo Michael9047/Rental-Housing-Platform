@@ -470,6 +470,16 @@ class SearchAgent(BaseAgent):
         from app.services.embedding_service import get_embedding_service
 
         started_at = time.perf_counter()
+        t_last = started_at
+        def _lap(label: str) -> float:
+            nonlocal t_last
+            now = time.perf_counter()
+            elapsed = (now - t_last) * 1000
+            total = (now - started_at) * 1000
+            logger.info("[TIMING] %s: %.0fms (total %.0fms)", label, elapsed, total)
+            t_last = now
+            return elapsed
+
         settings = get_settings()
         base_filters = dict(filters or {})
         if understanding is None:
@@ -508,14 +518,13 @@ class SearchAgent(BaseAgent):
             except (TypeError, ValueError):
                 active_filters.pop("commute_minutes", None)
 
-        # 学校坐标是硬地理约束；Query Rewrite 只补齐省略，不会虚构学校。
+        # 学校坐标仅在左侧未确定位置时才查询；如果 context_filters 已有
+        # country + district，说明主搜索页已经完成了地理定位，无需重复。
         uni_info: dict[str, Any] | None = None
-        # 这里只做召回池预筛，不把 5km 默认为用户硬约束；明确通勤方式时再收紧。
         distance_km = 20.0
-        if institution_name:
+        context_has_location = bool(active_filters.get("country") and active_filters.get("district"))
+        if institution_name and not context_has_location:
             try:
-                # 学校与通勤属于可选增强数据；用 savepoint 隔离缺表或坏数据，
-                # 避免一次辅助查询失败后污染整轮 Agent 会话事务。
                 async with self.session.begin_nested():
                     uni_info = await self._lookup_institution(str(institution_name))
                 if uni_info and commute_mode in _COMMUTE_PRE_FILTER_KM:
@@ -551,11 +560,13 @@ class SearchAgent(BaseAgent):
         )
 
         semantic_query = understanding.embedding_text(message)
+        _lap("filter_merge+uni_lookup")
         query_vec: list[float] | None = None
         embedding_service = get_embedding_service()
         if embedding_service.is_available:
             try:
                 query_vec = await embedding_service.generate_embedding(semantic_query)
+                _lap("embedding")
             except Exception:
                 logger.warning("Query Rewrite 向量化失败，降级到结构化+词面检索")
 
@@ -592,6 +603,7 @@ class SearchAgent(BaseAgent):
                 **common_search,
             )
         strict_recall = self._merge_recall_legs(strict_semantic, strict_structured)
+        _lap(f"db_search (semantic={len(strict_semantic)} structured={len(strict_structured)})")
 
         await self._attach_commute_context(
             strict_recall,
@@ -641,6 +653,7 @@ class SearchAgent(BaseAgent):
             )
             recall_pool.extend(new_items)
 
+        _lap(f"commute+broad_recall (pool={len(recall_pool)})")
         raw_poi_requirements = active_filters.get("poi_requirements") or []
         poi_pref_keys = normalize_poi_requirements(raw_poi_requirements)
         poi_by_unit_type: dict[int, dict] = {}
@@ -661,16 +674,19 @@ class SearchAgent(BaseAgent):
             except Exception:
                 logger.warning("POI 数据加载失败，降级为无 POI 信号重排", exc_info=True)
 
+        _lap(f"poi_load (poi_unit_types={len(poi_by_unit_type)})")
         selected, effective_filters, relaxation_trace, relaxation_level = apply_constraint_ablation(
             recall_pool,
             active_filters,
             min_results=max(1, int(settings.agent_min_results)),
         )
+        _lap(f"ablation (selected={len(selected)})")
         reranked = rerank_candidates(
             selected,
             query=semantic_query,
             filters=effective_filters,
         )
+        _lap(f"rerank (reranked={len(reranked)})")
 
         # 按公寓去重：同一 institute 只保留得分最高的那条
         seen_institutes: set[int] = set()
@@ -890,13 +906,20 @@ class SearchAgent(BaseAgent):
         stream_failed = False
         if llm.is_available and prep["unit_results"]:
             try:
+                _lap("pipeline_done→llm_start")
+                msg = self._reply_messages(prep)
+                prompt_chars = sum(len(m["content"]) for m in msg)
+                _lap(f"reply_prompt_built ({prompt_chars} chars)")
                 async for tok in llm.complete_text_stream(
-                    self._reply_messages(prep),
+                    msg,
                     temperature=float(get_settings().agent_recommend_temperature),
                     max_tokens=1200,
                 ):
+                    if not reply:
+                        _lap("llm_first_token")
                     reply += tok
                     yield {"type": "token", "text": tok}
+                _lap(f"llm_done ({len(reply)} chars)")
             except Exception:
                 stream_failed = True
                 logger.exception("LLM 流式推荐失败，降级为规则摘要")

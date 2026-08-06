@@ -168,9 +168,31 @@
       </el-form>
 
       <el-divider>其他登录方式</el-divider>
-      <el-button class="wechat-btn" @click="handleWechatLogin" :loading="wechatLoading" size="large" round>
+      <el-button class="wechat-btn" @click="showWechatQrDialog" size="large" round>
         💚 微信登录
       </el-button>
+
+      <!-- 微信扫码弹窗 -->
+      <el-dialog v-model="qrDialogVisible" title="微信扫码登录" width="340px" :close-on-click-modal="false" @close="stopQrPolling">
+        <div class="qr-container">
+          <div v-if="qrStatus === 'loading'" class="qr-status-wrap">
+            <el-icon class="is-loading" :size="28"><Loading /></el-icon>
+            <p>正在生成二维码...</p>
+          </div>
+          <div v-else-if="qrStatus === 'error'" class="qr-status-wrap">
+            <p class="qr-error-text">{{ qrError }}</p>
+            <el-button type="primary" size="small" @click="generateQrCode">重新生成</el-button>
+          </div>
+          <div v-else class="qr-display">
+            <canvas ref="qrCanvasRef" class="qr-canvas"></canvas>
+            <p class="qr-hint">请使用微信扫一扫登录</p>
+            <p class="qr-status-text" :class="qrStatus">
+              {{ qrStatus === 'pending' ? '等待扫码...' : qrStatus === 'scanned' ? '扫码成功，正在登录...' : qrStatus === 'expired' ? '二维码已过期' : '' }}
+            </p>
+          </div>
+        </div>
+      </el-dialog>
+
       <div class="auth-footer">
         还没有账号？<router-link to="/register">立即注册</router-link>
       </div>
@@ -179,12 +201,14 @@
 </template>
 
 <script setup lang="ts">
-import { reactive, ref, computed } from 'vue'
+import { reactive, ref, computed, nextTick } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { User, Lock, Phone, Message } from '@element-plus/icons-vue'
+import { User, Lock, Phone, Message, Loading } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
 import { useAuthStore } from '@/stores/auth'
+import { authService } from '@/services/auth'
+import QRCode from 'qrcode'
 
 const router = useRouter()
 const route = useRoute()
@@ -405,15 +429,78 @@ async function handlePhoneRegister() {
   }
 }
 
-// ── 微信登录 ──────────────────────────────
+// ── 微信扫码登录 ──────────────────────────────
 
-async function handleWechatLogin() {
-  wechatLoading.value = true
+const qrDialogVisible = ref(false)
+const qrCanvasRef = ref<HTMLCanvasElement>()
+const qrState = ref('')
+const qrError = ref('')
+const qrStatus = ref<'loading' | 'pending' | 'scanned' | 'expired' | 'error'>('loading')
+let qrPollTimer: ReturnType<typeof setInterval> | null = null
+
+async function generateQrCode() {
+  qrStatus.value = 'loading'
+  qrError.value = ''
   try {
-    ElMessage.info('微信登录需要微信内置浏览器或小程序环境。请使用微信扫码或在微信中打开。')
-  } finally {
-    wechatLoading.value = false
+    const resp = await authService.getWeChatQrUrl()
+    qrState.value = resp.state
+    await nextTick()
+    if (qrCanvasRef.value) {
+      await QRCode.toCanvas(qrCanvasRef.value, resp.qr_url, { width: 220, margin: 1 })
+    }
+    qrStatus.value = 'pending'
+    startQrPolling()
+  } catch (e: any) {
+    qrError.value = e?.response?.data?.detail || '生成二维码失败'
+    qrStatus.value = 'error'
   }
+}
+
+function startQrPolling() {
+  stopQrPolling()
+  let polls = 0
+  qrPollTimer = setInterval(async () => {
+    polls++
+    if (polls > 60) {
+      qrStatus.value = 'expired'
+      stopQrPolling()
+      return
+    }
+    try {
+      const statusResp = await authService.getWeChatQrStatus(qrState.value)
+      if (statusResp.status === 'scanned' && statusResp.access_token) {
+        stopQrPolling()
+        qrStatus.value = 'scanned'
+        // 直接设置登录状态
+        authStore.setAuth(statusResp.access_token, statusResp.user || ({} as any))
+        // 获取完整用户信息
+        setTimeout(async () => {
+          await authStore.fetchCurrentUser()
+        }, 300)
+        ElMessage.success('登录成功')
+        qrDialogVisible.value = false
+        const redirect = (route.query.redirect as string) || '/'
+        router.replace(redirect)
+      } else if (statusResp.status === 'expired') {
+        qrStatus.value = 'expired'
+        stopQrPolling()
+      }
+    } catch {
+      // 网络错误忽略，继续轮询
+    }
+  }, 2000)
+}
+
+function stopQrPolling() {
+  if (qrPollTimer) {
+    clearInterval(qrPollTimer)
+    qrPollTimer = null
+  }
+}
+
+function showWechatQrDialog() {
+  qrDialogVisible.value = true
+  generateQrCode()
 }
 </script>
 
@@ -552,6 +639,39 @@ async function handleWechatLogin() {
   border-color: #06ad56;
   color: #fff;
 }
+
+/* ── 微信扫码弹窗 ── */
+.qr-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 16px 0;
+  min-height: 280px;
+  justify-content: center;
+}
+.qr-status-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  color: #909399;
+}
+.qr-error-text { color: #e94560; }
+.qr-display {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+.qr-canvas {
+  border: 1px solid #eee;
+  border-radius: 8px;
+}
+.qr-hint { font-size: 13px; color: #606266; margin: 0; }
+.qr-status-text { font-size: 12px; margin: 0; }
+.qr-status-text.pending { color: #909399; }
+.qr-status-text.scanned { color: #67c23a; }
+.qr-status-text.expired { color: #e94560; }
 
 .auth-footer {
   text-align: center;

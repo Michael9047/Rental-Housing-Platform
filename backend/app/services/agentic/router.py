@@ -19,7 +19,12 @@ _REMOVE_PATTERN = re.compile(r"(移除|删除|去掉|拿掉|清除)")
 _COMPARE_PATTERN = re.compile(r"(对比|比较|哪个好|哪套好|哪一?[个套]更)")
 _CART_PATTERN = re.compile(r"(购物车|候选|清单|收藏)")
 _RECOMMEND_SIGNAL = re.compile(
-    r"找|推荐|租|房源|房子|居室|单间|公寓|合租|别墅|预算|地铁|学校|大学|附近|[0-9一二两三四五]\s*室|元|块|㎡|平米|平方"
+    r"找|推荐|租|房源|房子|居室|单间|公寓|合租|别墅|预算"
+    r"|地铁|学校|大学|附近|靠近|周边|步行|通勤|距离"
+    r"|健身房|泳池|停车|阳台|空调|洗衣机|电梯|WiFi|wifi|独卫|独立卫浴|独立厨房|宠物|自习"
+    r"|便宜|贵|价格|多少钱|月租|周租"
+    r"|[0-9一二两三四五]\s*室|元|块|㎡|平米|平方"
+    r"|带\s*(健身房|泳池|停车|阳台|空调|洗衣机|电梯|独卫|WiFi|wifi|宠物|自习)"
 )
 
 # ── 中文序号解析 ────────────────────────────────────────────────
@@ -114,7 +119,17 @@ _VALID_ROUTING = frozenset({"fast", "agent"})
 async def classify_message(
     message: str, history: list[dict] | None = None
 ) -> dict[str, Any]:
-    """统一分类：意图 + 阶段 + 路由信号，一次 LLM 调用完成。"""
+    """统一分类：意图 + 阶段 + 路由信号。规则先行命中搜索意图，未命中再走 LLM。"""
+    # ── 规则快速路径：明显找房信号直接跳过 LLM ──
+    text = message.strip()
+    if _RECOMMEND_SIGNAL.search(text) and not _COMPARE_PATTERN.search(text):
+        return {
+            "intent": "search", "sub_intent": "browse", "stage": "narrow",
+            "complexity": 0.5, "confidence": 0.85, "routing": "agent",
+            "faq_topic": None, "faq_confidence": None,
+            "refs": parse_refs(message), "reasoning": "规则快速路径：找房信号", "used_llm": False,
+        }
+
     llm = get_llm_service()
     if not llm.is_available:
         return _fallback_classify(message)
@@ -130,7 +145,7 @@ async def classify_message(
     user_prompt = f"对话历史：\n{history_text}\n用户最新消息: {message}" if history_text else message
 
     try:
-        result = await llm.complete_json(UNIFIED_CLASSIFIER_PROMPT, user_prompt, temperature=0.0, max_tokens=300)
+        result = await llm.complete_json(UNIFIED_CLASSIFIER_PROMPT, user_prompt, temperature=0.0, max_tokens=300, model="deepseek-v4-flash")
         intent = result.get("intent", "general")
         if intent not in _VALID_INTENTS:
             intent = "general"

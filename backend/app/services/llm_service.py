@@ -129,10 +129,11 @@ class LLMService:
         *,
         temperature: float = 0.2,
         max_tokens: int = 1500,
+        model: str | None = None,
     ) -> dict[str, Any]:
         """通用 JSON 补全：返回解析后的 dict，解析失败返回空 dict"""
         response = await self._client.chat.completions.create(
-            model=self._model,
+            model=model or self._model,
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},

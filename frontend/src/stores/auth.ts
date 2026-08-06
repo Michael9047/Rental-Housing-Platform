@@ -97,6 +97,19 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
+  async function wechatQrLogin(data: { code: string; state: string }) {
+    loading.value = true
+    try {
+      const tokenResp = await authService.wechatQrLogin(data)
+      setAuth(tokenResp.access_token, {} as User)
+      const currentUser = await authService.getMe()
+      setAuth(tokenResp.access_token, currentUser)
+      return currentUser
+    } finally {
+      loading.value = false
+    }
+  }
+
   async function fetchCurrentUser() {
     try {
       const currentUser = await authService.getMe()
@@ -127,6 +140,7 @@ export const useAuthStore = defineStore('auth', () => {
     login,
     phoneLogin,
     phoneRegister,
+    wechatQrLogin,
     logout,
     fetchCurrentUser,
     loadFromStorage,

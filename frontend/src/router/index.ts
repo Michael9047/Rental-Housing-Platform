@@ -353,6 +353,12 @@ const routes: RouteRecordRaw[] = [
     component: () => import('@/views/ResetPassword.vue'),
     meta: { guest: true },
   },
+  {
+    path: '/auth/wechat/callback',
+    name: 'wechat-callback',
+    component: () => import('@/views/WeChatCallback.vue'),
+    meta: { guest: true },
+  },
 ]
 
 const router = createRouter({

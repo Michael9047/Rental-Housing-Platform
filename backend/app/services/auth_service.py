@@ -74,3 +74,28 @@ class AuthService:
             await self.session.refresh(user)
 
         return user, is_new
+
+    async def wechat_qr_login(self, code: str) -> tuple[User, bool]:
+        """微信开放平台扫码登录：code → openid → 查找/创建用户"""
+        wechat = WeChatService()
+        oauth_data = await wechat.exchange_qr_code(code)
+
+        # 按 openid 查找已有用户
+        stmt = select(User).where(User.wechat_openid == oauth_data.openid)
+        result = await self.session.scalars(stmt)
+        user = result.first()
+
+        is_new = False
+        if not user:
+            is_new = True
+            user_in = UserCreate(
+                username=f"wx_{oauth_data.openid[-12:]}",
+                password_hash=hash_password(oauth_data.openid),
+                role="tenant",
+            )
+            user = await self.users.create(user_in)
+            user.wechat_openid = oauth_data.openid
+            await self.session.commit()
+            await self.session.refresh(user)
+
+        return user, is_new

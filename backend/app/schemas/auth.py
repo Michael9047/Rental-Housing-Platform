@@ -122,3 +122,25 @@ class ChangePhoneRequest(BaseModel):
 
 class WeChatConfigResponse(BaseModel):
     appid: str
+
+
+# ── 微信开放平台扫码登录（Web OAuth）────────────────
+
+
+class WeChatQrUrlResponse(BaseModel):
+    qr_url: str
+    state: str
+    expires_in: int = 300
+
+
+class WeChatQrLoginRequest(BaseModel):
+    code: str = Field(min_length=1)
+    state: str = Field(min_length=1)
+
+
+class WeChatQrStatusResponse(BaseModel):
+    status: str  # "pending" | "scanned" | "expired"
+    access_token: str | None = None
+    token_type: str | None = None
+    is_new_user: bool | None = None
+    user: CurrentUserResponse | None = None

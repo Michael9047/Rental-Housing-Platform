@@ -252,6 +252,24 @@ class Settings(BaseSettings):
         validation_alias="WECHAT_TOKEN_URL",
     )
 
+    # ── 微信开放平台 OAuth（Web 扫码登录）────────────────
+    wechat_open_appid: str = Field(
+        default="",
+        validation_alias="WECHAT_OPEN_APPID",
+    )
+    wechat_open_secret: str = Field(
+        default="",
+        validation_alias="WECHAT_OPEN_SECRET",
+    )
+    wechat_open_redirect_uri: str = Field(
+        default="",
+        validation_alias="WECHAT_OPEN_REDIRECT_URI",
+    )
+    wechat_open_dev_mode: bool = Field(
+        default=True,
+        validation_alias="WECHAT_OPEN_DEV_MODE",
+    )
+
     # SMS 验证码 (Alibaba Cloud 号码认证 dypnsapi)
     sms_provider: str = Field(default="aliyun", validation_alias="SMS_PROVIDER")
     sms_access_key_id: str = Field(default="", validation_alias="SMS_ACCESS_KEY_ID")

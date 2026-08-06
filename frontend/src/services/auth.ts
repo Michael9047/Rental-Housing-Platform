@@ -8,6 +8,9 @@ import type {
   PhoneRegisterRequest,
   SendSmsCodeRequest,
   VerifySmsCodeRequest,
+  WeChatQrUrlResponse,
+  WeChatQrLoginRequest,
+  WeChatQrStatusResponse,
 } from '@/types/auth'
 import type { User } from '@/types/user'
 
@@ -57,5 +60,20 @@ export const authService = {
   /** 已登录用户更换手机号（需短信验证） */
   changePhone(data: { new_phone: string; sms_code: string }): Promise<{ detail: string }> {
     return api.post('/auth/change-phone', data).then((r) => r.data)
+  },
+
+  /** 微信扫码登录 — 获取二维码 URL */
+  getWeChatQrUrl(): Promise<WeChatQrUrlResponse> {
+    return api.get('/auth/wechat/qr-url').then((r) => r.data)
+  },
+
+  /** 微信扫码登录 — 用 code+state 换取 JWT */
+  wechatQrLogin(data: WeChatQrLoginRequest): Promise<TokenResponse> {
+    return api.post('/auth/wechat/qr-login', data).then((r) => r.data)
+  },
+
+  /** 微信扫码登录 — 轮询扫码状态 */
+  getWeChatQrStatus(state: string): Promise<WeChatQrStatusResponse> {
+    return api.get(`/auth/wechat/qr-status/${state}`).then((r) => r.data)
   },
 }

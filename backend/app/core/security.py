@@ -117,3 +117,52 @@ async def consume_reset_token(token: str) -> int | None:
         return None
     finally:
         await r.close()
+
+
+# ── 微信扫码登录 state/code Redis 辅助函数 ─────────────────
+
+
+async def store_wechat_qr_state(state: str, ttl: int = 300) -> None:
+    """微信扫码登录 state token → Redis，默认 5 分钟过期"""
+    r = await _redis()
+    try:
+        await r.setex(f"wechat_qr_state:{state}", ttl, "pending")
+    finally:
+        await r.close()
+
+
+async def verify_and_consume_wechat_qr_state(state: str) -> bool:
+    """校验并消费微信扫码 state token，返回是否有效"""
+    r = await _redis()
+    try:
+        key = f"wechat_qr_state:{state}"
+        exists = await r.exists(key)
+        if exists:
+            await r.delete(key)
+            return True
+        return False
+    finally:
+        await r.close()
+
+
+async def store_wechat_qr_code(state: str, code: str, ttl: int = 120) -> None:
+    """暂存微信回调的 authorization_code，供前端轮询消费"""
+    r = await _redis()
+    try:
+        await r.setex(f"wechat_qr_code:{state}", ttl, code)
+    finally:
+        await r.close()
+
+
+async def consume_wechat_qr_code(state: str) -> str | None:
+    """消费暂存的 authorization_code，返回 code 或 None"""
+    r = await _redis()
+    try:
+        key = f"wechat_qr_code:{state}"
+        raw = await r.get(key)
+        if raw:
+            await r.delete(key)
+            return raw.decode()
+        return None
+    finally:
+        await r.close()
