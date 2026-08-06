@@ -309,6 +309,13 @@ const routes: RouteRecordRaw[] = [
         component: () => import('@/views/TenantManagement.vue'),
         meta: { requiresAuth: true, requiresLandlord: true },
       },
+      // ---- BM 个人中心 ----
+      {
+        path: 'landlord/profile',
+        name: 'landlord-profile',
+        component: () => import('@/views/LandlordProfile.vue'),
+        meta: { requiresAuth: true, requiresLandlord: true },
+      },
       // ---- 维修师傅 ----
       {
         path: 'worker/dashboard',

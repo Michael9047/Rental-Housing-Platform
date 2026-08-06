@@ -50,6 +50,10 @@
           <el-icon><User /></el-icon>
           <span>租客管理</span>
         </el-menu-item>
+        <el-menu-item index="/landlord/profile">
+          <el-icon><Setting /></el-icon>
+          <span>个人中心</span>
+        </el-menu-item>
       </template>
 
       <!-- 管理员：系统管理（不含仪表盘，仪表盘归房东） -->
@@ -72,7 +76,7 @@ import { ref, computed, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import {
   HomeFilled, Bell, DataAnalysis, User, Document,
-  Tickets, Fold, Expand, Grid, Clock,
+  Tickets, Fold, Expand, Grid, Clock, Setting,
 } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 
