@@ -284,6 +284,7 @@ const SearchAgentPanel = defineAsyncComponent(() => import("@/components/search/
 const authStore = useAuthStore()
 const agentChatStore = useAgentChatStore()
 const lastAgentSearchKey = ref('')
+let restoringFromNavigation = false
 
 // ── 模式 ──
 const searchMode = ref<'city' | 'school' | 'uni' | 'agent'>('city')
@@ -1044,6 +1045,9 @@ async function doSearch() {
     p.sort_by = sortAsc.value ? 'price_asc' : 'price_desc'
   }
 
+  // 从详情页返回时不触发新会话（保留对话历史）
+  if (restoringFromNavigation) return
+
   // 切换城市/学校/国家 → 自动新 Agent 会话，避免跨市场对话串扰
   if (agentChatStore.sessionId !== null) {
     const currentKey = JSON.stringify({
@@ -1062,6 +1066,7 @@ async function doSearch() {
   }
 
   propertyStore.fetchSearch(p)
+  restoringFromNavigation = false
 }
 
 /** 半径变更 → 重新搜索 */
@@ -1101,6 +1106,7 @@ function resetFilters() {
 
 // ── 路由初始化 ──
 async function initFromRoute() {
+  restoringFromNavigation = true
   const q = route.query
 
   // 优先检查是否来自 Agent 推荐（sessionStorage 中预存了结果）
