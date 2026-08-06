@@ -614,6 +614,11 @@ class SearchAgent(BaseAgent):
             item for item in strict_recall
             if candidate_matches_filters(item, active_filters)
         ]
+        logger.info(
+            "管线调试: recall=%d strict=%d filters=%s",
+            len(strict_recall), len(strict_matches),
+            {k: v for k, v in active_filters.items() if v and k != "near_lat" and k != "near_lng"},
+        )
 
         # 严格结果不足时只多查一次宽召回池；各约束消融都在内存中复用该池。
         recall_pool = list(strict_recall)
