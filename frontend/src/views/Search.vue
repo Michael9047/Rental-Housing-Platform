@@ -1060,7 +1060,9 @@ async function doSearch() {
       })
       if (currentKey && currentKey !== lastAgentSearchKey.value) {
         lastAgentSearchKey.value = currentKey
-        agentChatStore.newSession().catch(() => {})
+        // 已有实质对话时才创新会话（空对话没必要重建）
+        const hasRealMessages = agentChatStore.messages.some(m => m.role === 'user')
+        if (hasRealMessages) agentChatStore.newSession().catch(() => {})
       }
     }
   }
@@ -1216,6 +1218,12 @@ function restoreSearchState() {
     if (s.sortAsc != null) sortAsc.value = s.sortAsc
     // 恢复 Agent 面板
     if (s.agentOpen) agentOpen.value = true
+    // 同步追踪 key，避免恢复后首次搜索误创对话
+    lastAgentSearchKey.value = JSON.stringify({
+      country: filters.country, city: filters.city, district: filters.district,
+      institute_id: filters.institute_id, uniId: uniId.value,
+      uniName: uniName.value, searchMode: searchMode.value,
+    })
     return true
   } catch { return false }
 }
