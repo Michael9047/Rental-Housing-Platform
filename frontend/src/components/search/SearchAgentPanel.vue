@@ -10,6 +10,11 @@
         </div>
       </div>
       <div class="agent-header-actions">
+        <el-tooltip content="去AI智能找房详细分析" placement="bottom">
+          <el-button class="deep-chat-btn" size="small" type="primary" plain :disabled="sending || starting" @click="goDeepChat">
+            具体聊 →
+          </el-button>
+        </el-tooltip>
         <el-tooltip content="新建对话" placement="bottom">
           <el-button class="new-session-btn" text circle aria-label="新建 AI 对话" :disabled="sending || starting" @click="startNewChat">
             <el-icon :size="18"><Plus /></el-icon>
@@ -24,7 +29,6 @@
     </header>
 
     <div v-if="currentFilterChips.length" class="context-bar">
-      <span class="context-label">当前筛选</span>
       <div class="context-chips">
         <span v-for="chip in currentFilterChips" :key="chip">{{ chip }}</span>
       </div>
@@ -315,18 +319,17 @@ const currentFilterChips = computed(() => {
     chips.push('长租 12 月起')
   }
   if (filters.amenities?.length) chips.push(...filters.amenities.slice(0, 2))
-  if (props.resultCount > 0) chips.push(`${props.resultCount} 套结果`)
   return chips.slice(0, 7)
 })
 
 onMounted(async () => {
+  // FAQ 后台加载，不阻塞启动
+  agentService.getFaqs().then((chips) => {
+    if (chips.length) faqChips.value = mergeFaqChips(chips)
+  }).catch(() => undefined)
+
   try {
-    await Promise.all([
-      agentChatStore.ensureSession(),
-      agentService.getFaqs().then((chips) => {
-        if (chips.length) faqChips.value = mergeFaqChips(chips)
-      }).catch(() => undefined),
-    ])
+    await agentChatStore.ensureSession()
     await scrollToBottom()
   } catch {
     startupFailed.value = true
@@ -603,6 +606,10 @@ async function startNewChat() {
   }
 }
 
+function goDeepChat() {
+  router.push({ path: '/agent', query: { prompt: '要不要选择几套具体分析，或者帮你分析前三套？' } })
+}
+
 function openDeepAnalysis() {
   emit('goto-ai-search')
 }
@@ -674,13 +681,6 @@ function openDeepAnalysis() {
 
 .left-selection-bar strong { color: #205f96; }
 
-.context-label {
-  display: block;
-  margin-bottom: 6px;
-  color: #6c7785;
-  font-size: 12px;
-  font-weight: 600;
-}
 
 .context-chips,
 .memory-row,
