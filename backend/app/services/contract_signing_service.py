@@ -2,7 +2,7 @@
 import hashlib
 import json
 import uuid
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.contract import Contract, ContractSignature
 from app.models.user import User
 from app.schemas.contract import ContractSignCreate, ContractSignatureResponse
+from app.services.lease_pricing_service import LeasePricingService
 from app.services.private_object_storage import PrivateObjectStorage
 
 
@@ -102,6 +103,26 @@ class ContractSigningService:
         booking = await self.session.get(Booking, contract.booking_id)
         if booking and booking.status == BookingStatus.contract_ready:
             booking.status = BookingStatus.contract_signed
+            # 复用预订阶段已建立的租客档案，不创建重复租客账号或档案。
+            from app.models.tenant import Tenant
+            tenant_profile = await self.session.get(Tenant, booking.tenant_id) if booking.tenant_id else None
+            if tenant_profile:
+                contract_start = booking.contract_start or (
+                    date.fromisoformat(booking.scheduled_date) if booking.scheduled_date else None
+                )
+                contract_end = booking.contract_end or (
+                    LeasePricingService.add_calendar_months(contract_start, booking.lease_months)
+                    if contract_start and booking.lease_months else None
+                )
+                if contract_start and not booking.contract_start:
+                    booking.contract_start = contract_start
+                if contract_end and not booking.contract_end:
+                    booking.contract_end = contract_end
+                tenant_profile.current_unit_type_id = booking.unit_type_id
+                tenant_profile.room_number = booking.room_number
+                tenant_profile.move_in_date = contract_start
+                tenant_profile.move_out_date = contract_end
+                tenant_profile.housing_status = "active"
 
         await self.session.commit()
         await self.session.refresh(signature)

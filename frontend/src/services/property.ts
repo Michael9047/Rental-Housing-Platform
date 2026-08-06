@@ -153,8 +153,8 @@ export const propertyService = {
     return api.get('/buildings/public/search', { params: { ...sp, _t: Date.now() } }).then((r) => r.data)
   },
 
-  getById(id: number | string): Promise<Property> {
-    return api.get(`/unit-types/${id}`).then((r) => r.data)
+  getById(id: number | string, silent = false): Promise<Property> {
+    return api.get(`/unit-types/${id}`, { suppressGlobalError: silent } as any).then((r) => r.data)
   },
 
   create(data: PropertyCreate): Promise<Property> {
@@ -234,19 +234,16 @@ export const propertyService = {
 
   // ── 预订管线：日历可用性 + 日期校验 + 租期价格 ──
 
-  getBookingDateAvailability(unitTypeId: number, year: number, month: number): Promise<{
-    property_id: number; timezone: string; local_today: string;
-    available_from: string | null; blocked_dates: string[];
-  }> {
+  getBookingDateAvailability(unitTypeId: number, year: number, month: number): Promise<BookingDateAvailability> {
     return api.get(`/unit-types/${unitTypeId}/booking-availability`, { params: { year, month } }).then((r) => r.data)
   },
 
-  validateBookingDate(unitTypeId: number, moveInDate: string): Promise<{ available: boolean; reason?: string | null }> {
+  validateBookingDate(unitTypeId: number, moveInDate: string): Promise<BookingDateValidation> {
     return api.post(`/unit-types/${unitTypeId}/validate-booking-date`, { move_in_date: moveInDate }).then((r) => r.data)
   },
 
-  getLeasePricing(unitTypeId: number, moveInDate: string): Promise<any> {
-    return api.get(`/unit-types/${unitTypeId}/lease-pricing`, { params: { move_in_date: moveInDate } }).then((r) => r.data)
+  getLeasePricing(unitTypeId: number, moveInDate: string, silent = false): Promise<LeasePricing> {
+    return api.get(`/unit-types/${unitTypeId}/lease-pricing`, { params: { move_in_date: moveInDate }, suppressGlobalError: silent } as any).then((r) => r.data)
   },
 
   // ---- 修改历史 ----
@@ -280,22 +277,6 @@ export const propertyService = {
     return api.post('/unit-types/audit/clear').then((r) => r.data)
   },
 
-  // ── 预订流程相关 ──
-
-  /** 获取房源的可预订日期（日历视图）。 */
-  getBookingDateAvailability(propertyId: number, year: number, month: number): Promise<BookingDateAvailability> {
-    return api.get(`/properties/${propertyId}/booking-availability`, { params: { year, month } }).then((r) => r.data)
-  },
-
-  /** 校验单个日期是否可入住。 */
-  validateBookingDate(propertyId: number, date: string): Promise<BookingDateValidation> {
-    return api.get(`/properties/${propertyId}/validate-booking-date`, { params: { date } }).then((r) => r.data)
-  },
-
-  /** 获取房源指定入住日期的租期价格选项。 */
-  getLeasePricing(propertyId: number, moveInDate: string): Promise<LeasePricing> {
-    return api.get(`/properties/${propertyId}/lease-pricing`, { params: { move_in_date: moveInDate } }).then((r) => r.data)
-  },
 }
 
 export interface PropertyHistoryItem {

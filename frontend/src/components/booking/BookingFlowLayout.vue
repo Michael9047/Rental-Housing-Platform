@@ -22,9 +22,13 @@
 
       <div class="flow-actions">
         <el-button size="large" @click="goPrevious">{{ previousLabel }}</el-button>
-        <el-button v-if="nextRoute" type="primary" size="large" :disabled="nextDisabled" @click="goNext">
-          {{ nextLabel }}
-        </el-button>
+        <el-tooltip v-if="nextRoute || manualNext" :disabled="!nextDisabled || !nextDisabledReason" :content="nextDisabledReason" placement="top">
+          <span class="next-action-wrap">
+            <el-button type="primary" size="large" :loading="nextLoading" :disabled="nextDisabled" @click="goNext">
+              {{ nextLabel }}
+            </el-button>
+          </span>
+        </el-tooltip>
       </div>
     </el-card>
   </div>
@@ -39,6 +43,8 @@ const props = withDefaults(defineProps<{
   previousRoute?: string
   nextRoute?: string
   nextDisabled?: boolean
+  nextDisabledReason?: string
+  nextLoading?: boolean
   manualNext?: boolean
   previousLabel?: string
   nextLabel?: string
@@ -53,7 +59,7 @@ const emit = defineEmits<{
 
 const route = useRoute()
 const router = useRouter()
-const steps = ['入住日期', '租期选择', '个人信息', '紧急联系人', '信息确认与授权', '合同']
+const steps = ['入住日期', '租期选择', '个人信息', '紧急联系人', '信息确认与授权', '支付', '签署合同']
 
 function routeParams() {
   return { propertyId: String(route.params.propertyId) }
@@ -68,11 +74,11 @@ function goPrevious() {
 }
 
 function goNext() {
-  if (!props.nextRoute) return
   if (props.manualNext) {
     emit('next')
     return
   }
+  if (!props.nextRoute) return
   router.push({ name: props.nextRoute, params: routeParams() })
 }
 
@@ -122,7 +128,7 @@ function goBack() {
 }
 
 .flow-steps :deep(.el-step) {
-  flex: 1 0 calc(100% / 6);
+  flex: 1 0 calc(100% / 7);
   min-width: 0;
 }
 
@@ -144,6 +150,8 @@ function goBack() {
   margin-top: 24px;
 }
 
+.next-action-wrap { display: inline-flex; }
+
 @media (max-width: 768px) {
   .booking-flow-shell {
     width: min(calc(100% - 24px), 1160px);
@@ -155,7 +163,7 @@ function goBack() {
   }
 
   .flow-steps {
-    min-width: 760px;
+    min-width: 880px;
   }
 
   .flow-steps :deep(.el-step) {

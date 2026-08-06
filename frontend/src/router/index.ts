@@ -182,7 +182,7 @@ const routes: RouteRecordRaw[] = [
         meta: { requiresAuth: true },
       },
       {
-        path: 'booking/:propertyId/contract',
+        path: 'booking/:bookingId/contract',
         name: 'booking-contract-placeholder',
         component: () => import('@/views/booking/ContractPlaceholder.vue'),
         meta: { requiresAuth: true },
@@ -246,6 +246,12 @@ const routes: RouteRecordRaw[] = [
         path: 'contracts/templates',
         name: 'contract-templates',
         component: () => import('@/views/ContractTemplateManager.vue'),
+        meta: { requiresAuth: true, requiresLandlord: true },
+      },
+      {
+        path: 'contracts/dropbox-sign',
+        name: 'dropbox-template-bindings',
+        component: () => import('@/views/DropboxTemplateBindings.vue'),
         meta: { requiresAuth: true, requiresLandlord: true },
       },
       // 租客管理
@@ -386,7 +392,7 @@ const router = createRouter({
   routes,
 })
 
-router.beforeEach((to, _from, next) => {
+router.beforeEach((to, from, next) => {
   // 清理损坏的 localStorage（user 为 {} 或缺少 role 字段）
   const userStr = localStorage.getItem('user')
   if (userStr) {

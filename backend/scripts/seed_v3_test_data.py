@@ -1053,6 +1053,26 @@ async def _get_or_create_admin(session) -> int:
     return admin.id
 
 
+# 与 INSTITUTE_CONFIGS 中的 uni_id 保持一致，先写入被 commute 外键引用的大学。
+UNIVERSITY_SEEDS = [
+    {"id": 1, "name": "National University of Singapore", "name_cn": "新加坡国立大学", "abbreviation": "NUS", "city": "Singapore", "country": "SG", "latitude": 1.2966, "longitude": 103.7764, "is_hot": True},
+    {"id": 2, "name": "Nanyang Technological University", "name_cn": "南洋理工大学", "abbreviation": "NTU", "city": "Singapore", "country": "SG", "latitude": 1.3483, "longitude": 103.6831, "is_hot": True},
+    {"id": 3, "name": "Singapore Management University", "name_cn": "新加坡管理大学", "abbreviation": "SMU", "city": "Singapore", "country": "SG", "latitude": 1.2966, "longitude": 103.8500, "is_hot": True},
+    {"id": 22, "name": "University College London", "name_cn": "伦敦大学学院", "abbreviation": "UCL", "city": "London", "country": "GB", "latitude": 51.5246, "longitude": -0.1340, "is_hot": True},
+    {"id": 23, "name": "Imperial College London", "name_cn": "帝国理工学院", "abbreviation": "Imperial", "city": "London", "country": "GB", "latitude": 51.4988, "longitude": -0.1749, "is_hot": True},
+    {"id": 24, "name": "London School of Economics", "name_cn": "伦敦政治经济学院", "abbreviation": "LSE", "city": "London", "country": "GB", "latitude": 51.5145, "longitude": -0.1166, "is_hot": True},
+    {"id": 25, "name": "King's College London", "name_cn": "伦敦国王学院", "abbreviation": "KCL", "city": "London", "country": "GB", "latitude": 51.5115, "longitude": -0.1160, "is_hot": True},
+    {"id": 29, "name": "University of the Arts London", "name_cn": "伦敦艺术大学", "abbreviation": "UAL", "city": "London", "country": "GB", "latitude": 51.5210, "longitude": -0.1300, "is_hot": True},
+]
+
+
+async def _seed_universities(session) -> None:
+    for data in UNIVERSITY_SEEDS:
+        if await session.get(University, data["id"]) is None:
+            session.add(University(**data, is_active=True))
+    await session.flush()
+
+
 def _make_unit_type_name(cfg: dict) -> str:
     if "label_override" in cfg:
         return cfg["label_override"]
@@ -1080,6 +1100,7 @@ async def seed(clear_existing: bool = False) -> None:
             print("已清除新加坡数据")
 
         admin_id = await _get_or_create_admin(session)
+        await _seed_universities(session)
         total_ut = 0
         summary_rows: list[dict] = []
 

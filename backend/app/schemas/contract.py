@@ -14,7 +14,7 @@ class ContractResponse(BaseModel):
     id: str
     booking_id: int
     tenant_id: int
-    property_id: int
+    property_id: int = Field(validation_alias="unit_type_id")
     template_name: str
     agreement_number: str | None = None
     version: int = 1

@@ -4,6 +4,8 @@ from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from pydantic import BaseModel
 
+from app.services.exchange_rate_service import ExchangeRateService
+
 
 class Money(BaseModel):
     currency: str = "CNY"
@@ -55,7 +57,7 @@ class LeasePricingService:
         return date(year, month, day)
 
     @staticmethod
-    def calculate(unit_type, move_in_date_str: str) -> LeasePricing:
+    async def calculate(unit_type, move_in_date_str: str) -> LeasePricing:
         """为指定 UnitType 和入住日期生成价格选项。"""
         move_in = date.fromisoformat(move_in_date_str) if isinstance(move_in_date_str, str) else move_in_date_str
 
@@ -63,6 +65,7 @@ class LeasePricingService:
         monthly = int(getattr(unit_type, "base_rent", 0) or 0) if unit_type else 0
         deposit_raw = int(getattr(unit_type, "deposit_amount", 0) or 0) if unit_type else 0
         currency = str(getattr(unit_type, "currency", None) or "CNY") if unit_type else "CNY"
+        quote = await ExchangeRateService.quote_to_cny(currency)
         min_stay = int(getattr(unit_type, "min_stay_months", 3) or 3) if unit_type else 3
         # 默认服务费 0（UnitType 无 service_fee_rate 字段）
         service_rate = 0.0
@@ -82,23 +85,32 @@ class LeasePricingService:
             amount_due_now = deposit + service_fee
             rent_total = monthly * months
 
-            def _mk(amount: int) -> Money:
+            def _mk(amount: int, target_currency: str = currency) -> Money:
                 return Money(
-                    currency=currency,
+                    currency=target_currency,
                     minor_units=amount * 100,
                     minor_unit_exponent=2,
                     decimal=f"{amount}.00",
+                )
+
+            def _cny(amount: int) -> Money:
+                converted = (Decimal(amount) * quote.rate_to_cny).quantize(Decimal("0.01"))
+                return Money(
+                    currency="CNY",
+                    minor_units=int(converted * 100),
+                    minor_unit_exponent=2,
+                    decimal=f"{converted:.2f}",
                 )
 
             options.append(PricingOption(
                 months=months,
                 end_date=end.isoformat(),
                 prices=PriceSet(
-                    deposit=FeeBucket(local=_mk(deposit), cny=_mk(deposit)),
-                    service_fee=FeeBucket(local=_mk(service_fee), cny=_mk(service_fee)),
-                    monthly_rent=FeeBucket(local=_mk(monthly), cny=_mk(monthly)),
-                    amount_due_now=FeeBucket(local=_mk(amount_due_now), cny=_mk(amount_due_now)),
-                    rent_total=FeeBucket(local=_mk(rent_total), cny=_mk(rent_total)),
+                    deposit=FeeBucket(local=_mk(deposit), cny=_cny(deposit)),
+                    service_fee=FeeBucket(local=_mk(service_fee), cny=_cny(service_fee)),
+                    monthly_rent=FeeBucket(local=_mk(monthly), cny=_cny(monthly)),
+                    amount_due_now=FeeBucket(local=_mk(amount_due_now), cny=_cny(amount_due_now)),
+                    rent_total=FeeBucket(local=_mk(rent_total), cny=_cny(rent_total)),
                 ),
             ))
 
@@ -107,8 +119,8 @@ class LeasePricingService:
             calculation_date=datetime.now(timezone.utc).date().isoformat(),
             move_in_date=move_in.isoformat(),
             local_currency=currency,
-            exchange_rate_to_cny="1.0",
-            exchange_rate_at=datetime.now(timezone.utc).isoformat(),
-            exchange_rate_source="platform snapshot",
+            exchange_rate_to_cny=str(quote.rate_to_cny),
+            exchange_rate_at=quote.quoted_at.isoformat(),
+            exchange_rate_source=quote.source,
             options=options,
         )

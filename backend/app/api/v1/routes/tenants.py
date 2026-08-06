@@ -1,15 +1,18 @@
 """房客管理路由 — 含户型库存联动"""
-from datetime import datetime
+from datetime import date, datetime
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.api.deps import get_db_session, require_landlord
-from app.models.user import User
+from app.models.user import User, UserRole
 from app.models.tenant import Tenant
 from app.models.unit_type import UnitType
+from app.models.booking import Booking, BookingStatus
+from app.models.institute import Institute
 from app.schemas.tenant_order import TenantCreate, TenantUpdate, TenantRead, TenantListResponse
+from app.services.lease_pricing_service import LeasePricingService
 
 router = APIRouter(prefix="/tenants", tags=["tenants"])
 
@@ -55,6 +58,7 @@ async def list_tenants(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=200),
     keyword: str | None = Query(default=None),
+    current_user: User = Depends(require_landlord),
 ):
     filters = []
     if keyword:
@@ -66,21 +70,36 @@ async def list_tenants(
             Tenant.school_name.ilike(kw)
         )
 
-    base = select(func.count(Tenant.id))
+    base = select(func.count(func.distinct(Tenant.id))).join(Booking, Booking.tenant_id == Tenant.id).join(
+        Institute, Institute.id == Booking.institute_id
+    ).where(Booking.status == BookingStatus.contract_signed)
+    if current_user.role != UserRole.admin:
+        base = base.where(Institute.bm_id == current_user.id)
     for f in filters:
         base = base.where(f)
     total = (await session.scalar(base)) or 0
 
     skip = (page - 1) * page_size
     stmt = (
-        select(Tenant)
+        select(Tenant, Booking).join(Booking, Booking.tenant_id == Tenant.id).join(
+            Institute, Institute.id == Booking.institute_id
+        ).where(Booking.status == BookingStatus.contract_signed)
         .options(selectinload(Tenant.unit_type).selectinload(UnitType.institute))
         .order_by(Tenant.created_at.desc())
         .offset(skip).limit(page_size)
     )
+    if current_user.role != UserRole.admin:
+        stmt = stmt.where(Institute.bm_id == current_user.id)
     for f in filters:
         stmt = stmt.where(f)
-    items = list((await session.scalars(stmt)).unique())
+    rows = list((await session.execute(stmt)).unique().all())
+    items = []
+    seen_tenant_ids: set[int] = set()
+    for tenant, booking in rows:
+        if tenant.id in seen_tenant_ids:
+            continue
+        seen_tenant_ids.add(tenant.id)
+        items.append(_to_read(tenant, booking))
 
     return TenantListResponse(
         items=[_to_read(t) for t in items],
@@ -156,7 +175,7 @@ async def delete_tenant(
     return {"ok": True, "detail": "房客已删除"}
 
 
-def _to_read(t: Tenant) -> TenantRead:
+def _to_read(t: Tenant, booking: Booking | None = None) -> TenantRead:
     """转换为响应模型，附加 unit_type_name + institute_name"""
     ut = t.unit_type
     ut_name = ut.name if ut else None
@@ -167,13 +186,26 @@ def _to_read(t: Tenant) -> TenantRead:
         except Exception:
             pass
     hs = getattr(t.housing_status, 'value', t.housing_status) if t.housing_status else None
+    move_in_date = t.move_in_date
+    move_out_date = t.move_out_date
+    # 历史签约记录可能早于 contract_end 的写入逻辑。列表只读回填展示值，
+    # 不修改任何既有租客或订单数据。
+    if booking:
+        move_in_date = move_in_date or booking.contract_start
+        if move_in_date is None and booking.scheduled_date:
+            move_in_date = date.fromisoformat(booking.scheduled_date)
+        if move_out_date is None:
+            move_out_date = booking.contract_end
+        if move_out_date is None and move_in_date and booking.lease_months:
+            move_out_date = LeasePricingService.add_calendar_months(move_in_date, booking.lease_months)
+
     return TenantRead(
         id=t.id, surname_pinyin=t.surname_pinyin, given_name_pinyin=t.given_name_pinyin,
         chinese_name=t.chinese_name, phone=t.phone, email=t.email,
         school_name=t.school_name, current_unit_type_id=t.current_unit_type_id,
         unit_type_name=ut_name, institute_name=inst_name, room_number=t.room_number,
         housing_status=hs,
-        move_in_date=t.move_in_date, move_out_date=t.move_out_date,
+        move_in_date=move_in_date, move_out_date=move_out_date,
         label=t.label,
         created_at=t.created_at or datetime.utcnow(),
         updated_at=t.updated_at or datetime.utcnow(),

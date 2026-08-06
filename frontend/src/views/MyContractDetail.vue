@@ -6,6 +6,7 @@
     <template v-else-if="contract">
       <div class="page-actions">
         <el-button @click="router.push('/profile?tab=contracts')">返回我的合同</el-button>
+        <el-button v-if="contract.agreement_status !== 'signed'" type="primary" @click="openSigning">阅读并签署合同</el-button>
         <el-button :disabled="!contract.signed_pdf_available" @click="downloadPdf">下载已签署 PDF</el-button>
       </div>
       <el-card shadow="never" class="summary-card">
@@ -93,6 +94,11 @@ async function downloadPdf() {
   } catch {
     ElMessage.error('合同下载失败，请稍后重试')
   }
+}
+
+function openSigning() {
+  if (!contract.value) return
+  router.push(`/booking/${contract.value.booking_id}/contract`)
 }
 
 onMounted(loadContract)

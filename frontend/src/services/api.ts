@@ -37,6 +37,9 @@ export function extractErrorMessage(error: any): string | null {
   const msg = data?.error?.message
   if (msg && typeof msg === 'string') return msg
 
+  // 业务接口主动返回的 { code, message }
+  if (typeof data?.message === 'string' && data.message) return data.message
+
   // Standard FastAPI format: { detail: "..." }
   const detail = data?.detail
   if (detail && typeof detail === 'string') return detail
@@ -69,6 +72,7 @@ export function extractErrorMessage(error: any): string | null {
 api.interceptors.response.use(
   (response) => response,
   (error) => {
+    if (error.config?.suppressGlobalError) return Promise.reject(error)
     const isLoginPage = window.location.pathname === '/login'
     const hadToken = !!localStorage.getItem('access_token')
 

@@ -20,7 +20,8 @@ def create_app() -> FastAPI:
 
     app = FastAPI(
         title=settings.app_name,
-        debug=settings.debug,
+        # 开发环境同样不能将本机路径和完整 traceback 返回给浏览器。
+        debug=False,
         version="0.1.0",
     )
 

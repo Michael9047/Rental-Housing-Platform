@@ -3,6 +3,8 @@ from app.models.audit_log import AuditLog
 from app.models.booking import Booking
 from app.models.chat import ChatMessage, ChatSession
 from app.models.contract import Contract
+from app.models.external_signature import ExternalSignatureEvent, ExternalSignatureRequest, ExternalSignatureTemplateBinding
+from app.models.room_inventory import BookingRoomAssignment, RoomInventory
 from app.models.data_import import DataImport
 from app.models.embedding_job import EmbeddingJob
 from app.models.institute import Institute
@@ -19,6 +21,8 @@ from app.models.user_favorite import UserFavorite
 __all__ = [
     "AuditLog", "Base", "Booking",
     "ChatMessage", "ChatSession", "Contract", "DataImport", "EmbeddingJob",
+    "ExternalSignatureEvent", "ExternalSignatureRequest", "ExternalSignatureTemplateBinding",
+    "BookingRoomAssignment", "RoomInventory",
     "Institute", "InstitutePOI", "Notification", "Payment", "Review", "SavedSearch",
     "Tenant", "UnitType", "User", "UserFavorite",
 ]

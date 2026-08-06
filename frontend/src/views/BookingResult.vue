@@ -1,6 +1,6 @@
 <template>
   <main class="result-page" v-loading="loading">
-    <el-result v-if="error" icon="error" title="无法查看订单" :sub-title="error" />
+    <el-result v-if="error" icon="error" title="无法查看订单" :sub-title="error"><template #extra><el-button @click="load">重新加载</el-button><el-button @click="$router.push('/profile?tab=bills')">返回我的订单</el-button></template></el-result>
     <template v-else-if="order">
       <section class="status-card" :class="kind">
         <div class="status-icon" aria-hidden="true">{{ icon }}</div>
@@ -19,12 +19,12 @@
           <dt>人民币金额{{ order.settlement_currency==='CNY'?'':'（参考）' }}</dt><dd>{{ money(order.cny_reference_amount_minor, 'CNY') }}</dd>
           <dt>房源所在地货币金额</dt><dd>{{ money(order.settlement_amount_minor, order.property_currency) }}</dd>
         </dl>
-        <div v-if="kind==='success'" class="detail-note"><b>支付成功时间：</b>{{ order.paid_at ? time(order.paid_at) : '已确认' }}<br><b>支付流水号：</b>{{ maskedTransaction }}<br><b>已支付金额：</b>{{ money(order.settlement_amount_minor, order.settlement_currency) }}<p>下一步：请留意账户通知，并提前准备合同中列明的身份证明及入住材料。</p></div>
+        <div v-if="kind==='success'" class="detail-note"><b>支付成功时间：</b>{{ order.paid_at ? time(order.paid_at) : '已确认' }}<br><b>支付流水号：</b>{{ maskedTransaction }}<br><b>已支付金额：</b>{{ money(order.settlement_amount_minor, order.settlement_currency) }}<p v-if="isBookingSuccess"><b>预订成功。</b>房号已确认、合同已签署；您可在“我的订单”中查看合同。</p><p v-else><b>当前状态：等待合同确定。</b>BM 管理员确认真实房号并发送合同后，您可在“我的订单”中查看及签署合同。</p></div>
         <div v-else-if="kind==='pending'" class="detail-note"><b>剩余有效时间：</b>{{ remaining }}<br><b v-if="order.failure_reason">说明：</b>{{ order.failure_reason }}</div>
         <div v-else class="detail-note"><b>取消原因：</b>超过24小时未完成支付<br><b>原支付截止时间：</b>{{ time(order.expires_at) }}<br><b>库存状态：</b>房源预留已释放</div>
       </section>
       <section class="actions">
-        <template v-if="kind==='success'"><el-button type="primary" @click="$router.push('/bookings/tenant')">查看我的预订</el-button><el-button @click="property">返回房源详情</el-button></template>
+        <template v-if="kind==='success'"><el-button type="primary" @click="$router.push(`/booking/${order.booking_id}/contract`)">进入合同流程</el-button><el-button @click="$router.push('/bookings/tenant')">查看我的预订</el-button><el-button @click="property">返回房源详情</el-button></template>
         <template v-else-if="kind==='pending'"><el-button v-if="canRetry" type="primary" @click="retry">重新支付</el-button><el-button :loading="refreshing" @click="load">刷新支付状态</el-button></template>
         <template v-else><el-button @click="property">重新查看该房源</el-button><el-button type="primary" @click="rebook">重新发起预订</el-button></template>
       </section>
@@ -41,15 +41,16 @@ import { contractService } from '@/services/contract'
 import { canRetryPayment, paymentResultKind } from '@/utils/paymentResult'
 const route=useRoute(), router=useRouter(); const order=ref<PaymentResult>(); const loading=ref(true), refreshing=ref(false), error=ref(''), now=ref(Date.now()); let timer=0
 const status=computed(()=>order.value?.order_status || 'payment_pending'); const isReview=computed(()=>['payment_review','refund_pending'].includes(status.value))
+const isBookingSuccess=computed(()=>status.value==='contract_signed')
 const kind=computed(()=>paymentResultKind(status.value))
-const title=computed(()=>isReview.value?'付款正在核对/退款':kind.value==='success'?'预订成功 / Booking Confirmed':kind.value==='cancelled'?'订单已自动取消':status.value==='payment_processing'?'支付结果确认中':status.value==='payment_failed'?'支付未成功':'等待支付')
-const subtitle=computed(()=>isReview.value?'付款信息正在核对，必要时将安排退款。':kind.value==='success'?'付款已确认，房源预订成功。':kind.value==='cancelled'?'超过24小时未完成支付。':status.value==='payment_processing'?'请勿重复支付。':status.value==='payment_failed'?'可在有效期内重试。':'请在有效期内完成支付。')
+const title=computed(()=>isReview.value?'付款正在核对/退款':isBookingSuccess.value?'预订成功':kind.value==='success'?'等待合同确定':kind.value==='cancelled'?'订单已自动取消':status.value==='payment_processing'?'支付结果确认中':status.value==='payment_failed'?'支付未成功':'等待支付')
+const subtitle=computed(()=>isReview.value?'付款信息正在核对，必要时将安排退款。':isBookingSuccess.value?'支付已完成，合同已签署，预订流程完成。':kind.value==='success'?'支付成功，正在等待 BM 管理员确认房号并发送合同。':kind.value==='cancelled'?'超过24小时未完成支付。':status.value==='payment_processing'?'请勿重复支付。':status.value==='payment_failed'?'可在有效期内重试。':'请在有效期内完成支付。')
 const icon=computed(()=>kind.value==='success'?'✓':kind.value==='cancelled'?'×':isReview.value?'!':'…'); const canRetry=computed(()=>canRetryPayment(status.value,order.value?.expires_at||'',Date.now()))
 const remaining=computed(()=>{const s=Math.max(0,Math.floor((Date.parse(order.value?.expires_at||'')-now.value)/1000));return `${Math.floor(s/3600)}小时 ${Math.floor(s%3600/60)}分 ${s%60}秒`})
 const maskedTransaction=computed(()=>{const v=order.value?.transaction_id||'';return v.length>8?`${v.slice(0,4)}****${v.slice(-4)}`:'****'})
 const money=(minor:number,currency:string)=>new Intl.NumberFormat('zh-CN',{style:'currency',currency}).format(minor/100); const time=(v:string)=>new Intl.DateTimeFormat('zh-CN',{dateStyle:'medium',timeStyle:'medium'}).format(new Date(v))
-async function load(){refreshing.value=true;try{order.value=await paymentService.getResult(Number(route.params.id));const suffix=kind.value==='success'?'success':kind.value==='cancelled'?'cancelled':'payment-status';const canonical=`/booking/order/${route.params.id}/${suffix}`;if(route.path!==canonical)await router.replace(canonical)}catch(e:any){error.value=e?.response?.status===403?'你无权查看该订单':e?.response?.data?.detail||'服务器暂时不可用'}finally{loading.value=false;refreshing.value=false}}
-function property(){router.push(`/property/${order.value?.snapshot.property_id}`)} function rebook(){router.push(`/booking/${order.value?.snapshot.property_id}/move-in-date`)} function retry(){router.push(`/booking/payment/${route.params.id}/deposit`)}
+async function load(){const bookingId=Number(route.params.bookingId);if(!Number.isInteger(bookingId)||bookingId<=0){error.value='订单编号无效';loading.value=false;return}refreshing.value=true;try{order.value=await paymentService.getResult(bookingId);const suffix=kind.value==='success'?'success':kind.value==='cancelled'?'cancelled':'payment-status';const canonical=`/booking/order/${bookingId}/${suffix}`;if(route.path!==canonical)await router.replace(canonical)}catch(e:any){const status=e?.response?.status;error.value=status===401?'登录状态已失效，请重新登录':status===403?'您无权查看该订单':status===404?'订单不存在或跳转编号错误':status===409?'订单当前状态冲突，请刷新后重试':status>=500?'服务器处理订单时发生错误':!e?.response?'无法连接后端服务，请确认后端已启动':'订单加载失败'}finally{loading.value=false;refreshing.value=false}}
+function property(){router.push(`/property/${order.value?.snapshot.property_id}`)} function rebook(){router.push(`/booking/${order.value?.snapshot.property_id}/move-in-date`)} function retry(){router.push(`/booking/payment/${route.params.bookingId}/deposit`)}
 async function download(){if(!order.value)return;const blob=await contractService.download(order.value.snapshot.agreement_id);const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=`${order.value.snapshot.agreement_number}.pdf`;a.click();URL.revokeObjectURL(url)}
 onMounted(()=>{load();timer=window.setInterval(()=>now.value=Date.now(),1000)});onBeforeUnmount(()=>clearInterval(timer))
 </script>

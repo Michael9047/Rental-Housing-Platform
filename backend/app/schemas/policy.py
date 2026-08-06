@@ -11,7 +11,7 @@ class PolicyAcceptanceItem(BaseModel):
 
 
 class BookingConfirmationCreate(BaseModel):
-    property_id: int
+    unit_type_id: int
     move_in_date: date
     lease_months: int
     policy_acceptances: list[PolicyAcceptanceItem]
@@ -20,3 +20,4 @@ class BookingConfirmationCreate(BaseModel):
 class BookingConfirmationRead(BaseModel):
     booking_id: int
     consent_count: int
+    order_status: str

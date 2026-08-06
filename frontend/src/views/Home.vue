@@ -61,7 +61,8 @@ async function handleAiSearch() {
 
 async function loadRooms() {
   try {
-    const res = await api.get('/buildings/public/search', { params: { limit: 18 } })
+    // 本地演示环境共有超过 18 所已上架公寓；完整加载以便租客可以选择 BM 已管理的公寓。
+    const res = await api.get('/buildings/public/search', { params: { limit: 50 } })
     const data = res.data
     rooms.value = Array.isArray(data) ? data : (data?.items || [])
   } catch (e: any) {

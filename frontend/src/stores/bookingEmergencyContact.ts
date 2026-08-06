@@ -19,6 +19,15 @@ function createEmptyForm(): EmergencyContactForm {
     address_line: '',
     postal_code: '',
     consultant_id: '',
+    country_code: '',
+    country_name: '',
+    level1_code: '',
+    level1_name: '',
+    city_code: '',
+    city_name: '',
+    district_code: '',
+    district_name: '',
+    address_detail: '',
   }
 }
 
@@ -36,27 +45,26 @@ export const useBookingEmergencyContactStore = defineStore('bookingEmergencyCont
     sameAsApplicant.value = enabled
     if (enabled) {
       const applicant = useBookingPersonalInfoStore()
-      form.region = applicant.form.region
-      form.address_line = applicant.form.address_line || applicant.form.address_detail || ''
-      form.postal_code = applicant.form.postal_code
-    } else {
-      form.region = ''
-      form.address_line = ''
-      form.postal_code = ''
+      copyApplicantAddress(applicant.form)
     }
+  }
+
+  function copyApplicantAddress(applicantForm: Record<string, any>) {
+    const addressFields = [
+      'country_code', 'country_name', 'level1_code', 'level1_name',
+      'city_code', 'city_name', 'district_code', 'district_name', 'region',
+      'postal_code',
+    ] as const
+    addressFields.forEach((field) => { form[field] = applicantForm[field] || '' })
+    form.address_line = applicantForm.address_line || applicantForm.address_detail || ''
+    form.address_detail = form.address_line
   }
 
   /** 别名，兼容旧 API：从申请人数据复制地址字段。 */
   function setSameAsApplicant(enabled: boolean, applicantForm?: Record<string, any>) {
     sameAsApplicant.value = enabled
     if (enabled && applicantForm) {
-      form.region = applicantForm.region || ''
-      form.address_line = applicantForm.address_line || applicantForm.address_detail || ''
-      form.postal_code = applicantForm.postal_code || ''
-    } else if (!enabled) {
-      form.region = ''
-      form.address_line = ''
-      form.postal_code = ''
+      copyApplicantAddress(applicantForm)
     }
   }
 

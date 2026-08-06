@@ -27,4 +27,6 @@ alibabacloud_tea_util>=0.3.0
 
 # PDF generation (contract attachments)
 weasyprint>=62.0
+pypdf==5.9.0
+reportlab==4.4.3
 

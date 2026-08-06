@@ -43,6 +43,8 @@ export interface TenantContractItem {
   waiting_for_move_in:boolean; signed_pdf_available:boolean
 }
 export interface TenantContractDetail extends TenantContractItem { content:string; snapshot:ContractSnapshot; signature_url:string }
+export interface EmbeddedSigningSession { signature_request_id: string; sign_url: string; expires_at: number | null; client_id: string; test_mode: boolean }
+export interface ContractExecution { mode: 'mock_sign'|'dropbox_sign'; available:boolean; label:string; reason?:string|null; template_id?:string; signer_role?:string }
 
 export const contractService = {
   listMine(): Promise<TenantContractItem[]> { return api.get('/contracts/my').then(r=>r.data.items) },
@@ -67,6 +69,13 @@ export const contractService = {
 
   confirmSignature(contractId: string, data: { agreement_version: number; agreement_content_hash: string; tenant_name: string; consent_text_version: string; idempotency_key: string; strokes: SignaturePoint[][]; name_confirmed: boolean; electronic_signature_consent: boolean }): Promise<ContractSignatureRecord> {
     return api.post(`/contracts/${contractId}/sign`, data).then((r) => r.data)
+  },
+  getExecution(contractId: string): Promise<ContractExecution> {
+    return api.get(`/contracts/${contractId}/execution`).then((r) => r.data)
+  },
+
+  startEmbeddedSigning(contractId: string, data: { electronic_signature_consent: boolean; consent_text_version: string }): Promise<EmbeddedSigningSession> {
+    return api.post(`/contracts/dropbox-sign/${contractId}/embedded-session`, data).then((r) => r.data)
   },
 
   download(contractId: string): Promise<Blob> {

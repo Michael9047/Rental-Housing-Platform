@@ -1,264 +1,76 @@
-<!-- 预订流程第五步：核对摘要并记录四份政策同意。 -->
+<!-- 预订流程第五步：订单核对、押金支付注意事项和政策授权。 -->
 <template>
-  <BookingFlowLayout
-    title="信息确认与授权"
-    :current-step="4"
-    previous-route="booking-emergency-contact"
-    next-route="booking-contract-placeholder"
-    previous-label="上一步"
-    next-label="我已阅读并同意上述内容"
-    :next-disabled="!allAccepted || loading || submitting || !summaryReady"
-    manual-next
-    @next="confirmAndContinue"
-  >
+  <BookingFlowLayout title="信息确认与授权" :current-step="4" previous-route="booking-emergency-contact" previous-label="上一步"
+    next-label="确认协议并前往支付" :next-disabled="!canProceedToPayment" :next-disabled-reason="proceedDisabledReason"
+    :next-loading="submitting" manual-next @next="proceedToPayment">
     <div v-loading="loading" class="review-page">
-      <div class="intro">
-        <h2>请仔细阅读下方内容</h2>
-        <p>请核对订单摘要，并分别阅读和同意四份政策文件。</p>
-      </div>
-
-      <el-alert v-if="errorMessage" :title="errorMessage" type="error" :closable="false" />
-
+      <div class="intro"><h2>请仔细阅读下方内容</h2><p>填写进度已保存，请核对信息并完成授权</p></div>
+      <el-alert v-if="errorMessage" :title="errorMessage" type="error" :closable="false"><template #default><el-button v-if="initializationFailed" text @click="reloadOrderInformation">重新加载订单信息</el-button></template></el-alert>
       <template v-if="property && pricing && selectedOption">
-        <section class="summary-card property-summary">
-          <div><span>房源名称</span><strong>{{ property.title }}</strong></div>
-          <div><span>国家/地区</span><strong>{{ countryLabel }}</strong></div>
-          <div><span>城市</span><strong>{{ property.district }}</strong></div>
-          <div><span>入住日期</span><strong>{{ pricing.move_in_date }}</strong></div>
-          <div><span>租期</span><strong>{{ selectedOption.months }} 个月（至 {{ selectedOption.end_date }}）</strong></div>
-          <div><span>学校</span><strong>{{ personal.form.school_name || '未填写' }}</strong></div>
-        </section>
-
-        <section class="summary-card price-summary">
-          <h3>费用摘要</h3>
-          <div v-for="row in priceRows" :key="row.label" :class="{ due: row.due }">
-            <span>{{ row.label }}</span>
-            <strong>{{ money(row.value.cny) }}<small v-if="row.value.local.currency !== 'CNY'"> / {{ money(row.value.local) }}</small></strong>
-          </div>
-          <p>汇率仅供参考，以最终付款页面为准。</p>
-        </section>
-
-        <section class="people-grid">
-          <el-card shadow="never">
-            <template #header><strong>申请人信息（已脱敏）</strong></template>
-            <p>姓名：{{ maskName(personal.form.chinese_name) }}</p>
-            <p>手机：{{ maskPhone(personal.form.phone_country_code, personal.form.phone) }}</p>
-            <p>邮箱：{{ maskEmail(personal.form.email) }}</p>
-            <p>地址：{{ maskAddress(personal.form.region, personal.form.address_detail) }}</p>
-          </el-card>
-          <el-card shadow="never">
-            <template #header><strong>紧急联系人（已脱敏）</strong></template>
-            <p>姓名：{{ maskName(emergency.form.chinese_name) }}</p>
-            <p>关系：{{ emergency.form.relationship || '未填写' }}</p>
-            <p>手机：{{ maskPhone(emergency.form.phone_country_code, emergency.form.phone) }}</p>
-            <p>邮箱：{{ maskEmail(emergency.form.email) }}</p>
-            <p v-if="emergency.form.consultant_id">顾问工号：{{ emergency.form.consultant_id }}</p>
-          </el-card>
-        </section>
-
-        <section class="policy-section">
-          <el-alert title="以下政策正文均为待法务审核的业务模板" type="warning" :closable="false" show-icon />
-          <p class="refund-notice">退订条件因国家或地区、房源、房型及价格方案而异，不承诺无条件退款或统一冷静期。</p>
-          <el-checkbox v-model="selectAll" class="select-all">全选</el-checkbox>
-          <el-checkbox v-for="policy in policies" :key="policy.key" v-model="accepted[policy.key]" class="policy-check">
-            我已阅读并同意
-            <button
-              :ref="(element) => setPolicyTrigger(policy.key, element)"
-              type="button"
-              class="policy-link"
-              :aria-haspopup="'dialog'"
-              @click.stop.prevent="openPolicy(policy.key)"
-            >{{ policy.title }}</button>
-            <small v-if="policyDocuments[policy.key]">（版本 {{ policyDocuments[policy.key].version }}）</small>
-          </el-checkbox>
+        <section class="summary-card property-summary"><div><span>订单编号</span><strong>{{ existingBookingId || '将在确认后生成' }}</strong></div><div><span>房源名称</span><strong>{{ property.name || '加载失败，重试' }}</strong></div><div><span>公寓/房东</span><strong>{{ property.institute_name || '加载失败，重试' }}</strong></div><div><span>房间或户型</span><strong>{{ property.name || '加载失败，重试' }}</strong></div><div><span>入住日期</span><strong>{{ pricing.move_in_date }}</strong></div><div><span>租期</span><strong>{{ selectedOption.months }} 个月（至 {{ selectedOption.end_date }}）</strong></div><div><span>房源计价币种</span><strong>{{ selectedOption.prices.deposit.local.currency }}</strong></div></section>
+        <section class="summary-card price-summary"><h3>预订需缴纳的费用</h3><div><span>预订押金</span><strong>{{ money(selectedOption.prices.deposit.local) }}</strong></div><div><span>当前应付金额</span><strong>{{ money(selectedOption.prices.amount_due_now.local) }}</strong></div><p>支付币种、汇率及更新时间以支付订单快照为准，支付手续费按实际渠道展示</p></section>
+        <section class="people-grid"><el-card shadow="never"><template #header><strong>个人信息摘要（已脱敏）</strong></template><p>姓名：{{ maskName(personal.form.chinese_name) }}</p><p>手机：{{ maskPhone(personal.form.phone_country_code, personal.form.phone) }}</p><p>邮箱：{{ maskEmail(personal.form.email) }}</p><el-button text type="primary" @click="goEdit('booking-personal-info')">修改个人信息</el-button></el-card><el-card shadow="never"><template #header><strong>紧急联系人摘要（已脱敏）</strong></template><p>姓名：{{ maskName(emergency.form.chinese_name) }}</p><p>关系：{{ emergency.form.relationship || '未填写' }}</p><p>手机：{{ maskPhone(emergency.form.phone_country_code, emergency.form.phone) }}</p><p>邮箱：{{ maskEmail(emergency.form.email) }}</p><el-button text type="primary" @click="goEdit('booking-emergency-contact')">修改紧急联系人</el-button></el-card></section>
+        <section class="policy-section" aria-label="协议授权">
+          <div class="critical-summary"><div><el-tag type="danger" effect="dark"><el-icon><WarningFilled /></el-icon> 重要</el-tag><strong>押金支付注意事项</strong></div><span :class="criticalNoticeState === 'confirmed' ? 'read' : 'unread'">{{ criticalNoticeStatus }}</span><el-button link type="primary" @click="noticeVisible = true">查看押金支付注意事项</el-button></div>
+          <el-tooltip :disabled="criticalNoticeState === 'confirmed'" content="请先阅读并确认押金支付注意事项" placement="top"><span class="all-consent"><el-checkbox v-model="allToggle" :indeterminate="someAccepted && !allAccepted" :disabled="criticalNoticeState !== 'confirmed'">一键同意全部协议</el-checkbox></span></el-tooltip>
+          <p v-if="hasFallback" class="fallback-hint">当前部分内容展示简要版，最终以正式协议及法务审核版本为准 <el-button link type="primary" @click="retryFallbackPolicies">重试加载正式版</el-button></p>
+          <div class="policy-list"><article v-for="policy in policies" :key="policy.key" class="policy-row"><el-tooltip :disabled="criticalNoticeState === 'confirmed'" content="请先阅读并确认押金支付注意事项"><span><el-checkbox v-model="acceptedPolicies[policy.acceptanceKey]" :disabled="criticalNoticeState !== 'confirmed'" /></span></el-tooltip><button type="button" class="policy-link" @click="openPolicy(policy.key)">{{ policy.title }}</button><el-tag size="small" :type="policyDocuments[policy.key]?.isFallback ? 'warning' : 'success'">{{ policyDocuments[policy.key]?.isFallback ? '简要版' : `正式版 V${policyDocuments[policy.key]?.version || ''}` }}</el-tag><el-button link type="primary" @click="openPolicy(policy.key)">查看</el-button></article></div>
         </section>
       </template>
-
-      <PolicyDialog v-model="dialogVisible" :document="activePolicyDocument" @closed="restorePolicyFocus" />
+      <PolicyDialog v-model="policyVisible" :document="activePolicyDocument" />
+      <el-dialog v-model="noticeVisible" class="critical-dialog" width="min(760px, calc(100vw - 28px))" top="6vh" append-to-body @opened="startNoticeCountdown" @closed="pauseNoticeCountdown">
+        <template #header><div class="critical-heading"><el-tag type="danger" effect="dark"><el-icon><WarningFilled /></el-icon> 重要</el-tag><strong>重要：押金支付注意事项</strong></div><p>以下内容涉及押金、退款、审核及合同签署，请仔细阅读</p></template>
+        <div class="critical-content"><ol><li v-for="item in criticalItems" :key="item">{{ item }}</li></ol><p class="notice-disclaimer">请仔细阅读以上内容。该内容为简要提示，最终以正式协议、适用法律及法务审核版本为准</p></div>
+        <template #footer><el-button :disabled="noticeSeconds > 0" type="primary" @click="confirmCriticalNotice">{{ noticeSeconds > 0 ? `请仔细阅读（${noticeSeconds}秒）` : '我已阅读押金支付注意事项' }}</el-button></template>
+      </el-dialog>
     </div>
   </BookingFlowLayout>
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onMounted, reactive, ref, type ComponentPublicInstance } from 'vue'
+import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
+import { WarningFilled } from '@element-plus/icons-vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
 import BookingFlowLayout from '@/components/booking/BookingFlowLayout.vue'
 import PolicyDialog from '@/components/booking/PolicyDialog.vue'
 import { propertyService, type LeaseOption, type LeasePricing, type MoneyAmount } from '@/services/property'
 import { policyService, type PolicyDocument } from '@/services/policy'
-import { bookingService } from '@/services/booking'
-import { useBookingPersonalInfoStore } from '@/stores/bookingPersonalInfo'
-import { useBookingEmergencyContactStore } from '@/stores/bookingEmergencyContact'
 import { bookingDraftService } from '@/services/bookingDraft'
 import { extractErrorMessage } from '@/services/api'
-import type { Property } from '@/types/property'
-import { areAllPoliciesAccepted } from '@/utils/policyAcceptance'
+import { policyFallbacks } from '@/data/policyFallbacks'
+import { useBookingPersonalInfoStore } from '@/stores/bookingPersonalInfo'
+import { useBookingEmergencyContactStore } from '@/stores/bookingEmergencyContact'
 
-const route = useRoute()
-const router = useRouter()
-const personal = useBookingPersonalInfoStore()
-const emergency = useBookingEmergencyContactStore()
-const propertyId = computed(() => Number(route.params.propertyId))
-const property = ref<Property | null>(null)
-const pricing = ref<LeasePricing | null>(null)
-const selectedMonths = ref(0)
-const loading = ref(false)
-const submitting = ref(false)
-const errorMessage = ref('')
-const policies = [
-  { key: 'booking-authorization', title: '《订房授权书》', path: '/booking-policies/booking-authorization' },
-  { key: 'cross-border-data', title: '《个人信息出境授权声明》', path: '/booking-policies/cross-border-data' },
-  { key: 'privacy', title: '《隐私政策》', path: '/booking-policies/privacy' },
-  { key: 'cancellation', title: '《公寓退订政策》', path: '/booking-policies/cancellation' },
-]
-const accepted = reactive<Record<string, boolean>>(Object.fromEntries(policies.map((policy) => [policy.key, false])))
-const policyDocuments = reactive<Record<string, PolicyDocument>>({})
-const activePolicyKey = ref('')
-const dialogVisible = ref(false)
-const policyTriggers = new Map<string, HTMLButtonElement>()
-const activePolicyDocument = computed(() => policyDocuments[activePolicyKey.value] || null)
-const allAccepted = computed(() => areAllPoliciesAccepted(policies.map((policy) => policy.key), accepted))
-const selectAll = computed({ get: () => allAccepted.value, set: (value: boolean) => policies.forEach((policy) => { accepted[policy.key] = value }) })
-
-// 适配自定义月数：若预设选项找不到，取第一个选项按月租公式实时计算
-const selectedOption = computed<LeaseOption | null>(() => {
-  if (!pricing.value || !selectedMonths.value) return null
-  const found = pricing.value.options.find((option) => option.months === selectedMonths.value)
-  if (found) return found
-  // 自定义月数：基于第一个预设选项的月租实时计算
-  const base = pricing.value.options[0]
-  if (!base) return null
-  const monthly = base.prices.monthly_rent.local.minor_units / 100
-  const deposit = base.prices.deposit.local.minor_units / 100
-  const serviceFee = base.prices.service_fee.local.minor_units / 100
-  const m = selectedMonths.value
-  const endDate = (() => { const d = new Date(pricing.value.move_in_date); d.setMonth(d.getMonth() + m); return d.toISOString().slice(0, 10) })()
-  const cur = base.prices.monthly_rent.local.currency
-  const mk = (v: number) => ({ currency: cur, minor_units: v * 100, minor_unit_exponent: 2, decimal: v.toFixed(2) })
-  return {
-    months: m, end_date: endDate,
-    prices: {
-      deposit: { local: mk(deposit), cny: mk(deposit) },
-      service_fee: { local: mk(serviceFee), cny: mk(serviceFee) },
-      monthly_rent: { local: mk(monthly), cny: mk(monthly) },
-      amount_due_now: { local: mk(deposit + serviceFee), cny: mk(deposit + serviceFee) },
-      rent_total: { local: mk(monthly * m), cny: mk(monthly * m) },
-    },
-  }
-})
-const summaryReady = computed(() => Boolean(
-  property.value && selectedOption.value && personal.form.chinese_name && emergency.form.chinese_name
-  && policies.every((policy) => policyDocuments[policy.key]),
-))
-const countryLabels: Record<string, string> = { CN: '中国', GB: '英国', US: '美国', AU: '澳大利亚', CA: '加拿大', SG: '新加坡', JP: '日本', KR: '韩国', DE: '德国', FR: '法国' }
-const countryLabel = computed(() => countryLabels[property.value?.country || ''] || property.value?.country || '未设置')
-const priceRows = computed(() => selectedOption.value ? [
-  { label: '月租', value: selectedOption.value.prices.monthly_rent },
-  { label: '租金总额', value: selectedOption.value.prices.rent_total },
-  { label: '押金', value: selectedOption.value.prices.deposit },
-  { label: '服务费', value: selectedOption.value.prices.service_fee },
-  { label: '当前应付金额', value: selectedOption.value.prices.amount_due_now, due: true },
-] : [])
-
-function readDraft() { try { return JSON.parse(localStorage.getItem(`booking_draft_${propertyId.value}`) || '{}') } catch { return {} } }
-function money(value: MoneyAmount) { return `${value.currency} ${value.decimal}` }
-function maskName(value: string) { return value ? `${value.slice(0, 1)}${'*'.repeat(Math.max(1, value.length - 1))}` : '未填写' }
-function maskPhone(code: string, value: string) { return value.length >= 7 ? `${code} ${value.slice(0, 3)}****${value.slice(-4)}` : '未填写' }
-function maskEmail(value: string) { const [name, domain] = value.split('@'); return name && domain ? `${name.slice(0, 1)}***@${domain}` : '未填写' }
-function maskAddress(region: string, address: string) { return region && address ? `${region} ${address.slice(0, 2)}***` : '未填写' }
-function setPolicyTrigger(key: string, element: Element | ComponentPublicInstance | null) {
-  if (element instanceof HTMLButtonElement) policyTriggers.set(key, element)
-}
-function openPolicy(key: string) {
-  if (!policyDocuments[key]) return
-  activePolicyKey.value = key
-  dialogVisible.value = true
-}
-async function restorePolicyFocus() {
-  await nextTick()
-  policyTriggers.get(activePolicyKey.value)?.focus()
-}
-
-async function confirmAndContinue() {
-  if (!allAccepted.value || !pricing.value) return
-  submitting.value = true
-  errorMessage.value = ''
-  try {
-    const result = await policyService.confirmBooking({
-      property_id: propertyId.value,
-      move_in_date: pricing.value.move_in_date,
-      lease_months: selectedMonths.value,
-      policy_acceptances: policies.map((policy) => ({
-        key: policy.key,
-        version: policyDocuments[policy.key].version,
-        content_hash: policyDocuments[policy.key].content_hash,
-      })),
-    })
-    const draft = readDraft()
-    localStorage.setItem(`booking_draft_${propertyId.value}`, JSON.stringify({ ...draft, booking_id: result.booking_id }))
-    router.push({ name: 'booking-contract-placeholder', params: { propertyId: String(propertyId.value) }, query: { booking_id: String(result.booking_id) } })
-  } catch (error: any) {
-    const status = error?.response?.status || '?'
-    const msg = extractErrorMessage(error) || ''
-    console.error(`[confirm] HTTP ${status}:`, msg)
-
-    // 409 Conflict — 可能已有该房源的 pending 预订
-    if (status === 409 && msg.includes('already have a pending booking')) {
-      try {
-        const bookings = await bookingService.list()
-        const existing = bookings.find(
-          (b: any) => b.property_id === propertyId.value && b.status === 'pending'
-        )
-        if (existing) {
-          errorMessage.value = ''
-          ElMessage.success('检测到已有待处理预订，直接进入合同签署')
-          await router.push({
-            name: 'booking-contract-placeholder',
-            params: { propertyId: String(propertyId.value) },
-            query: { booking_id: String(existing.id) },
-          })
-          return
-        }
-      } catch { /* 回退到显示原始错误 */ }
-    }
-
-    errorMessage.value = msg || `订单确认失败 (HTTP ${status})，请检查信息后重试`
-  } finally { submitting.value = false }
-}
-
-onMounted(async () => {
-  loading.value = true
-  try {
-    const serverDraft = await bookingDraftService.get(propertyId.value)
-    if (!serverDraft.move_in_date || !serverDraft.lease_months || !serverDraft.personal_info || !serverDraft.emergency_contact || serverDraft.current_step !== 'review') {
-      router.replace({ name: 'booking-emergency-contact', params: { propertyId: String(propertyId.value) } })
-      return
-    }
-    Object.assign(personal.form, serverDraft.personal_info)
-    Object.assign(emergency.form, serverDraft.emergency_contact)
-    const [propertyResult, pricingResult, ...documents] = await Promise.all([
-      propertyService.getById(propertyId.value),
-      propertyService.getLeasePricing(propertyId.value, serverDraft.move_in_date),
-      ...policies.map((policy) => policyService.get(policy.key)),
-    ])
-    property.value = propertyResult
-    pricing.value = pricingResult
-    documents.forEach((document) => { policyDocuments[document.key] = document })
-    selectedMonths.value = Number(serverDraft.lease_months)
-  } catch (error: any) {
-    errorMessage.value = extractErrorMessage(error) || '无法加载订单摘要'
-  } finally { loading.value = false }
-})
+interface DisplayPolicyDocument extends PolicyDocument { isFallback: boolean }
+const route = useRoute(); const router = useRouter(); const personal = useBookingPersonalInfoStore(); const emergency = useBookingEmergencyContactStore()
+const propertyId = computed(() => Number(route.params.propertyId)); const unitTypeId = ref(0); const property = ref<any>(null); const pricing = ref<LeasePricing | null>(null); const selectedMonths = ref(0)
+type CriticalNoticeState = 'unread' | 'reading' | 'eligible' | 'confirmed'
+const loading = ref(false); const submitting = ref(false); const draftLoaded = ref(false); const initializationFailed = ref(false); const errorMessage = ref(''); const policyVisible = ref(false); const noticeVisible = ref(false); const activePolicyKey = ref(''); const criticalNoticeState = ref<CriticalNoticeState>('unread'); const noticeSeconds = ref(5); let noticeTimer = 0; let readingStartedAt: number | null = null; let readingElapsedMs = 0; let initializationPromise: Promise<void> | null = null
+const policies = [{ key: 'booking_auth', title: '《预订及押金规则》', acceptanceKey: 'bookingDeposit' }, { key: 'privacy', title: '《隐私政策》', acceptanceKey: 'privacy' }, { key: 'cancellation', title: '《支付服务说明》', acceptanceKey: 'paymentService' }, { key: 'data_transfer', title: '《个人信息出境授权声明》', acceptanceKey: 'crossBorderData' }] as const
+const acceptedPolicies = reactive({ bookingDeposit: false, privacy: false, paymentService: false, crossBorderData: false }); const policyDocuments = reactive<Record<string, DisplayPolicyDocument>>({})
+const criticalItems = ['本次支付款项为预订押金，将按照正式规则抵扣租赁押金', '支付成功仅表示平台已收到款项并受理预订申请，不代表预订已经成功，也不代表租赁合同已经成立或生效', '支付成功后，平台预计在3个自然日内核验房源状态、申请资料及合同条件，并通过站内消息、邮件或短信通知结果', '合同发送后，用户应在7个自然日内完成核对与签署', '因房源不可订、重复出售、公寓方或房东拒绝确认、平台审核或系统原因无法继续时，押金按照正式规则原路退回', '用户付款后、合同发出前主动取消，当前规则为仅退70%；最终以适用法律、正式协议及法务审核版本为准', '用户无正当理由逾期未签署、主动放弃，或提交虚假、错误、严重缺失资料时，平台可按照已确认规则处理押金或转人工核验', '确认退款后，款项将按原支付渠道退回，通常需要3至10个工作日，实际到账时间以银行或支付机构处理进度为准', '如支付金额、合同关键条款或房源信息与付款前展示不一致，用户应暂停后续流程并联系客服核验', '用户可通过客服或申诉入口查询订单、支付、退款及合同处理进度']
+const activePolicyDocument = computed(() => policyDocuments[activePolicyKey.value] || null); const allAccepted = computed(() => Object.values(acceptedPolicies).every(Boolean)); const someAccepted = computed(() => Object.values(acceptedPolicies).some(Boolean)); const allToggle = computed({ get: () => allAccepted.value, set: (value: boolean) => Object.keys(acceptedPolicies).forEach(key => { acceptedPolicies[key as keyof typeof acceptedPolicies] = value }) }); const hasFallback = computed(() => policies.some(p => policyDocuments[p.key]?.isFallback)); const existingBookingId = computed(() => Number(route.query.booking_id) || 0)
+const selectedOption = computed<LeaseOption | null>(() => pricing.value?.options.find(o => o.months === selectedMonths.value) || null); const summaryReady = computed(() => Boolean(draftLoaded.value && property.value && selectedOption.value && personal.form.chinese_name && emergency.form.chinese_name)); const criticalNoticeStatus = computed(() => ({ unread: '尚未阅读', reading: '阅读中', eligible: '请确认已阅读', confirmed: '已阅读押金支付注意事项' })[criticalNoticeState.value]); const canProceedToPayment = computed(() => criticalNoticeState.value === 'confirmed' && allAccepted.value && draftLoaded.value && summaryReady.value && !initializationFailed.value && !loading.value && !submitting.value); const proceedDisabledReason = computed(() => { if (loading.value) return '订单信息正在加载'; if (initializationFailed.value || !summaryReady.value) return '订单信息加载失败，请重试'; if (criticalNoticeState.value !== 'confirmed') return '请先阅读押金支付注意事项至少5秒'; if (!allAccepted.value) return '请阅读并同意全部四份协议'; return '' })
+function money(value: MoneyAmount) { return `${value.currency} ${value.decimal}` }; function maskName(v: string) { return v ? `${v.slice(0, 1)}${'*'.repeat(Math.max(1, v.length - 1))}` : '未填写' }; function maskPhone(c: string, v: string) { return v.length >= 7 ? `${c} ${v.slice(0, 3)}****${v.slice(-4)}` : '未填写' }; function maskEmail(v: string) { const [n, d] = v.split('@'); return n && d ? `${n.slice(0, 1)}***@${d}` : '未填写' }
+function goEdit(name: string) { router.push({ name, params: { propertyId: String(propertyId.value) } }) }
+function updateReadingProgress() { if (readingStartedAt === null) return; const elapsed = readingElapsedMs + performance.now() - readingStartedAt; noticeSeconds.value = Math.max(0, Math.ceil((5000 - elapsed) / 1000)); if (elapsed >= 5000) { readingElapsedMs = 5000; readingStartedAt = null; pauseNoticeCountdown(); criticalNoticeState.value = 'eligible' } }
+function startNoticeCountdown() { if (criticalNoticeState.value === 'confirmed' || criticalNoticeState.value === 'eligible' || document.hidden) return; criticalNoticeState.value = 'reading'; if (readingStartedAt === null) readingStartedAt = performance.now(); if (!noticeTimer) noticeTimer = window.setInterval(updateReadingProgress, 100) }
+function pauseNoticeCountdown() { updateReadingProgress(); if (noticeTimer) { window.clearInterval(noticeTimer); noticeTimer = 0 }; if (readingStartedAt !== null) { readingElapsedMs += performance.now() - readingStartedAt; readingStartedAt = null } }
+function handleVisibilityChange() { if (document.hidden) pauseNoticeCountdown(); else if (noticeVisible.value && criticalNoticeState.value === 'reading') startNoticeCountdown() }
+function confirmCriticalNotice() { if (criticalNoticeState.value !== 'eligible') return; criticalNoticeState.value = 'confirmed'; noticeVisible.value = false }
+function fallbackDocument(key: string): DisplayPolicyDocument { const fallback = policyFallbacks[key]; return { key, title: fallback.title, version: fallback.version, content: fallback.content, content_hash: fallback.contentHash, isFallback: true } }
+async function loadPolicy(key: string) { try { const document = await policyService.get(key); if (!document.content?.trim()) throw new Error('政策正文为空'); policyDocuments[key] = { ...document, isFallback: false } } catch (error) { console.warn(`政策 ${key} 正式内容加载失败，已使用简要版`, error); policyDocuments[key] = fallbackDocument(key) } }
+async function retryFallbackPolicies() { await Promise.all(policies.filter(p => policyDocuments[p.key]?.isFallback).map(p => loadPolicy(p.key))) }
+function openPolicy(key: string) { activePolicyKey.value = key; policyVisible.value = true }
+async function proceedToPayment() { if (criticalNoticeState.value !== 'confirmed') { errorMessage.value = '请先阅读并确认押金支付注意事项'; return }; if (!allAccepted.value) { errorMessage.value = '请同意全部四份协议'; return }; if (!canProceedToPayment.value || !pricing.value || submitting.value) { errorMessage.value = '订单信息不完整'; return }; submitting.value = true; errorMessage.value = ''; try { const result = await policyService.confirmBooking({ unit_type_id: unitTypeId.value, move_in_date: pricing.value.move_in_date, lease_months: selectedMonths.value, policy_acceptances: policies.map(p => ({ key: p.key, version: policyDocuments[p.key].version, content_hash: policyDocuments[p.key].content_hash })) }); if (!result.booking_id) throw new Error('待支付订单创建失败，请重试'); const target = router.resolve({ name: 'deposit-payment', params: { id: String(result.booking_id) } }); if (!target.matched.length) throw new Error('支付页面不存在'); await router.push(target); await new Promise(resolve => window.setTimeout(resolve, 1000)); if (router.currentRoute.value.name !== 'deposit-payment') throw new Error('支付页面初始化失败，请重试') } catch (error: any) { console.error('[authorization] proceed payment failed', { status: error?.response?.status, response: error?.response?.data, url: error?.config?.url, method: error?.config?.method, error }); const status = error?.response?.status; if (status === 401) errorMessage.value = '登录已过期，请重新登录'; else if (status === 404) errorMessage.value = '未找到当前草稿、户型或订单'; else if (status === 422) errorMessage.value = `请检查提交信息：${extractErrorMessage(error) || '信息格式无效'}`; else errorMessage.value = error?.message === '支付页面不存在' ? '支付页面不存在' : extractErrorMessage(error) || '订单确认失败，请稍后重试' } finally { submitting.value = false } }
+function logInitFailure(resource: string, error: any, id: number) { console.error('[authorization:init] request failed', { resource, id, url: error?.config?.url, method: error?.config?.method, status: error?.response?.status, response: error?.response?.data }) }
+async function loadAuthorizationPage() { if (initializationPromise) return initializationPromise; initializationPromise = (async () => { loading.value = true; initializationFailed.value = false; draftLoaded.value = false; criticalNoticeState.value = 'unread'; readingElapsedMs = 0; noticeSeconds.value = 5; errorMessage.value = ''; try { let draft; try { draft = await bookingDraftService.get(propertyId.value, true) } catch (error) { logInitFailure('booking draft', error, propertyId.value); throw error }; if (!draft?.move_in_date || !draft.lease_months || !draft.personal_info || !draft.emergency_contact || draft.current_step !== 'review') throw new Error('草稿信息不完整'); unitTypeId.value = Number(draft.unit_type_id); Object.assign(personal.form, draft.personal_info); Object.assign(emergency.form, draft.emergency_contact); draftLoaded.value = true; try { property.value = await propertyService.getById(unitTypeId.value, true) } catch (error) { logInitFailure('unit type', error, unitTypeId.value); throw error }; try { pricing.value = await propertyService.getLeasePricing(unitTypeId.value, draft.move_in_date, true) } catch (error) { logInitFailure('lease pricing', error, unitTypeId.value); throw error }; selectedMonths.value = Number(draft.lease_months); await Promise.all(policies.map(p => loadPolicy(p.key))); noticeVisible.value = true } catch (error: any) { initializationFailed.value = true; draftLoaded.value = false; errorMessage.value = '部分订单信息加载失败，请重试'; if (!error?.config) console.error('[authorization:init] request failed', { resource: 'draft validation', id: propertyId.value, response: error?.message }) } finally { loading.value = false; initializationPromise = null } })(); return initializationPromise }
+function reloadOrderInformation() { void loadAuthorizationPage() }
+onMounted(() => { void loadAuthorizationPage() })
+onMounted(() => document.addEventListener('visibilitychange', handleVisibilityChange))
+onUnmounted(() => { document.removeEventListener('visibilitychange', handleVisibilityChange); pauseNoticeCountdown() })
 </script>
 
 <style scoped>
-.review-page { display: grid; gap: 18px; }
-.intro h2 { margin: 0 0 6px; font-size: 24px; }.intro p { margin: 0; color: var(--text-muted); }
-.summary-card { padding: 22px 28px; border-radius: var(--radius); }.property-summary { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px 28px; background: #f6f7fa; }
-.summary-card div { display: flex; justify-content: space-between; gap: 12px; }.summary-card span { color: var(--text-muted); }
-.price-summary { display: grid; gap: 12px; background: #edf8fa; }.price-summary h3 { margin: 0 0 6px; }.price-summary small { color: var(--text-muted); }.price-summary .due { padding-top: 12px; border-top: 1px solid #cfe3e7; font-size: 17px; }.price-summary p { margin: 0; color: var(--text-muted); font-size: 12px; }
-.people-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; }.people-grid p { color: var(--text-secondary); }
-.policy-section { display: grid; gap: 12px; padding-top: 8px; }.refund-notice { margin: 0; padding: 14px; border-radius: var(--radius-sm); background: #f6f7fa; line-height: 1.6; }.select-all { padding-bottom: 10px; border-bottom: 1px solid var(--border-light); font-weight: 700; }.policy-check { margin-right: 0; }.policy-link { padding: 0; border: 0; background: none; color: var(--primary); font: inherit; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }.policy-link:focus-visible { outline: 2px solid var(--primary); outline-offset: 3px; border-radius: 2px; }
-@media (max-width: 700px) { .property-summary, .people-grid { grid-template-columns: 1fr; } }
+.review-page{display:grid;gap:18px}.intro h2{margin:0 0 6px;font-size:24px}.intro p,.summary-card span{color:var(--text-muted)}.summary-card{padding:22px 28px;border-radius:var(--radius)}.property-summary{display:grid;grid-template-columns:repeat(2,1fr);gap:14px 28px;background:#f6f7fa}.summary-card div{display:flex;justify-content:space-between;gap:12px}.price-summary{display:grid;gap:12px;background:#edf8fa}.price-summary h3,.price-summary p{margin:0}.price-summary p{font-size:13px;color:var(--text-muted)}.people-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:16px}.policy-section{display:grid;gap:12px;padding:18px;border:1px solid var(--border-light);border-radius:var(--radius-sm)}.critical-summary{display:flex;align-items:center;gap:12px;flex-wrap:wrap}.critical-summary>div{display:flex;align-items:center;gap:8px}.critical-summary strong{font-size:16px}.read{color:#27a36a}.unread{color:#d86a26}.all-consent{display:inline-flex;max-width:100%}.fallback-hint{margin:0;font-size:13px;color:var(--text-secondary)}.policy-list{display:grid;gap:8px}.policy-row{display:grid;grid-template-columns:auto minmax(0,1fr) auto auto;align-items:center;gap:10px;padding:10px 12px;background:#f8fafc;border-radius:8px}.policy-link{min-width:0;padding:0;border:0;background:none;color:var(--primary);font:inherit;text-align:left;cursor:pointer;text-decoration:underline;text-underline-offset:2px}.critical-heading{display:flex;align-items:center;gap:10px;padding-right:28px}.critical-heading strong{font-size:19px}.critical-heading+p{margin:8px 0 0;color:var(--text-secondary)}.critical-content{height:min(54vh,560px);overflow-y:auto;padding-right:6px;line-height:1.75}.critical-content ol{margin:0;padding-left:24px}.critical-content li{padding-left:4px;margin-bottom:14px}.notice-disclaimer{margin:18px 0 10px;font-weight:600}@media(max-width:700px){.property-summary,.people-grid{grid-template-columns:1fr}.summary-card{padding:18px}.critical-summary{align-items:flex-start}.critical-heading{align-items:flex-start}.critical-heading strong{font-size:17px}.policy-row{grid-template-columns:auto minmax(0,1fr) auto}.policy-row .el-button{grid-column:2/4;justify-self:start}}
 </style>

@@ -18,17 +18,18 @@ export interface PolicyAcceptanceItem {
 export interface BookingConfirmationResult {
   booking_id: number
   consent_count: number
+  order_status: string
 }
 
 export const policyService = {
   /** 获取单个政策文档正文。 */
   get(key: string): Promise<PolicyDocument> {
-    return api.get(`/bookings/policies/${key}`).then((r) => r.data)
+    return api.get(`/bookings/policies/${key}`, { suppressGlobalError: true } as any).then((r) => r.data)
   },
 
   /** 确认预订并提交政策同意记录。 */
   confirmBooking(data: {
-    property_id: number
+    unit_type_id: number
     move_in_date: string
     lease_months: number
     policy_acceptances: PolicyAcceptanceItem[]

@@ -4,6 +4,7 @@ from decimal import Decimal
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.core.config import get_settings
 from app.models.booking import Booking
@@ -37,7 +38,13 @@ class OrderNotificationService:
         event_key = f"order:{booking.id}:{event_type}:{discriminator}"
         existing = await self.session.scalar(select(NotificationOutbox).where(NotificationOutbox.event_key == event_key))
         if existing: return None
-        user = await self.session.get(User, booking.tenant_id); property_obj = await self.session.get(Property, booking.property_id)
+        user = await self.session.get(User, booking.user_id)
+        # Property 兼容别名实际为 UnitType，通知中使用订单的 unit_type_id。
+        property_obj = await self.session.scalar(
+            select(Property)
+            .options(selectinload(Property.institute))
+            .where(Property.id == booking.unit_type_id)
+        )
         if not user or not property_obj: return None
         if contract is None: contract = await self.session.scalar(select(Contract).where(Contract.booking_id == booking.id).order_by(Contract.version.desc()))
         pricing = (booking.application_data or {}).get("pricing_snapshot") or {}; option = next((x for x in pricing.get("options",[]) if x.get("months")==booking.lease_months),None)
@@ -46,8 +53,8 @@ class OrderNotificationService:
         amount = f"{currency} {(Decimal(minor)/Decimal(100)):.2f}"
         title = TITLES[event_type]
         status = booking.status.value if hasattr(booking.status,"value") else str(booking.status)
-        payload = {"user_name":user.username,"order_number":str(booking.id),"property_name":property_obj.title,"property_address":property_obj.address,"move_in_date":booking.scheduled_date or "待确认","tenancy_months":booking.lease_months or 0,"amount":amount,"status":status,"payment_deadline":booking.payment_expires_at.isoformat() if booking.payment_expires_at else None,"order_url":f"{get_settings().frontend_url}/booking/order/{booking.id}/payment-status","support_email":get_settings().support_email,"contract_number":contract.agreement_number if contract else None}
-        notification = Notification(user_id=user.id,type=NotificationType.system,title=title,content=f"订单 #{booking.id}：{title}", body=f"订单 #{booking.id}：{title}", entity_type="order", entity_id=str(booking.id), order_id=str(getattr(payment, "order_id", None) or booking.id), agreement_id=str(contract.id) if contract else None, property_id=booking.property_id)
+        payload = {"user_name":user.username,"order_number":str(booking.id),"property_name":property_obj.name,"property_address":getattr(property_obj.institute, "address", "") or "","move_in_date":booking.scheduled_date or "待确认","tenancy_months":booking.lease_months or 0,"amount":amount,"status":status,"payment_deadline":booking.payment_expires_at.isoformat() if booking.payment_expires_at else None,"order_url":f"{get_settings().frontend_url}/booking/order/{booking.id}/payment-status","support_email":get_settings().support_email,"contract_number":contract.agreement_number if contract else None}
+        notification = Notification(user_id=user.id,type=NotificationType.system,title=title,content=f"订单 #{booking.id}：{title}", body=f"订单 #{booking.id}：{title}", entity_type="order", entity_id=str(booking.id), order_id=str(getattr(payment, "order_id", None) or booking.id), agreement_id=str(contract.id) if contract else None, unit_type_id=booking.unit_type_id)
         outbox = NotificationOutbox(event_key=event_key,event_type=event_type,user_id=user.id,booking_id=booking.id,channel="email",template_version=TEMPLATE_VERSION,payload=payload,status=NotificationOutboxStatus.pending,next_attempt_at=datetime.now(timezone.utc))
         self.session.add_all([notification,outbox]); return outbox
 
@@ -71,10 +78,14 @@ class OrderNotificationService:
         if existing:
             return None
 
-        property_obj = await self.session.get(Property, booking.property_id)
+        property_obj = await self.session.scalar(
+            select(Property)
+            .options(selectinload(Property.institute))
+            .where(Property.id == booking.unit_type_id)
+        )
         if not property_obj:
             return None
-        landlord = await self.session.get(User, property_obj.landlord_id)
+        landlord = await self.session.get(User, getattr(property_obj.institute, "bm_id", None))
         if not landlord:
             return None
         if contract is None:
@@ -100,9 +111,9 @@ class OrderNotificationService:
             "user_name": landlord.username,
             "order_number": str(booking.id),
             "property_id": property_obj.id,
-            "property_name": property_obj.title,
-            "property_address": property_obj.address,
-            "room_type": property_obj.property_type.value if hasattr(property_obj.property_type, "value") else str(property_obj.property_type),
+            "property_name": property_obj.name,
+            "property_address": getattr(property_obj.institute, "address", "") or "",
+            "room_type": property_obj.name,
             "move_in_date": snapshot.get("commencement_date") or booking.scheduled_date,
             "expiry_date": snapshot.get("expiry_date"),
             "tenancy_months": snapshot.get("tenancy_months") or booking.lease_months,
@@ -123,10 +134,10 @@ class OrderNotificationService:
             user_id=landlord.id,
             type=NotificationType.booking_completed,
             title=title,
-            content=f"房源“{property_obj.title}”已成功预订，订单 #{booking.id}。",
-            body=f"房源“{property_obj.title}”已成功预订，订单 #{booking.id}。",
+            content=f"房源“{property_obj.name}”已成功预订，订单 #{booking.id}。",
+            body=f"房源“{property_obj.name}”已成功预订，订单 #{booking.id}。",
             entity_type="order", entity_id=str(booking.id), order_id=str(payment.order_id),
-            agreement_id=str(contract.id) if contract else None, property_id=booking.property_id,
+            agreement_id=str(contract.id) if contract else None, unit_type_id=booking.unit_type_id,
         )
 
         verified_email = landlord.email if landlord.email and getattr(landlord, "email_verified", False) else None

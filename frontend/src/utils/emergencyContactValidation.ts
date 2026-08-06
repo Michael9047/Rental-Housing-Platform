@@ -29,6 +29,15 @@ export interface EmergencyContactForm {
   address_line: string
   postal_code: string
   consultant_id: string
+  country_code: string
+  country_name: string
+  level1_code: string
+  level1_name: string
+  city_code: string
+  city_name: string
+  district_code: string
+  district_name: string
+  address_detail: string
   [key: string]: string
 }
 

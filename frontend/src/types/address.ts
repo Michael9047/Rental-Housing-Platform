@@ -1,5 +1,7 @@
 /** 结构化地址类型，供 AddressSelector 和个人信息/紧急联系人表单使用。 */
 
+import divisionsData from 'china-division/dist/pca-code.json'
+
 export interface StructuredAddress {
   country_code: string
   country_name: string
@@ -30,6 +32,26 @@ export function buildRegion(address: Partial<StructuredAddress>): string {
 }
 
 /** 从旧版地址字段（region / address_detail 等）迁移到新版 structured address。 */
+interface Division { code: string; name: string; children?: Division[] }
+
+function restoreChinaDivisionCodes(form: Record<string, any>): void {
+  if (!form.region || form.level1_code) return
+  const divisions = divisionsData as Division[]
+  const names = String(form.region).split(/\s+/).filter(Boolean)
+  const level1 = divisions.find((item) => names.includes(item.name))
+  if (!level1) return
+  const city = level1.children?.find((item) => names.includes(item.name))
+  const district = city?.children?.find((item) => names.includes(item.name))
+  Object.assign(form, {
+    level1_code: level1.code,
+    level1_name: level1.name,
+    city_code: city?.code || '',
+    city_name: city?.name || '',
+    district_code: district?.code || '',
+    district_name: district?.name || '',
+  })
+}
+
 export function restoreLegacyAddress(form: Record<string, any>): void {
   // 确保 phone_country_code 存在
   if (!form.phone_country_code) form.phone_country_code = '+86'
@@ -39,6 +61,7 @@ export function restoreLegacyAddress(form: Record<string, any>): void {
     form.country_name = '中国大陆'
   }
   // 如果旧版有 address_detail 但没有 address_line
+  if (form.country_code === 'CN') restoreChinaDivisionCodes(form)
   if (form.address_detail && !form.address_line) {
     form.address_line = form.address_detail
   }

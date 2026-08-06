@@ -315,6 +315,14 @@ class Settings(BaseSettings):
         validation_alias="FRONTEND_URL",
     )
     payment_provider: str = Field(default="mock_hosted", validation_alias="PAYMENT_PROVIDER")
+    exchange_rate_api_url: str = Field(
+        default="https://api.frankfurter.dev/v1/latest",
+        validation_alias="EXCHANGE_RATE_API_URL",
+    )
+    exchange_rate_timeout_seconds: float = Field(
+        default=3.0,
+        validation_alias="EXCHANGE_RATE_TIMEOUT_SECONDS",
+    )
     payment_mock_webhook_secret: str = Field(default="local-test-only-change-me", validation_alias="PAYMENT_MOCK_WEBHOOK_SECRET")
     payment_mock_merchant_account: str = Field(default="mock_test_account", validation_alias="PAYMENT_MOCK_MERCHANT_ACCOUNT")
     payments_live_enabled: bool = Field(default=False, validation_alias="PAYMENTS_LIVE_ENABLED")
@@ -336,6 +344,10 @@ class Settings(BaseSettings):
     card_success_url: str = Field(default="", validation_alias="CARD_SUCCESS_URL")
     card_cancel_url: str = Field(default="", validation_alias="CARD_CANCEL_URL")
     contract_expiring_soon_days: int = Field(default=30, validation_alias="CONTRACT_EXPIRING_SOON_DAYS")
+    dropbox_sign_api_key: str = Field(default="", validation_alias="DROPBOX_SIGN_API_KEY")
+    dropbox_sign_client_id: str = Field(default="", validation_alias="DROPBOX_SIGN_CLIENT_ID")
+    dropbox_sign_webhook_enabled: bool = Field(default=False, validation_alias="DROPBOX_SIGN_WEBHOOK_ENABLED")
+    dropbox_sign_test_mode: bool = Field(default=True, validation_alias="DROPBOX_SIGN_TEST_MODE")
 
 
 @lru_cache

@@ -38,6 +38,13 @@ class DepositType(str, enum.Enum):
     custom = "custom"
 
 
+class RentPeriod(str, enum.Enum):
+    """户型基础租金的计价周期。"""
+
+    weekly = "weekly"
+    monthly = "monthly"
+
+
 class UnitType(TimestampMixin, Base):
     """户型 — 中间层核心录入主体，归属于公寓"""
     __tablename__ = "unit_types"
@@ -69,6 +76,12 @@ class UnitType(TimestampMixin, Base):
         Enum(DepositType, name="unit_type_deposit_type"), nullable=True, default=None
     )
     currency: Mapped[str | None] = mapped_column(String(10), nullable=True, default="CNY")
+    rent_period: Mapped[RentPeriod] = mapped_column(
+        Enum(RentPeriod, name="rent_period"),
+        nullable=False,
+        default=RentPeriod.monthly,
+        server_default=text("'monthly'"),
+    )
 
     # ── 租期 — 自由文本(AI可读) + 结构化Date(DB可查) ──
     lease_start: Mapped[str | None] = mapped_column(String(50), nullable=True)

@@ -11,7 +11,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.booking import Booking, BookingStatus
 from app.models.contract import Contract
 from app.models.policy_consent import PolicyConsent
-from app.models.property import Property, PropertyType
+from app.models.institute import Institute
+from app.models.unit_type import UnitType, PropertyType
 from app.models.user import User
 from app.services.lease_pricing_service import LeasePricingService
 
@@ -41,11 +42,12 @@ class ContractService:
         self.session = session
 
     async def _build_source_snapshot(self, booking: Booking) -> dict:
-        tenant = await self.session.get(User, booking.tenant_id)
+        tenant = await self.session.get(User, booking.user_id)
         landlord = await self.session.get(User, booking.bm_id)
-        property_obj = await self.session.get(Property, booking.institute_id)
-        if not property_obj:
-            raise ValueError("Property not found")
+        unit_type = await self.session.get(UnitType, booking.unit_type_id)
+        institute = await self.session.get(Institute, booking.institute_id)
+        if not unit_type or not institute:
+            raise ValueError("Unit type or institute not found")
 
         application = booking.application_data or {}
         personal = application.get("personal_info") or {}
@@ -55,8 +57,8 @@ class ContractService:
             None,
         )
         if option is None and booking.scheduled_date:
-            calculated = LeasePricingService.calculate(
-                property_obj, datetime.fromisoformat(booking.scheduled_date).date()
+            calculated = await LeasePricingService.calculate(
+                unit_type, datetime.fromisoformat(booking.scheduled_date).date()
             ).model_dump(mode="json")
             pricing = calculated
             option = next(
@@ -108,7 +110,7 @@ class ContractService:
             "zh": f"已包含：{'、'.join(included) if included else '房源记录未配置'}；不包含：{'、'.join(excluded) if excluded else '房源记录未配置'}。未列明费用以订单和房源规则为准。",
             "en": f"Included: {', '.join(included) if included else 'not configured in the property record'}; excluded: {', '.join(excluded) if excluded else 'not configured in the property record'}. Unlisted charges are governed by the booking and property rules.",
         }
-        tenant_cn = personal.get("chinese_name") or (tenant.username if tenant else "待确认")
+        tenant_cn = self._decode_display_text(personal.get("chinese_name")) or (tenant.username if tenant else "待确认")
         tenant_en = " ".join(filter(None, [personal.get("given_name_pinyin"), personal.get("surname_pinyin")])) or "To be confirmed"
         commencement = booking.scheduled_date or "待确认"
         return {
@@ -119,11 +121,16 @@ class ContractService:
             "platform_role": PLATFORM_ROLE,
             "tenant_name_cn": tenant_cn,
             "tenant_name_en": tenant_en,
-            "property_name": getattr(getattr(property_obj, 'unit_type', None), 'name', property_obj.room_number or ''),
-            "property_address": getattr(getattr(getattr(property_obj, 'unit_type', None), 'institute', None), 'address', ''),
-            "property_id": property_obj.id,
-            "room_type": getattr(getattr(property_obj, 'unit_type', None), 'name', '') or '',
-            "occupancy_limit": property_rules.get("occupancy_limit") or max(1, getattr(getattr(property_obj, 'unit_type', None), 'bedrooms', 0) or 1),
+            "tenant_email": tenant.email if tenant else None,
+            "tenant_phone": self._decode_display_text(personal.get("phone")) or (tenant.phone if tenant else None),
+            "tenant_school": self._decode_display_text(personal.get("school")) or self._decode_display_text(personal.get("university")),
+            "tenant_passport": self._decode_display_text(personal.get("passport_number")) or self._decode_display_text(personal.get("passport")),
+            "property_name": institute.name_cn or institute.name,
+            "property_address": institute.address or '',
+            "property_id": unit_type.id,
+            "room_type": unit_type.name,
+            "room_number": booking.room_number,
+            "occupancy_limit": property_rules.get("occupancy_limit") or max(1, unit_type.bedrooms or 1),
             "commencement_date": commencement,
             "expiry_date": option["end_date"],
             "tenancy_months": booking.lease_months,
@@ -147,6 +154,62 @@ class ContractService:
             "prevailing_language": property_rules.get("prevailing_language") or "待业务和法务配置 / To be configured by business and legal counsel",
             "provider_execution_mode": property_rules.get("provider_execution_mode") or "待配置；不得视为供应方已签署或盖章 / Not configured; no provider signature or seal is represented",
         }
+
+    @staticmethod
+    def _decode_display_text(value: object) -> str | None:
+        """解码历史 JSON 二次序列化留下的 ASCII \\uXXXX 文本，不触碰已经是 Unicode 的正常字符串。"""
+        if not isinstance(value, str):
+            return None
+        text = value.strip()
+        if not text:
+            return None
+        if "\\u" in text and text.isascii():
+            try:
+                return json.loads('"' + text.replace('"', '\\"') + '"').strip()
+            except (json.JSONDecodeError, ValueError):
+                return text
+        return text
+
+    async def build_contract_context(self, booking_id: int) -> dict:
+        """从真实订单构建模板填充上下文，前端不可传入任何金额、日期或房号。"""
+        booking = await self.session.get(Booking, booking_id)
+        if not booking:
+            raise ValueError("Booking not found")
+        source = await self._build_source_snapshot(booking)
+        generated_date = datetime.now(timezone.utc).date().isoformat()
+        context = {
+            "agreement_number": source.get("agreement_number"),
+            "order_number": str(booking.id),
+            "tenant_name_cn": source.get("tenant_name_cn"),
+            "tenant_name_en": source.get("tenant_name_en"),
+            "tenant_email": source.get("tenant_email"),
+            "tenant_phone": source.get("tenant_phone"),
+            "tenant_school": source.get("tenant_school"),
+            "tenant_passport": source.get("tenant_passport"),
+            "landlord_or_provider_name": source.get("provider_name"),
+            "property_name": source.get("property_name"),
+            "property_address": source.get("property_address"),
+            "property_id": source.get("property_id"),
+            "unit_type_name": source.get("room_type"),
+            "room_number": source.get("room_number"),
+            "commencement_date": source.get("commencement_date"),
+            "end_date": source.get("expiry_date"),
+            "lease_months": source.get("tenancy_months"),
+            "monthly_rent": source.get("monthly_rent"),
+            "rent_currency": source.get("settlement_currency"),
+            "security_deposit": source.get("deposit"),
+            "utilities_deposit": "0",
+            "payment_due_day": (booking.application_data or {}).get("property_contract_rules", {}).get("payment_due_day"),
+            "generated_date": generated_date,
+        }
+        context.update({
+            "tenant_name": context["tenant_name_cn"],
+            "deposit_amount": context["security_deposit"],
+            "lease_start": context["commencement_date"],
+            "lease_end": context["end_date"],
+            "sign_date": context["generated_date"],
+        })
+        return context
 
     @staticmethod
     def _sections(source: dict) -> list[dict]:
@@ -204,7 +267,7 @@ class ContractService:
         ).hexdigest()
         snapshot["content_hash"] = content_hash
         contract = Contract(
-            booking_id=booking.id, tenant_id=booking.tenant_id, property_id=booking.institute_id,
+            booking_id=booking.id, tenant_id=booking.user_id, unit_type_id=booking.unit_type_id,
             template_name="housing_reservation_tenancy_bilingual", agreement_number=agreement_number,
             version=version, template_version=TEMPLATE_VERSION, content_hash=content_hash,
             snapshot=snapshot, generated_at=generated_at, content=content, status="generated",

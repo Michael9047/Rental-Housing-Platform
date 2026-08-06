@@ -257,10 +257,14 @@ function openUnitGallery(ut: any) {
 
 function handleBook(id: number) {
   // 两层结构：直接用 unit_type_id 预订
-  const ut = building.value?.unit_types?.find((u: any) => u.id === id)
+  const unitTypeId = Number(id)
+  if (!Number.isSafeInteger(unitTypeId) || unitTypeId <= 0) {
+    return ElMessage.error('户型信息异常，请刷新页面后重试')
+  }
+  const ut = building.value?.unit_types?.find((u: any) => u.id === unitTypeId)
   if (!ut) return ElMessage.warning('户型不存在')
   if (!ut.has_vacancy && ut.available_count <= 0) return ElMessage.warning('该户型暂无空房')
-  router.push({ name: 'booking-move-in-date', params: { propertyId: String(id) } })
+  router.push({ name: 'booking-move-in-date', params: { propertyId: String(unitTypeId) } })
 }
 
 let lIdx = 0

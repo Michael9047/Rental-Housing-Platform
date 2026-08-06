@@ -18,8 +18,10 @@ from sqlalchemy.orm import selectinload
 from app.api.deps import get_current_user, get_db_session, require_landlord
 from app.api.v1.routes.building_staff import _move_qr_from_temp
 from app.models.institute import Institute, InstituteStatus
+from app.models.contract_template import ContractTemplate
 from app.models.user import User
 from app.schemas.institute import InstituteCreate, InstituteUpdate
+from app.services.institute_access import managed_institute_filter
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/buildings", tags=["buildings"])
@@ -227,6 +229,48 @@ async def list_buildings(
         "couples_allowed": bool(b.couples_allowed) if b.couples_allowed is not None else False,
         "images": [{"id": img.id, "filename": img.filename, "original_name": img.original_name, "sort_order": img.sort_order, "is_primary": img.is_primary} for img in sorted(b.images or [], key=lambda x: x.sort_order)],
     } for b in result]
+
+
+@router.get("/managed")
+async def list_managed_buildings(
+    session: AsyncSession = Depends(get_db_session),
+    current_user: User = Depends(require_landlord),
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=200, ge=1, le=200),
+) -> dict:
+    """列出当前用户可管理的公寓，供合同模板管理等受限页面使用。"""
+    template_count = (
+        select(func.count(ContractTemplate.id))
+        .where(ContractTemplate.institute_id == Institute.id)
+        .correlate(Institute)
+        .scalar_subquery()
+    )
+    stmt = (
+        select(Institute, template_count.label("template_count"))
+        .where(Institute.status != InstituteStatus.suspended)
+        .order_by(Institute.id.desc())
+        .offset(skip)
+        .limit(limit)
+    )
+    scope = managed_institute_filter(current_user)
+    if scope is not None:
+        stmt = stmt.where(scope)
+
+    rows = (await session.execute(stmt)).all()
+    items = [
+        {
+            "id": building.id,
+            "business_id": building.business_id,
+            "name": building.name,
+            "name_cn": building.name_cn,
+            "city": building.city,
+            "status": building.status.value,
+            "bm_id": building.bm_id,
+            "template_count": count,
+        }
+        for building, count in rows
+    ]
+    return {"items": items, "total": len(items)}
 
 
 @router.post("")

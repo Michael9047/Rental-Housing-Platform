@@ -30,7 +30,7 @@ def generate_property_embedding(property_id: int) -> None:
         async with async_session() as session:
             # Create pending EmbeddingJob
             job = EmbeddingJob(
-                property_id=property_id,
+                unit_type_id=property_id,
                 status=EmbeddingJobStatus.pending,
             )
             session.add(job)

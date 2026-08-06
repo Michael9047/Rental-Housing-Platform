@@ -248,10 +248,14 @@ async function toggleCart() {
 
 function goBook() {
   if (!building.value || !selectedUnitType.value) return
-  const propertyId = building.value.id
+  const unitTypeId = Number(selectedUnitType.value.id)
+  if (!Number.isSafeInteger(unitTypeId) || unitTypeId <= 0) {
+    ElMessage.error('户型信息异常，请刷新页面后重试')
+    return
+  }
   router.push({
     name: 'booking-move-in-date',
-    params: { propertyId: String(propertyId) },
+    params: { propertyId: String(unitTypeId) },
   })
 }
 

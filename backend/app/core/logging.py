@@ -223,6 +223,14 @@ async def http_exception_handler(request: Request, exc: StarletteHTTPException) 
 
 
 async def generic_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    # 完整 traceback 仅写入服务端日志，响应只返回可安全展示的固定文案。
+    logging.getLogger("app.error").exception(
+        "Unhandled exception on %s %s",
+        request.method, request.url.path,
+        extra={"request_id": getattr(request.state, "request_id", None)},
+    )
+    return _build_error_response(500, "服务器处理请求时发生错误，请稍后重试", "internal_error")
+
     msg = str(exc) if settings.debug else "Internal server error"
     error_type = type(exc).__name__
 

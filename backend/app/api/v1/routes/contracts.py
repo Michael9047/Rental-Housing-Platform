@@ -1,11 +1,13 @@
 from datetime import datetime, timedelta, timezone
+from io import BytesIO
+import re
 
 import jwt
 import uuid
 import logging
 from pydantic import ValidationError
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from fastapi.responses import Response, JSONResponse
+from fastapi.responses import Response, JSONResponse, StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import func, select
 
@@ -13,15 +15,48 @@ from app.api.deps import get_current_user, get_db_session, require_tenant
 from app.models.user import User, UserRole
 from app.schemas.contract import ContractResponse, ContractSignCreate, ContractSignatureResponse, TenantContractDetail, TenantContractListResponse
 from app.models.contract import Contract, ContractSignature
+from app.models.institute import Institute
+from app.models.unit_type import UnitType
 from app.services.booking_service import BookingService
 from app.services.contract_service import ContractService
+from app.services.institute_access import can_manage_institute, managed_institute_filter
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
-def _can_access(current_user: User, booking) -> bool:
-    return current_user.id in {booking.tenant_id, booking.bm_id} or current_user.role == UserRole.admin
+async def _can_access(session: AsyncSession, current_user: User, booking) -> bool:
+    """按租客、超级管理员或公寓 BM 的真实归属校验合同访问权限。"""
+    if current_user.role == UserRole.admin or current_user.id == booking.user_id:
+        return True
+    if current_user.role != UserRole.landlord or booking.unit_type_id is None:
+        return False
+
+    managed_institute = await session.scalar(
+        select(Institute.id)
+        .join(UnitType, UnitType.institute_id == Institute.id)
+        .where(UnitType.id == booking.unit_type_id, managed_institute_filter(current_user))
+    )
+    return managed_institute is not None
+
+
+async def _can_manage_institute(
+    session: AsyncSession, current_user: User, institute_id: int
+) -> bool:
+    """校验用户是否有指定公寓的合同模板管理权限。"""
+    return await can_manage_institute(session, current_user, institute_id)
+
+
+async def _get_managed_template(
+    session: AsyncSession, current_user: User, template_id: str
+):
+    """按公寓归属读取合同模板，管理员可读取全部模板。"""
+    template = await session.get(ContractTemplate, template_id)
+    if not template:
+        return None
+    if not await _can_manage_institute(session, current_user, template.institute_id):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="无权管理该公寓的合同模板")
+    return template
 
 
 @router.post("/{booking_id}/generate", response_model=ContractResponse, status_code=status.HTTP_201_CREATED)
@@ -32,18 +67,16 @@ async def generate_contract(
 ) -> ContractResponse:
     from sqlalchemy.orm import selectinload
     from app.models.booking import Booking
-    from app.models.property import Room
-    from app.models.unit_type import UnitType
     booking = (await session.scalars(
         select(Booking).where(Booking.id == booking_id).options(
-            selectinload(Booking.property).selectinload(Room.unit_type).selectinload(UnitType.institute),
+            selectinload(Booking.unit_type).selectinload(UnitType.institute),
             selectinload(Booking.tenant),
         )
     )).unique().first()
     if not booking:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Booking not found")
 
-    if current_user.id not in {booking.tenant_id, booking.bm_id} and current_user.role != UserRole.admin:
+    if not await _can_access(session, current_user, booking):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
 
     contract_service = ContractService(session)
@@ -64,12 +97,29 @@ async def get_contract_by_booking(
     booking = await BookingService(session).get(booking_id)
     if not booking:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Booking not found")
-    if not _can_access(current_user, booking):
+    if not await _can_access(session, current_user, booking):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
     contract = await ContractService(session).list_by_booking(booking_id)
     if not contract:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Contract not found")
     return contract
+
+
+@router.get("/{contract_id}/execution")
+async def get_contract_execution(
+    contract_id: str,
+    session: AsyncSession = Depends(get_db_session),
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    """返回当前合同唯一允许使用的签署渠道，不暴露第三方密钥。"""
+    contract = await ContractService(session).get_contract(contract_id)
+    if not contract:
+        raise HTTPException(status_code=404, detail="Contract not found")
+    booking = await BookingService(session).get(contract.booking_id)
+    if not booking or not await _can_access(session, current_user, booking):
+        raise HTTPException(status_code=403, detail="Access denied")
+    from app.services.contract_execution_service import ContractExecutionService
+    return await ContractExecutionService(session).resolve(contract)
 
 
 @router.get("/my", response_model=TenantContractListResponse)
@@ -176,6 +226,8 @@ async def upload_template(
     """BM 上传合同 PDF 模板 — 绑定到指定公寓"""
     if current_user.role not in (UserRole.landlord, UserRole.admin):
         raise HTTPException(403, "仅房东可上传模板")
+    if not await _can_manage_institute(session, current_user, institute_id):
+        raise HTTPException(403, "No permission to manage this institute")
     if not file.filename or not file.filename.lower().endswith(".pdf"):
         raise HTTPException(400, "仅支持 PDF 文件")
 
@@ -200,11 +252,15 @@ async def list_templates(
     current_user: User = Depends(get_current_user),
 ):
     """BM 查看自己的模板列表"""
-    stmt = (
-        select(ContractTemplate)
-        .where(ContractTemplate.bm_id == current_user.id)
-        .order_by(ContractTemplate.created_at.desc())
+    if current_user.role not in (UserRole.landlord, UserRole.admin):
+        raise HTTPException(403, "Landlord or admin role required")
+    stmt = select(ContractTemplate).join(
+        Institute, ContractTemplate.institute_id == Institute.id
     )
+    scope = managed_institute_filter(current_user)
+    if scope is not None:
+        stmt = stmt.where(scope)
+    stmt = stmt.order_by(ContractTemplate.created_at.desc())
     result = await session.execute(stmt)
     items = list(result.scalars().all())
     return TemplateListResponse(items=items, total=len(items))
@@ -216,8 +272,8 @@ async def get_template(
     session: AsyncSession = Depends(get_db_session),
     current_user: User = Depends(get_current_user),
 ):
-    tpl = await session.get(ContractTemplate, template_id)
-    if not tpl or tpl.bm_id != current_user.id:
+    tpl = await _get_managed_template(session, current_user, template_id)
+    if not tpl:
         raise HTTPException(404, "模板不存在")
     return tpl
 
@@ -229,14 +285,24 @@ async def download_template_file(
     current_user: User = Depends(get_current_user),
 ):
     """下载模板 PDF 文件"""
-    tpl = await session.get(ContractTemplate, template_id)
-    if not tpl or tpl.bm_id != current_user.id:
+    tpl = await _get_managed_template(session, current_user, template_id)
+    if not tpl:
         raise HTTPException(404, "模板不存在")
     try:
         pdf_bytes = PrivateObjectStorage().get(tpl.file_path)
     except FileNotFoundError:
         raise HTTPException(404, "模板文件不存在")
-    return Response(content=pdf_bytes, media_type="application/pdf")
+    filename = re.sub(r"[^A-Za-z0-9._-]", "_", tpl.name).strip("._") or "contract_template"
+    if not filename.lower().endswith(".pdf"):
+        filename = f"{filename}.pdf"
+    return StreamingResponse(
+        BytesIO(pdf_bytes),
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'inline; filename="{filename}"',
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
 
 
 @router.put("/templates/{template_id}", response_model=TemplateRead)
@@ -247,8 +313,8 @@ async def update_template(
     current_user: User = Depends(get_current_user),
 ):
     """更新模板名称或保存字段坐标"""
-    tpl = await session.get(ContractTemplate, template_id)
-    if not tpl or tpl.bm_id != current_user.id:
+    tpl = await _get_managed_template(session, current_user, template_id)
+    if not tpl:
         raise HTTPException(404, "模板不存在")
     update = data.model_dump(exclude_unset=True)
     for k, v in update.items():
@@ -264,8 +330,8 @@ async def delete_template(
     session: AsyncSession = Depends(get_db_session),
     current_user: User = Depends(get_current_user),
 ):
-    tpl = await session.get(ContractTemplate, template_id)
-    if not tpl or tpl.bm_id != current_user.id:
+    tpl = await _get_managed_template(session, current_user, template_id)
+    if not tpl:
         raise HTTPException(404, "模板不存在")
     try:
         PrivateObjectStorage().delete(tpl.file_path)
@@ -308,20 +374,27 @@ async def list_landlord_contracts(
     from sqlalchemy.orm import selectinload
     from app.models.booking import Booking
 
-    booking_stmt = select(Booking.id).where(Booking.bm_id == current_user.id)
-    booking_result = await session.execute(booking_stmt)
-    booking_ids = [r[0] for r in booking_result.all()]
+    if current_user.role not in (UserRole.landlord, UserRole.admin):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Landlord or admin role required")
 
-    if not booking_ids:
-        return _LandlordContractList(items=[], total=0, page=page, page_size=page_size, total_pages=0)
+    count_stmt = select(func.count(Contract.id))
+    stmt = select(Contract)
+    if current_user.role == UserRole.landlord:
+        for model, condition in (
+            (Booking, Contract.booking_id == Booking.id),
+            (UnitType, Booking.unit_type_id == UnitType.id),
+            (Institute, UnitType.institute_id == Institute.id),
+        ):
+            count_stmt = count_stmt.join(model, condition)
+            stmt = stmt.join(model, condition)
+        scope = managed_institute_filter(current_user)
+        count_stmt = count_stmt.where(scope)
+        stmt = stmt.where(scope)
 
-    count_stmt = select(func.count(Contract.id)).where(Contract.booking_id.in_(booking_ids))
     total = (await session.scalar(count_stmt)) or 0
 
     stmt = (
-        select(Contract)
-        .where(Contract.booking_id.in_(booking_ids))
-        .options(
+        stmt.options(
             selectinload(Contract.tenant),
             selectinload(Contract.booking).selectinload(Booking.unit_type),
         )
@@ -359,10 +432,9 @@ async def get_contract(
     if not contract:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Contract not found")
 
-    if current_user.id not in {contract.tenant_id, booking := None} and current_user.role != UserRole.admin:
-        booking = await BookingService(session).get(contract.booking_id)
-        if booking and current_user.id not in {booking.tenant_id, booking.bm_id}:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+    booking = await BookingService(session).get(contract.booking_id)
+    if not booking or not await _can_access(session, current_user, booking):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
 
     return contract
 
@@ -407,7 +479,7 @@ async def create_signed_download_link(
     if not contract or contract.status != "signed":
         raise HTTPException(status_code=404, detail="Signed contract not found")
     booking = await BookingService(session).get(contract.booking_id)
-    if not booking or not _can_access(current_user, booking):
+    if not booking or not await _can_access(session, current_user, booking):
         raise HTTPException(status_code=403, detail="Access denied")
     if not contract.file_path:
         request_id = str(uuid.uuid4())
@@ -451,10 +523,10 @@ async def download_contract(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Contract not found")
 
     booking = await BookingService(session).get(contract.booking_id)
-    if booking and current_user.id not in {booking.tenant_id, booking.bm_id} and current_user.role != UserRole.admin:
+    if not booking or not await _can_access(session, current_user, booking):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
 
-    from app.services.contract_pdf_service import ContractPdfService
+    from app.services.contract_pdf_render_service import ContractPdfRenderService, ContractRenderError
     from app.services.private_object_storage import PrivateObjectStorage
     if contract.status == "signed" and not contract.file_path:
         return JSONResponse(
@@ -465,12 +537,22 @@ async def download_contract(
                 "request_id": str(uuid.uuid4()),
             },
         )
-    pdf = PrivateObjectStorage().get(contract.file_path) if contract.status == "signed" else await ContractPdfService().generate(contract)
+    if contract.status == "signed":
+        pdf = PrivateObjectStorage().get(contract.file_path)
+    else:
+        # 租客只能获取生成完成的快照，不返回 BM 原始空白模板。
+        try:
+            pdf = await ContractPdfRenderService(session).render_current_contract(contract)
+        except ContractRenderError as exc:
+            return JSONResponse(
+                status_code=status.HTTP_409_CONFLICT,
+                content={"code": "CONTRACT_TEMPLATE_INCOMPLETE", "message": str(exc), "missing_fields": exc.missing_fields},
+            )
     filename = f"{contract.agreement_number or contract.id}.pdf"
     return Response(
         content=pdf,
         media_type="application/pdf",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        headers={"Content-Disposition": f'inline; filename="{filename}"'},
     )
 
 

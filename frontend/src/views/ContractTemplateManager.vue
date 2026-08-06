@@ -1,19 +1,32 @@
 <template>
   <div class="page-container">
-    <h2>合同模板管理</h2>
+    <div class="page-title">
+      <h2>合同模板管理</h2>
+      <el-button @click="$router.push('/contracts/dropbox-sign')">Dropbox Sign 模板绑定</el-button>
+    </div>
 
     <el-row :gutter="16" style="margin-top:16px">
       <!-- 左侧：我的公寓 -->
       <el-col :span="6">
         <el-card shadow="never">
-          <template #header><span>🏢 我的公寓</span></template>
-          <div v-if="buildings.length === 0" style="text-align:center;padding:20px;color:#909399">暂无公寓</div>
+          <template #header>
+            <div class="building-card-header">
+              <span>🏢 我的公寓</span>
+              <el-button text size="small" :loading="buildingLoading" @click="reloadData">重新加载</el-button>
+            </div>
+          </template>
+          <div v-if="buildingError" class="building-state is-error">{{ buildingError }}</div>
+          <div v-else-if="!buildingLoading && buildings.length === 0" class="building-state">当前账号尚未分配公寓</div>
           <div v-for="b in buildings" :key="b.id"
                :class="['bld-item', { active: selectedBld?.id === b.id }]"
                @click="selectBuilding(b)">
             <div class="bld-name">{{ b.name_cn || b.name }}</div>
             <div class="bld-city">{{ b.city || '' }}</div>
-            <el-tag size="small" v-if="getTplCount(b.id)">{{ getTplCount(b.id) }} 模板</el-tag>
+            <div class="bld-meta">
+              <span>{{ b.business_id || '无 business_id' }}</span>
+              <el-tag size="small" :type="b.status === 'active' ? 'success' : 'info'">{{ b.status }}</el-tag>
+              <el-tag size="small" type="info">{{ getTplCount(b) }} 模板</el-tag>
+            </div>
           </div>
         </el-card>
       </el-col>
@@ -34,7 +47,7 @@
               </div>
             </template>
             <div v-if="bldTemplates.length === 0" style="text-align:center;padding:20px;color:#909399">
-              暂无模板，请上传
+              该公寓暂无合同模板
             </div>
             <div v-for="tpl in bldTemplates" :key="tpl.id"
                  :class="['tpl-row', { active: activeTpl?.id === tpl.id }]"
@@ -64,17 +77,19 @@
               <el-select v-model="selectedField" placeholder="选择字段" size="small" style="width:160px;margin:0 8px">
                 <el-option v-for="f in fieldOptions" :key="f.key" :label="f.label" :value="f.key" />
               </el-select>
-              <el-tag v-for="(_, key) in activeTpl.field_positions" :key="key" size="small" closable style="margin:0 2px" @close="removeField(key as string)">
-                {{ fieldOptions.find(f=>f.key===key)?.label || key }}
+              <el-tag v-for="(_, key) in activeTpl.field_positions" :key="key" size="small" closable style="margin:0 2px" @close="removeField(String(key))">
+                {{ fieldOptions.find(f => f.key === String(key))?.label || key }}
               </el-tag>
             </div>
             <div ref="pdfContainer" style="border:1px solid #dcdfe6;min-height:600px;position:relative;overflow:auto;background:#f5f5f5"
                  @mousedown="onMouseDown" @mousemove="onMouseMove" @mouseup="onMouseUp" @mouseleave="onMouseUp">
-              <iframe v-if="pdfUrl" :src="pdfUrl" width="100%" height="800" :style="{border:'none',pointerEvents:digMode?'none':'auto'}" />
+              <div v-if="pdfLoading" class="pdf-state">正在加载合同模板 PDF…</div>
+              <div v-else-if="pdfError" class="pdf-state is-error">{{ pdfError }}</div>
+              <iframe v-else-if="pdfObjectUrl" :src="pdfObjectUrl" width="100%" height="800" :style="{border:'none',pointerEvents:digMode?'none':'auto'}" />
               <!-- 已保存的字段标记 -->
               <div v-for="(pos, key) in activeTpl.field_positions" :key="key" class="field-marker"
                    :style="{left:pos.x+'px',top:pos.y+'px',width:(pos.w||80)+'px',height:(pos.h||20)+'px'}">
-                {{ fieldOptions.find(f=>f.key===key)?.label || key }}
+                {{ fieldOptions.find(f => f.key === String(key))?.label || key }}
               </div>
               <!-- 拖动框选中的临时矩形 -->
               <div v-if="dragRect" class="drag-rect"
@@ -106,14 +121,20 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onBeforeUnmount, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import api from '@/services/api'
 
 const buildings = ref<any[]>([])
+const buildingLoading = ref(false)
+const buildingError = ref('')
 const selectedBld = ref<any>(null)
 const templates = ref<any[]>([])
 const activeTpl = ref<any>(null)
+const pdfObjectUrl = ref('')
+const pdfLoading = ref(false)
+const pdfError = ref('')
+let pdfLoadSequence = 0
 const digMode = ref(false)
 const selectedField = ref('')
 // 框选状态
@@ -126,7 +147,6 @@ const saving = ref(false)
 const fileInput = ref<HTMLInputElement>()
 
 const bldTemplates = computed(() => templates.value.filter(t => t.institute_id === selectedBld.value?.id))
-const pdfUrl = computed(() => activeTpl.value ? `/api/v1/contracts/templates/${activeTpl.value.id}/file` : '')
 
 const uploadForm = ref({ name: '', file: null as File | null })
 
@@ -151,17 +171,112 @@ onMounted(async () => {
   await loadTemplates()
 })
 
-function getTplCount(bldId: number) { return templates.value.filter(t => t.institute_id === bldId).length }
+function getTplCount(building: any) {
+  return building.template_count ?? templates.value.filter(t => t.institute_id === building.id).length
+}
+
+function buildingLoadMessage(error: any): string {
+  const status = error?.response?.status
+  if (status === 401) return '登录已过期，请重新登录'
+  if (status === 403) return '当前账号没有合同模板管理权限'
+  if (status >= 500) return '公寓列表加载失败，请重试'
+  if (!error?.response) return '无法连接服务器，请检查后端服务'
+  return '公寓列表加载失败，请重试'
+}
 
 async function loadBuildings() {
-  try { const r = await api.get('/buildings', { params: { limit: 200 } }); buildings.value = Array.isArray(r.data) ? r.data : (r.data.items || []) } catch { /* */ }
+  buildingLoading.value = true
+  buildingError.value = ''
+  try {
+    const r = await api.get('/buildings/managed', { params: { limit: 200 }, suppressGlobalError: true } as any)
+    buildings.value = r.data.items || []
+    if (selectedBld.value && !buildings.value.some(b => b.id === selectedBld.value.id)) {
+      selectedBld.value = null
+      activeTpl.value = null
+      revokePdfObjectUrl()
+    }
+  } catch (error) {
+    buildings.value = []
+    selectedBld.value = null
+    activeTpl.value = null
+    revokePdfObjectUrl()
+    buildingError.value = buildingLoadMessage(error)
+  } finally {
+    buildingLoading.value = false
+  }
 }
 async function loadTemplates() {
-  try { const r = await api.get('/contracts/templates'); templates.value = r.data.items || [] } catch { /* */ }
+  try {
+    const r = await api.get('/contracts/templates', { suppressGlobalError: true } as any)
+    templates.value = r.data.items || []
+  } catch (error) {
+    templates.value = []
+    if (!buildingError.value) buildingError.value = buildingLoadMessage(error)
+  }
 }
 
-function selectBuilding(b: any) { selectedBld.value = b; activeTpl.value = null; digMode.value = false }
-function selectTemplate(tpl: any) { activeTpl.value = { ...tpl, field_positions: { ...tpl.field_positions } }; digMode.value = false; selectedField.value = '' }
+async function reloadData() {
+  revokePdfObjectUrl()
+  await Promise.all([loadBuildings(), loadTemplates()])
+  if (activeTpl.value && templates.value.some(t => t.id === activeTpl.value.id)) {
+    await loadPdf(activeTpl.value.id)
+  }
+}
+
+function revokePdfObjectUrl() {
+  pdfLoadSequence += 1
+  if (pdfObjectUrl.value) URL.revokeObjectURL(pdfObjectUrl.value)
+  pdfObjectUrl.value = ''
+}
+
+function pdfLoadMessage(error: any): string {
+  const status = error?.response?.status
+  if (status === 401) return '登录状态已失效，请重新登录'
+  if (status === 403) return '您无权查看该合同模板'
+  if (status === 404) return '合同文件不存在'
+  if (status >= 500) return '合同加载失败，请稍后重试'
+  if (!error?.response) return '无法连接服务器，请检查后端服务'
+  return '合同加载失败，请稍后重试'
+}
+
+async function loadPdf(templateId: string) {
+  const requestSequence = ++pdfLoadSequence
+  pdfLoading.value = true
+  pdfError.value = ''
+  if (pdfObjectUrl.value) URL.revokeObjectURL(pdfObjectUrl.value)
+  pdfObjectUrl.value = ''
+  try {
+    const response = await api.get(`/contracts/templates/${templateId}/file`, {
+      responseType: 'blob',
+      suppressGlobalError: true,
+    } as any)
+    const contentType = String(response.headers?.['content-type'] || response.data?.type || '').toLowerCase()
+    if (!contentType.includes('application/pdf')) throw new Error('服务器返回的内容不是 PDF')
+    if (requestSequence !== pdfLoadSequence) return
+    pdfObjectUrl.value = URL.createObjectURL(new Blob([response.data], { type: 'application/pdf' }))
+  } catch (error) {
+    if (requestSequence !== pdfLoadSequence) return
+    pdfError.value = error instanceof Error && error.message === '服务器返回的内容不是 PDF'
+      ? error.message
+      : pdfLoadMessage(error)
+  } finally {
+    if (requestSequence === pdfLoadSequence) pdfLoading.value = false
+  }
+}
+
+function selectBuilding(b: any) {
+  selectedBld.value = b
+  activeTpl.value = null
+  digMode.value = false
+  pdfError.value = ''
+  revokePdfObjectUrl()
+}
+function selectTemplate(tpl: any) {
+  activeTpl.value = { ...tpl, field_positions: { ...tpl.field_positions } }
+  digMode.value = false
+  selectedField.value = ''
+  void loadPdf(tpl.id)
+}
 function removeField(key: string) { if (activeTpl.value?.field_positions) delete activeTpl.value.field_positions[key] }
 
 function getCoords(e: MouseEvent) {
@@ -235,18 +350,28 @@ async function deleteTemplate(tpl: any) {
     await api.delete(`/contracts/templates/${tpl.id}`)
     ElMessage.success('已删除')
     if (activeTpl.value?.id === tpl.id) activeTpl.value = null
+    revokePdfObjectUrl()
     loadTemplates()
   } catch { ElMessage.error('删除失败') }
 }
+
+onBeforeUnmount(revokePdfObjectUrl)
 </script>
 
 <style scoped>
+.page-title { display: flex; justify-content: space-between; align-items: center; gap: 16px }
 .page-container { max-width: 1400px; margin: 0 auto; padding: 24px }
+.building-card-header { display: flex; justify-content: space-between; align-items: center }
+.building-state { text-align: center; padding: 20px; color: #909399 }
+.building-state.is-error { color: #f56c6c }
 .bld-item { padding: 10px 14px; border-bottom: 1px solid #ebeef5; cursor: pointer; border-radius: 4px }
 .bld-item:hover { background: #f5f7fa }
 .bld-item.active { background: var(--primary-light); border-left: 3px solid var(--primary) }
 .bld-name { font-weight: 600 }
 .bld-city { font-size: 12px; color: #909399 }
+.bld-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; margin-top: 4px; font-size: 12px; color: #909399 }
+.pdf-state { display: flex; min-height: 600px; align-items: center; justify-content: center; color: #909399 }
+.pdf-state.is-error { color: #f56c6c }
 .tpl-row { padding: 10px 14px; border-bottom: 1px solid #ebeef5; cursor: pointer; display: flex; align-items: center; gap: 12px; border-radius: 4px }
 .tpl-row:hover { background: #f5f7fa }
 .tpl-row.active { background: var(--primary-light) }

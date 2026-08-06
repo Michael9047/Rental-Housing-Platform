@@ -43,8 +43,8 @@ class PaymentResultResponse(PaymentResponse):
 class TenantOrderListItem(BaseModel):
     booking_id: int
     order_id: str
-    agreement_id: str
-    agreement_number: str
+    agreement_id: str | None = None
+    agreement_number: str | None = None
     property_id: int
     property_name: str
     property_image_url: str | None = None
@@ -90,6 +90,9 @@ class TenantOrderDetail(TenantOrderListItem):
     webhook_confirmed: bool = False
     amounts_verified: bool = False
     inventory_reserved: bool = False
+    contract: dict | None = None
+    room_assignment: dict | None = None
+    workflow: dict = Field(default_factory=dict)
 
 
 class PaymentEligibilityResponse(BaseModel):

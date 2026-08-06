@@ -121,6 +121,59 @@ body {
   border-radius: var(--radius-sm) !important;
 }
 
+/* 预订信息表单复用地址“国家/地区”下拉框的单行控件尺寸。 */
+.booking-control-form {
+  --booking-control-height: 48px;
+  --booking-control-padding: 4px 12px;
+  --booking-control-radius: var(--radius-sm);
+  --booking-control-border: 0 0 0 1px var(--el-border-color) inset;
+}
+.booking-control-form .el-form-item__content {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  line-height: normal;
+}
+.booking-control-form .el-input,
+.booking-control-form .el-select,
+.booking-control-form .el-date-editor,
+.booking-control-form .el-cascader {
+  display: block;
+  width: 100% !important;
+  min-width: 0;
+}
+.booking-control-form .el-input__wrapper,
+.booking-control-form .el-select__wrapper,
+.booking-control-form .el-date-editor,
+.booking-control-form .el-cascader .el-input__wrapper {
+  width: 100%;
+  min-height: var(--booking-control-height);
+  height: var(--booking-control-height);
+  padding: var(--booking-control-padding);
+  box-sizing: border-box;
+  border-radius: var(--booking-control-radius) !important;
+  box-shadow: var(--booking-control-border);
+}
+.booking-control-form .el-date-editor .el-input__wrapper {
+  min-height: 100%;
+  height: 100%;
+}
+.booking-control-form .el-form-item__error {
+  position: static;
+  display: block;
+  margin-top: 5px;
+  padding: 0;
+  line-height: 18px;
+  color: var(--el-color-warning);
+}
+.booking-control-form .el-radio-group {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  min-height: var(--booking-control-height);
+  gap: 8px 16px;
+}
+
 .el-tag {
   border-radius: 6px !important;
 }

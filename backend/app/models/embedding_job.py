@@ -18,8 +18,8 @@ class EmbeddingJob(Base):
     __tablename__ = "embedding_jobs"
 
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
-    property_id: Mapped[int] = mapped_column(
-        ForeignKey("properties.id", ondelete="CASCADE"), index=True
+    unit_type_id: Mapped[int] = mapped_column(
+        ForeignKey("unit_types.id", ondelete="CASCADE"), index=True
     )
     status: Mapped[EmbeddingJobStatus] = mapped_column(
         Enum(EmbeddingJobStatus, name="embedding_job_status"),

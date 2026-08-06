@@ -4,9 +4,9 @@ from fastapi import APIRouter
 from app.api.v1.routes import (
     admin, agent, auth, bookings,
     building_staff, buildings, chat, commute, contracts,
-    dashboard, favorites, geocoding, health,
+    dashboard, external_signatures, favorites, geocoding, health,
     images, imports, map_routes, me, notifications,
-    payments, pois, repair_workers, repairs, reviews,
+    payments, pois, repair_workers, repairs, reviews, room_confirmations,
     search_suggestions, tenants,
     unit_types, universities, upload, users, wechat,
 )
@@ -37,6 +37,8 @@ api_router.include_router(wechat.router, tags=["wechat"])
 api_router.include_router(search_suggestions.router, prefix="/search", tags=["search"])
 api_router.include_router(universities.router, prefix="/universities", tags=["universities"])
 api_router.include_router(contracts.router, prefix="/contracts", tags=["contracts"])
+api_router.include_router(room_confirmations.router, prefix="/room-confirmations", tags=["room-confirmations"])
+api_router.include_router(external_signatures.router, prefix="/contracts/dropbox-sign", tags=["contracts"])
 api_router.include_router(payments.router, prefix="/payments", tags=["payments"])
 api_router.include_router(favorites.router, prefix="/favorites", tags=["favorites"])
 api_router.include_router(upload.router, tags=["upload"])

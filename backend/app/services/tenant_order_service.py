@@ -8,8 +8,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.booking import Booking, BookingStatus
 from app.models.contract import Contract, ContractSignature
 from app.models.payment import Payment, PaymentStatus
-from app.models.unit_type import UnitType
-from app.models.property_image import PropertyImage
+from app.models.institute import Institute
+from app.models.unit_type import UnitType, UnitTypeImage
 from app.models.user import User
 from app.schemas.payment import PaymentEligibilityResponse, TenantOrderDetail, TenantOrderListItem
 from app.services.order_state_policy import booking_is_confirmed, payment_status_can_pay, payment_status_value
@@ -80,9 +80,9 @@ class TenantOrderService:
             select(Payment).where(Payment.booking_id == booking_id).order_by(Payment.created_at.desc())
         )
 
-    async def payment_eligibility(self, booking_id: int, tenant_id: int) -> PaymentEligibilityResponse:
+    async def payment_eligibility(self, booking_id: int, tenant_user_id: int) -> PaymentEligibilityResponse:
         booking = await self.session.scalar(
-            select(Booking).where(Booking.id == booking_id, Booking.tenant_id == tenant_id)
+            select(Booking).where(Booking.id == booking_id, Booking.user_id == tenant_user_id)
         )
         if not booking:
             raise LookupError("订单不存在或无权查看")
@@ -94,18 +94,6 @@ class TenantOrderService:
             # 未签约/未创建支付的订单，给一个默认截止时间（24小时后）
             expires_at = datetime.now(timezone.utc) + timedelta(hours=24)
         reason = None
-        contract = await self.session.scalar(
-            select(Contract).where(Contract.booking_id == booking.id, Contract.status == "signed")
-            .order_by(Contract.version.desc())
-        )
-        signature = None
-        if contract:
-            signature = await self.session.scalar(
-                select(ContractSignature).where(
-                    ContractSignature.agreement_id == contract.id,
-                    ContractSignature.tenant_user_id == tenant_id,
-                )
-            )
         processing = await self.session.scalar(
             select(Payment.id).where(
                 Payment.booking_id == booking.id,
@@ -120,8 +108,6 @@ class TenantOrderService:
             reason = "当前订单状态不允许支付"
         elif not booking.inventory_reserved:
             reason = "房源预留已失效，请重新预订"
-        elif not contract or not signature:
-            reason = "未找到当前版本的有效已签合同"
         elif payment and not self._amounts_verified(payment):
             reason = "订单金额或币种已变化，请联系客服"
         can_pay = reason is None and payment_status_can_pay(payment_status)
@@ -135,7 +121,7 @@ class TenantOrderService:
             payment_id=payment.id if payment else None,
         )
 
-    async def _item(self, booking: Booking, payment: Payment | None, contract: Contract, unit_type: UnitType, image: PropertyImage | None) -> TenantOrderListItem:
+    async def _item(self, booking: Booking, payment: Payment | None, contract: Contract | None, unit_type: UnitType, image: UnitTypeImage | None) -> TenantOrderListItem:
         pricing, option = self._pricing(booking)
         snapshot = payment.snapshot if payment else {}
         fees = (snapshot or {}).get("fees") or option.get("prices", {})
@@ -145,23 +131,22 @@ class TenantOrderService:
         amounts_verified = self._amounts_verified(payment) if payment else bool(local_total)
         webhook_confirmed = bool(payment and payment.status == PaymentStatus.success and payment.paid_at and payment.transaction_id)
         confirmed = booking_is_confirmed(booking.status, payment_status, amounts_verified=amounts_verified, webhook_confirmed=webhook_confirmed)
-        eligibility = await self.payment_eligibility(booking.id, booking.tenant_id)
+        eligibility = await self.payment_eligibility(booking.id, booking.user_id)
         expires_at = payment.expires_at if payment else booking.payment_expires_at
         remaining = max(0, int(((expires_at or datetime.now(timezone.utc)) - datetime.now(timezone.utc)).total_seconds()))
         settlement_currency = payment.settlement_currency if payment else local_total.get("currency", pricing.get("local_currency", "CNY"))
         settlement_amount = payment.settlement_amount_minor if payment else int(local_total.get("minor_units", 0))
-        ut = getattr(unit_type, 'unit_type', None)
-        inst = getattr(ut, 'institute', None) if ut else None
+        institute = await self.session.get(Institute, booking.institute_id)
         return TenantOrderListItem(
             booking_id=booking.id,
             order_id=payment.order_id if payment else f"BOOKING-{booking.id}",
-            agreement_id=contract.id,
-            agreement_number=contract.agreement_number or contract.id,
+            agreement_id=contract.id if contract else None,
+            agreement_number=(contract.agreement_number or contract.id) if contract else None,
             property_id=unit_type.id,
-            property_name=getattr(ut, 'name', None) or unit_type.room_number or f"Room #{unit_type.id}",
+            property_name=(institute.name_cn or institute.name) if institute else unit_type.name,
             property_image_url=f"/api/v1/uploads/{image.filename}" if image else None,
-            property_city=getattr(inst, 'city', None) or '',
-            property_address=getattr(inst, 'address', None) or '',
+            property_city=institute.city if institute else '',
+            property_address=institute.address if institute else '',
             lease_start_date=(snapshot or {}).get("commencement_date") or booking.scheduled_date,
             lease_end_date=(snapshot or {}).get("expiry_date") or option.get("end_date"),
             lease_months=booking.lease_months,
@@ -182,47 +167,42 @@ class TenantOrderService:
             failure_reason=FAILURE_REASONS.get(payment_status),
         )
 
-    async def list_for_tenant(self, tenant_id: int) -> list[TenantOrderListItem]:
+    async def list_for_tenant(self, tenant_user_id: int) -> list[TenantOrderListItem]:
         bookings = list(await self.session.scalars(
-            select(Booking).where(Booking.tenant_id == tenant_id).order_by(Booking.created_at.desc())
+            select(Booking).where(Booking.user_id == tenant_user_id).order_by(Booking.created_at.desc())
         ))
         result = []
         for booking in bookings:
             payment = await self._latest_payment(booking.id)
-            contract = await self.session.scalar(
-                select(Contract).where(Contract.booking_id == booking.id, Contract.status == "signed")
-                .order_by(Contract.version.desc())
-            )
+            contract = await self.session.scalar(select(Contract).where(Contract.booking_id == booking.id).order_by(Contract.version.desc()))
             unit_type = await self.session.get(UnitType, booking.unit_type_id)
-            if not contract or not unit_type:
+            if not unit_type:
                 continue
             image = await self.session.scalar(
-                select(PropertyImage).where(PropertyImage.room_id == unit_type.id)
-                .order_by(PropertyImage.is_primary.desc(), PropertyImage.sort_order, PropertyImage.id)
+                select(UnitTypeImage).where(UnitTypeImage.unit_type_id == unit_type.id)
+                .order_by(UnitTypeImage.is_primary.desc(), UnitTypeImage.sort_order, UnitTypeImage.id)
             )
             result.append(await self._item(booking, payment, contract, unit_type, image))
         return result
 
-    async def detail_for_tenant(self, booking_id: int, tenant_id: int) -> TenantOrderDetail:
+    async def detail_for_tenant(self, booking_id: int, tenant_user_id: int) -> TenantOrderDetail:
         booking = await self.session.scalar(
-            select(Booking).where(Booking.id == booking_id, Booking.tenant_id == tenant_id)
+            select(Booking).where(Booking.id == booking_id, Booking.user_id == tenant_user_id)
         )
         if not booking:
             raise LookupError("订单不存在或无权查看")
         payment = await self._latest_payment(booking.id)
-        contract = await self.session.scalar(
-            select(Contract).where(Contract.booking_id == booking.id, Contract.status == "signed")
-            .order_by(Contract.version.desc())
-        )
+        contract = await self.session.scalar(select(Contract).where(Contract.booking_id == booking.id).order_by(Contract.version.desc()))
         unit_type = await self.session.get(UnitType, booking.unit_type_id)
-        tenant = await self.session.get(User, tenant_id)
-        if not contract or not unit_type or not tenant:
-            raise LookupError("订单关联数据不完整")
+        tenant = await self.session.get(User, booking.user_id)
+        if not unit_type or not tenant:
+            raise LookupError("订单关联户型或租客数据不完整")
         image = await self.session.scalar(
-            select(PropertyImage).where(PropertyImage.room_id == unit_type.id)
-            .order_by(PropertyImage.is_primary.desc(), PropertyImage.sort_order, PropertyImage.id)
+            select(UnitTypeImage).where(UnitTypeImage.unit_type_id == unit_type.id)
+            .order_by(UnitTypeImage.is_primary.desc(), UnitTypeImage.sort_order, UnitTypeImage.id)
         )
         item = await self._item(booking, payment, contract, unit_type, image)
+        institute = await self.session.get(Institute, booking.institute_id)
         pricing, option = self._pricing(booking)
         fees = (payment.snapshot or {}).get("fees", {}) if payment else option.get("prices", {})
         deposit = fees.get("deposit", {})
@@ -234,7 +214,7 @@ class TenantOrderService:
             applicant_phone_masked=self._mask_phone(tenant.phone),
             applicant_email_masked=self._mask_email(tenant.email),
             property_type=getattr(unit_type, 'property_type', None) or '',
-            property_country=getattr(getattr(unit_type, 'institute', None), 'country', '') or '',
+            property_country=institute.country if institute else '',
             property_description=getattr(unit_type, 'description', None) or '',
             monthly_rent_minor=int((unit_type.base_rent or 0) * 100),
             deposit_amount_minor=int((deposit.get("local") or deposit).get("minor_units", 0)),
@@ -249,4 +229,19 @@ class TenantOrderService:
             webhook_confirmed=bool(payment and payment.status == PaymentStatus.success and payment.paid_at and payment.transaction_id),
             amounts_verified=self._amounts_verified(payment) if payment else bool(option),
             inventory_reserved=booking.inventory_reserved,
+            contract={"id": contract.id, "status": contract.status, "agreement_number": contract.agreement_number} if contract else None,
+            room_assignment={"room_number": booking.room_number} if booking.room_number else None,
+            workflow=self._workflow(booking, payment, contract),
         )
+
+    @staticmethod
+    def _workflow(booking: Booking, payment: Payment | None, contract: Contract | None) -> dict:
+        if payment and payment.status == PaymentStatus.success and not booking.room_number:
+            return {"current_step": "awaiting_room_confirmation", "title": "等待BM确认房号", "can_view_contract": False, "can_sign_contract": False}
+        if contract and contract.status == "generated":
+            return {"current_step": "awaiting_contract", "title": "等待BM发送合同", "can_view_contract": False, "can_sign_contract": False}
+        if contract and contract.status in {"sent", "awaiting_signature"}:
+            return {"current_step": "awaiting_signature", "title": "待租客签署", "can_view_contract": True, "can_sign_contract": True}
+        if contract and contract.status == "signed":
+            return {"current_step": "booking_success", "title": "预订成功", "can_view_contract": True, "can_sign_contract": False}
+        return {"current_step": "awaiting_payment", "title": "待支付", "can_view_contract": False, "can_sign_contract": False}

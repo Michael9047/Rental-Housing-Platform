@@ -72,7 +72,7 @@ class PaymentOrderService:
         booking.inventory_reserved = False
 
     @staticmethod
-    def _price_snapshot(booking: Booking, contract: Contract, property_obj: Property, tenant_name: str) -> tuple[dict, dict]:
+    def _price_snapshot(booking: Booking, contract: Contract | None, property_obj: Property, tenant_name: str) -> tuple[dict, dict]:
         pricing = (booking.application_data or {}).get("pricing_snapshot") or {}
         option = next((x for x in pricing.get("options", []) if x.get("months") == booking.lease_months), None)
         if not option:
@@ -97,15 +97,17 @@ class PaymentOrderService:
                 }
             }
         prices = option["prices"]
-        ut = getattr(property_obj, 'unit_type', None)
-        inst = getattr(ut, 'institute', None) if ut else None
+        # Property 兼容别名在当前模型中实际指向 UnitType，不再访问已删除的 Room 字段。
+        unit_type = getattr(property_obj, 'unit_type', None) or property_obj
+        inst = getattr(unit_type, 'institute', None)
         snapshot = {
             "order_number": str(booking.id), "property_id": booking.institute_id,
-            "property_name": getattr(ut, 'name', property_obj.room_number or ''), "property_address": getattr(inst, 'address', ''),
+            "property_name": getattr(unit_type, 'name', '') or '', "property_address": getattr(inst, 'address', '') or '',
             "commencement_date": booking.scheduled_date, "expiry_date": option["end_date"],
             "tenancy_months": booking.lease_months, "tenant_name": tenant_name,
-            "agreement_id": contract.id, "agreement_number": contract.agreement_number,
-            "agreement_version": contract.version, "agreement_content_hash": contract.content_hash,
+            # 合同仅在支付审核通过后生成；支付前订单快照不伪造合同信息。
+            "agreement_id": contract.id if contract else "", "agreement_number": contract.agreement_number if contract else "待审核后生成",
+            "agreement_version": contract.version if contract else None, "agreement_content_hash": contract.content_hash if contract else None,
             "fees": {"deposit": prices["deposit"]["local"], "service_fee": prices["service_fee"]["local"], "tax": {"currency": pricing["local_currency"], "minor_units": 0, "minor_unit_exponent": 2, "decimal": "0.00"}, "current_total": prices["amount_due_now"]["local"]},
         }
         return pricing, snapshot
@@ -117,7 +119,7 @@ class PaymentOrderService:
         start = datetime.fromisoformat(booking.scheduled_date).date()
         end = LeasePricingService.add_calendar_months(start, booking.lease_months)
         candidates = await self.session.scalars(select(Booking).where(
-            Booking.property_id == booking.institute_id,
+            Booking.unit_type_id == booking.unit_type_id,
             Booking.id != booking.id,
             Booking.status.in_([BookingStatus.contract_signed, BookingStatus.payment_pending, BookingStatus.completed]),
         ))
@@ -139,7 +141,8 @@ class PaymentOrderService:
             return by_key
         booking = await self.session.scalar(select(Booking).where(Booking.id == booking_id).with_for_update())
         if not booking: raise LookupError("订单不存在")
-        if booking.tenant_id != user_id: raise PermissionError("只能支付本人的订单")
+        owner_user_id = getattr(booking, "user_id", booking.tenant_id)
+        if owner_user_id != user_id: raise PermissionError("只能支付本人的订单")
         active = await self.session.scalar(select(Payment).where(Payment.booking_id == booking_id, Payment.status.in_([PaymentStatus.pending, PaymentStatus.processing])).order_by(Payment.created_at.desc()))
         if active:
             active.booking = booking
@@ -147,11 +150,16 @@ class PaymentOrderService:
         now = datetime.now(timezone.utc)
         if booking.payment_expires_at and booking.payment_expires_at <= now: raise TimeoutError("支付订单已超过24小时有效期")
         if booking.status == BookingStatus.payment_expired: raise RuntimeError("订单支付已过期，请重新发起预订")
-        if booking.status not in {BookingStatus.contract_signed, BookingStatus.payment_pending, BookingStatus.payment_failed}: raise RuntimeError("必须先签署当前版本合同，且订单处于可付款状态")
+        if booking.status not in {BookingStatus.contract_signed, BookingStatus.payment_pending, BookingStatus.payment_failed}:
+            raise RuntimeError("订单当前不可支付；历史订单需先完成合同签署")
+        # 新流程在付款后审核并发送合同；若历史订单已有已签合同，继续复用其快照。
         contract = await self.session.scalar(select(Contract).where(Contract.booking_id == booking.id, Contract.status == "signed").order_by(Contract.version.desc()))
-        if not contract or not await self.session.scalar(select(ContractSignature).where(ContractSignature.agreement_id == contract.id, ContractSignature.tenant_user_id == user_id)):
-            raise RuntimeError("未找到当前合同的有效租客签名")
-        property_obj = await self.session.get(Property, booking.institute_id)
+        # 当前 Property 兼容别名实际为 UnitType；支付快照必须按订单的户型外键查询并预加载公寓关联。
+        property_obj = await self.session.scalar(
+            select(Property)
+            .options(selectinload(Property.institute))
+            .where(Property.id == booking.unit_type_id)
+        )
         if not property_obj or property_obj.status != PropertyStatus.available: raise RuntimeError("房源当前不可支付预订")
         await self._ensure_availability(booking)
         pricing, snapshot = self._price_snapshot(booking, contract, property_obj, tenant_name)
@@ -209,9 +217,7 @@ class PaymentOrderService:
             booking.deposit_status, booking.payment_transaction_id = "paid", payment.transaction_id
             self._transition(booking, BookingStatus.paid, reason="支付服务商有效成功 webhook", payment_id=payment.id)
             booking.inventory_reserved = False
-            property_obj.status = PropertyStatus.rented
             await OrderNotificationService(self.session).enqueue("payment_succeeded", booking, payment=payment, discriminator=payment.id)
-            await OrderNotificationService(self.session).enqueue_landlord_booking_confirmed(booking, payment)
         else:
             payment.status, payment.trade_state, payment.trade_state_desc = PaymentStatus.failed, "FAILED", "测试支付失败，可在有效期内重试"
             if booking.status == BookingStatus.payment_expired:

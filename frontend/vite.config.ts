@@ -13,7 +13,8 @@ export default defineConfig({
     port: 5173,
     proxy: {
       '/api': {
-        target: 'http://localhost:8000',
+        // 本机 8000 被旧工作区遗留进程占用时，PR41 本地后端使用 8001。
+        target: 'http://127.0.0.1:8001',
         changeOrigin: true,
       },
     },

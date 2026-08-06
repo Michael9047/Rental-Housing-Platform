@@ -24,8 +24,8 @@ export interface BookingDraftSavePayload {
 
 export const bookingDraftService = {
   /** 获取服务端草稿。 */
-  get(propertyId: number): Promise<BookingDraft> {
-    return api.get(`/bookings/drafts/${propertyId}`).then((r) => r.data)
+  get(propertyId: number, silent = false): Promise<BookingDraft> {
+    return api.get(`/bookings/drafts/${propertyId}`, { suppressGlobalError: silent } as any).then((r) => r.data)
   },
 
   /** 保存（创建或更新）服务端草稿。 */

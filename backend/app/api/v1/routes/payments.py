@@ -2,7 +2,7 @@
 import json
 import uuid
 from decimal import Decimal
-from urllib.parse import parse_qs
+from urllib.parse import parse_qs, urlparse
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -167,7 +167,7 @@ async def mock_checkout(checkout_id: str, session: AsyncSession = Depends(get_db
     payment = await session.scalar(select(Payment).where(Payment.provider_checkout_id == checkout_id))
     if not payment: raise HTTPException(404, "测试收银台不存在")
     display_amount = Decimal(payment.settlement_amount_minor) / Decimal(100)
-    return f'''<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>本地测试收银台</title><style>body{{font:16px system-ui;background:#f4f6f9;margin:0}}main{{max-width:520px;margin:10vh auto;background:white;padding:32px;border-radius:16px;box-shadow:0 8px 30px #0002}}button{{padding:13px 20px;margin:8px;border:0;border-radius:8px;cursor:pointer}}.ok{{background:#1769e0;color:white}}.warn{{color:#a33}}</style><main><h1>本地测试收银台</h1><p>不会采集银行卡号、有效期或 CVV，也不会产生真实扣款。</p><p>测试金额：<strong>{payment.settlement_currency} {display_amount:.2f}</strong></p><form method="post" action="/api/v1/payments/mock-checkout/{checkout_id}/complete"><button class="ok" name="outcome" value="succeeded">模拟支付成功</button><button name="outcome" value="failed">模拟支付失败</button></form><p class="warn">仅限本地开发测试模式</p></main></html>'''
+    return f'''<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>本地测试收银台</title><style>body{{font:16px system-ui;background:#f4f6f9;margin:0}}main{{max-width:520px;margin:10vh auto;background:white;padding:32px;border-radius:16px;box-shadow:0 8px 30px #0002}}button{{padding:13px 20px;margin:8px;border:0;border-radius:8px;cursor:pointer}}.ok{{background:#1769e0;color:white}}.warn{{color:#a33}}</style><main><h1>本地测试收银台</h1><p>不会采集银行卡号、有效期或 CVV，也不会产生真实扣款。</p><p>测试金额：<strong>{payment.settlement_currency} {display_amount:.2f}</strong></p><form method="post" action="/api/v1/payments/mock-checkout/{checkout_id}/complete"><input type="hidden" name="return_origin" id="return-origin"><button class="ok" name="outcome" value="succeeded">模拟支付成功</button><button name="outcome" value="failed">模拟支付失败</button></form><p class="warn">仅限本地开发测试模式</p></main><script>try{{const ref=new URL(document.referrer);if(['http:','https:'].includes(ref.protocol))document.getElementById('return-origin').value=ref.origin}}catch(e){{}}</script></html>'''
 
 
 @router.post("/mock-checkout/{checkout_id}/complete")
@@ -179,4 +179,9 @@ async def complete_mock_checkout(checkout_id: str, request: Request, session: As
     payload = json.dumps(event, separators=(",", ":"), sort_keys=True).encode(); provider = MockHostedPaymentProvider()
     result = await PaymentOrderService(session).process_webhook(payload, provider.sign(payload))
     page = "success" if result.status == PaymentStatus.success else "payment-status"
-    return RedirectResponse(f"{get_settings().frontend_url}/booking/order/{payment.booking_id}/{page}", status_code=303)
+    return_origin = form.get("return_origin", [""])[0]
+    parsed = urlparse(return_origin)
+    # 本地测试收银台只接受浏览器来源中的本机前端地址，避免开放重定向。
+    is_local_frontend = parsed.scheme in {"http", "https"} and parsed.hostname in {"localhost", "127.0.0.1"}
+    frontend_origin = f"{parsed.scheme}://{parsed.netloc}" if is_local_frontend else get_settings().frontend_url
+    return RedirectResponse(f"{frontend_origin}/booking/order/{payment.booking_id}/{page}", status_code=303)
