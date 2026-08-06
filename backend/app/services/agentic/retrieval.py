@@ -58,6 +58,35 @@ def _location_matches(value: str, item: dict[str, Any]) -> bool:
     return any(_text(alias) in haystack for alias in aliases)
 
 
+# 中文→英文 amenity 反向映射，用于松弛匹配
+_AMENITY_ALIASES_REVERSE: dict[str, tuple[str, ...]] = {
+    "健身房": ("gym", "健身房"),
+    "泳池": ("pool", "swimming pool", "泳池"),
+    "空调": ("air conditioning", "ac", "空调"),
+    "独立卫浴": ("ensuite", "private bathroom", "独立卫浴"),
+    "WiFi": ("wifi", "WiFi"),
+    "自习室": ("study room", "自习室"),
+    "洗衣机": ("laundry", "washing machine", "洗衣机"),
+    "阳台": ("balcony", "阳台"),
+    "电梯": ("elevator", "电梯"),
+    "停车位": ("parking", "停车位"),
+    "门禁": ("security", "24h security", "门禁"),
+    "快递代收": ("parcel", "package", "快递代收"),
+    "家具齐全": ("furnished", "家具齐全"),
+    "宠物友好": ("pet friendly", "宠物友好"),
+    "独立厨房": ("private kitchen", "独立厨房"),
+    "冰箱": ("fridge", "冰箱"),
+    "微波炉": ("microwave", "微波炉"),
+}
+
+
+def _expand_amenity(value: str) -> set[str]:
+    """将 amenity 筛选值展开为中英文同义词集合，用于松弛匹配。"""
+    v = _text(value)
+    aliases = _AMENITY_ALIASES_REVERSE.get(v, (v,))
+    return {_text(a) for a in aliases}
+
+
 def _candidate_amenities(item: dict[str, Any]) -> set[str]:
     unit_type = item["unit_type"]
     institute = item["institute"]
@@ -139,7 +168,11 @@ def candidate_matches_filters(
             return False
     if "amenities" not in ignored and filters.get("amenities"):
         available = _candidate_amenities(item)
-        if any(_text(required) not in available for required in filters["amenities"]):
+        # 用同义词集合松弛匹配，保证中文筛选词能命中英文数据
+        if any(
+            not (_expand_amenity(required) & available)
+            for required in filters["amenities"]
+        ):
             return False
     if "min_lease_months" not in ignored and filters.get("min_lease_months") is not None:
         # 用户可接受的租期必须不短于房源要求的最短租期。
