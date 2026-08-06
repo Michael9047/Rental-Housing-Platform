@@ -65,7 +65,11 @@ export const agentService = {
   },
 
   /** 发送用户消息（筛选条件 + 自然语言 + 可选对比房源ID），返回回复和推荐房源 */
-  sendMessage(sessionId: number, body: AgentMessageRequest): Promise<AgentMessageResponse> {
+  sendMessage(
+    sessionId: number,
+    body: AgentMessageRequest,
+    signal?: AbortSignal,
+  ): Promise<AgentMessageResponse> {
     // Agent 推荐涉及 LLM 调用，超时放宽
     const payload: Record<string, unknown> = {
       message: body.message,
@@ -77,7 +81,10 @@ export const agentService = {
     }
     if (body.mode) payload.mode = body.mode
     return api
-      .post(`/agent/sessions/${sessionId}/messages`, payload, { timeout: 60000 })
+      .post(`/agent/sessions/${sessionId}/messages`, payload, {
+        timeout: 60000,
+        ...(signal ? { signal } : {}),
+      })
       .then((r) => r.data)
   },
 
@@ -179,7 +186,11 @@ export const agentService = {
         consumeBufferedBlocks()
       }
       if (!receivedDone && buffer.trim()) consumeBlock(buffer)
-      if (!receivedDone && !signal?.aborted) {
+      if (signal?.aborted) {
+        // 用户主动中止，静默返回
+        return
+      }
+      if (!receivedDone) {
         throw new Error('流式连接在完成前中断')
       }
     } finally {

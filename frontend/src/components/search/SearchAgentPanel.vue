@@ -203,18 +203,20 @@
           :disabled="starting || startupFailed || sending"
           placeholder="补充预算、通勤或生活偏好（Shift+Enter 换行）"
           @keydown.enter.exact.prevent="send()"
+          @keydown.escape.prevent="sending && stopGeneration()"
         />
-        <el-tooltip content="发送" placement="top">
+        <el-tooltip :content="sending ? '停止生成 (Esc)' : '发送 (Enter)'" placement="top">
           <el-button
             class="send-btn"
-            type="primary"
+            :class="{ 'stop-btn': sending }"
+            :type="sending ? 'danger' : 'primary'"
             circle
-            :loading="sending"
-            :disabled="starting || startupFailed || sending || !inputText.trim()"
-            aria-label="发送"
-            @click="send()"
+            :disabled="!sending && (starting || startupFailed || !inputText.trim())"
+            :aria-label="sending ? '停止生成' : '发送'"
+            @click="sending ? stopGeneration() : send()"
           >
-            <el-icon v-if="!sending"><Promotion /></el-icon>
+            <span v-if="sending" class="stop-icon"></span>
+            <el-icon v-else><Promotion /></el-icon>
           </el-button>
         </el-tooltip>
       </div>
@@ -273,6 +275,7 @@ const inputText = ref('')
 const starting = ref(true)
 const startupFailed = ref(false)
 const sending = ref(false)
+const abortController = ref<AbortController | null>(null)
 const selectedCompareIds = ref<number[]>([])
 const messageListRef = ref<HTMLElement | null>(null)
 let scrollFrame: number | null = null
@@ -333,7 +336,21 @@ onMounted(async () => {
   }
 })
 
+/** ESC 全局快捷键：停止 AI 生成 */
+function onKeydown(e: KeyboardEvent) {
+  if (e.key === 'Escape' && sending.value) {
+    e.preventDefault()
+    stopGeneration()
+  }
+}
+
+onMounted(() => {
+  document.addEventListener('keydown', onKeydown)
+})
+
 onBeforeUnmount(() => {
+  document.removeEventListener('keydown', onKeydown)
+  abortController.value?.abort()
   if (scrollFrame !== null) window.cancelAnimationFrame(scrollFrame)
 })
 
@@ -384,10 +401,14 @@ async function send(preset?: string, explicitCompareIds?: number[]) {
   const assistantMessage = agentChatStore.appendStreamingAssistant()
   if (preset === undefined) inputText.value = ''
   sending.value = true
+  const controller = new AbortController()
+  abortController.value = controller
   await scrollToBottom()
 
   const finalMeta: AgentStreamMeta = {}
   const compareIds = explicitCompareIds?.length ? explicitCompareIds : compareIdsFor(text)
+  /** 流式过程中是否已向中间面板推送过结果 */
+  let emittedDuringStream = false
 
   try {
     await agentService.sendMessageStream(
@@ -405,42 +426,69 @@ async function send(preset?: string, explicitCompareIds?: number[]) {
         onMeta(meta) {
           Object.assign(finalMeta, meta)
           applyMeta(assistantMessage, meta)
+
+          // 流式过程中即时推送推荐结果和筛选补丁到中间面板
+          const newRecs = meta.recommendations?.length
+            ? uniqueRecommendations(meta.recommendations)
+            : meta.top_picks?.length
+              ? uniqueRecommendations(meta.top_picks)
+              : null
+          if (newRecs && newRecs.length > 0) {
+            emit('show-recommendations', newRecs)
+            emittedDuringStream = true
+          }
+          if (meta.filter_patch && Object.keys(meta.filter_patch).length > 0) {
+            emit('apply-filter-patch', meta.filter_patch, !emittedDuringStream)
+          }
+
           scheduleScroll()
         },
         onError(message) {
           if (!assistantMessage.content) assistantMessage.content = `抱歉，${message}`
         },
       },
+      controller.signal,
     )
     if (!assistantMessage.content) assistantMessage.content = '这次没有生成有效回复，请换一种说法再试。'
 
-    const recommendations = finalMeta.recommendations?.length
-      ? uniqueRecommendations(finalMeta.recommendations)
-      : finalMeta.top_picks?.length
-        ? uniqueRecommendations(finalMeta.top_picks)
-        : []
-    if (finalMeta.filter_patch && Object.keys(finalMeta.filter_patch).length > 0) {
-      // 有推荐结果时不同时触发 doSearch，避免覆盖 Agent 排序
-      emit('apply-filter-patch', finalMeta.filter_patch, recommendations.length === 0)
-    }
-    // 始终更新中间搜索结果
-    if (recommendations.length > 0) {
-      emit('show-recommendations', recommendations)
-    } else if (finalMeta.filter_patch && Object.keys(finalMeta.filter_patch).length > 0) {
-      // 无推荐但有筛选补丁 → 让中间区域用新条件重新搜索
-      emit('apply-filter-patch', finalMeta.filter_patch, true)
+    // 流式结束后的兜底：仅在 onMeta 未推送时执行
+    if (!emittedDuringStream) {
+      const recommendations = finalMeta.recommendations?.length
+        ? uniqueRecommendations(finalMeta.recommendations)
+        : finalMeta.top_picks?.length
+          ? uniqueRecommendations(finalMeta.top_picks)
+          : []
+      if (finalMeta.filter_patch && Object.keys(finalMeta.filter_patch).length > 0) {
+        emit('apply-filter-patch', finalMeta.filter_patch, recommendations.length === 0)
+      }
+      if (recommendations.length > 0) {
+        emit('show-recommendations', recommendations)
+      } else if (finalMeta.filter_patch && Object.keys(finalMeta.filter_patch).length > 0) {
+        emit('apply-filter-patch', finalMeta.filter_patch, true)
+      }
     }
   } catch (error) {
-    const reason = error instanceof Error ? error.message : '请求没有成功，请稍后再试'
-    assistantMessage.content = assistantMessage.content
-      ? `${assistantMessage.content}\n\n（连接中断：${reason}）`
-      : `抱歉，${reason}`
+    if (controller.signal.aborted) {
+      // 用户主动停止，保留已生成的部分内容
+      if (!assistantMessage.content) assistantMessage.content = '已停止生成。'
+    } else {
+      const reason = error instanceof Error ? error.message : '请求没有成功，请稍后再试'
+      assistantMessage.content = assistantMessage.content
+        ? `${assistantMessage.content}\n\n（连接中断：${reason}）`
+        : `抱歉，${reason}`
+    }
   } finally {
     assistantMessage.streaming = false
     sending.value = false
+    abortController.value = null
     void agentChatStore.fetchSessions()
     await scrollToBottom()
   }
+}
+
+/** 停止当前正在生成的 AI 回复 */
+function stopGeneration() {
+  abortController.value?.abort()
 }
 
 function compareIdsFor(text: string): number[] | undefined {
@@ -833,6 +881,19 @@ function openDeepAnalysis() {
 .composer-row { display: grid; grid-template-columns: minmax(0, 1fr) 38px; align-items: end; gap: 9px; }
 .composer :deep(.el-textarea__inner) { min-height: 62px !important; padding-right: 58px; font-size: 13px; }
 .send-btn { width: 38px; height: 38px; }
+.stop-btn { animation: stop-pulse 3.6s ease-in-out infinite; }
+.stop-icon {
+  display: inline-block;
+  width: 13px;
+  height: 13px;
+  background: #fff;
+  border-radius: 3px;
+}
+
+@keyframes stop-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(245, 108, 108, 0.35); }
+  50% { box-shadow: 0 0 0 6px rgba(245, 108, 108, 0); }
+}
 
 @media (max-height: 700px) {
   .welcome-panel { padding-top: 8px; padding-bottom: 8px; }

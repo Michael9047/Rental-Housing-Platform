@@ -229,15 +229,16 @@
             resize="none"
             placeholder="描述你的需求，或问「押金怎么退」「合同怎么签」"
             @keydown.enter.exact.prevent="handleSend()"
+            @keydown.escape.prevent="sending && stopGeneration()"
           />
           <el-button
-            type="primary"
-            :loading="sending"
-            :disabled="!inputText.trim()"
+            :type="sending ? 'danger' : 'primary'"
+            :disabled="!sending && !inputText.trim()"
             class="send-btn"
-            @click="handleSend()"
+            @click="sending ? stopGeneration() : handleSend()"
           >
-            发送
+            <span v-if="sending" class="stop-icon-inline"></span>
+            {{ sending ? '停止' : '发送' }}
           </el-button>
         </div>
       </div>
@@ -380,6 +381,7 @@ const filters = reactive<AgentFilters>({
 })
 const inputText = ref('')
 const sending = ref(false)
+const abortController = ref<AbortController | null>(null)
 const chatListRef = ref<HTMLElement | null>(null)
 
 // 勾选用于对比的房源 id（来自推荐横条 + 购物车，共享同一份选择）
@@ -512,7 +514,21 @@ onMounted(async () => {
   await scrollChatToBottom()
 })
 
+/** ESC 全局快捷键：停止 AI 生成 */
+function onKeydown(e: KeyboardEvent) {
+  if (e.key === 'Escape' && sending.value) {
+    e.preventDefault()
+    stopGeneration()
+  }
+}
+
+onMounted(() => {
+  document.addEventListener('keydown', onKeydown)
+})
+
 onBeforeUnmount(() => {
+  document.removeEventListener('keydown', onKeydown)
+  abortController.value?.abort()
   window.removeEventListener('resize', onResize)
 })
 
@@ -524,15 +540,21 @@ async function handleSend(preset?: string, comparePropertyIds?: number[]) {
   messages.value.push({ role: 'user', content: text })
   if (!preset) inputText.value = ''
   sending.value = true
+  const controller = new AbortController()
+  abortController.value = controller
   await scrollChatToBottom()
 
   try {
-    const resp = await agentService.sendMessage(sessionId.value, {
-      message: text,
-      filters: { ...filters },
-      compare_property_ids: comparePropertyIds,
-      mode: agentMode.value === 'auto' ? null : agentMode.value,
-    })
+    const resp = await agentService.sendMessage(
+      sessionId.value,
+      {
+        message: text,
+        filters: { ...filters },
+        compare_property_ids: comparePropertyIds,
+        mode: agentMode.value === 'auto' ? null : agentMode.value,
+      },
+      controller.signal,
+    )
     const isRecommend = resp.intent === 'recommend'
     messages.value.push({
       role: 'assistant',
@@ -548,12 +570,19 @@ async function handleSend(preset?: string, comparePropertyIds?: number[]) {
     if (resp.cart_changed) {
       await cartStore.fetch()
     }
-  } catch {
+  } catch (error) {
+    if (controller.signal.aborted) return // 用户主动停止，静默返回
     messages.value.push({ role: 'assistant', content: '抱歉，请求失败了，请稍后再试。' })
   } finally {
     sending.value = false
+    abortController.value = null
     await scrollChatToBottom()
   }
+}
+
+/** 停止当前正在生成的 AI 回复 */
+function stopGeneration() {
+  abortController.value?.abort()
 }
 
 async function handleToggleCart(rec: AgentRecommendation) {
@@ -790,6 +819,18 @@ function goToSearchFromAgent(msg: AgentChatMessage) {
 
 .send-btn {
   flex-shrink: 0;
+}
+
+.stop-icon-inline {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  margin-right: 4px;
+  background: #fff;
+  border-radius: 2px;
+  vertical-align: middle;
+  position: relative;
+  top: -1px;
 }
 
 /* ── 内联推荐横条 ───────────────── */

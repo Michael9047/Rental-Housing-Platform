@@ -108,7 +108,69 @@
           </div>
         </div>
 
-        <!-- ③ 户型类型 -->
+        <!-- ③ 入住时间 -->
+        <div class="filter-block">
+          <div class="filter-block-title">
+            入住时间
+            <button v-if="filters.move_in_date" class="filter-clear" @click="filters.move_in_date = undefined; doSearch()">✕</button>
+          </div>
+          <div class="mini-calendar">
+            <div class="mc-header">
+              <button class="mc-nav" @click="calPrevMonth">&lt;</button>
+              <span class="mc-title">{{ calYear }}年{{ calMonth }}月</span>
+              <button class="mc-nav" @click="calNextMonth">&gt;</button>
+            </div>
+            <div class="mc-weekdays">
+              <span v-for="d in calWeekdays" :key="d" class="mc-wd">{{ d }}</span>
+            </div>
+            <div class="mc-days">
+              <button
+                v-for="(day, i) in calDays"
+                :key="i"
+                class="mc-day"
+                :class="{
+                  'mc-other': !day.inMonth,
+                  'mc-today': day.isToday,
+                  'mc-sel': day.iso === filters.move_in_date,
+                  'mc-dis': day.disabled,
+                }"
+                :disabled="day.disabled"
+                @click="toggleCalDay(day)"
+              >{{ day.label }}</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- ④ 租期 -->
+        <div class="filter-block">
+          <div class="filter-block-title">
+            租期（月）
+            <button v-if="durationMonths != null" class="filter-clear" @click="durationMonths = null; editingCustom = false; doSearch()">✕</button>
+          </div>
+          <div class="chip-row">
+            <span v-for="m in [3,6,12]" :key="m"
+              class="chip" :class="{ on: durationMonths === m }"
+              @click="editingCustom = false; durationMonths = durationMonths === m ? null : m; doSearch()"
+            >{{ m }}个月</span>
+            <span v-if="!editingCustom" class="chip" :class="{ on: durationMonths === -1 }"
+              @click="startCustomEdit"
+            >{{ durationMonths === -1 ? customDuration + '个月' : '自定义' }}</span>
+            <span v-else class="chip chip-edit on">
+              <input
+                ref="customInputRef"
+                v-model.number="customDuration"
+                type="number"
+                min="1" max="24"
+                class="chip-num-input"
+                @blur="commitCustom"
+                @keydown.enter="commitCustom"
+                @keydown.escape="cancelCustom"
+              />个月
+            </span>
+          </div>
+        </div>
+
+        <!-- ⑤ 户型类型 -->
         <div class="filter-block">
           <div class="filter-block-title">户型类型</div>
           <div class="chip-row">
@@ -119,7 +181,7 @@
           </div>
         </div>
 
-        <!-- ④ 便利设施 -->
+        <!-- ⑥ 便利设施 -->
         <div class="filter-block">
           <div class="filter-block-title">便利设施</div>
           <div class="amenity-grid">
@@ -142,7 +204,7 @@
           </el-button>
         </div>
 
-        <!-- ⑤ 周边配套 — 待实现 -->
+        <!-- ⑦ 周边配套 — 待实现 -->
       </aside>
 
       <!-- ════════════════════════════════════════════ -->
@@ -366,7 +428,76 @@ const commuteTime = ref<number | null>(null)
 const distanceFilter = ref<number | null>(null)
 
 // ── 城市专属 ──
-const durationFilter = ref<string | null>(null)
+const durationMonths = ref<number | null>(null)
+const customDuration = ref<number>(1)
+const editingCustom = ref(false)
+const customInputRef = ref<HTMLInputElement>()
+
+function startCustomEdit() {
+  if (editingCustom.value) return
+  editingCustom.value = true
+  durationMonths.value = -1
+  nextTick(() => customInputRef.value?.focus())
+}
+function commitCustom() {
+  if (customDuration.value < 1) customDuration.value = 1
+  if (customDuration.value > 24) customDuration.value = 24
+  doSearch()
+}
+function cancelCustom() {
+  editingCustom.value = false
+  durationMonths.value = null
+}
+
+// ── 紧凑日历 ──
+const calWeekdays = ['日','一','二','三','四','五','六']
+const calView = ref({ year: new Date().getFullYear(), month: new Date().getMonth() + 1 })
+const calYear = computed(() => calView.value.year)
+const calMonth = computed(() => calView.value.month)
+interface CalDay { label: number; iso: string; inMonth: boolean; isToday: boolean; disabled: boolean }
+const calDays = computed<CalDay[]>(() => {
+  const { year, month } = calView.value
+  const first = new Date(year, month - 1, 1)
+  const startDow = first.getDay()
+  const daysInMonth = new Date(year, month, 0).getDate()
+  const today = new Date(); today.setHours(0,0,0,0)
+  const todayIso = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`
+  const result: CalDay[] = []
+  // 上月填充
+  const prevLast = new Date(year, month - 1, 0).getDate()
+  for (let i = startDow - 1; i >= 0; i--) {
+    const d = prevLast - i
+    result.push({ label: d, iso: '', inMonth: false, isToday: false, disabled: true })
+  }
+  // 本月
+  for (let d = 1; d <= daysInMonth; d++) {
+    const iso = `${year}-${String(month).padStart(2,'0')}-${String(d).padStart(2,'0')}`
+    const date = new Date(year, month - 1, d)
+    date.setHours(0,0,0,0)
+    result.push({ label: d, iso, inMonth: true, isToday: iso === todayIso, disabled: date < today })
+  }
+  // 下月填充
+  const remaining = 7 - (result.length % 7)
+  if (remaining < 7) {
+    for (let d = 1; d <= remaining; d++) {
+      result.push({ label: d, iso: '', inMonth: false, isToday: false, disabled: true })
+    }
+  }
+  return result
+})
+function calPrevMonth() {
+  if (calView.value.month === 1) { calView.value = { year: calView.value.year - 1, month: 12 } }
+  else { calView.value = { ...calView.value, month: calView.value.month - 1 } }
+}
+function calNextMonth() {
+  if (calView.value.month === 12) { calView.value = { year: calView.value.year + 1, month: 1 } }
+  else { calView.value = { ...calView.value, month: calView.value.month + 1 } }
+}
+function toggleCalDay(day: CalDay) {
+  if (day.disabled || !day.iso) return
+  filters.move_in_date = filters.move_in_date === day.iso ? undefined : day.iso
+  doSearch()
+}
 
 // ── Google 地图 ──
 let mapInstance: any = null
@@ -527,10 +658,12 @@ const pageSize = 12
 
 const filters = reactive<PropertySearchParams & {
   amenities?: string[]
+  move_in_date?: string
 }>({
   q: '', district: undefined, city: undefined, price_min: undefined, price_max: undefined,
   property_type: undefined,
   limit: 30, country: undefined, institute_id: undefined,
+  move_in_date: undefined,
 })
 
 const activeFilterCount = computed(() => {
@@ -677,7 +810,7 @@ const agentFilters = computed<AgentFilters>(() => {
     bedrooms: filters.bedrooms,
     property_type: filters.property_type,
     room_type: filters.room_type,
-    available_from: filters.move_in_month ? String(filters.move_in_month) : undefined,
+    available_from: filters.move_in_date ? String(filters.move_in_date) : undefined,
   }
   const amenityValues = [
     ...(filters.features || []),
@@ -692,12 +825,11 @@ const agentFilters = computed<AgentFilters>(() => {
     result.commute_minutes = commuteTime.value
     result.commute_mode = commuteTime.value <= 15 ? 'walking' : 'driving'
   }
-  if (durationFilter.value === 'short') result.max_lease_months = 3
-  if (durationFilter.value === 'medium') {
-    result.min_lease_months = 3
-    result.max_lease_months = 6
+  if (durationMonths.value != null) {
+    const m = durationMonths.value === -1 ? customDuration.value : durationMonths.value
+    result.min_lease_months = m
+    result.max_lease_months = m
   }
-  if (durationFilter.value === 'long') result.min_lease_months = 12
   return result
 })
 
@@ -1019,7 +1151,7 @@ async function doSearch() {
   if (filters.bedrooms != null) p.bedrooms = filters.bedrooms
   if (filters.property_type) p.property_type = filters.property_type as PropertyType
   if (filters.room_type) p.room_type = filters.room_type
-  if (filters.move_in_month) p.available_from = String(filters.move_in_month)
+  if (filters.move_in_date) p.available_from = String(filters.move_in_date)
 
   // 合并 features + amenities + location_tags
   const allAmenities = [
@@ -1030,9 +1162,11 @@ async function doSearch() {
   if (allAmenities.length > 0) p.amenities = allAmenities
 
   // 租期筛选
-  if (durationFilter.value === 'short') p.max_lease_months = 3
-  else if (durationFilter.value === 'medium') { p.min_lease_months = 3; p.max_lease_months = 6 }
-  else if (durationFilter.value === 'long') p.min_lease_months = 12
+  if (durationMonths.value != null) {
+    const m = durationMonths.value === -1 ? customDuration.value : durationMonths.value
+    p.min_lease_months = m
+    p.max_lease_months = m
+  }
 
   // 半径搜索：大学坐标 → 地图中心
   if (uniLat.value != null && uniLng.value != null) {
@@ -1336,6 +1470,65 @@ watch(() => route.query, () => { initFromRoute() })
   padding: 2px 8px;
   font-size: 12px;
 }
+
+/* ── 紧凑日历 ── */
+.mini-calendar {
+  background: #fafbfc;
+  border-radius: 8px;
+  padding: 8px;
+}
+.mc-header {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 6px;
+}
+.mc-nav {
+  border: none; background: none; font-size: 14px; cursor: pointer;
+  padding: 2px 8px; color: #606266; border-radius: 4px;
+}
+.mc-nav:hover { background: #ecf5ff; color: #409eff; }
+.mc-title { font-size: 13px; font-weight: 600; color: #303133; }
+.mc-weekdays {
+  display: grid; grid-template-columns: repeat(7, 1fr);
+  text-align: center; font-size: 11px; color: #909399;
+  margin-bottom: 4px;
+}
+.mc-wd { padding: 2px 0; }
+.mc-days {
+  display: grid; grid-template-columns: repeat(7, 1fr);
+  gap: 2px; text-align: center;
+}
+.mc-day {
+  width: 100%; aspect-ratio: 1;
+  border: none; background: none; font-size: 12px;
+  border-radius: 6px; cursor: pointer; color: #303133;
+  display: flex; align-items: center; justify-content: center;
+  transition: all 0.15s;
+}
+.mc-day:hover:not(:disabled):not(.mc-sel) { background: #ecf5ff; }
+.mc-other { color: #c0c4cc; cursor: default; }
+.mc-today { font-weight: 700; color: #409eff; }
+.mc-sel { background: #409eff; color: #fff; font-weight: 600; }
+.mc-dis { color: #c0c4cc; cursor: not-allowed; }
+.chip-edit {
+  display: inline-flex; align-items: center; gap: 1px;
+  cursor: default !important;
+}
+.chip-num-input {
+  width: 28px; text-align: center;
+  border: none; outline: none; background: transparent;
+  font-size: 12px; font-weight: 500; color: #fff;
+  padding: 0;
+  -moz-appearance: textfield;
+}
+.chip-num-input::-webkit-outer-spin-button,
+.chip-num-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+
+.filter-clear {
+  border: none; background: none; color: #909399; cursor: pointer;
+  font-size: 13px; padding: 0 4px; line-height: 1;
+}
+.filter-clear:hover { color: #e94560; }
+
 
 /* chip buttons */
 .chip-row { display: flex; flex-wrap: wrap; gap: 6px; }
