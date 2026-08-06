@@ -98,7 +98,7 @@ async def get_lease_pricing(
     if not ut:
         from fastapi import HTTPException
         raise HTTPException(404, "户型不存在")
-    result = LeasePricingService.calculate(ut, move_in_date)
+    result = await LeasePricingService.calculate(ut, move_in_date)
     return result.model_dump()
 
 
