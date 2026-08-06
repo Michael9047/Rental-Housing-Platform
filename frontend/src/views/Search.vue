@@ -1208,7 +1208,6 @@ function restoreSearchState() {
   if (!raw) return false
   try {
     const s = JSON.parse(raw)
-    sessionStorage.removeItem(SESSION_KEY)
     // 恢复筛选
     if (s.filters) Object.assign(filters, s.filters)
     if (s.searchMode) searchMode.value = s.searchMode
@@ -1239,7 +1238,7 @@ onMounted(() => {
   }
 })
 onUnmounted(() => {
-  if (searchResults.value.length > 0) saveSearchState()
+  saveSearchState()
   destroyMap()
 })
 watch(() => route.query, () => { initFromRoute() })
