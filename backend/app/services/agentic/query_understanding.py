@@ -407,7 +407,7 @@ async def understand_query(
             user_prompt,
             temperature=0.0,
             max_tokens=900,
-            model="deepseek-v4-flash",
+            model=None,  # 使用默认模型（settings.deepseek_chat_model）
         )
     except Exception:
         return _rule_fallback(message, previous_filters)
