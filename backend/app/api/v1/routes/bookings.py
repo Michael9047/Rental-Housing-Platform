@@ -315,7 +315,7 @@ async def confirm_booking_with_policies(
                 booking_id=booking.id,
                 user_id=current_user.id,
                 policy_key=policy.key,
-                policy_version=int(policy.version.split(".")[0]),
+                policy_version=policy.version,
                 content_hash=policy.content_hash,
                 ip_address=ip_address,
             ))
