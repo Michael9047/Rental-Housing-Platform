@@ -213,7 +213,7 @@ async def confirm_booking_with_policies(
     session: AsyncSession = Depends(get_db_session),
     current_user: User = Depends(require_tenant),
 ) -> BookingConfirmationRead:
-    unit_type_id = confirmation.unit_type_id
+    unit_type_id = confirmation.property_id
     existing_booking = await session.scalar(select(Booking).where(
         Booking.user_id == current_user.id,
         Booking.unit_type_id == unit_type_id,
