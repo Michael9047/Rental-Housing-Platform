@@ -77,6 +77,7 @@ export const useAgentChatStore = defineStore('agentChat', () => {
   const loadingHistory = ref(false)
   const rememberedPreferences = ref<AgentFilters>({})
   const memoryLoaded = ref(false)
+  const searchPanelOpen = ref(false)
   /** 外部页面（如首页）触发的待发送查询 */
   const pendingQuery = ref<string | null>(null)
 
@@ -209,6 +210,7 @@ export const useAgentChatStore = defineStore('agentChat', () => {
     loadingHistory,
     rememberedPreferences,
     memoryLoaded,
+    searchPanelOpen,
     pendingQuery,
     appendStreamingAssistant,
     fetchSessions,
