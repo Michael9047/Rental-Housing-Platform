@@ -1046,27 +1046,27 @@ async function doSearch() {
   }
 
   // 从详情页返回时不触发新会话（保留对话历史）
-  if (restoringFromNavigation) return
-
-  // 切换城市/学校/国家 → 自动新 Agent 会话，避免跨市场对话串扰
-  if (agentChatStore.sessionId !== null) {
-    const currentKey = JSON.stringify({
-      country: filters.country,
-      city: filters.city,
-      district: filters.district,
-      institute_id: filters.institute_id,
-      uniId: uniId.value,
-      uniName: uniName.value,
-      searchMode: searchMode.value,
-    })
-    if (currentKey && currentKey !== lastAgentSearchKey.value) {
-      lastAgentSearchKey.value = currentKey
-      agentChatStore.newSession().catch(() => {})
+  if (!restoringFromNavigation) {
+    // 切换城市/学校/国家 → 自动新 Agent 会话，避免跨市场对话串扰
+    if (agentChatStore.sessionId !== null) {
+      const currentKey = JSON.stringify({
+        country: filters.country,
+        city: filters.city,
+        district: filters.district,
+        institute_id: filters.institute_id,
+        uniId: uniId.value,
+        uniName: uniName.value,
+        searchMode: searchMode.value,
+      })
+      if (currentKey && currentKey !== lastAgentSearchKey.value) {
+        lastAgentSearchKey.value = currentKey
+        agentChatStore.newSession().catch(() => {})
+      }
     }
   }
+  restoringFromNavigation = false
 
   propertyStore.fetchSearch(p)
-  restoringFromNavigation = false
 }
 
 /** 半径变更 → 重新搜索 */
