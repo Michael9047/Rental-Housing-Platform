@@ -1,14 +1,14 @@
 <template>
   <div class="search-page">
-    <!-- 大学/位置模式顶部横幅 -->
-    <div v-if="searchMode === 'uni' && uniName" class="school-banner uni-banner">
+    <!-- 大学/位置模式顶部横幅（AI 推荐时不显示，避免重复） -->
+    <div v-if="searchMode === 'uni' && uniName && !fromAgent" class="school-banner uni-banner">
       <el-icon :size="22"><component :is="uniId ? School : Location" /></el-icon>
       <h1>靠近 {{ uniName }} 的房源</h1>
       <span class="school-count">共 {{ searchResults.length }} 套</span>
     </div>
 
     <!-- 学校模式顶部横幅 -->
-    <div v-if="searchMode === 'school' && schoolName" class="school-banner">
+    <div v-if="searchMode === 'school' && schoolName && !fromAgent" class="school-banner">
       <el-icon :size="22"><School /></el-icon>
       <h1>靠近 {{ schoolName }} 的房源</h1>
       <span class="school-count">{{ searchResults.length }} 套</span>
