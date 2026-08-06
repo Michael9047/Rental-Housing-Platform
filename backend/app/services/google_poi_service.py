@@ -621,6 +621,22 @@ class GooglePOIService:
                     lines.append(f"{cat}：{names}等{len(items)}项")
             content = "\n".join(lines) if len(lines) > 1 else f"该房源位于{base}，周边配套设施较少。"
 
+            # ── 安全评分 ──
+            safety_data = None
+            try:
+                from app.services.safety_scoring import SafetyScoringService
+                country = (prop.country or "").upper()
+                if country in ("SG", "GB", "UK"):
+                    safety_svc = SafetyScoringService()
+                    result = await safety_svc.score_single(
+                        prop.id, lat=lat, lng=lng, country=country,
+                    )
+                    safety_data = result.to_dict()
+                    logger.info("Safety score for institute %s: %.0f (source: %s)",
+                                prop.id, result.score, result.data_source)
+            except Exception:
+                logger.exception("Safety scoring failed for institute %s", prop.id)
+
             # Upsert
             result = await session.execute(sa_select(PropertyPOI).where(PropertyPOI.institute_id == prop.id))
             poi_record = result.scalar_one_or_none()
@@ -628,10 +644,12 @@ class GooglePOIService:
                 poi_record.content = content
                 poi_record.poi_data = poi_data
                 poi_record.map_poi_data = map_poi_data
+                poi_record.safety_data = safety_data
                 poi_record.generated_at = datetime.now(timezone.utc)
             else:
                 poi_record = PropertyPOI(institute_id=prop.id, content=content, poi_data=poi_data,
-                                         map_poi_data=map_poi_data, generated_at=datetime.now(timezone.utc), reviewed=False)
+                                         map_poi_data=map_poi_data, safety_data=safety_data,
+                                         generated_at=datetime.now(timezone.utc), reviewed=False)
                 session.add(poi_record)
             await session.commit()
             await session.refresh(poi_record)
