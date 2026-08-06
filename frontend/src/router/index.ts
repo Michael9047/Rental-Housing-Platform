@@ -184,7 +184,7 @@ const routes: RouteRecordRaw[] = [
         meta: { requiresAuth: true },
       },
       {
-        path: 'booking/:propertyId/contract',
+        path: 'booking/:bookingId/contract',
         name: 'booking-contract-placeholder',
         component: () => import('@/views/booking/ContractPlaceholder.vue'),
         meta: { requiresAuth: true },
@@ -293,6 +293,20 @@ const routes: RouteRecordRaw[] = [
         path: 'workspace/workers',
         name: 'landlord-workers',
         component: () => import('@/views/landlord/WorkerManagement.vue'),
+        meta: { requiresAuth: true, requiresLandlord: true },
+      },
+      // ---- BM 合约管理 ----
+      {
+        path: 'contracts/landlord',
+        name: 'landlord-contracts',
+        component: () => import('@/views/LandlordContracts.vue'),
+        meta: { requiresAuth: true, requiresLandlord: true },
+      },
+      // ---- BM 租客管理 ----
+      {
+        path: 'tenants/manage',
+        name: 'tenant-management',
+        component: () => import('@/views/TenantManagement.vue'),
         meta: { requiresAuth: true, requiresLandlord: true },
       },
       // ---- 维修师傅 ----

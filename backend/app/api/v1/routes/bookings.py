@@ -1,3 +1,6 @@
+from datetime import date
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from starlette.responses import JSONResponse
 from sqlalchemy import select
@@ -13,6 +16,7 @@ from app.schemas.policy import BookingConfirmationCreate, BookingConfirmationRea
 from app.models.booking import Booking
 from app.models.policy_consent import PolicyConsent
 from app.models.booking_flow_draft import BookingFlowDraft
+from app.models.tenant import Tenant
 from app.schemas.booking_flow_draft import BookingFlowDraftRead, BookingFlowDraftUpdate
 from app.services.booking_availability_service import BookingAvailabilityService
 from app.services.lease_pricing_service import LeasePricingService
@@ -21,6 +25,119 @@ from app.services.booking_service import BookingService
 from app.services.property_service import PropertyService
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
+
+
+def _serialize_personal_info(tenant: Tenant | None) -> dict | None:
+    """将实际存储在 tenants 表中的个人资料转换为草稿接口格式。"""
+    if not tenant or not tenant.chinese_name:
+        return None
+    return {
+        "chinese_name": tenant.chinese_name, "given_name_pinyin": tenant.given_name_pinyin,
+        "surname_pinyin": tenant.surname_pinyin,
+        "birth_date": tenant.birth_date.isoformat() if tenant.birth_date else None,
+        "gender": tenant.gender, "phone": tenant.phone, "email": tenant.email,
+        "nationality": tenant.nationality, "school_name": tenant.school_name,
+        "enrollment_grade": tenant.enrollment_grade, "major_english": tenant.major_english,
+        "region": tenant.region, "address_line": tenant.address_detail,
+        "address_detail": tenant.address_detail, "postal_code": tenant.postal_code,
+    }
+
+
+def _serialize_emergency_contact(tenant: Tenant | None) -> dict | None:
+    """将实际存储在 tenants 表中的紧急联系人转换为草稿接口格式。"""
+    if not tenant or not tenant.emergency_chinese_name:
+        return None
+    same_address = (
+        tenant.emergency_region == tenant.region
+        and tenant.emergency_address_detail == tenant.address_detail
+        and tenant.emergency_postal_code == tenant.postal_code
+    )
+    return {
+        "chinese_name": tenant.emergency_chinese_name,
+        "given_name_pinyin": tenant.emergency_given_name_pinyin,
+        "surname_pinyin": tenant.emergency_surname_pinyin,
+        "relationship": tenant.emergency_relation, "relation": tenant.emergency_relation,
+        "birth_date": tenant.emergency_birth_date.isoformat() if tenant.emergency_birth_date else None,
+        "phone": tenant.emergency_phone, "email": tenant.emergency_email,
+        "gender": tenant.emergency_gender, "region": tenant.emergency_region,
+        "address_line": tenant.emergency_address_detail,
+        "address_detail": tenant.emergency_address_detail,
+        "postal_code": tenant.emergency_postal_code,
+        "consultant_id": tenant.emergency_consultant_id,
+        "same_as_personal_address": same_address,
+    }
+
+
+def _draft_read(draft: BookingFlowDraft, tenant: Tenant | None) -> BookingFlowDraftRead:
+    """显式构造草稿响应，避免访问不存在的 ORM JSON 属性。"""
+    return BookingFlowDraftRead(
+        id=draft.id, user_id=draft.user_id, unit_type_id=draft.unit_type_id,
+        current_step=draft.current_step, move_in_date=draft.move_in_date,
+        lease_months=draft.lease_months, personal_info=_serialize_personal_info(tenant),
+        emergency_contact=_serialize_emergency_contact(tenant),
+        created_at=draft.created_at, updated_at=draft.updated_at,
+    )
+
+
+async def _get_draft_tenant(session: AsyncSession, draft: BookingFlowDraft) -> Tenant | None:
+    """按草稿关联读取租客资料；旧草稿按用户回填关联。"""
+    tenant = await session.get(Tenant, draft.tenant_id) if draft.tenant_id else None
+    if tenant:
+        return tenant
+    tenant = await session.scalar(select(Tenant).where(Tenant.user_id == draft.user_id).order_by(Tenant.id))
+    if tenant:
+        draft.tenant_id = tenant.id
+    return tenant
+
+
+async def _ensure_draft_tenant(session: AsyncSession, draft: BookingFlowDraft) -> Tenant:
+    """个人资料首次保存时创建并关联租客资料。"""
+    tenant = await _get_draft_tenant(session, draft)
+    if tenant:
+        return tenant
+    tenant = Tenant(user_id=draft.user_id, label="预约申请人")
+    session.add(tenant)
+    await session.flush()
+    draft.tenant_id = tenant.id
+    return tenant
+
+
+def _apply_personal_info(tenant: Tenant, data: dict) -> None:
+    """保存个人资料到 tenants 的真实列。"""
+    field_map = {
+        "chinese_name": "chinese_name", "given_name_pinyin": "given_name_pinyin",
+        "surname_pinyin": "surname_pinyin", "gender": "gender", "phone": "phone",
+        "email": "email", "nationality": "nationality", "school_name": "school_name",
+        "enrollment_grade": "enrollment_grade", "major_english": "major_english",
+        "region": "region", "postal_code": "postal_code",
+    }
+    for source, target in field_map.items():
+        if source in data:
+            setattr(tenant, target, data[source])
+    if "address_line" in data or "address_detail" in data:
+        tenant.address_detail = data.get("address_line") or data.get("address_detail")
+    if "birth_date" in data:
+        tenant.birth_date = date.fromisoformat(data["birth_date"]) if data["birth_date"] else None
+
+
+def _apply_emergency_contact(tenant: Tenant, data: dict) -> None:
+    """保存紧急联系人到 tenants 的真实列。"""
+    field_map = {
+        "chinese_name": "emergency_chinese_name", "given_name_pinyin": "emergency_given_name_pinyin",
+        "surname_pinyin": "emergency_surname_pinyin", "gender": "emergency_gender",
+        "phone": "emergency_phone", "email": "emergency_email", "region": "emergency_region",
+        "postal_code": "emergency_postal_code", "consultant_id": "emergency_consultant_id",
+    }
+    for source, target in field_map.items():
+        if source in data:
+            setattr(tenant, target, data[source])
+    if "relationship" in data or "relation" in data:
+        tenant.emergency_relation = data.get("relationship") or data.get("relation")
+    if "address_line" in data or "address_detail" in data:
+        tenant.emergency_address_detail = data.get("address_line") or data.get("address_detail")
+    if "birth_date" in data:
+        tenant.emergency_birth_date = date.fromisoformat(data["birth_date"]) if data["birth_date"] else None
 
 
 @router.get("/drafts/{unit_type_id}", response_model=BookingFlowDraftRead)
@@ -35,7 +152,7 @@ async def get_booking_flow_draft(
     ))
     if not draft:
         return JSONResponse(content=None, status_code=200)
-    return draft
+    return _draft_read(draft, await _get_draft_tenant(session, draft))
 
 
 @router.put("/drafts/{unit_type_id}", response_model=BookingFlowDraftRead)
@@ -55,13 +172,17 @@ async def save_booking_flow_draft(
     if not draft:
         draft = BookingFlowDraft(user_id=current_user.id, unit_type_id=unit_type_id)
         session.add(draft)
-    payload = update.model_dump(exclude_unset=True)
-    if update.personal_info is not None:
-        payload["personal_info"] = update.personal_info.model_dump(mode="json")
-    if update.emergency_contact is not None:
-        payload["emergency_contact"] = update.emergency_contact.model_dump(mode="json")
+    payload = update.model_dump(mode="json", exclude={"personal_info", "emergency_contact"}, exclude_unset=True)
     for field, value in payload.items():
         setattr(draft, field, value)
+    tenant = await _get_draft_tenant(session, draft)
+    if update.personal_info is not None:
+        tenant = await _ensure_draft_tenant(session, draft)
+        _apply_personal_info(tenant, update.personal_info.model_dump(mode="json"))
+    if update.emergency_contact is not None:
+        if not tenant:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Personal information step is incomplete")
+        _apply_emergency_contact(tenant, update.emergency_contact.model_dump(mode="json"))
     if draft.current_step in {"lease_term", "personal_info", "emergency_contact", "review"}:
         if not draft.move_in_date:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Move-in date step is incomplete")
@@ -76,13 +197,13 @@ async def save_booking_flow_draft(
         min_stay = int(getattr(getattr(property_obj, 'unit_type', None), 'min_stay_months', 3) or 3)
         if draft.lease_months < max(1, min_stay):
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"Lease term must be at least {max(1, min_stay)} month(s)")
-    if draft.current_step in {"emergency_contact", "review"} and not draft.personal_info:
+    if draft.current_step in {"emergency_contact", "review"} and not _serialize_personal_info(tenant):
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Personal information step is incomplete")
-    if draft.current_step == "review" and not draft.emergency_contact:
+    if draft.current_step == "review" and not _serialize_emergency_contact(tenant):
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Emergency contact step is incomplete")
     await session.commit()
     await session.refresh(draft)
-    return draft
+    return _draft_read(draft, tenant)
 
 
 @router.post("/confirm", response_model=BookingConfirmationRead, status_code=status.HTTP_201_CREATED)
@@ -92,17 +213,39 @@ async def confirm_booking_with_policies(
     session: AsyncSession = Depends(get_db_session),
     current_user: User = Depends(require_tenant),
 ) -> BookingConfirmationRead:
+    unit_type_id = confirmation.unit_type_id
+    existing_booking = await session.scalar(select(Booking).where(
+        Booking.user_id == current_user.id,
+        Booking.unit_type_id == unit_type_id,
+        Booking.scheduled_date == confirmation.move_in_date.isoformat(),
+        Booking.lease_months == confirmation.lease_months,
+        Booking.status.in_([
+            BookingStatus.payment_pending,
+            BookingStatus.payment_processing,
+            BookingStatus.payment_failed,
+        ]),
+    ))
+    if existing_booking:
+        return BookingConfirmationRead(
+            booking_id=existing_booking.id,
+            consent_count=len(POLICIES),
+            order_status=existing_booking.status.value,
+        )
+
     flow_draft = await session.scalar(select(BookingFlowDraft).where(
         BookingFlowDraft.user_id == current_user.id,
-        BookingFlowDraft.unit_type_id == confirmation.unit_type_id,
+        BookingFlowDraft.unit_type_id == unit_type_id,
     ))
     if not flow_draft:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Booking flow steps are incomplete: draft not found")
     if flow_draft.current_step != "review":
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"Booking flow steps are incomplete: current_step={flow_draft.current_step}, expected review")
-    if not flow_draft.personal_info:
+    tenant = await _get_draft_tenant(session, flow_draft)
+    personal_info = _serialize_personal_info(tenant)
+    emergency_contact = _serialize_emergency_contact(tenant)
+    if not personal_info:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Booking flow steps are incomplete: personal_info missing")
-    if not flow_draft.emergency_contact:
+    if not emergency_contact:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Booking flow steps are incomplete: emergency_contact missing")
     if flow_draft.move_in_date != confirmation.move_in_date.isoformat():
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"Booking flow steps are incomplete: move_in_date mismatch draft={flow_draft.move_in_date} confirm={confirmation.move_in_date.isoformat()}")
@@ -120,11 +263,6 @@ async def confirm_booking_with_policies(
                 detail=f"Policy {key} has changed; please review the latest version",
             )
 
-    # 获取 UnitType（不再使用旧的 Property/Room）
-    unit_type_id = getattr(confirmation, 'unit_type_id', None) or getattr(confirmation, 'unit_type_id', None)
-    if not unit_type_id:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing unit_type_id")
-
     availability_service = BookingAvailabilityService(session)
     unit_type = await availability_service.get_unit_type(unit_type_id)
     if not unit_type:
@@ -139,7 +277,7 @@ async def confirm_booking_with_policies(
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=f"Lease term must be at least {max(1, min_stay)} month(s)")
 
     # 生成价格快照
-    pricing = LeasePricingService.calculate(unit_type, confirmation.move_in_date)
+    pricing = await LeasePricingService.calculate(unit_type, confirmation.move_in_date)
     base = pricing.options[0]
     mon_minor = base.prices.monthly_rent.local.minor_units
     mon_exp = base.prices.monthly_rent.local.minor_unit_exponent
@@ -148,49 +286,51 @@ async def confirm_booking_with_policies(
     svc_fee = base.prices.service_fee.local.minor_units // (10 ** base.prices.service_fee.local.minor_unit_exponent)
     m = confirmation.lease_months
 
-    duplicate = await session.scalar(select(Booking).where(
-        Booking.user_id == current_user.id,
-        Booking.unit_type_id == unit_type_id,
-        Booking.status == BookingStatus.pending,
-    ))
-    if duplicate:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="You already have a pending booking for this unit type")
-
-    booking = Booking(
-        user_id=current_user.id,
-        tenant_id=current_user.id,
-        unit_type_id=unit_type_id,
-        institute_id=unit_type.institute_id,
-        bm_id=getattr(getattr(unit_type, 'institute', None), 'bm_id', None),
-        status=BookingStatus.pending,
-        scheduled_date=confirmation.move_in_date.isoformat(),
-        deposit_amount=getattr(unit_type, 'deposit_amount', None) or 0,
-        service_fee=svc_fee,
-        deposit_status="unpaid",
-        lease_months=m,
-        total_rent=monthly * m,
-        application_data={
-            "pricing_snapshot": pricing.model_dump(mode="json"),
-            "personal_info": flow_draft.personal_info,
-            "emergency_contact": flow_draft.emergency_contact,
-        },
-    )
-    session.add(booking)
-    await session.flush()
-
-    ip_address = request.client.host if request.client else "unknown"
-    for policy in POLICIES.values():
-        session.add(PolicyConsent(
-            booking_id=booking.id,
+    try:
+        booking = Booking(
             user_id=current_user.id,
-            policy_key=policy.key,
-            policy_version=policy.version,
-            content_hash=policy.content_hash,
-            ip_address=ip_address,
-        ))
-    await session.delete(flow_draft)
-    await session.commit()
-    return BookingConfirmationRead(booking_id=booking.id, consent_count=len(POLICIES))
+            tenant_id=tenant.id,
+            unit_type_id=unit_type_id,
+            institute_id=unit_type.institute_id,
+            bm_id=getattr(getattr(unit_type, 'institute', None), 'bm_id', None),
+            status=BookingStatus.payment_pending,
+            scheduled_date=confirmation.move_in_date.isoformat(),
+            deposit_amount=getattr(unit_type, 'deposit_amount', None) or 0,
+            service_fee=svc_fee,
+            deposit_status="unpaid",
+            lease_months=m,
+            total_rent=monthly * m,
+            application_data={
+                "pricing_snapshot": pricing.model_dump(mode="json"),
+                "personal_info": personal_info,
+                "emergency_contact": emergency_contact,
+            },
+        )
+        session.add(booking)
+        await session.flush()
+
+        ip_address = request.client.host if request.client else "unknown"
+        for policy in POLICIES.values():
+            session.add(PolicyConsent(
+                booking_id=booking.id,
+                user_id=current_user.id,
+                policy_key=policy.key,
+                policy_version=int(policy.version.split(".")[0]),
+                content_hash=policy.content_hash,
+                ip_address=ip_address,
+            ))
+        await session.delete(flow_draft)
+        await session.commit()
+        await session.refresh(booking)
+    except Exception:
+        await session.rollback()
+        logger.exception("Failed to confirm booking", extra={"user_id": current_user.id, "unit_type_id": unit_type_id})
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Order confirmation failed")
+    return BookingConfirmationRead(
+        booking_id=booking.id,
+        consent_count=len(POLICIES),
+        order_status=booking.status.value,
+    )
 
 
 @router.post("/emergency-contact/validate", response_model=BookingEmergencyContactValidationRead)
@@ -271,7 +411,8 @@ async def get_booking(
     if not booking:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Booking not found")
 
-    if current_user.id not in {booking.tenant_id, booking.bm_id} and current_user.role != UserRole.admin:
+    # booking.user_id 是登录租客账户；tenant_id 指向 tenants 档案主键，二者不能混用。
+    if current_user.id not in {booking.user_id, booking.bm_id} and current_user.role != UserRole.admin:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
 
     return booking
@@ -313,7 +454,7 @@ async def cancel_booking(
     if not booking:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Booking not found")
 
-    if current_user.id != booking.tenant_id and current_user.role != UserRole.admin:
+    if current_user.id != booking.user_id and current_user.role != UserRole.admin:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only the tenant can cancel this booking")
 
     updated = await booking_service.update_status(booking_id, BookingStatus.cancelled)
