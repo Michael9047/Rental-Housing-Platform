@@ -40,11 +40,4 @@ POLICIES: dict[str, Policy] = {
         content_hash="privacy_v1_hash",
         content="平台将严格保护您的个人信息，未经授权不会向第三方披露。",
     ),
-    "payment_service": Policy(
-        key="payment_service",
-        title="支付服务说明",
-        version=1,
-        content_hash="payment_service_v1_hash",
-        content="本平台采用第三方支付服务，支付过程中产生的费用由支付服务提供商收取。",
-    ),
 }
