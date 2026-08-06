@@ -30,10 +30,6 @@
 
       <!-- ====== 房东侧边栏 ====== -->
       <template v-if="authStore.isLandlord">
-        <el-menu-item index="/workspace">
-          <el-icon><DataAnalysis /></el-icon>
-          <span>运营工作台</span>
-        </el-menu-item>
         <el-menu-item index="/buildings">
           <el-icon><HomeFilled /></el-icon>
           <span>公寓管理</span>
@@ -53,10 +49,6 @@
         <el-menu-item index="/tenants/manage">
           <el-icon><User /></el-icon>
           <span>租客管理</span>
-        </el-menu-item>
-        <el-menu-item index="/notifications">
-          <el-icon><Bell /></el-icon>
-          <span>消息通知</span>
         </el-menu-item>
       </template>
 
