@@ -118,6 +118,16 @@ class Settings(BaseSettings):
         validation_alias="AGENT_RECOMMEND_TEMPERATURE",
     )
 
+    # ========== 汇率服务 ==========
+    exchange_rate_api_url: str = Field(
+        default="https://api.exchangerate-api.com/v4/latest/CNY",
+        validation_alias="EXCHANGE_RATE_API_URL",
+    )
+    exchange_rate_timeout_seconds: float = Field(
+        default=8.0,
+        validation_alias="EXCHANGE_RATE_TIMEOUT_SECONDS",
+    )
+
     # ========== 高德地图（中国大陆主引擎） ==========
     amap_web_key: str = Field(
         default="",
