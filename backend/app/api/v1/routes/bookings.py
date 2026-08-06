@@ -322,10 +322,10 @@ async def confirm_booking_with_policies(
         await session.delete(flow_draft)
         await session.commit()
         await session.refresh(booking)
-    except Exception:
+    except Exception as e:
         await session.rollback()
-        logger.exception("Failed to confirm booking", extra={"user_id": current_user.id, "unit_type_id": unit_type_id})
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Order confirmation failed")
+        logger.error("Failed to confirm booking: %s", str(e)[:200])
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)[:200])
     return BookingConfirmationRead(
         booking_id=booking.id,
         consent_count=len(POLICIES),
