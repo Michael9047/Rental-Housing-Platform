@@ -1199,6 +1199,7 @@ function saveSearchState() {
     uniRadius: uniRadius.value, schoolId: schoolId.value, schoolName: schoolName.value,
     sortField: sortField.value, sortAsc: sortAsc.value,
     agentOpen: agentOpen.value,
+    fromAgent: fromAgent.value,
     hasAgentSession: agentChatStore.sessionId !== null,
   }))
 }
@@ -1217,6 +1218,7 @@ function restoreSearchState() {
     if (s.sortAsc != null) sortAsc.value = s.sortAsc
     // 恢复 Agent 面板
     if (s.agentOpen) agentOpen.value = true
+    if (s.fromAgent) fromAgent.value = true
     // 同步追踪 key，避免恢复后首次搜索误创对话
     lastAgentSearchKey.value = JSON.stringify({
       country: filters.country, city: filters.city, district: filters.district,
@@ -1230,9 +1232,13 @@ function restoreSearchState() {
 onMounted(() => {
   const restored = restoreSearchState()
   if (restored) {
-    // 恢复筛选后重新搜索（store 在刷新后会清空）
-    restoringFromNavigation = true
-    doSearch()
+    if (fromAgent.value) {
+      // AI 结果还在 Pinia store 里，不重新搜索
+      restoringFromNavigation = true
+    } else {
+      restoringFromNavigation = true
+      doSearch()
+    }
   } else {
     initFromRoute()
   }
