@@ -69,6 +69,7 @@ import LeaseStep from '@/components/booking/LeaseStep.vue'
 import PersonalInfoStep from '@/components/booking/PersonalInfoStep.vue'
 import AgreementStep from '@/components/booking/AgreementStep.vue'
 import { bookingService } from '@/services/booking'
+import { bookingDraftService } from '@/services/bookingDraft'
 
 const route = useRoute()
 const router = useRouter()
@@ -120,12 +121,33 @@ async function loadProperty() {
   }
 }
 
-function handleNextDate() {
-  bookingFlow.nextStep()
+async function handleNextDate() {
+  if (!bookingFlow.property || !bookingFlow.start_date) return
+  try {
+    await bookingDraftService.save(bookingFlow.property.id, {
+      move_in_date: bookingFlow.start_date,
+      current_step: 'lease_term',
+    })
+    bookingFlow.nextStep()
+  } catch (err: any) {
+    const detail = err?.response?.data?.detail
+    ElMessage.error(detail && typeof detail === 'string' ? detail : '保存入住日期失败，请重试')
+  }
 }
 
-function handleNextLease() {
-  bookingFlow.nextStep()
+async function handleNextLease() {
+  if (!bookingFlow.property || !bookingFlow.lease_months) return
+  try {
+    await bookingDraftService.save(bookingFlow.property.id, {
+      move_in_date: bookingFlow.start_date,
+      lease_months: bookingFlow.lease_months,
+      current_step: 'personal_info',
+    })
+    bookingFlow.nextStep()
+  } catch (err: any) {
+    const detail = err?.response?.data?.detail
+    ElMessage.error(detail && typeof detail === 'string' ? detail : '保存租期失败，请重试')
+  }
 }
 
 function handleInfoPrev() {

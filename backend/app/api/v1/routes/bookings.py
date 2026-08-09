@@ -190,6 +190,16 @@ async def save_booking_flow_draft(
         valid, reason, _ = await availability_service.validate(property_obj, draft.move_in_date)
         if not valid:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=reason)
+        # 若租期已选，同步检查整段租期范围冲突
+        if draft.lease_months:
+            move_in_date_obj = date.fromisoformat(draft.move_in_date)
+            has_conflict = await availability_service.check_conflict(
+                unit_type_id=property_obj.id,
+                move_in=move_in_date_obj,
+                lease_months=draft.lease_months,
+            )
+            if has_conflict:
+                raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="房源在所选租期内已存在冲突订单")
     if draft.current_step in {"personal_info", "emergency_contact", "review"}:
         if not draft.lease_months:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Lease term step is incomplete")
@@ -197,6 +207,16 @@ async def save_booking_flow_draft(
         min_stay = int(getattr(getattr(property_obj, 'unit_type', None), 'min_stay_months', 3) or 3)
         if draft.lease_months < max(1, min_stay):
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"Lease term must be at least {max(1, min_stay)} month(s)")
+        # 检查整段租期范围是否与已有订单冲突
+        move_in_date_obj = date.fromisoformat(draft.move_in_date)
+        conflict_service = BookingAvailabilityService(session)
+        has_conflict = await conflict_service.check_conflict(
+            unit_type_id=property_obj.id,
+            move_in=move_in_date_obj,
+            lease_months=draft.lease_months,
+        )
+        if has_conflict:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="房源在所选租期内已存在冲突订单")
     if draft.current_step in {"emergency_contact", "review"} and not _serialize_personal_info(tenant):
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Personal information step is incomplete")
     if draft.current_step == "review" and not _serialize_emergency_contact(tenant):
@@ -276,6 +296,15 @@ async def confirm_booking_with_policies(
     if confirmation.lease_months < max(1, min_stay):
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=f"Lease term must be at least {max(1, min_stay)} month(s)")
 
+    # 检查整段租期范围是否与已有订单冲突
+    has_conflict = await availability_service.check_conflict(
+        unit_type_id=unit_type_id,
+        move_in=confirmation.move_in_date,
+        lease_months=confirmation.lease_months,
+    )
+    if has_conflict:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="房源在所选租期内已存在冲突订单")
+
     # 生成价格快照
     pricing = await LeasePricingService.calculate(unit_type, confirmation.move_in_date)
     base = pricing.options[0]
@@ -320,6 +349,13 @@ async def confirm_booking_with_policies(
                 ip_address=ip_address,
             ))
         await session.delete(flow_draft)
+        # 自动生成合同，确保后续支付流程能找到合同记录
+        try:
+            from app.services.contract_service import ContractService
+            contract = await ContractService(session).generate_contract(booking)
+            logger.info("Auto-generated contract %s for booking %s", contract.id, booking.id)
+        except Exception as contract_err:
+            logger.warning("Failed to auto-generate contract for booking %s: %s", booking.id, str(contract_err)[:200])
         await session.commit()
         await session.refresh(booking)
     except Exception as e:
@@ -359,6 +395,20 @@ async def create_booking(
     unit_type = await PropertyService(session).get(unit_type_id)
     if not unit_type:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="UnitType not found")
+
+    # 可用性校验：入住日期 + 整段租期范围
+    if booking_in.scheduled_date and booking_in.lease_months:
+        availability_service = BookingAvailabilityService(session)
+        valid, reason, _ = await availability_service.validate(unit_type, booking_in.scheduled_date)
+        if not valid:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=reason)
+        has_conflict = await availability_service.check_conflict(
+            unit_type_id=unit_type_id,
+            move_in=date.fromisoformat(booking_in.scheduled_date),
+            lease_months=booking_in.lease_months,
+        )
+        if has_conflict:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="房源在所选租期内已存在冲突订单")
 
     booking_service = BookingService(session)
     try:
