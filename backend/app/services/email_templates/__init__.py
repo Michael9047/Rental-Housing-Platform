@@ -29,6 +29,9 @@ def render(template_name: str, **kwargs) -> str:
         渲染后的完整 HTML 字符串
     """
     # 1. 读取 body 模板并填充业务变量
+    # 通用订单事件模板可按事件覆盖按钮文案；旧调用保持“查看订单详情”。
+    kwargs.setdefault("action_label", "查看订单详情")
+    kwargs.setdefault("contract_url", kwargs.get("frontend_url", "#"))
     body_template = _read(template_name + ".html")
     body_html = body_template.format(**kwargs)
 

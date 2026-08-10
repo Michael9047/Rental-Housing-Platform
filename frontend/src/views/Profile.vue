@@ -54,14 +54,14 @@
                   <div class="contract-tags"><el-tag v-for="label in row.status_labels" :key="label" size="small">{{ label }}</el-tag></div>
                   <el-alert v-if="row.invalid_reason" type="warning" :closable="false" :title="row.invalid_reason" />
                   <p v-if="row.settlement_currency">实际支付金额：{{ contractMoney(row.settlement_amount_minor, row.settlement_currency) }}</p>
-                  <p v-if="row.remaining_payment_seconds !== null">剩余支付时间：{{ duration(row.remaining_payment_seconds) }}</p>
+                  <p v-if="row.can_pay && row.remaining_payment_seconds !== null">剩余支付时间：{{ duration(row.remaining_payment_seconds) }}</p>
                   <p v-if="row.remaining_contract_days !== null">剩余合同天数：{{ row.remaining_contract_days }}天</p>
                 </div>
               </div>
               <div class="contract-actions">
                 <el-button type="primary" text @click="router.push(`/my-contracts/${row.agreement_id}`)">查看合同</el-button>
                 <el-button text :disabled="!row.signed_pdf_available" @click="downloadContract(row)">下载合同</el-button>
-                <el-button text @click="router.push(`/booking/order/${row.booking_id}/payment-status`)">查看订单</el-button>
+                <el-button text @click="router.push(`/my-orders/${row.booking_id}`)">查看订单</el-button>
                 <el-button text @click="router.push(`/building/${row.property_id}`)">查看房源</el-button>
                 <el-button v-if="row.booking_id && !['paid','cancelled','refunded','payment_expired'].includes(row.payment_status) && row.booking_status !== 'confirmed'" type="primary" @click="router.push(`/booking/payment/${row.booking_id}/deposit`)">继续支付</el-button>
                 <el-button v-if="row.booking_id && ['payment_expired','cancelled'].includes(row.payment_status)" type="warning" @click="router.push(`/booking/${row.property_id}/move-in-date`)">重新预订</el-button>
@@ -92,16 +92,17 @@
                   <p>入住：{{ order.lease_start_date || '—' }} 至 {{ order.lease_end_date || '—' }} · {{ order.lease_months || '—' }}个月</p>
                   <p>当前应付：{{ contractMoney(order.settlement_amount_minor, order.settlement_currency) }} · 人民币：{{ contractMoney(order.cny_reference_amount_minor, 'CNY') }}</p>
                   <p>当地货币：{{ contractMoney(order.property_amount_minor, order.property_currency) }}</p>
-                  <div class="order-tags"><el-tag size="small">订单：{{ order.status_label }}</el-tag><el-tag size="small">支付：{{ order.status_label }}</el-tag><el-tag size="small" :type="order.booking_status === 'confirmed' ? 'success' : 'info'">预订：{{ order.booking_status === 'confirmed' ? '成功' : '未成功' }}</el-tag></div>
+                  <div class="order-tags"><el-tag size="small">订单：{{ order.status_label }}</el-tag><el-tag size="small">支付：{{ order.status_label }}</el-tag><el-tag size="small" :type="order.booking_status === 'confirmed' ? 'success' : 'info'">预订：{{ bookingStatusLabel(order.booking_status) }}</el-tag></div>
                   <p>创建：{{ contractDateTime(order.created_at) }} · 截止：{{ contractDateTime(order.expires_at) }}</p>
-                  <p v-if="remainingSeconds(order) > 0 && order.booking_status !== 'confirmed'">倒计时：{{ duration(remainingSeconds(order)) }}</p>
+                  <p v-if="order.can_pay && remainingSeconds(order) > 0">倒计时：{{ duration(remainingSeconds(order)) }}</p>
                   <el-alert v-if="order.failure_reason" :closable="false" type="warning" :title="order.failure_reason" />
                 </div>
               </div>
               <div class="contract-actions">
                 <el-button text type="primary" @click="router.push(`/my-orders/${order.booking_id}`)">查看详情</el-button>
                 <el-button text @click="router.push(`/building/${order.property_id}`)">查看房源</el-button>
-                <el-button v-if="order.agreement_id && order.booking_status !== 'confirmed'" text @click="router.push(`/my-contracts/${order.agreement_id}`)">查看合同</el-button>
+                <!-- 合同入口由是否存在关联合同决定，不能因预订已成功而被错误隐藏。 -->
+                <el-button v-if="order.agreement_id" text @click="router.push(`/my-contracts/${order.agreement_id}`)">查看合同</el-button>
                 <el-button v-if="order.payment_status === 'payment_processing'" text @click="refreshOrders">刷新状态</el-button>
                 <!-- 非终态的订单：直接跳支付页，由支付页自行判决 -->
                 <el-button v-if="order.booking_id && !['paid','cancelled','refunded','payment_expired'].includes(order.payment_status) && order.booking_status !== 'confirmed'" type="primary" @click="router.push(`/booking/payment/${order.booking_id}/deposit`)">继续支付</el-button>
@@ -416,7 +417,8 @@ const pageLoading = ref(false)
 const showVerify = ref(false)
 const showNewRepair = ref(false)
 const contractFilter = ref('pending_effective')
-const billTab = ref('pending')
+// 已支付订单是租客进入“我的账单/订单”后最常需要查看的记录；待支付订单仍可切换查看。
+const billTab = ref('successful')
 
 const bookings = ref<Booking[]>([]) // 用于报修弹窗房源选择
 const contracts = ref<TenantContractItem[]>([])
@@ -539,10 +541,20 @@ const filteredContracts = computed(() => {
   return contracts.value.filter(c => c.category === contractFilter.value)
 })
 
-const successfulOrderStatuses = new Set(['paid', 'success', 'confirmed'])
+// “已成功”按支付结果判断。合同尚未最终确认的已付订单也必须可在账单中查看。
+// 已完成分类保留已取消记录，避免租客取消后误以为订单被删除。
+const successfulOrderStatuses = new Set(['paid', 'success', 'refunded', 'cancelled'])
 const filteredOrders = computed(() => orders.value.filter(order => billTab.value === 'successful'
-  ? order.booking_status === 'confirmed' && successfulOrderStatuses.has(order.payment_status)
-  : order.booking_status !== 'confirmed'))
+  ? successfulOrderStatuses.has(order.payment_status)
+  : !successfulOrderStatuses.has(order.payment_status)))
+const bookingStatusLabel = (status: string) => ({
+  confirmed: '成功',
+  awaiting_contract_confirmation: '待确认房号和合同',
+  awaiting_signature: '待签署合同',
+  awaiting_final_confirmation: '待最终确认',
+  cancelled: '已取消',
+  not_confirmed: '未完成',
+}[status] || status)
 
 // ── Actions ──
 async function fetchAll() {

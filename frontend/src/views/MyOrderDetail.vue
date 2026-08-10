@@ -30,25 +30,25 @@
         <dl>
           <dt>订单编号</dt><dd>{{ order.order_id }}</dd><dt>合同编号</dt><dd>{{ order.agreement_number }}</dd>
           <dt>订单状态</dt><dd>{{ order.order_status }}</dd><dt>支付状态</dt><dd>{{ order.status_label }}</dd>
-          <dt>预订状态</dt><dd>{{ order.booking_status === 'confirmed' ? '预订成功' : '预订未成功' }}</dd>
+          <dt>预订状态</dt><dd>{{ bookingStatusLabel(order.booking_status) }}</dd>
           <dt>押金</dt><dd>{{ money(order.deposit_amount_minor, order.property_currency) }}</dd><dt>服务费</dt><dd>{{ money(order.service_fee_amount_minor, order.property_currency) }}</dd>
           <dt>税费</dt><dd>{{ money(order.tax_amount_minor, order.property_currency) }}</dd><dt>当前总计</dt><dd>{{ money(order.settlement_amount_minor, order.settlement_currency) }}</dd>
           <dt>实际扣款币种</dt><dd>{{ order.settlement_currency }}</dd><dt>人民币金额</dt><dd>{{ money(order.cny_reference_amount_minor, 'CNY') }}</dd>
           <dt>当地货币金额</dt><dd>{{ money(order.property_amount_minor, order.property_currency) }}</dd><dt>汇率</dt><dd>{{ order.exchange_rate }}（{{ order.exchange_rate_source }}）</dd>
           <dt>汇率时间</dt><dd>{{ dateTime(order.exchange_rate_timestamp) }}</dd><dt>创建时间</dt><dd>{{ dateTime(order.created_at) }}</dd>
-          <dt>支付截止</dt><dd>{{ dateTime(order.expires_at) }}</dd><dt>状态更新时间</dt><dd>{{ dateTime(order.status_updated_at) }}</dd>
+          <template v-if="order.can_pay"><dt>支付截止</dt><dd>{{ dateTime(order.expires_at) }}</dd></template><dt>状态更新时间</dt><dd>{{ dateTime(order.status_updated_at) }}</dd>
           <dt>支付成功时间</dt><dd>{{ order.paid_at ? dateTime(order.paid_at) : '—' }}</dd><dt>支付流水号</dt><dd>{{ order.transaction_id_masked || '—' }}</dd>
         </dl>
-        <p v-if="remaining > 0 && order.booking_status !== 'confirmed'" class="countdown">剩余支付时间：{{ duration(remaining) }}</p>
+        <p v-if="order.can_pay && remaining > 0" class="countdown">剩余支付时间：{{ duration(remaining) }}</p>
       </el-card>
       <footer>
-        <el-button @click="router.push(`/my-contracts/${order.agreement_id}`)">查看合同</el-button>
+        <el-button :disabled="!order.agreement_id" @click="router.push(`/my-contracts/${order.agreement_id}`)">查看合同</el-button>
         <el-button :disabled="!order.agreement_id" @click="downloadContract">下载合同</el-button>
         <el-button @click="router.push(`/property/${order.property_id}`)">查看房源</el-button>
         <el-button v-if="order.booking_status !== 'confirmed'" :loading="refreshing" @click="load">刷新支付状态</el-button>
         <el-button v-if="['payment_expired','cancelled'].includes(order.payment_status)" @click="router.push(`/booking/${order.property_id}/move-in-date`)">重新预订该房源</el-button>
         <el-button v-if="order.can_pay" type="primary" :loading="validating" @click="enterPayment">{{ order.payment_action_label }}</el-button>
-        <el-button @click="router.push('/customer-service')">联系客服</el-button>
+        <el-button v-if="canCancel" type="danger" plain :loading="cancelling" @click="cancelOrder">取消订单</el-button>
       </footer>
     </template>
   </main>
@@ -57,21 +57,36 @@
 <script setup lang="ts">
 // 订单详情只展示服务端脱敏及验证后的数据，不读取本地临时申请资料。
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { useRoute, useRouter } from 'vue-router'
 import { contractService } from '@/services/contract'
+import { bookingService } from '@/services/booking'
 import { paymentService, type TenantOrderDetail } from '@/services/payment'
 import { remainingPaymentSeconds } from '@/utils/orderPresentation'
 
-const route=useRoute(),router=useRouter();const order=ref<TenantOrderDetail>();const loading=ref(true),refreshing=ref(false),validating=ref(false),error=ref(''),now=ref(Date.now());let timer=0
+const route=useRoute(),router=useRouter();const order=ref<TenantOrderDetail>();const loading=ref(true),refreshing=ref(false),validating=ref(false),cancelling=ref(false),error=ref(''),now=ref(Date.now());let timer=0
 const remaining=computed(()=>remainingPaymentSeconds(order.value?.expires_at||'',now.value))
+const canCancel=computed(()=>Boolean(order.value && !['cancelled','refunded'].includes(order.value.payment_status) && order.value.order_status !== 'completed'))
 const propertyType=computed(()=>({apartment:'公寓',house:'独立屋',studio:'单间',shared:'合租'} as Record<string,string>)[order.value?.property_type||'']||order.value?.property_type)
 const money=(minor:number,currency:string)=>new Intl.NumberFormat('zh-CN',{style:'currency',currency}).format(minor/100)
 const dateTime=(value:string)=>new Intl.DateTimeFormat('zh-CN',{dateStyle:'medium',timeStyle:'medium'}).format(new Date(value))
 const duration=(seconds:number)=>`${String(Math.floor(seconds/3600)).padStart(2,'0')}:${String(Math.floor(seconds%3600/60)).padStart(2,'0')}:${String(seconds%60).padStart(2,'0')}`
+const bookingStatusLabel=(status:string)=>({confirmed:'预订成功',awaiting_contract_confirmation:'待管理员确认房号和合同',awaiting_signature:'待签署合同',awaiting_final_confirmation:'合同已签署，待最终确认',cancelled:'已取消',not_confirmed:'预订未完成'}[status]||status)
 async function load(){const bookingId=Number(route.params.id);if(!Number.isInteger(bookingId)||bookingId<=0){error.value='订单编号无效';loading.value=false;return}refreshing.value=true;try{order.value=await paymentService.getMyOrder(bookingId);error.value=''}catch(e:any){const status=e?.response?.status;error.value=status===401?'登录状态已失效，请重新登录':status===403?'您无权查看该订单':status===404?'订单不存在或跳转编号错误':status===409?'订单当前状态冲突，请刷新后重试':status>=500?'服务器处理订单时发生错误':!e?.response?'无法连接后端服务，请确认后端已启动':'订单加载失败'}finally{loading.value=false;refreshing.value=false}}
 async function enterPayment(){if(!order.value)return;validating.value=true;try{const result=await paymentService.validatePayment(order.value.booking_id);if(!result.can_pay){ElMessage.warning(result.reason||'当前订单暂不能支付');await load();return}await router.push(`/booking/payment/${order.value.booking_id}/deposit`)}catch(e:any){ElMessage.error(e?.response?.data?.detail||'支付资格校验失败')}finally{validating.value=false}}
 async function downloadContract(){if(!order.value)return;try{const link=await contractService.getSignedDownloadLink(order.value.agreement_id);if(!link.url){ElMessage.info(link.message||'签署版 PDF 正在生成');return}window.location.assign(link.url)}catch{ElMessage.error('合同下载失败，请稍后重试')}}
+async function cancelOrder(){
+  if(!order.value)return
+  try{
+    await ElMessageBox.confirm('取消后订单将终止，已支付押金不予退还。是否确认取消？','取消订单确认',{type:'warning',confirmButtonText:'确认取消订单',cancelButtonText:'暂不取消'})
+    cancelling.value=true
+    await bookingService.cancel(order.value.booking_id)
+    ElMessage.success('订单已取消，管理员已收到通知')
+    await load()
+  }catch(error:unknown){
+    if(error !== 'cancel')ElMessage.error('取消订单失败，请刷新后重试')
+  }finally{cancelling.value=false}
+}
 onMounted(()=>{load();timer=window.setInterval(()=>now.value=Date.now(),1000)});onBeforeUnmount(()=>window.clearInterval(timer))
 </script>
 

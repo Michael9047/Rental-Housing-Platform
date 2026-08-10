@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import get_current_user, get_db_session, require_landlord, require_tenant
 from app.models.booking import Booking, BookingStatus
 from app.models.contract import Contract
+from app.models.notification import Notification, NotificationType
 from app.models.external_signature import (
     ExternalSignatureEvent,
     ExternalSignatureRequest,
@@ -369,6 +370,39 @@ async def dropbox_sign_webhook(request: Request, session: AsyncSession = Depends
                 booking = await session.get(Booking, contract.booking_id)
                 if booking and booking.status == BookingStatus.contract_ready:
                     booking.status = BookingStatus.contract_signed
+                    # 外部签约回调与站内签约走相同的通知语义：签约即完成预订。
+                    # 仅在首次状态流转时创建，避免供应商重复回调产生重复站内信。
+                    tenant_notice_exists = await session.scalar(
+                        select(Notification.id).where(
+                            Notification.user_id == contract.tenant_id,
+                            Notification.type == NotificationType.contract_signed,
+                            Notification.entity_type == "order",
+                            Notification.entity_id == str(booking.id),
+                        )
+                    )
+                    if not tenant_notice_exists:
+                        session.add(Notification(
+                            user_id=contract.tenant_id,
+                            type=NotificationType.contract_signed,
+                            title="已完成预订",
+                            content="您已完成合同签署，预订已完成。点击查看订单详情。",
+                            body="您已完成合同签署，预订已完成。点击查看订单详情。",
+                            entity_type="order",
+                            entity_id=str(booking.id),
+                            order_id=str(booking.id),
+                            agreement_id=contract.id,
+                            unit_type_id=booking.unit_type_id,
+                        ))
+                    from app.services.notification_service import NotificationService
+                    await NotificationService(session).add_admin_order_notifications(
+                        booking.id,
+                        booking.bm_id,
+                        booking.unit_type_id,
+                        NotificationType.contract_signed,
+                        "租客已完成预订",
+                        "租客已完成合同签署，预订已完成。请进入租客管理查看入住信息。",
+                        agreement_id=contract.id,
+                    )
         elif event_type in {"signature_request_canceled", "signature_request_declined"}:
             signature_request.status = "cancelled"
     await session.commit()

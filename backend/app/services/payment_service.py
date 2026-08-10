@@ -1,6 +1,7 @@
 """从订单价格快照创建支付单并以验签 webhook 原子确认结果。"""
 import hashlib
 import json
+import logging
 import uuid
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
@@ -16,9 +17,12 @@ from app.models.payment import Payment, PaymentStatus, PaymentWebhookEvent
 from app.models.property import Property, PropertyStatus
 from app.models.notification import Notification, NotificationType
 from app.models.user import User, UserRole
+from app.core.config import get_settings
 from app.services.payment_provider import MockHostedPaymentProvider, PaymentMethod, PaymentRequest, get_test_provider
 from app.services.lease_pricing_service import LeasePricingService
 from app.services.order_notification_service import OrderNotificationService
+
+logger = logging.getLogger(__name__)
 
 
 class PaymentOrderService:
@@ -48,6 +52,41 @@ class PaymentOrderService:
 
     def _notify(self, user_id: int, kind: NotificationType, title: str, content: str) -> None:
         self.session.add(Notification(user_id=user_id, type=kind, title=title, content=content))
+
+    async def _enqueue_notification_safely(self, event_type: str, booking: Booking, *, payment: Payment, discriminator: str) -> None:
+        """通知为后置副作用，任何异常均不得中断支付状态更新或浏览器跳转。"""
+        try:
+            await OrderNotificationService(self.session).enqueue(
+                event_type, booking, payment=payment, discriminator=discriminator,
+            )
+        except Exception:
+            logger.exception("订单通知入队失败 event=%s booking_id=%s", event_type, booking.id)
+
+    async def _send_payment_success_email_safely(self, booking: Booking, payment: Payment) -> None:
+        """支付事务提交后投递租客模拟邮件，邮件异常不影响已完成的支付。"""
+        try:
+            tenant = await self.session.get(User, booking.user_id)
+            if not tenant or not tenant.email:
+                logger.warning("支付成功邮件跳过：租客没有邮箱 booking_id=%s", booking.id)
+                return
+            from app.services.email_service import EmailService
+
+            deadline = payment.paid_at + timedelta(days=3) if payment.paid_at else None
+            amount = f"{payment.settlement_amount_minor / 100:.2f} {payment.settlement_currency}"
+            deadline_text = deadline.isoformat() if deadline else "待管理员确认"
+            await EmailService().send(
+                tenant.email,
+                "支付成功，订单正在审核",
+                (
+                    f"<h2>支付成功，订单正在审核</h2>"
+                    f"<p>订单编号：{booking.id}</p><p>支付金额：{amount}</p>"
+                    f"<p>支付时间：{payment.paid_at.isoformat() if payment.paid_at else ''}</p>"
+                    f"<p>管理员最晚处理时间：{deadline_text}</p>"
+                    f"<p><a href='{get_settings().frontend_url.rstrip('/')}/my-orders/{booking.id}'>查看订单详情</a></p>"
+                ),
+            )
+        except Exception:
+            logger.exception("租客支付成功模拟邮件投递失败 booking_id=%s", booking.id)
 
     @staticmethod
     def webhook_target(status: BookingStatus, event_status: str, now: datetime, expires_at: datetime) -> BookingStatus:
@@ -206,7 +245,7 @@ class PaymentOrderService:
                 payment.status, payment.trade_state, payment.trade_state_desc = PaymentStatus.review, "LATE_SUCCESS", "订单过期后收到成功付款，等待人工退款或核对"
                 self._transition(booking, BookingStatus.payment_review, reason="过期后收到成功支付 webhook", payment_id=payment.id)
                 self.release_inventory(booking)
-                await OrderNotificationService(self.session).enqueue("late_payment_review", booking, payment=payment, discriminator=payment.id)
+                await self._enqueue_notification_safely("late_payment_review", booking, payment=payment, discriminator=payment.id)
                 admins = await self.session.scalars(select(User).where(User.role == UserRole.admin))
                 for admin in admins:
                     self._notify(admin.id, NotificationType.system, "迟到付款待处理", f"订单 #{booking.id} 已过期后收到付款，请人工核对或退款。")
@@ -217,15 +256,23 @@ class PaymentOrderService:
             booking.deposit_status, booking.payment_transaction_id = "paid", payment.transaction_id
             self._transition(booking, BookingStatus.paid, reason="支付服务商有效成功 webhook", payment_id=payment.id)
             booking.inventory_reserved = False
-            await OrderNotificationService(self.session).enqueue("payment_succeeded", booking, payment=payment, discriminator=payment.id)
+            await self._enqueue_notification_safely("payment_succeeded", booking, payment=payment, discriminator=payment.id)
+            from app.services.notification_service import NotificationService
+            await NotificationService(self.session).add_admin_order_notifications(
+                booking.id, booking.bm_id, booking.unit_type_id, NotificationType.payment_received,
+                "新支付订单待确认合同",
+                f"订单 #{booking.id} 已完成支付。请在 3 个自然日内确认房号、合同信息并上传合同。",
+            )
         else:
             payment.status, payment.trade_state, payment.trade_state_desc = PaymentStatus.failed, "FAILED", "测试支付失败，可在有效期内重试"
             if booking.status == BookingStatus.payment_expired:
                 await self.session.commit(); await self.session.refresh(payment)
                 return payment
             self._transition(booking, BookingStatus.payment_failed, reason="支付服务商失败 webhook", payment_id=payment.id)
-            await OrderNotificationService(self.session).enqueue("payment_failed", booking, payment=payment, discriminator=payment.id)
+            await self._enqueue_notification_safely("payment_failed", booking, payment=payment, discriminator=payment.id)
         await self.session.commit(); await self.session.refresh(payment)
+        if event.get("status") == "succeeded" and payment.status == PaymentStatus.success:
+            await self._send_payment_success_email_safely(booking, payment)
         return payment
 
     async def expire_due_orders(self, now: datetime | None = None) -> dict[str, int]:
@@ -262,7 +309,7 @@ class PaymentOrderService:
             payment.status, payment.trade_state, payment.trade_state_desc = PaymentStatus.expired, "EXPIRED", "24小时内未完成付款"
         self._transition(booking, BookingStatus.payment_expired, reason="到期且服务商未确认成功", payment_id=payment.id if payment else None)
         self.release_inventory(booking)
-        await OrderNotificationService(self.session).enqueue("payment_expired", booking, payment=payment, discriminator="24h")
+        await self._enqueue_notification_safely("payment_expired", booking, payment=payment, discriminator="24h")
         await self.session.commit()
         return True
 
@@ -279,7 +326,7 @@ class PaymentOrderService:
         else:
             event = "refund_failed"
             self.session.add(AuditLog(user_id=None, action="payment_refund_failed", resource_type="booking", resource_id=booking.id, details={"payment_id":payment.id,"provider_event_id":provider_event_id}))
-        await OrderNotificationService(self.session).enqueue(event, booking, payment=payment, discriminator=provider_event_id)
+        await self._enqueue_notification_safely(event, booking, payment=payment, discriminator=provider_event_id)
         await self.session.commit()
 
     @staticmethod

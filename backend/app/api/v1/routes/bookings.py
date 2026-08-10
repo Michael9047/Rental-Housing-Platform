@@ -456,6 +456,24 @@ async def cancel_booking(
 
     if current_user.id != booking.user_id and current_user.role != UserRole.admin:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only the tenant can cancel this booking")
+    if booking.status in {BookingStatus.cancelled, BookingStatus.completed, BookingStatus.refunded}:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="当前订单不能取消")
 
     updated = await booking_service.update_status(booking_id, BookingStatus.cancelled)
+    # 租客主动取消后，BM 与超级管理员都需要收到站内消息和开发环境模拟邮件。
+    from app.models.notification import NotificationType
+    from app.services.notification_service import NotificationService
+
+    await NotificationService(session).add_admin_order_notifications(
+        booking_id=updated.id,
+        bm_id=updated.bm_id,
+        unit_type_id=updated.unit_type_id,
+        notification_type=NotificationType.booking_cancelled,
+        title="租客已取消订单",
+        content=(
+            f"租客已取消订单【{updated.id}】。该订单的押金按当前取消规则不予退还，"
+            "请进入订单列表查看后续处理信息。"
+        ),
+    )
+    await session.commit()
     return updated

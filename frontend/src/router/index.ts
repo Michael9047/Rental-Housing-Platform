@@ -359,6 +359,18 @@ const routes: RouteRecordRaw[] = [
         component: () => import('@/views/admin/AdminLogs.vue'),
         meta: { requiresAuth: true, requiresAdmin: true },
       },
+      {
+        path: 'admin/notification-simulations',
+        name: 'admin-notification-simulations',
+        component: () => import('@/views/admin/NotificationSimulation.vue'),
+        meta: { requiresAuth: true, requiresAdmin: true },
+      },
+      {
+        path: 'admin/simulated-mailbox',
+        name: 'admin-simulated-mailbox',
+        component: () => import('@/views/admin/SimulatedMailbox.vue'),
+        meta: { requiresAuth: true, requiresAdmin: true },
+      },
     ],
   },
   {

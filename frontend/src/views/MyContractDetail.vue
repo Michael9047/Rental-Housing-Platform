@@ -27,6 +27,10 @@
           <div><dt>房源</dt><dd><router-link :to="`/property/${contract.property_id}`">{{ contract.property_name }}</router-link></dd></div>
         </dl>
       </el-card>
+      <el-alert v-if="contract.agreement_status === 'generated'" :type="contract.is_contract_retention_expired ? 'error' : 'warning'" :closable="false" class="retention-alert">
+        <template #title>合同签署保留时间：{{ retentionText }}</template>
+        <template #default>管理员已发送本合同；请在 {{ formatDateTime(contract.contract_retention_deadline) }} 前完成签署，逾期后请联系平台客服。</template>
+      </el-alert>
 
       <article class="agreement-paper">
         <p class="template-notice">业务开发模板，待房源所在地法务审核</p>
@@ -61,12 +65,20 @@ const loading = ref(true)
 const error = ref('')
 const contract = ref<TenantContractDetail | null>(null)
 const signatureObjectUrl = ref('')
+const elapsedSeconds = ref(0)
+let timer = 0
 
 const paymentLabel = computed(() => contract.value?.status_labels[0] || contract.value?.payment_status || '未知')
 
-function formatDateTime(value: string) {
+function formatDateTime(value: string | null) {
+  if (!value) return '未签署'
   return new Intl.DateTimeFormat('zh-CN', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value))
 }
+const retentionText = computed(() => {
+  const seconds = Math.max(0, (contract.value?.remaining_contract_seconds || 0) - elapsedSeconds.value)
+  if (!seconds) return '合同保留期已结束'
+  return `剩余 ${Math.floor(seconds / 86400)}天 ${Math.floor(seconds % 86400 / 3600)}小时 ${Math.floor(seconds % 3600 / 60)}分`
+})
 
 async function loadContract() {
   try {
@@ -101,14 +113,15 @@ function openSigning() {
   router.push(`/booking/${contract.value.booking_id}/contract`)
 }
 
-onMounted(loadContract)
-onBeforeUnmount(() => { if (signatureObjectUrl.value) URL.revokeObjectURL(signatureObjectUrl.value) })
+onMounted(() => { loadContract(); timer = window.setInterval(() => { elapsedSeconds.value += 60 }, 60000) })
+onBeforeUnmount(() => { if (signatureObjectUrl.value) URL.revokeObjectURL(signatureObjectUrl.value); window.clearInterval(timer) })
 </script>
 
 <style scoped>
 .contract-detail { width: min(980px, calc(100% - 32px)); min-height: 60vh; margin: 28px auto 60px; }
 .page-actions { display: flex; justify-content: space-between; margin-bottom: 16px; }
 .summary-card { margin-bottom: 20px; }
+.retention-alert { margin: 0 0 20px; }
 .title-row { display: flex; justify-content: space-between; align-items: flex-start; gap: 20px; }
 h1 { margin: 0 0 6px; font-size: 25px; } .title-row p { margin: 0 0 18px; color: var(--text-muted); }
 .meta-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px 32px; margin: 20px 0 0; }

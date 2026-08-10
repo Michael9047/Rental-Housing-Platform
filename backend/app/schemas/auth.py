@@ -55,6 +55,7 @@ class PhoneLoginResponse(BaseModel):
     """手机号登录响应：已注册用户直接返回 token，新用户返回 is_new=True"""
     access_token: str | None = None
     token_type: str = "bearer"
+    refresh_token: str | None = None
     is_new_user: bool = False
     phone: str
 
@@ -74,6 +75,7 @@ class PhoneRegisterRequest(BaseModel):
 class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
+    refresh_token: str | None = None
 
 
 class WeChatLoginRequest(BaseModel):

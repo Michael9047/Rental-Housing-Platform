@@ -6,6 +6,7 @@ from app.api.v1.routes import (
     building_staff, buildings, chat, commute, contracts,
     dashboard, external_signatures, favorites, geocoding, health,
     images, imports, map_routes, me, notifications,
+    notification_simulations,
     payments, pois, repair_workers, repairs, reviews, room_confirmations,
     search_suggestions, tenants,
     unit_types, universities, upload, users, wechat,
@@ -30,6 +31,7 @@ api_router.include_router(tenants.router, tags=["tenants"])
 # 其他模块
 api_router.include_router(bookings.router, prefix="/bookings", tags=["bookings"])
 api_router.include_router(notifications.router, prefix="/notifications", tags=["notifications"])
+api_router.include_router(notification_simulations.router, prefix="/notification-simulations", tags=["notification-simulations"])
 api_router.include_router(chat.router, prefix="/chat", tags=["chat"])
 api_router.include_router(admin.router, prefix="/admin", tags=["admin"])
 api_router.include_router(imports.router, prefix="/import", tags=["import"])

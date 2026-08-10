@@ -71,12 +71,27 @@ export function extractErrorMessage(error: any): string | null {
 // Response interceptor: handle 401, show errors
 api.interceptors.response.use(
   (response) => response,
-  (error) => {
+  async (error) => {
     if (error.config?.suppressGlobalError) return Promise.reject(error)
     const isLoginPage = window.location.pathname === '/login'
     const hadToken = !!localStorage.getItem('access_token')
 
     if (error.response?.status === 401) {
+      const refreshToken = localStorage.getItem('refresh_token')
+      const request = error.config as any
+      if (refreshToken && !request?._retry && !String(request?.url || '').includes('/auth/refresh')) {
+        request._retry = true
+        try {
+          const refreshed = await axios.post('/api/v1/auth/refresh', {}, { headers: { Authorization: `Bearer ${refreshToken}` } })
+          localStorage.setItem('access_token', refreshed.data.access_token)
+          if (refreshed.data.refresh_token) localStorage.setItem('refresh_token', refreshed.data.refresh_token)
+          request.headers = request.headers || {}
+          request.headers.Authorization = `Bearer ${refreshed.data.access_token}`
+          return api(request)
+        } catch {
+          localStorage.removeItem('refresh_token')
+        }
+      }
       // 仅在用户之前已登录（有过 token）的情况下才跳转登录页
       // 未登录用户浏览公开内容时遇到 401 静默处理，不强制跳转
       if (!isLoginPage && hadToken) {
