@@ -20,6 +20,7 @@ export interface LoginRequest {
 export interface TokenResponse {
   access_token: string
   token_type: string
+  refresh_token?: string
 }
 
 /** 手机号 + 短信验证码登录请求 */
@@ -32,6 +33,7 @@ export interface PhoneLoginRequest {
 export interface PhoneLoginResponse {
   access_token: string | null
   token_type: string
+  refresh_token?: string
   is_new_user: boolean
   phone: string
 }

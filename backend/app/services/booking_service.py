@@ -114,13 +114,6 @@ class BookingService:
                 booking.user_id,
                 ["email"],
             ),
-            BookingStatus.cancelled: (
-                NotificationType.booking_cancelled,
-                "预约已取消",
-                "一个预约已被取消",
-                booking.bm_id,
-                ["email"],
-            ),
             BookingStatus.completed: (
                 NotificationType.booking_completed,
                 "预约已完成",

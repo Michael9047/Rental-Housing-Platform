@@ -13,6 +13,7 @@ celery_app = Celery(
     task_serializer="json",
     accept_content=["json"],
     result_serializer="json",
+    include=["app.tasks.payment_tasks"],
     timezone="Asia/Shanghai",
     enable_utc=True,
 )
@@ -26,5 +27,15 @@ celery_app.conf.update(
     task_routes={
         "app.tasks.embedding_tasks.*": {"queue": "embedding"},
         "app.tasks.import_tasks.*": {"queue": "import"},
+    },
+    beat_schedule={
+        "payment-expiring-3h-reminder-every-5-minutes": {
+            "task": "send_payment_expiring_3h_reminders",
+            "schedule": 300.0,
+        },
+        "contract-expiring-12h-reminder-every-5-minutes": {
+            "task": "send_contract_expiring_12h_reminders",
+            "schedule": 300.0,
+        },
     },
 )

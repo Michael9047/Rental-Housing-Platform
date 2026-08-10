@@ -1,3 +1,7 @@
+import asyncio
+import logging
+from contextlib import suppress
+
 from fastapi.staticfiles import StaticFiles
 from pathlib import Path
 
@@ -14,6 +18,22 @@ from starlette.responses import Response
 from app.core.monitoring import PrometheusMiddleware, add_metrics_endpoint, install_celery_metrics
 
 
+async def _run_local_notification_scheduler() -> None:
+    """开发环境轻量提醒调度：无需单独启动 Celery beat，outbox 幂等键会阻止重复发送。"""
+    from app.tasks.payment_tasks import (
+        send_contract_expiring_12h_reminders,
+        send_payment_expiring_3h_reminders,
+    )
+
+    while True:
+        try:
+            await asyncio.to_thread(send_payment_expiring_3h_reminders)
+            await asyncio.to_thread(send_contract_expiring_12h_reminders)
+        except Exception:
+            logging.getLogger(__name__).exception("本地通知定时扫描失败")
+        await asyncio.sleep(300)
+
+
 def create_app() -> FastAPI:
     settings = get_settings()
     setup_logging()
@@ -25,12 +45,25 @@ def create_app() -> FastAPI:
         version="0.1.0",
     )
 
+    if settings.environment.lower() != "production":
+        @app.on_event("startup")
+        async def start_local_notification_scheduler() -> None:
+            app.state.local_notification_scheduler = asyncio.create_task(_run_local_notification_scheduler())
+
+        @app.on_event("shutdown")
+        async def stop_local_notification_scheduler() -> None:
+            task = getattr(app.state, "local_notification_scheduler", None)
+            if task:
+                task.cancel()
+                with suppress(asyncio.CancelledError):
+                    await task
+
     # CORS — relaxed in dev, tighten in prod via env
     # 不能用 ["*"] + allow_credentials=True，浏览器会直接拒绝
     cors_origins: list[str] = (
         settings.cors_origins
         if settings.environment == "production"
-        else ["http://localhost:5173", "http://localhost:8080", "http://127.0.0.1:8080", "http://localhost:8012", "null"]
+        else ["http://127.0.0.1:5173", "http://localhost:5173", "http://localhost:8080", "http://127.0.0.1:8080", "http://localhost:8012", "null"]
     )
     allow_creds = settings.environment == "production"
     app.add_middleware(
@@ -129,7 +162,7 @@ def create_app() -> FastAPI:
             "version": "0.1.0",
             "docs": "/docs",
             "api_prefix": "/api/v1",
-            "frontend": "http://localhost:5173",
+            "frontend": settings.frontend_url,
         }
 
     return app

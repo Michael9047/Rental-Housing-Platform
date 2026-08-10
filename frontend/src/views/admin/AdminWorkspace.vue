@@ -21,6 +21,8 @@
         <div class="user-actions">
           <el-button type="primary" round @click="showEditProfile = true">编辑资料</el-button>
           <el-button round @click="showUploadQualification = true">资质上传</el-button>
+          <el-button plain type="warning" @click="router.push('/admin/notification-simulations')">通知模拟</el-button>
+          <el-button plain @click="router.push('/admin/simulated-mailbox')">模拟邮箱</el-button>
         </div>
       </div>
     </el-card>
@@ -383,6 +385,9 @@
 import { ref, computed, reactive, onMounted } from 'vue'
 import { UserFilled } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { useRouter } from 'vue-router'
+
+const router = useRouter()
 import { dashboardService } from '@/services/dashboard'
 import { adminService } from '@/services/admin'
 import type { Property } from '@/types/property'

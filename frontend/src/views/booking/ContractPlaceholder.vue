@@ -17,7 +17,7 @@
           <div v-else-if="pdfLoading" class="pdf-loading">正在加载合同 PDF…</div>
           <iframe v-else-if="pdfObjectUrl" :src="pdfObjectUrl" title="合同 PDF 预览" class="pdf-frame" />
         </section>
-        <section class="tenant-signing no-print">
+        <section v-if="canUseTenantSigning" class="tenant-signing no-print">
           <h3>租客电子签名 / Tenant Electronic Signature</h3>
           <template v-if="contract.status !== 'signed'">
             <p>租客法定姓名 / Tenant Legal Name：<strong>{{ value('tenant_name_cn') }}</strong></p>
@@ -30,6 +30,14 @@
           </template>
           <el-result v-else icon="success" title="合同已确认并锁定" :sub-title="`签署时间：${contract.signed_at || ''}`" />
         </section>
+        <el-alert
+          v-else
+          class="no-print signing-role-alert"
+          type="warning"
+          :closable="false"
+          title="当前为公寓运营商账号，不能代替租客签署合同"
+          description="请退出当前账号后，以该订单的租客账号登录并重新打开合同邮件中的链接；管理员和公寓运营商请通过合约管理页面处理订单。"
+        />
         <!-- 保留旧的系统实验合同 HTML 仅供历史代码兼容；租客端绝不渲染它，正式文件始终是上方唯一的 PDF 快照。 -->
         <article v-if="false" class="contract-document">
           <header>
@@ -88,8 +96,10 @@ import SignaturePad, { type SignaturePoint } from '@/components/booking/Signatur
 import { contractService, type Contract, type ContractExecution, type ContractSnapshot } from '@/services/contract'
 import { paymentService } from '@/services/payment'
 import { extractErrorMessage } from '@/services/api'
+import { useAuthStore } from '@/stores/auth'
 
 const route = useRoute(); const router = useRouter()
+const auth = useAuthStore()
 const contract = ref<Contract | null>(null); const execution = ref<ContractExecution | null>(null); const loading = ref(false); const downloading = ref(false); const errorMessage = ref('')
 const waitingForBm = ref(false)
 const pdfObjectUrl = ref(''); const pdfLoading = ref(false); const pdfError = ref('')
@@ -102,6 +112,7 @@ const pageTitle = computed(() => contract.value?.status === 'signed' ? '预订�
 const contractStatusLabel = computed(() => ({ generated: '已生成，待 BM 发送', sent: '待租客签署', awaiting_signature: '待租客签署', signed: '已签署', voided: '已作废', expired: '已过期' }[contract.value?.status || ''] || '合同处理中'))
 const signatureMetrics = computed(() => { const points = signatureStrokes.value.flat(); let length = 0; signatureStrokes.value.forEach((stroke) => stroke.slice(1).forEach((point, index) => { const previous = stroke[index]; length += Math.hypot(point.x - previous.x, point.y - previous.y) })); return { points: points.length, length } })
 const canSign = computed(() => execution.value?.mode === 'mock_sign' && Boolean(contract.value?.content_hash && nameConfirmed.value && signatureConsent.value && signatureStrokes.value.length > 0 && signatureStrokes.value.some(s => s.length >= 2)))
+const canUseTenantSigning = computed(() => ['tenant', 'admin'].includes(auth.user?.role || ''))
 function value(key: string) { return String(snapshot.value?.[key] ?? '') }
 const coverFields = computed(() => [
   ['合同编号 / Agreement Number', value('agreement_number')], ['订单编号 / Order Number', value('order_number')],
@@ -149,6 +160,7 @@ async function loadPdf(contractId: string) {
 }
 
 async function confirmSigning() {
+  if (!canUseTenantSigning.value) { ElMessage.warning('请使用租客账号签署合同；公寓运营商请前往合约管理页面处理订单'); return }
   if (!contract.value || !canSign.value) { ElMessage.warning('请完整签名并确认姓名及电子签名同意事项'); return }
   try { await ElMessageBox.confirm('此操作仅用于本地实验，不具法律效力。签署后合同内容将被锁定。是否继续？', '模拟签署合同', { confirmButtonText: '确认模拟签署', cancelButtonText: '返回检查', type: 'warning' }) } catch { return }
   signing.value = true
@@ -188,5 +200,6 @@ onBeforeUnmount(releasePdfUrl)
 <style scoped>
 .contract-shell{max-width:980px;margin:0 auto}.contract-actions{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;padding:12px 16px;background:#f5f6f8;border-radius:8px}.contract-document{padding:48px 56px;background:#fff;border:1px solid #d8d8d8;box-shadow:0 4px 22px rgba(0,0,0,.08);font-family:"Noto Sans CJK SC","Microsoft YaHei","SimSun",sans-serif;color:#171717;line-height:1.72}.contract-document header{text-align:center;border-bottom:2px solid #222;padding-bottom:18px;margin-bottom:22px}.contract-document h1{margin:0;font-family:"Noto Serif CJK SC","SimSun",serif;font-size:30px}.contract-document h2{margin:4px 0 0;font-size:20px}.development-notice{color:#9a5b00;font-size:13px}.cover-fields{width:100%;border-collapse:collapse;table-layout:fixed;margin-bottom:26px}.cover-fields th,.cover-fields td{border:1px solid #777;padding:8px 10px;text-align:left;vertical-align:top;overflow-wrap:anywhere}.cover-fields th{width:40%;background:#f2f2f2}.clause{margin-bottom:20px;break-inside:avoid-page}.clause h3{margin:0;font-size:17px}.clause h4{margin:1px 0 6px;font-size:15px}.clause p{margin:4px 0}.english{color:#333}.signature-section{display:grid;grid-template-columns:1fr 1fr;gap:20px;border-top:2px solid #222;padding-top:22px;margin-top:30px;break-inside:avoid-page}.signature-box{min-height:220px;border:1px solid #777;padding:16px}.signature-line{min-height:34px;border-bottom:1px solid #333}.record{font-size:12px;color:#555;overflow-wrap:anywhere}@media(max-width:700px){.contract-document{padding:24px 18px}.contract-actions{align-items:flex-start;gap:10px;flex-direction:column}.signature-section{grid-template-columns:1fr}.cover-fields th{width:46%}}@media print{.no-print{display:none!important}.contract-shell{max-width:none}.contract-document{padding:0;border:0;box-shadow:none}}
 .tenant-signing{display:grid;gap:16px;margin-top:30px;padding:22px;border:1px solid #b8bec5;border-radius:8px;background:#f8f9fa}.tenant-signing h3{margin:0}.sign-actions{display:flex;justify-content:space-between;gap:12px}
+.signing-role-alert{margin-top:30px}
 .pdf-preview{margin-bottom:16px;border:1px solid #d8d8d8;border-radius:8px;overflow:hidden;background:#fff}.pdf-frame{width:100%;height:680px;border:0;display:block}.pdf-loading{padding:28px;text-align:center;color:#687080}@media(max-width:700px){.pdf-frame{height:480px}}
 </style>

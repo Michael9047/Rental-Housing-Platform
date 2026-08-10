@@ -16,6 +16,7 @@ from app.core.security import (
     store_sms_code,
     verify_and_consume_sms_code,
 )
+from app.core.security_audit import create_refresh_token
 from app.models.user import User, UserStatus
 from app.schemas.auth import (
     CurrentUserResponse,
@@ -130,7 +131,8 @@ async def login(
         ip_address=request.client.host if request.client else None,
     )
 
-    return TokenResponse(access_token=auth_service.create_access_token(user))
+    access_token = auth_service.create_access_token(user)
+    return TokenResponse(access_token=access_token, refresh_token=create_refresh_token(str(user.id)))
 
 
 # 刷新 Token
@@ -160,6 +162,7 @@ async def refresh_token(request: Request) -> TokenResponse:
     return TokenResponse(
         access_token=tokens["access_token"],
         token_type=tokens["token_type"],
+        refresh_token=tokens["refresh_token"],
     )
 
 
@@ -296,7 +299,7 @@ async def phone_login(
         ip_address=request.client.host if request.client else None,
     )
 
-    return PhoneLoginResponse(access_token=token, is_new_user=False, phone=phone)
+    return PhoneLoginResponse(access_token=token, refresh_token=create_refresh_token(str(user.id)), is_new_user=False, phone=phone)
 
 
 @router.post("/phone-register", response_model=TokenResponse, status_code=status.HTTP_201_CREATED)
@@ -363,7 +366,7 @@ async def phone_register(
             pass
 
         token = AuthService(session).create_access_token(user)
-        return TokenResponse(access_token=token)
+        return TokenResponse(access_token=token, refresh_token=create_refresh_token(str(user.id)))
     except IntegrityError as exc:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,

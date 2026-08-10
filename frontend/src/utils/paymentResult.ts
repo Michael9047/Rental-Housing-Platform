@@ -12,7 +12,8 @@ export function paymentResultKind(
   if (!result) return 'unknown'
   const s = typeof result === 'string' ? result : (result.order_status || result.status)
   if (!s) return 'unknown'
-  if (s === 'paid' || (typeof result !== 'string' && result.paid_at)) return 'success'
+  // 已签合同与已完成预订同样属于成功结果，不能落入页面的“取消/失败”展示分支。
+  if (['paid', 'contract_ready', 'contract_signed', 'completed'].includes(s) || (typeof result !== 'string' && result.paid_at)) return 'success'
   if (s === 'refunded') return 'refunded'
   if (s === 'cancelled') return 'cancelled'
   if (s === 'payment_expired') return 'expired'

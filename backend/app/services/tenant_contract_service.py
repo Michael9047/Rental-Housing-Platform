@@ -1,5 +1,5 @@
 """租客端合同列表与详情查询服务。"""
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -65,6 +65,13 @@ class TenantContractService:
         if expires_at:
             remaining_seconds = max(0, int((expires_at - datetime.now(timezone.utc)).total_seconds()))
         remaining_contract_days = None
+        contract_retention_deadline = None
+        remaining_contract_seconds = None
+        if contract.status == "generated" and contract.generated_at:
+            contract_retention_deadline = contract.generated_at + timedelta(days=7)
+            remaining_contract_seconds = max(
+                0, int((contract_retention_deadline - datetime.now(timezone.utc)).total_seconds())
+            )
         if booking.scheduled_date and contract.status == "signed":
             try:
                 move_in = datetime.fromisoformat(booking.scheduled_date).date()
@@ -106,6 +113,11 @@ class TenantContractService:
             payment_expires_at=expires_at,
             remaining_payment_seconds=remaining_seconds,
             remaining_contract_days=remaining_contract_days,
+            contract_retention_deadline=contract_retention_deadline,
+            remaining_contract_seconds=remaining_contract_seconds,
+            is_contract_retention_expired=bool(
+                contract_retention_deadline and contract_retention_deadline <= datetime.now(timezone.utc)
+            ),
             can_pay=payment_status_can_pay(payment_status),
             waiting_for_move_in=category == "pending_effective" and contract.status == "signed",
             signed_pdf_available=contract.status == "signed" and contract.file_path is not None,

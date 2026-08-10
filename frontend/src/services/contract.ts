@@ -40,6 +40,7 @@ export interface TenantContractItem {
   category:ContractCategory; category_label:string; status_labels:string[]; invalid_reason:string|null
   settlement_currency:string|null; settlement_amount_minor:number|null; payment_expires_at:string|null
   remaining_payment_seconds:number|null; remaining_contract_days:number|null; can_pay:boolean
+  contract_retention_deadline:string|null; remaining_contract_seconds:number|null; is_contract_retention_expired:boolean
   waiting_for_move_in:boolean; signed_pdf_available:boolean
 }
 export interface TenantContractDetail extends TenantContractItem { content:string; snapshot:ContractSnapshot; signature_url:string }

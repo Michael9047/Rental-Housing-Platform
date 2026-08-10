@@ -16,12 +16,12 @@
       <li v-for="item in filteredItems" :key="item.id" class="notification-list-item">
         <RouterLink v-if="orderRoute(item)" :to="orderRoute(item)!" class="notification-card" :class="cardClasses(item)" :aria-label="cardLabel(item)" @click="markReadOptimistically(item)">
           <span class="notification-icon" aria-hidden="true">{{ typeIcon(item) }}</span>
-          <span class="notification-content"><span class="notification-title-row"><span v-if="!item.is_read" class="unread-dot" aria-label="未读"></span><strong>{{ item.title }}</strong></span><span class="notification-body">{{ item.body || item.content || '关联订单通知' }}</span><span class="notification-meta"><span>订单 {{ item.order_id }}</span><time>{{ formatDate(item.created_at) }}</time></span></span>
+          <span class="notification-content"><span class="notification-title-row"><span v-if="!item.is_read" class="unread-dot" aria-label="未读"></span><strong>{{ notificationTitle(item) }}</strong></span><span class="notification-body">{{ item.body || item.content || '关联订单通知' }}</span><span class="notification-meta"><span>订单 {{ item.order_id }}</span><time>{{ formatDate(item.created_at) }}</time></span></span>
           <span class="notification-action"><el-tag size="small" effect="plain">{{ statusText(item) }}</el-tag><span>{{ actionText(item) }} →</span></span>
         </RouterLink>
         <article v-else class="notification-card unavailable" :class="cardClasses(item)" :aria-label="cardLabel(item)">
           <span class="notification-icon" aria-hidden="true">{{ typeIcon(item) }}</span>
-          <span class="notification-content"><span class="notification-title-row"><span v-if="!item.is_read" class="unread-dot" aria-label="未读"></span><strong>{{ item.title }}</strong></span><span class="notification-body">{{ item.body || item.content || '关联订单不可用' }}</span><span class="notification-meta"><time>{{ formatDate(item.created_at) }}</time></span></span>
+          <span class="notification-content"><span class="notification-title-row"><span v-if="!item.is_read" class="unread-dot" aria-label="未读"></span><strong>{{ notificationTitle(item) }}</strong></span><span class="notification-body">{{ item.body || item.content || '关联订单不可用' }}</span><span class="notification-meta"><time>{{ formatDate(item.created_at) }}</time></span></span>
           <span class="notification-action"><span>关联订单不可用</span></span>
         </article>
       </li>
@@ -34,10 +34,27 @@ import { computed, onMounted, ref } from 'vue'
 import { useRouter, RouterLink } from 'vue-router'
 import { notificationService } from '@/services/notification'
 import type { Notification } from '@/types/booking'
+import { useAuthStore } from '@/stores/auth'
 
-const router = useRouter(); const items = ref<Notification[]>([]); const unreadCount = ref(0); const loading = ref(true); const loadError = ref(false); const filter = ref('all')
+const router = useRouter(); const auth = useAuthStore(); const items = ref<Notification[]>([]); const unreadCount = ref(0); const loading = ref(true); const loadError = ref(false); const filter = ref('all')
 const filteredItems = computed(() => filter.value === 'unread' ? items.value.filter((item) => !item.is_read) : items.value)
-const orderRoute = (item: Notification) => item.entity_type === 'order' && item.entity_id ? `/my-orders/${item.entity_id}` : null
+const notificationTitle = (item: Notification) => {
+  if (item.type !== 'contract_signed') return item.title
+  return ['admin', 'landlord', 'bd_manager'].includes(auth.user?.role || '') ? '租客已完成预订' : '已完成预订'
+}
+const orderRoute = (item: Notification) => {
+  if (item.entity_type !== 'order') return null
+  const bookingId = [item.entity_id, item.order_id].find((value) => Boolean(value && /^\d+$/.test(value)))
+  if (!bookingId) return null
+  const isManager = ['admin', 'landlord', 'bd_manager'].includes(auth.user?.role || '')
+  // 租客签署完成后，管理员应在租客管理页继续完成入住/最终确认；
+  // 其他待确认合同通知仍进入合同管理页。
+  if (isManager && item.type === 'contract_signed') return `/tenants?booking_id=${encodeURIComponent(bookingId)}`
+  if (isManager && item.type === 'booking_cancelled') return `/bookings/landlord?order_id=${encodeURIComponent(bookingId)}`
+  if (isManager) return `/contracts/landlord?order_id=${encodeURIComponent(bookingId)}`
+  if (item.type === 'contract_generated') return `/booking/${bookingId}/contract`
+  return `/my-orders/${bookingId}`
+}
 const formatDate = (value: string) => new Date(value).toLocaleString('zh-CN', { dateStyle: 'medium', timeStyle: 'short' })
 const statusText = (item: Notification) => ({ payment_pending: '待支付', payment_processing: '处理中', payment_failed: '支付失败', paid: '已支付', payment_expired: '已失效', payment_review: '退款核对', refunded: '已退款' }[item.payment_status || ''] || '订单通知')
 const actionText = (item: Notification) => ({ payment_pending: '查看并支付', payment_processing: '查看支付状态', payment_failed: '重新支付', paid: '查看预订', payment_expired: '查看取消详情', payment_review: '查看退款状态', refunded: '查看退款详情' }[item.payment_status || ''] || '查看订单')

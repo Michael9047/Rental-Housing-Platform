@@ -92,6 +92,9 @@ class TenantContractListItem(BaseModel):
     payment_expires_at: datetime | None = None
     remaining_payment_seconds: int | None = None
     remaining_contract_days: int | None = None
+    contract_retention_deadline: datetime | None = None
+    remaining_contract_seconds: int | None = None
+    is_contract_retention_expired: bool = False
     can_pay: bool = False
     waiting_for_move_in: bool = False
     signed_pdf_available: bool = False

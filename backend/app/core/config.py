@@ -39,7 +39,7 @@ class Settings(BaseSettings):
 
     # CORS
     cors_origins: list[str] = Field(
-        default=["http://localhost:5173"],
+        default=["http://127.0.0.1:5173", "http://localhost:5173"],
         validation_alias="CORS_ORIGINS",
     )
 
@@ -311,7 +311,7 @@ class Settings(BaseSettings):
 
     # Frontend
     frontend_url: str = Field(
-        default="http://localhost:5173",
+        default="http://127.0.0.1:5173",
         validation_alias="FRONTEND_URL",
     )
     payment_provider: str = Field(default="mock_hosted", validation_alias="PAYMENT_PROVIDER")

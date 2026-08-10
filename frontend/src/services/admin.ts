@@ -4,6 +4,22 @@ import type { Property } from '@/types/property'
 import type { User } from '@/types/user'
 
 export const adminService = {
+  /** 开发环境的订单通知模拟；后端仍会校验管理员及公寓管理范围。 */
+  dispatchNotificationSimulation(payload: { booking_id: number; event_type: string; outcome: 'success' | 'retry_success' | 'failed' }): Promise<{ booking_id: number; event_type: string; outcome: string; results: Array<{ recipient: string; role: string; channel: string; status: string; attempts: number; sent_at: string; detail: string }> }> {
+    return api.post('/notification-simulations/dispatch', payload).then((r) => r.data)
+  },
+
+  getNotificationSimulationEvents(): Promise<{ items: string[] }> {
+    return api.get('/notification-simulations/events').then((r) => r.data)
+  },
+
+  getNotificationSimulationOrders(): Promise<{ items: Array<{ id: number; status: string; institute_id: number | null }> }> {
+    return api.get('/notification-simulations/orders').then((r) => r.data)
+  },
+
+  getSimulatedMailbox(): Promise<{ items: Array<{ id: string; event_type: string; booking_id: number | null; recipient: string; title: string; body: string; status: string; attempts: number; sent_at: string | null; queued_at: string; last_error: string | null; simulated: boolean }> }> {
+    return api.get('/notifications/admin/mailbox').then((r) => r.data)
+  },
   getStats(): Promise<AdminStats> {
     return api.get('/admin/stats').then((r) => r.data)
   },

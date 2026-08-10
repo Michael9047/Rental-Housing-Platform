@@ -62,6 +62,21 @@ class TenantOrderService:
         return payment_status_value(payment.status if payment else None, booking.status)
 
     @staticmethod
+    def _booking_display_status(booking: Booking, confirmed: bool) -> str:
+        """将真实订单流程映射为租客页面可展示的预订阶段。"""
+        if confirmed:
+            return "confirmed"
+        if booking.status == BookingStatus.paid:
+            return "awaiting_contract_confirmation"
+        if booking.status == BookingStatus.contract_ready:
+            return "awaiting_signature"
+        if booking.status == BookingStatus.contract_signed:
+            return "confirmed"
+        if booking.status == BookingStatus.cancelled:
+            return "cancelled"
+        return "not_confirmed"
+
+    @staticmethod
     def _amounts_verified(payment: Payment) -> bool:
         total = (payment.snapshot or {}).get("fees", {}).get("current_total", {})
         return (
@@ -133,7 +148,12 @@ class TenantOrderService:
         confirmed = booking_is_confirmed(booking.status, payment_status, amounts_verified=amounts_verified, webhook_confirmed=webhook_confirmed)
         eligibility = await self.payment_eligibility(booking.id, booking.user_id)
         expires_at = payment.expires_at if payment else booking.payment_expires_at
-        remaining = max(0, int(((expires_at or datetime.now(timezone.utc)) - datetime.now(timezone.utc)).total_seconds()))
+        # 历史草稿订单可能尚未创建 Payment，也没有旧版 payment_expires_at。
+        # 与 payment_eligibility 保持一致：仅为展示和资格判断提供 24 小时窗口，
+        # 不写回数据库、更不改变订单状态，避免单条历史数据导致整个订单列表 500。
+        if not expires_at:
+            expires_at = datetime.now(timezone.utc) + timedelta(hours=24)
+        remaining = max(0, int((expires_at - datetime.now(timezone.utc)).total_seconds()))
         settlement_currency = payment.settlement_currency if payment else local_total.get("currency", pricing.get("local_currency", "CNY"))
         settlement_amount = payment.settlement_amount_minor if payment else int(local_total.get("minor_units", 0))
         institute = await self.session.get(Institute, booking.institute_id)
@@ -157,7 +177,7 @@ class TenantOrderService:
             property_amount_minor=int(local_total.get("minor_units", settlement_amount)),
             order_status=booking.status.value,
             payment_status=payment_status,
-            booking_status="confirmed" if confirmed else "not_confirmed",
+            booking_status=self._booking_display_status(booking, confirmed),
             status_label=STATUS_LABELS.get(payment_status, payment_status),
             created_at=booking.created_at,
             expires_at=expires_at,

@@ -56,9 +56,11 @@ class ContractService:
             (item for item in pricing.get("options", []) if item.get("months") == booking.lease_months),
             None,
         )
-        if option is None and booking.scheduled_date:
+        # 兼容旧订单：早期快照可能只有租期和结束日期，没有完整价格结构。
+        # 房号确认后仍应能生成合同，使用当前户型价格补齐缺失快照字段。
+        if (option is None or not option.get("prices")) and booking.scheduled_date:
             calculated = await LeasePricingService.calculate(
-                unit_type, datetime.fromisoformat(booking.scheduled_date).date()
+                unit_type, datetime.fromisoformat(booking.scheduled_date[:10]).date()
             ).model_dump(mode="json")
             pricing = calculated
             option = next(
@@ -139,11 +141,11 @@ class ContractService:
             "service_fee": _money(prices["service_fee"]["local"]),
             "amount_due_now": _money(prices["amount_due_now"]["local"]),
             "future_rent": _money(prices["rent_total"]["local"]),
-            "settlement_currency": pricing["local_currency"],
-            "cny_reference_amount": _money(prices["amount_due_now"]["cny"]),
-            "exchange_rate": pricing["exchange_rate_to_cny"],
-            "exchange_rate_at": pricing["exchange_rate_at"],
-            "exchange_rate_source": pricing["exchange_rate_source"],
+            "settlement_currency": pricing.get("local_currency", prices["monthly_rent"]["local"].get("currency", "CNY")),
+            "cny_reference_amount": _money(prices["amount_due_now"].get("cny")),
+            "exchange_rate": pricing.get("exchange_rate_to_cny"),
+            "exchange_rate_at": pricing.get("exchange_rate_at"),
+            "exchange_rate_source": pricing.get("exchange_rate_source", "platform snapshot"),
             "tax_treatment": property_rules.get("tax_treatment") or "房源记录未配置 / Not configured in the property record",
             "utilities": utilities_text,
             "cancellation_policy_version": policy_versions.get("cancellation", "未记录 / Not recorded"),

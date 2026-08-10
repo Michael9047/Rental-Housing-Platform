@@ -34,7 +34,9 @@ def payment_status_value(payment_status: PaymentStatus | None, booking_status: B
 
 
 def booking_is_confirmed(booking_status: BookingStatus, payment_status: str, *, amounts_verified: bool = True, webhook_confirmed: bool = True) -> bool:
-    return booking_status == BookingStatus.paid and payment_status == "paid" and amounts_verified and webhook_confirmed
+    # 支付成功仅表示进入管理员确认房号/合同的流程；租客完成合同签署后，
+    # 当前业务无需再等待管理员最终确认，即可展示为预订成功。
+    return booking_status in {BookingStatus.contract_signed, BookingStatus.completed} and payment_status == "paid" and amounts_verified and webhook_confirmed
 
 
 def payment_status_can_pay(payment_status: str) -> bool:
