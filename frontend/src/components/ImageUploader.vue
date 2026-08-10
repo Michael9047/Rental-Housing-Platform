@@ -74,7 +74,7 @@
 import { ref, computed, watch } from 'vue'
 import { UploadFilled, Delete } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
-import api from '@/services/api'
+import api, { extractErrorMessage } from '@/services/api'
 
 const props = withDefaults(defineProps<{
   title?: string
@@ -179,7 +179,7 @@ async function uploadFiles(files: File[]) {
     notifyParent()
     ElMessage.success(`成功上传 ${res.data.count} 张图片`)
   } catch (e: any) {
-    ElMessage.error('上传失败，请重试')
+    ElMessage.error(extractErrorMessage(e) || '上传失败，请重试')
   } finally {
     uploading.value = false
     uploadProgress.value = 0

@@ -14,6 +14,7 @@ router = APIRouter(prefix="/upload", tags=["upload"])
 ALLOWED_TYPES = {"image/jpeg", "image/png", "image/webp"}
 MAX_FILE_SIZE = 5 * 1024 * 1024  # 5MB
 MAX_FILES = 15
+MAX_BATCH_FILES = 20
 
 
 @router.post("/temp")
@@ -53,8 +54,8 @@ async def upload_temp_batch_images(
 ) -> JSONResponse:
     """批量导入时上传楼栋共用图片，返回临时 URL 列表。"""
     settings = get_settings()
-    if len(files) > 8:
-        raise HTTPException(status_code=400, detail="批量共用图片最多上传 8 张")
+    if len(files) > MAX_BATCH_FILES:
+        raise HTTPException(status_code=400, detail=f"批量共用图片最多上传 {MAX_BATCH_FILES} 张")
 
     temp_dir = Path(settings.upload_dir).resolve() / "temp" / "batch" / str(current_user.id)
     temp_dir.mkdir(parents=True, exist_ok=True)

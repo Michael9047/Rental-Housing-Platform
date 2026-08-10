@@ -34,7 +34,7 @@
 
         <el-menu-item index="/admin/alerts">
           <el-icon><Warning /></el-icon>
-          <span>异常处理</span>
+          <span>系统异常</span>
         </el-menu-item>
 
         <el-menu-item index="/admin/notifications">
@@ -122,7 +122,7 @@ const pageTitle = computed(() => {
     '/admin': '控制台',
     '/admin/properties': '房源审核',
     '/admin/users': '用户管理',
-    '/admin/alerts': '异常处理',
+    '/admin/alerts': '系统异常',
     '/admin/notifications': '信息通知',
     '/admin/import': '批量导入',
     '/admin/logs': '审计日志',
