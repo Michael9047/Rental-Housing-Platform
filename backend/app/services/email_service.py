@@ -113,6 +113,11 @@ class EmailService:
         if not to_email:
             return {"status": "skipped", "reason": "no email address"}
 
+        # Mailpit 使用本地独立 SMTP 端口，不需要正式 SMTP 的账号密码。
+        # 必须在正式 SMTP 配置判断前投递，否则会被错误跳过。
+        if self.settings.email_delivery_mode.lower() == "mailpit":
+            return await self._send_via_smtp(to_email, subject, html_body)
+
         # ── 1. DirectMail（优先）────────────────────────────────
         if self.settings.dm_access_key_id and self.settings.dm_account_name:
             return await self._send_via_directmail(
@@ -279,13 +284,14 @@ class EmailService:
         if not to_email:
             return {"status": "skipped", "reason": "no email address"}
 
-        smtp_host = self.settings.smtp_host
-        smtp_port = self.settings.smtp_port
+        is_mailpit = self.settings.email_delivery_mode.lower() == "mailpit"
+        smtp_host = "127.0.0.1" if is_mailpit else self.settings.smtp_host
+        smtp_port = 1025 if is_mailpit else self.settings.smtp_port
         smtp_user = self.settings.smtp_user
         smtp_password = self.settings.smtp_password
-        from_email = self.settings.smtp_from_email or smtp_user
+        from_email = self.settings.smtp_from_email or smtp_user or "no-reply@rental.local"
 
-        if not smtp_host or not smtp_user or not smtp_password:
+        if not smtp_host or (not is_mailpit and (not smtp_user or not smtp_password)):
             logger.warning("SMTP not configured, skipping email to %s", to_email)
             return {"status": "skipped", "reason": "smtp not configured"}
 
@@ -304,7 +310,7 @@ class EmailService:
                 self._send_sync,
                 smtp_host, smtp_port, smtp_user, smtp_password,
                 from_email, [to_email], msg.as_string(),
-                self.settings.smtp_use_tls,
+                False if is_mailpit else self.settings.smtp_use_tls,
             )
             logger.info("SMTP 发送成功 to=%s", to_email)
             return {"status": "sent", "provider": "smtp"}
@@ -326,5 +332,6 @@ class EmailService:
         with smtplib.SMTP(host, port, timeout=15) as server:
             if use_tls:
                 server.starttls()
-            server.login(user, password)
+            if user and password:
+                server.login(user, password)
             server.sendmail(from_addr, to_addrs, msg_string)

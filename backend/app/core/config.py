@@ -1,4 +1,5 @@
 from functools import lru_cache
+from decimal import Decimal
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -23,6 +24,20 @@ class Settings(BaseSettings):
 
     redis_url: str = Field(default="redis://localhost:6379/0", validation_alias="REDIS_URL")
 
+    # 平台预订金是唯一可支付项目；不得由房源、租期或客户端请求覆盖。
+    booking_deposit_amount_cny: Decimal = Field(
+        default=Decimal("2000.00"), validation_alias="BOOKING_DEPOSIT_AMOUNT_CNY"
+    )
+    booking_deposit_currency: str = Field(
+        default="CNY", validation_alias="BOOKING_DEPOSIT_CURRENCY"
+    )
+
+    # 开发环境中是否由 Web 进程执行通知提醒扫描。默认关闭，避免数据库尚未启动时后台任务反复报错。
+    local_notification_scheduler_enabled: bool = Field(
+        default=False,
+        validation_alias="LOCAL_NOTIFICATION_SCHEDULER_ENABLED",
+    )
+
     auth_secret_key: str = Field(
         default="dev-only-change-me",
         validation_alias="AUTH_SECRET_KEY",
@@ -39,7 +54,7 @@ class Settings(BaseSettings):
 
     # CORS
     cors_origins: list[str] = Field(
-        default=["http://localhost:5173"],
+        default=["http://127.0.0.1:5173", "http://localhost:5173"],
         validation_alias="CORS_ORIGINS",
     )
 
@@ -311,10 +326,18 @@ class Settings(BaseSettings):
 
     # Frontend
     frontend_url: str = Field(
-        default="http://localhost:5173",
+        default="http://127.0.0.1:5173",
         validation_alias="FRONTEND_URL",
     )
     payment_provider: str = Field(default="mock_hosted", validation_alias="PAYMENT_PROVIDER")
+    exchange_rate_api_url: str = Field(
+        default="https://api.frankfurter.dev/v1/latest",
+        validation_alias="EXCHANGE_RATE_API_URL",
+    )
+    exchange_rate_timeout_seconds: float = Field(
+        default=3.0,
+        validation_alias="EXCHANGE_RATE_TIMEOUT_SECONDS",
+    )
     payment_mock_webhook_secret: str = Field(default="local-test-only-change-me", validation_alias="PAYMENT_MOCK_WEBHOOK_SECRET")
     payment_mock_merchant_account: str = Field(default="mock_test_account", validation_alias="PAYMENT_MOCK_MERCHANT_ACCOUNT")
     payments_live_enabled: bool = Field(default=False, validation_alias="PAYMENTS_LIVE_ENABLED")
@@ -336,6 +359,10 @@ class Settings(BaseSettings):
     card_success_url: str = Field(default="", validation_alias="CARD_SUCCESS_URL")
     card_cancel_url: str = Field(default="", validation_alias="CARD_CANCEL_URL")
     contract_expiring_soon_days: int = Field(default=30, validation_alias="CONTRACT_EXPIRING_SOON_DAYS")
+    dropbox_sign_api_key: str = Field(default="", validation_alias="DROPBOX_SIGN_API_KEY")
+    dropbox_sign_client_id: str = Field(default="", validation_alias="DROPBOX_SIGN_CLIENT_ID")
+    dropbox_sign_webhook_enabled: bool = Field(default=False, validation_alias="DROPBOX_SIGN_WEBHOOK_ENABLED")
+    dropbox_sign_test_mode: bool = Field(default=True, validation_alias="DROPBOX_SIGN_TEST_MODE")
 
 
 @lru_cache

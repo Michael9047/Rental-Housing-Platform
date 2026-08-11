@@ -1,0 +1,15 @@
+<h2 style="margin:0 0 16px;color:#059669;font-size:20px;">预订成功</h2>
+<p style="margin:0 0 12px;color:#475569;line-height:1.7;">您好，{user_name}：</p>
+<p style="margin:0 0 16px;color:#475569;line-height:1.7;">您已完成合同签署，订单预订已成功。完整订单信息和合同已保存至订单详情。</p>
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;margin-bottom:20px;">
+<tr><td style="padding:16px;color:#065f46;font-size:14px;line-height:1.8;">
+<strong>订单编号：</strong>{order_number}<br>
+<strong>房源：</strong>{property_name}<br>
+<strong>入住日期：</strong>{move_in_date}<br>
+<strong>租期：</strong>{tenancy_months} 个月<br>
+<strong>订单金额：</strong>{amount}<br>
+<strong>合同编号：</strong>{contract_number}<br>
+<strong>签署时间：</strong>{signed_at}
+</td></tr></table>
+<p style="margin:0 0 20px;"><a href="{order_url}" style="display:inline-block;background:#2563eb;color:#fff;padding:11px 20px;border-radius:6px;text-decoration:none;">{action_label}</a></p>
+<p style="margin:0;color:#64748b;font-size:13px;">如需帮助，请联系平台客服：{support_email}。</p>

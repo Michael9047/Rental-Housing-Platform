@@ -1,6 +1,8 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import type { RouteRecordRaw } from 'vue-router'
 import DefaultLayout from '@/layouts/DefaultLayout.vue'
+import { ElMessage } from 'element-plus'
+import { contractTemplateManagementEnabled } from '@/config/features'
 
 const routes: RouteRecordRaw[] = [
   {
@@ -182,7 +184,7 @@ const routes: RouteRecordRaw[] = [
         meta: { requiresAuth: true },
       },
       {
-        path: 'booking/:propertyId/contract',
+        path: 'booking/:bookingId/contract',
         name: 'booking-contract-placeholder',
         component: () => import('@/views/booking/ContractPlaceholder.vue'),
         meta: { requiresAuth: true },
@@ -246,6 +248,24 @@ const routes: RouteRecordRaw[] = [
         path: 'contracts/templates',
         name: 'contract-templates',
         component: () => import('@/views/ContractTemplateManager.vue'),
+        meta: { requiresAuth: true, requiresLandlord: true },
+      },
+      {
+        path: 'contracts/dropbox-sign',
+        name: 'dropbox-template-bindings',
+        component: () => import('@/views/DropboxTemplateBindings.vue'),
+        meta: { requiresAuth: true, requiresLandlord: true },
+      },
+      {
+        path: 'admin/orders',
+        name: 'admin-orders',
+        component: () => import('@/views/AdminOrderManagement.vue'),
+        meta: { requiresAuth: true, requiresLandlord: true },
+      },
+      {
+        path: 'admin/orders/:id',
+        name: 'admin-order-detail',
+        component: () => import('@/views/AdminOrderDetail.vue'),
         meta: { requiresAuth: true, requiresLandlord: true },
       },
       // 租客管理
@@ -353,6 +373,18 @@ const routes: RouteRecordRaw[] = [
         component: () => import('@/views/admin/AdminLogs.vue'),
         meta: { requiresAuth: true, requiresAdmin: true },
       },
+      {
+        path: 'admin/notification-simulations',
+        name: 'admin-notification-simulations',
+        component: () => import('@/views/admin/NotificationSimulation.vue'),
+        meta: { requiresAuth: true, requiresAdmin: true },
+      },
+      {
+        path: 'admin/simulated-mailbox',
+        name: 'admin-simulated-mailbox',
+        component: () => import('@/views/admin/SimulatedMailbox.vue'),
+        meta: { requiresAuth: true, requiresAdmin: true },
+      },
     ],
   },
   {
@@ -386,7 +418,7 @@ const router = createRouter({
   routes,
 })
 
-router.beforeEach((to, _from, next) => {
+router.beforeEach((to, from, next) => {
   // 清理损坏的 localStorage（user 为 {} 或缺少 role 字段）
   const userStr = localStorage.getItem('user')
   if (userStr) {
@@ -413,6 +445,11 @@ router.beforeEach((to, _from, next) => {
 
   if (to.meta.requiresAuth && !token) {
     return next({ name: 'login', query: { redirect: to.fullPath } })
+  }
+
+  if (to.name === 'contract-templates' && !contractTemplateManagementEnabled) {
+    ElMessage.info('合同模板管理功能暂未开放')
+    return next({ name: 'landlord-contracts' })
   }
 
   if (to.meta.guest && token) {

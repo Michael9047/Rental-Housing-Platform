@@ -11,7 +11,8 @@ export const useAuthStore = defineStore('auth', () => {
   const loading = ref(false)
 
   const isLoggedIn = computed(() => !!token.value)
-  const isLandlord = computed(() => user.value?.role === 'landlord')
+  // 管理员复用公寓后台的导航和路由权限，避免订单等后台功能仅对房东角色可见。
+  const isLandlord = computed(() => user.value?.role === 'landlord' || user.value?.role === 'admin')
   const isAdmin = computed(() => user.value?.role === 'admin')
   const isMaintenance = computed(() => user.value?.role === 'maintenance_worker')
 
@@ -22,10 +23,15 @@ export const useAuthStore = defineStore('auth', () => {
     localStorage.setItem('user', JSON.stringify(newUser))
   }
 
+  function setRefreshToken(refreshToken?: string | null) {
+    if (refreshToken) localStorage.setItem('refresh_token', refreshToken)
+  }
+
   function clearAuth() {
     token.value = null
     user.value = null
     localStorage.removeItem('access_token')
+    localStorage.removeItem('refresh_token')
     localStorage.removeItem('user')
   }
 
@@ -57,6 +63,7 @@ export const useAuthStore = defineStore('auth', () => {
     try {
       const tokenResp = await authService.login(data)
       setAuth(tokenResp.access_token, { } as User)
+      setRefreshToken(tokenResp.refresh_token)
       const currentUser = await authService.getMe()
       setAuth(tokenResp.access_token, currentUser)
       return currentUser
@@ -73,6 +80,7 @@ export const useAuthStore = defineStore('auth', () => {
       if (!resp.is_new_user && resp.access_token) {
         // 已注册用户：直接登录
         setAuth(resp.access_token, {} as User)
+        setRefreshToken(resp.refresh_token)
         const currentUser = await authService.getMe()
         setAuth(resp.access_token, currentUser)
       }
@@ -88,6 +96,7 @@ export const useAuthStore = defineStore('auth', () => {
     try {
       const tokenResp = await authService.phoneRegister(data)
       setAuth(tokenResp.access_token, {} as User)
+      setRefreshToken(tokenResp.refresh_token)
       const currentUser = await authService.getMe()
       setAuth(tokenResp.access_token, currentUser)
       return currentUser
