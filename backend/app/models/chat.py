@@ -9,6 +9,11 @@ from app.models.mixins import TimestampMixin
 from app.db.session import Base
 
 
+# 现有表没有 session_kind 字段；在不改变 main 数据结构的前提下，以保留标题
+# 作为 Agent 会话类型标记。普通客服 API 必须显式排除这个标题。
+AGENT_SESSION_TITLE = "租房推荐 Agent"
+
+
 class ChatSessionStatus(str, enum.Enum):
     active = "active"
     closed = "closed"

@@ -115,7 +115,7 @@
                   {{ rec.property.title }}
                 </div>
                 <div class="rec-card-tags">
-                  <el-tag size="small" type="info">{{ typeLabels[rec.property.property_type] }}</el-tag>
+                  <el-tag size="small" type="info">{{ typeLabels[rec.property.property_type || ''] || '户型待确认' }}</el-tag>
                   <el-tag size="small">{{ rec.property.bedrooms }}室{{ rec.property.bathrooms }}卫</el-tag>
                   <el-tag v-if="rec.property.area_sqm" size="small" type="info">
                     {{ rec.property.area_sqm }}㎡
@@ -390,7 +390,7 @@ const { items: cartItems } = storeToRefs(cartStore)
 const agentChat = useAgentChatStore()
 const { sessionId, messages, aiAvailable } = storeToRefs(agentChat)
 
-const typeLabels: Record<PropertyType, string> = {
+const typeLabels: Record<string, string> = {
   studio: '单间',
   '1-bed': '一室',
   '2-bed': '两室+',

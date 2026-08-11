@@ -3,6 +3,7 @@ import { createPinia } from 'pinia'
 import ElementPlus from 'element-plus'
 import zhCn from 'element-plus/es/locale/lang/zh-cn'
 import 'element-plus/dist/index.css'
+import './styles/booking-form-controls.css'
 import * as ElementPlusIconsVue from '@element-plus/icons-vue'
 import App from './App.vue'
 import router from './router'
@@ -20,9 +21,10 @@ for (const [key, component] of Object.entries(ElementPlusIconsVue)) {
 
 // 在任何 JS 执行前拦截 ResizeObserver 良性报错
 const eio = window.onerror
-window.onerror = (msg) => {
+window.onerror = (msg, source, line, column, error) => {
   if (typeof msg === 'string' && msg.includes('ResizeObserver')) return true
-  if (eio) return eio.apply(window, arguments as any)
+  if (eio) return eio.call(window, msg, source, line, column, error)
+  return false
 }
 
 app.config.errorHandler = (err: unknown) => {

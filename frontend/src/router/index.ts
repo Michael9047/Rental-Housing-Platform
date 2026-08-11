@@ -21,11 +21,18 @@ const routes: RouteRecordRaw[] = [
         path: 'ai-search',
         name: 'ai-search',
         component: () => import('@/views/AiSearch.vue'),
+        meta: { requiresAuth: true },
       },
       {
         path: 'cart',
         name: 'cart',
         component: () => import('@/views/CartView.vue'),
+        meta: { requiresAuth: true },
+      },
+      {
+        path: 'compare',
+        name: 'compare',
+        component: () => import('@/views/CompareView.vue'),
         meta: { requiresAuth: true },
       },
       {
@@ -36,7 +43,7 @@ const routes: RouteRecordRaw[] = [
       // 兼容旧版 /property/:id 链接
       {
         path: 'property/:id',
-        redirect: (to: any) => ({ path: `/building/${to.params.id}` }),
+        redirect: (to: any) => ({ path: `/building/${to.params.id}`, query: to.query }),
       },
       {
         path: 'profile',

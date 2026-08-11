@@ -129,7 +129,7 @@ onMounted(async () => {
   loading.value = true
   try {
     const booking = await bookingService.getById(bookingId)
-    if (booking.property_id !== Number(route.params.propertyId)) throw new Error('订单与房源不匹配')
+    if (booking.unit_type_id !== Number(route.params.propertyId)) throw new Error('订单与户型不匹配')
     try { contract.value = await contractService.getByBooking(bookingId) }
     catch (contractError: any) { if (contractError?.response?.status === 404) contract.value = await contractService.generate(bookingId); else throw contractError }
     if (contract.value.snapshot?.agreement_version !== contract.value.version || contract.value.snapshot?.content_hash !== contract.value.content_hash) throw new Error('合同快照版本或哈希不一致，请刷新后重试')

@@ -54,3 +54,18 @@ export interface VerifySmsCodeRequest {
   phone: string
   code: string
 }
+
+/** 请求发送密码重置邮件。后端始终返回统一提示，避免邮箱枚举。 */
+export interface ForgotPasswordRequest {
+  email: string
+}
+
+/** 使用邮件中的一次性 token 设置新密码。 */
+export interface ResetPasswordRequest {
+  token: string
+  new_password: string
+}
+
+export interface AuthDetailResponse {
+  detail: string
+}

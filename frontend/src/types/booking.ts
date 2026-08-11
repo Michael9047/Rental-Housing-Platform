@@ -20,7 +20,7 @@ export interface Booking {
   payment_transaction_id: string | null
   lease_months: number | null
   total_rent: number | null
-  application_data: any | null
+  application_data: Record<string, unknown> | null
   created_at: string
   updated_at: string
 }
@@ -36,7 +36,7 @@ export interface BookingCreate {
   service_fee?: number
   lease_months?: number
   total_rent?: number
-  application_data?: any
+  application_data?: Record<string, unknown>
 }
 
 export type NotificationType =

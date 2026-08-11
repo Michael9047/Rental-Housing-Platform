@@ -33,6 +33,7 @@
           v-for="room in rooms"
           :key="room.id"
           :property="room"
+          entity="building"
           :show-quick-book="false"
         />
       </div>

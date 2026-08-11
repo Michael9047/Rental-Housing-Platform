@@ -167,7 +167,7 @@
                       {{ rec.property.title }}
                     </div>
                     <div class="rec-card-tags">
-                      <el-tag size="small" type="info">{{ typeLabels[rec.property.property_type] }}</el-tag>
+                      <el-tag size="small" type="info">{{ typeLabels[rec.property.property_type || ''] || '户型待确认' }}</el-tag>
                       <el-tag size="small">{{ rec.property.bedrooms }}室{{ rec.property.bathrooms }}卫</el-tag>
                       <el-tag v-if="rec.property.area_sqm" size="small" type="info">
                         {{ rec.property.area_sqm }}㎡
@@ -341,6 +341,11 @@ import {
 } from '@element-plus/icons-vue'
 import { storeToRefs } from 'pinia'
 import { getImageUrl } from '@/utils/image'
+import {
+  compactAgentFilters,
+  deriveClearedFilterFields,
+  mergeAgentFilterSnapshot,
+} from '@/utils/agentFilterSync'
 import { agentService } from '@/services/agent'
 import { useAgentChatStore } from '@/stores/agentChat'
 import { useCartStore } from '@/stores/cart'
@@ -359,7 +364,7 @@ const agentChat = useAgentChatStore()
 // 会话与消息放 store：切去其他页面再回来，聊天记录仍在
 const { sessionId, messages, aiAvailable } = storeToRefs(agentChat)
 
-const typeLabels: Record<PropertyType, string> = {
+const typeLabels: Record<string, string> = {
   studio: '单间',
   '1-bed': '一室',
   '2-bed': '两室+',
@@ -378,6 +383,7 @@ const filters = reactive<AgentFilters>({
   bedrooms: null,
   property_type: null,
 })
+const submittedFilterSnapshot = ref<AgentFilters>({})
 const inputText = ref('')
 const sending = ref(false)
 const chatListRef = ref<HTMLElement | null>(null)
@@ -525,11 +531,17 @@ async function handleSend(preset?: string, comparePropertyIds?: number[]) {
   if (!preset) inputText.value = ''
   sending.value = true
   await scrollChatToBottom()
+  const requestFilters = compactAgentFilters(filters)
+  const clearFields = deriveClearedFilterFields(
+    submittedFilterSnapshot.value,
+    requestFilters,
+  )
 
   try {
     const resp = await agentService.sendMessage(sessionId.value, {
       message: text,
-      filters: { ...filters },
+      filters: requestFilters,
+      ...(clearFields.length ? { clear_fields: clearFields } : {}),
       compare_property_ids: comparePropertyIds,
       mode: agentMode.value === 'auto' ? null : agentMode.value,
     })
@@ -543,7 +555,22 @@ async function handleSend(preset?: string, comparePropertyIds?: number[]) {
       aiAvailable: resp.ai_available,
       quickReplies: resp.quick_replies,
       links: resp.links,
+      stateSummary: resp.state_summary,
+      filterPatch: resp.filter_patch,
+      clearedFilters: resp.cleared_filters,
     })
+    const syncedFilters = resp.state_summary
+      ? compactAgentFilters(resp.state_summary.filters as AgentFilters)
+      : mergeAgentFilterSnapshot(requestFilters, resp.filter_patch, resp.cleared_filters)
+    filters.country = syncedFilters.country ?? null
+    filters.district = syncedFilters.district ?? null
+    filters.price_min = syncedFilters.price_min ?? null
+    filters.price_max = syncedFilters.price_max ?? null
+    filters.bedrooms = syncedFilters.bedrooms ?? null
+    filters.property_type = syncedFilters.property_type ?? null
+    // 此旧页面只呈现上面六个字段；快照也必须只记录 UI 可表达的值，
+    // 不能把服务端推导出的城市/通勤等字段误判为用户下一轮手动清除。
+    submittedFilterSnapshot.value = compactAgentFilters(filters)
     aiAvailable.value = resp.ai_available
     if (resp.cart_changed) {
       await cartStore.fetch()

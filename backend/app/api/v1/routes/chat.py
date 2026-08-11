@@ -4,6 +4,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, get_db_session
+from app.models.chat import AGENT_SESSION_TITLE
 from app.models.user import User
 from app.services.chat_service import ChatService
 
@@ -50,6 +51,11 @@ async def create_session(
     session: AsyncSession = Depends(get_db_session),
     current_user: User = Depends(get_current_user),
 ) -> SessionResponse:
+    if body.title == AGENT_SESSION_TITLE:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="该标题为 AI 租房管家保留，请使用 /agent/sessions 创建 Agent 会话",
+        )
     chat_service = ChatService(session)
     chat_session = await chat_service.create_session(current_user.id, body.title)
     return SessionResponse(
@@ -68,7 +74,10 @@ async def list_sessions(
     current_user: User = Depends(get_current_user),
 ) -> list[SessionResponse]:
     chat_service = ChatService(session)
-    sessions = await chat_service.list_sessions(current_user.id)
+    sessions = [
+        item for item in await chat_service.list_sessions(current_user.id)
+        if item.title != AGENT_SESSION_TITLE
+    ]
     return [
         SessionResponse(
             id=s.id,
@@ -89,6 +98,9 @@ async def get_messages(
     current_user: User = Depends(get_current_user),
 ) -> list[MessageResponse]:
     chat_service = ChatService(session)
+    chat_session = await chat_service.get_session(session_id, current_user.id)
+    if chat_session is None or chat_session.title == AGENT_SESSION_TITLE:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Chat session not found")
     messages = await chat_service.get_messages(session_id, current_user.id)
     return [
         MessageResponse(
@@ -111,6 +123,9 @@ async def send_message(
     current_user: User = Depends(get_current_user),
 ):
     chat_service = ChatService(session)
+    chat_session = await chat_service.get_session(session_id, current_user.id)
+    if chat_session is None or chat_session.title == AGENT_SESSION_TITLE:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Chat session not found")
 
     # Fetch existing history for this session
     existing_messages = await chat_service.get_messages(session_id, current_user.id)
@@ -137,6 +152,9 @@ async def delete_session(
     current_user: User = Depends(get_current_user),
 ) -> None:
     chat_service = ChatService(session)
+    chat_session = await chat_service.get_session(session_id, current_user.id)
+    if chat_session is None or chat_session.title == AGENT_SESSION_TITLE:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Chat session not found")
     deleted = await chat_service.delete_session(session_id, current_user.id)
     if not deleted:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Chat session not found")

@@ -1,64 +1,268 @@
-// AI 租房助手会话 store —— 让聊天记录跨页面切换持久
-// 会话 id 和消息保留在这里，在不同页面之间切换不会丢失对话。
+// AI 租房助手状态：管理多会话回放、流式消息与跨会话长期偏好。
 import { defineStore } from 'pinia'
-import { ref } from 'vue'
+import { reactive, ref } from 'vue'
 import { agentService } from '@/services/agent'
-import type { AgentChatMessage } from '@/types/agent'
+import {
+  uniqueAgentRecommendations,
+  visibleAgentRecommendations,
+} from '@/utils/agentRecommendations'
+import type {
+  AgentChatMessage,
+  AgentFilters,
+  AgentHistoryMessage,
+  AgentLink,
+  AgentRecommendation,
+  AgentSessionSummary,
+  AgentSource,
+  AgentStateSummary,
+  AgentTaskBoundary,
+  QueryRewriteInfo,
+  ThinkingStep,
+} from '@/types/agent'
 
 export const GREETING: AgentChatMessage = {
   role: 'assistant',
   content:
     '你好，我是租房推荐管家 👋\n' +
-    '告诉我地区、预算和户型，我来帮你找房并给出推荐理由；' +
-    '也可以直接问「押金怎么退」「合同怎么签」这类问题。\n' +
-    '看中的房源可以加入候选清单，凑够两套随时让我对比。',
+    '告诉我学校、国家/地区、预算和户型，我会记住你刚才提到的户型与偏好。' +
+    '推荐后可以继续问「这套有健身房吗」「附近通勤方便吗」或「这几套哪个好」。',
+  isWelcome: true,
+}
+
+function isRecommendation(value: unknown): value is AgentRecommendation {
+  if (!value || typeof value !== 'object') return false
+  const candidate = value as Partial<AgentRecommendation>
+  return Number.isInteger(Number(candidate.property_id))
+    && !!candidate.property
+    && typeof candidate.property === 'object'
+}
+
+function historyToChatMessage(message: AgentHistoryMessage): AgentChatMessage {
+  const metadata = message.metadata || {}
+  const recommendations = Array.isArray(metadata.recommendations)
+    ? metadata.recommendations.filter(isRecommendation)
+    : []
+  const topPicks = Array.isArray(metadata.top_picks)
+    ? metadata.top_picks.filter(isRecommendation)
+    : []
+  const allRestoredRecommendations = uniqueAgentRecommendations(
+    recommendations.length ? recommendations : topPicks,
+  )
+  const restoredRecommendations = visibleAgentRecommendations(allRestoredRecommendations)
+  const persistedTotal = Number(metadata.recommendation_total)
+  const recommendationTotal = Number.isInteger(persistedTotal) && persistedTotal >= 0
+    ? Math.max(persistedTotal, allRestoredRecommendations.length)
+    : allRestoredRecommendations.length
+
+  return {
+    id: message.id,
+    role: message.role,
+    content: message.content,
+    recommendations: restoredRecommendations.length ? restoredRecommendations : undefined,
+    allRecommendations: restoredRecommendations.length ? restoredRecommendations : undefined,
+    recommendationTotal: recommendationTotal || undefined,
+    aiAvailable: typeof metadata.ai_available === 'boolean' ? metadata.ai_available : undefined,
+    quickReplies: Array.isArray(metadata.quick_replies)
+      ? metadata.quick_replies.map(String)
+      : undefined,
+    guidedOptions: Array.isArray(metadata.guided_options)
+      ? metadata.guided_options as AgentChatMessage['guidedOptions']
+      : undefined,
+    stateSummary: metadata.state_summary
+      ? metadata.state_summary as AgentStateSummary
+      : undefined,
+    turnSummary: metadata.turn_summary
+      ? metadata.turn_summary as AgentStateSummary
+      : undefined,
+    taskBoundary: metadata.task_boundary && typeof metadata.task_boundary === 'object'
+      ? metadata.task_boundary as AgentTaskBoundary
+      : undefined,
+    queryRewrite: metadata.query_rewrite
+      ? metadata.query_rewrite as QueryRewriteInfo
+      : undefined,
+    sources: Array.isArray(metadata.sources)
+      ? metadata.sources as AgentSource[]
+      : undefined,
+    links: Array.isArray(metadata.links)
+      ? metadata.links as AgentLink[]
+      : undefined,
+    thinkingSteps: Array.isArray(metadata.thinking_steps)
+      ? metadata.thinking_steps as ThinkingStep[]
+      : undefined,
+    filterPatch: metadata.filter_patch && typeof metadata.filter_patch === 'object'
+      ? metadata.filter_patch as Record<string, unknown>
+      : undefined,
+    clearedFilters: Array.isArray(metadata.cleared_filters)
+      ? metadata.cleared_filters as AgentChatMessage['clearedFilters']
+      : undefined,
+  }
 }
 
 export const useAgentChatStore = defineStore('agentChat', () => {
   const sessionId = ref<number | null>(null)
   const messages = ref<AgentChatMessage[]>([])
   const aiAvailable = ref(true)
-  /** 外部页面（如首页）触发的待发送查询 */
+  const sessions = ref<AgentSessionSummary[]>([])
+  const loadingHistory = ref(false)
+  const rememberedPreferences = ref<AgentFilters>({})
+  const memoryLoaded = ref(false)
+  /** 首页等外部页面触发、等待 AI 页面消费的查询。 */
   const pendingQuery = ref<string | null>(null)
 
   let creating: Promise<void> | null = null
+  let lifecycleEpoch = 0
+  let historyRequestId = 0
 
-  /** 确保会话存在（并发安全，只创建一次）；首次创建时附上欢迎语 */
+  /**
+   * 创建一条可被 SSE 回调持续修改的响应式消息。
+   * 必须返回 reactive 对象，避免继续修改入队前的普通对象时界面不更新。
+   */
+  function appendStreamingAssistant(
+    initial: Partial<AgentChatMessage> = {},
+  ): AgentChatMessage {
+    const message = reactive<AgentChatMessage>({
+      ...initial,
+      role: 'assistant',
+      content: initial.content ?? '',
+      streaming: true,
+    })
+    messages.value.push(message)
+    return message
+  }
+
+  /** 拉取会话列表；辅助接口失败不影响当前对话。 */
+  async function fetchSessions(): Promise<void> {
+    const epoch = lifecycleEpoch
+    try {
+      const result = await agentService.listSessions()
+      if (epoch === lifecycleEpoch) sessions.value = result
+    } catch {
+      // 保留当前会话，页面仍可继续发送消息。
+    }
+  }
+
+  /** 拉取用户主动保存的长期偏好。 */
+  async function fetchMemory(): Promise<void> {
+    const epoch = lifecycleEpoch
+    try {
+      const memory = await agentService.getMemory()
+      if (epoch !== lifecycleEpoch) return
+      rememberedPreferences.value = memory.preferences || {}
+      memoryLoaded.value = true
+    } catch {
+      // 未登录或接口暂不可用时不阻断找房。
+    }
+  }
+
+  /** 并发安全地保证当前存在一个 Agent 会话。 */
   async function ensureSession(): Promise<void> {
     if (sessionId.value !== null) return
+
     if (!creating) {
-      creating = agentService
-        .createSession()
-        .then((s) => {
-          sessionId.value = s.session_id
-          if (messages.value.length === 0) messages.value.push({ ...GREETING })
-        })
-        .finally(() => {
-          creating = null
-        })
+      const epoch = lifecycleEpoch
+      const task = agentService.createSession().then((session) => {
+        if (epoch !== lifecycleEpoch) return
+        sessionId.value = session.session_id
+        if (messages.value.length === 0) messages.value.push({ ...GREETING })
+        void fetchSessions()
+        if (!memoryLoaded.value) void fetchMemory()
+      })
+      creating = task
+      try {
+        await task
+      } finally {
+        if (creating === task) creating = null
+      }
+      return
     }
+
     await creating
   }
 
-  /** 登出等场景清空 */
+  /** 创建全新会话，旧历史仍保留在侧栏。 */
+  async function newSession(): Promise<void> {
+    lifecycleEpoch += 1
+    creating = null
+    historyRequestId += 1
+    const epoch = lifecycleEpoch
+    const session = await agentService.createSession()
+    if (epoch !== lifecycleEpoch) return
+    sessionId.value = session.session_id
+    messages.value = [{ ...GREETING }]
+    await fetchSessions()
+  }
+
+  /** 切换并回放指定历史会话。 */
+  async function switchSession(id: number): Promise<void> {
+    if (sessionId.value === id && messages.value.length > 0) return
+    const requestId = ++historyRequestId
+    loadingHistory.value = true
+    try {
+      const history = await agentService.getSessionMessages(id)
+      if (requestId !== historyRequestId) return
+      sessionId.value = id
+      messages.value = [{ ...GREETING }, ...history.items.map(historyToChatMessage)]
+    } finally {
+      if (requestId === historyRequestId) loadingHistory.value = false
+    }
+  }
+
+  async function saveMemory(preferences: AgentFilters): Promise<void> {
+    const memory = await agentService.saveMemory(preferences)
+    rememberedPreferences.value = memory.preferences || preferences
+    memoryLoaded.value = true
+  }
+
+  async function clearMemory(): Promise<void> {
+    await agentService.clearMemory()
+    rememberedPreferences.value = {}
+    memoryLoaded.value = true
+  }
+
+  /** 登录身份改变时彻底清空用户相关状态，并使旧异步结果失效。 */
   function reset(): void {
+    lifecycleEpoch += 1
+    historyRequestId += 1
+    creating = null
     sessionId.value = null
     messages.value = []
+    sessions.value = []
+    loadingHistory.value = false
     aiAvailable.value = true
+    rememberedPreferences.value = {}
+    memoryLoaded.value = false
     pendingQuery.value = null
   }
 
-  /** 外部页面触发：设置待发送查询（AssistantBubble 会监听并消费） */
   function openWithQuery(query: string): void {
     pendingQuery.value = query
   }
 
-  /** 消费待发送查询，返回后清空 */
   function consumeQuery(): string | null {
-    const q = pendingQuery.value
+    const query = pendingQuery.value
     pendingQuery.value = null
-    return q
+    return query
   }
 
-  return { sessionId, messages, aiAvailable, pendingQuery, ensureSession, reset, openWithQuery, consumeQuery }
+  return {
+    sessionId,
+    messages,
+    aiAvailable,
+    sessions,
+    loadingHistory,
+    rememberedPreferences,
+    memoryLoaded,
+    pendingQuery,
+    appendStreamingAssistant,
+    fetchSessions,
+    fetchMemory,
+    ensureSession,
+    newSession,
+    switchSession,
+    saveMemory,
+    clearMemory,
+    reset,
+    openWithQuery,
+    consumeQuery,
+  }
 })

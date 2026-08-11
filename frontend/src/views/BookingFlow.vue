@@ -106,7 +106,8 @@ async function loadProperty() {
 
   loading.value = true
   try {
-    const property = await propertyStore.fetchById(propertyId.value)
+    await propertyStore.fetchById(propertyId.value)
+    const property = propertyStore.currentProperty
     if (property) {
       bookingFlow.setProperty(property)
       if (authStore.user) {
@@ -141,14 +142,13 @@ async function handleConfirmAgreements() {
   loading.value = true
   try {
     const result = await bookingService.create({
-      property_id: bookingFlow.property.id,
+      unit_type_id: bookingFlow.property.id,
+      institute_id: bookingFlow.property.institute_id,
       message: '',
       scheduled_date: bookingFlow.start_date,
       deposit_amount: bookingFlow.deposit_amount,
       service_fee: bookingFlow.service_fee,
-      // @ts-ignore
       lease_months: bookingFlow.lease_months,
-      // @ts-ignore
       application_data: {
         applicant: bookingFlow.applicant,
         guarantor: bookingFlow.guarantor,

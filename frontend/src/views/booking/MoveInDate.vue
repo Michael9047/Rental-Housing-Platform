@@ -83,6 +83,7 @@ const blockedDates = ref(new Set<string>())
 const selectedDate = ref('')
 const isSelectionValid = ref(false)
 const errorMessage = ref('')
+let initializedCalendarMonth = false
 
 const initialDate = new Date()
 const viewYear = ref(initialDate.getUTCFullYear())
@@ -146,6 +147,17 @@ async function loadAvailability() {
     localToday.value = result.local_today
     availableFrom.value = result.available_from
     blockedDates.value = new Set(result.blocked_dates)
+    // 初次打开以房源所在地的“今天”为准，避免浏览器时区/月份把日历落在错误月份。
+    if (!initializedCalendarMonth && !selectedDate.value) {
+      initializedCalendarMonth = true
+      const [localYear, localMonth] = result.local_today.split('-').map(Number)
+      if (localYear && localMonth && (localYear !== viewYear.value || localMonth !== viewMonth.value)) {
+        viewYear.value = localYear
+        viewMonth.value = localMonth
+        await loadAvailability()
+        return
+      }
+    }
     if (selectedDate.value) await validateSelection(selectedDate.value)
   } catch (error: any) {
     errorMessage.value = extractErrorMessage(error) || '无法加载房源可入住日期'

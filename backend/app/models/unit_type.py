@@ -3,7 +3,7 @@ import enum
 from datetime import date, datetime
 from decimal import Decimal
 
-from sqlalchemy import Boolean, Date, DateTime, Enum, ForeignKey, Integer, Numeric, String, Text, text
+from sqlalchemy import Boolean, Date, DateTime, Enum, ForeignKey, Integer, JSON, Numeric, String, Text, text
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -71,7 +71,9 @@ class UnitType(TimestampMixin, Base):
 
     # ── 楼层差异化加价 ──
     # [{"floor_min": 1, "floor_max": 5, "adjustment": 0}, {"floor_min": 6, "floor_max": 10, "adjustment": 200}]
-    floor_pricing: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    floor_pricing: Mapped[dict | None] = mapped_column(
+        JSONB().with_variant(JSON(), "sqlite"), nullable=True
+    )
 
     # ── 库存 ──
     total_count: Mapped[int] = mapped_column(Integer, default=1, nullable=False, server_default=text("1"))
@@ -79,8 +81,12 @@ class UnitType(TimestampMixin, Base):
     has_vacancy: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False, server_default=text("true"))
 
     # ── 配置 ──
-    amenities: Mapped[list[str] | None] = mapped_column(ARRAY(String(50)), nullable=True)
-    image_urls: Mapped[list[str] | None] = mapped_column(ARRAY(String(500)), nullable=True)
+    amenities: Mapped[list[str] | None] = mapped_column(
+        ARRAY(String(50)).with_variant(JSON(), "sqlite"), nullable=True
+    )
+    image_urls: Mapped[list[str] | None] = mapped_column(
+        ARRAY(String(500)).with_variant(JSON(), "sqlite"), nullable=True
+    )
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     available_from: Mapped[date | None] = mapped_column(Date, nullable=True)
     min_stay_months: Mapped[int] = mapped_column(Integer, default=3, nullable=False)

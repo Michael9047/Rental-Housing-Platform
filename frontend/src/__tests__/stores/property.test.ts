@@ -54,7 +54,13 @@ describe('usePropertyStore', () => {
   })
 
   it('fetchList populates properties', async () => {
-    mockList.mockResolvedValue([sampleProperty])
+    mockList.mockResolvedValue({
+      items: [sampleProperty],
+      total: 1,
+      page: 1,
+      page_size: 20,
+      total_pages: 1,
+    })
     const store = usePropertyStore()
     await store.fetchList()
     expect(store.properties).toHaveLength(1)

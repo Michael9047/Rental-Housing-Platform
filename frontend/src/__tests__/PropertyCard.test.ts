@@ -1,17 +1,23 @@
-import { describe, it, expect, vi } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { beforeEach, describe, it, expect, vi } from 'vitest'
+import { flushPromises, mount } from '@vue/test-utils'
+import { createPinia } from 'pinia'
 import ElementPlus from 'element-plus'
 import PropertyCard from '@/components/PropertyCard.vue'
+import { agentService } from '@/services/agent'
 import type { Property } from '@/types/property'
 
+const { routerPush } = vi.hoisted(() => ({ routerPush: vi.fn() }))
+
 vi.mock('vue-router', () => ({
-  useRouter: () => ({ push: vi.fn() }),
-  useRoute: () => ({ params: {}, query: {} }),
+  useRouter: () => ({ push: routerPush }),
+  useRoute: () => ({ params: {}, query: {}, fullPath: '/search?country=SG' }),
 }))
 
-const mockPush = vi.fn()
+vi.mock('@/router', () => ({
+  default: { push: vi.fn() },
+}))
 
-const baseProperty: Property = {
+const baseProperty = {
   id: 1, landlord_id: 1,
   title: "Sunny Apartment near Metro",
   description: "A beautiful apartment with great natural light.",
@@ -24,20 +30,25 @@ const baseProperty: Property = {
   deposit_amount: 5200, service_fee_rate: 0.5,
   created_at: "2026-01-01T00:00:00Z", updated_at: "2026-01-01T00:00:00Z",
   images: [], primary_image_url: null,
-}
+} as Property
 
 function createWrapper(overrides: any = {}, props: any = {}) {
   const property = { ...baseProperty, ...overrides }
   return mount(PropertyCard, {
-    props: { property, ...props },
+    props: { property, entity: 'unit-type', ...props },
     global: {
-      plugins: [ElementPlus],
-      mocks: { "$router": { push: mockPush } },
+      plugins: [createPinia(), ElementPlus],
     },
   })
 }
 
 describe("PropertyCard", () => {
+  beforeEach(() => {
+    localStorage.clear()
+    vi.restoreAllMocks()
+    vi.clearAllMocks()
+  })
+
   it("renders property title", () => {
     const wrapper = createWrapper()
     expect(wrapper.find(".card-title").text()).toContain("Sunny Apartment")
@@ -45,7 +56,7 @@ describe("PropertyCard", () => {
 
   it("renders price", () => {
     const wrapper = createWrapper()
-    expect(wrapper.find(".card-price").text()).toContain("5200")
+    expect(wrapper.find(".card-price").text()).toContain("5,200")
   })
 
   it("renders district tag", () => {
@@ -76,5 +87,111 @@ describe("PropertyCard", () => {
   it("renders area when available", () => {
     const wrapper = createWrapper()
     expect(wrapper.text()).toContain("72.5")
+  })
+
+  it("never exposes or calls UnitType cart APIs for a Building card without a representative UnitType", async () => {
+    localStorage.setItem('access_token', 'tenant-token')
+    localStorage.setItem('user', JSON.stringify({ id: 1, role: 'tenant' }))
+    const addSpy = vi.spyOn(agentService, 'addCartItem')
+    const removeSpy = vi.spyOn(agentService, 'removeCartItem')
+    const wrapper = createWrapper({ id: 7, institute_id: 99 }, { entity: 'building' })
+
+    expect(wrapper.find('.add-cart-btn').exists()).toBe(false)
+    await wrapper.trigger('click')
+    for (const button of wrapper.findAll('button')) await button.trigger('click')
+
+    expect(addSpy).not.toHaveBeenCalled()
+    expect(removeSpy).not.toHaveBeenCalled()
+  })
+
+  it("uses the representative UnitType ID when a Building card adds and removes a candidate", async () => {
+    localStorage.setItem('access_token', 'tenant-token')
+    localStorage.setItem('user', JSON.stringify({ id: 1, role: 'tenant' }))
+    const addSpy = vi.spyOn(agentService, 'addCartItem').mockResolvedValue({
+      id: 1,
+      property_id: 42,
+      property: { ...baseProperty, id: 42 },
+    } as any)
+    const removeSpy = vi.spyOn(agentService, 'removeCartItem').mockResolvedValue()
+    const wrapper = createWrapper(
+      { id: 7, institute_id: 7, representative_unit_type_id: 42 },
+      { entity: 'building' },
+    )
+
+    expect(wrapper.find('.add-cart-btn').exists()).toBe(true)
+    await wrapper.find('.add-cart-btn').trigger('click')
+    await flushPromises()
+
+    expect(addSpy).toHaveBeenCalledOnce()
+    expect(addSpy).toHaveBeenCalledWith(42, undefined)
+    expect(addSpy).not.toHaveBeenCalledWith(7, undefined)
+    expect(wrapper.find('.add-cart-btn').classes()).toContain('is-added')
+
+    await wrapper.find('.add-cart-btn').trigger('click')
+    await flushPromises()
+
+    expect(removeSpy).toHaveBeenCalledOnce()
+    expect(removeSpy).toHaveBeenCalledWith(42)
+  })
+
+  it("shows the Building candidate button to guests and redirects before calling cart APIs", async () => {
+    const addSpy = vi.spyOn(agentService, 'addCartItem')
+    const removeSpy = vi.spyOn(agentService, 'removeCartItem')
+    const wrapper = createWrapper(
+      { id: 7, institute_id: 7, representative_unit_type_id: 42 },
+      { entity: 'building' },
+    )
+
+    expect(wrapper.find('.add-cart-btn').exists()).toBe(true)
+    expect(wrapper.find('.add-cart-btn').attributes('aria-label')).toBe('登录后加入候选清单')
+    await wrapper.find('.add-cart-btn').trigger('click')
+    await flushPromises()
+
+    expect(routerPush).toHaveBeenCalledWith({
+      name: 'login',
+      query: { redirect: '/search?country=SG' },
+    })
+    expect(addSpy).not.toHaveBeenCalled()
+    expect(removeSpy).not.toHaveBeenCalled()
+  })
+
+  it("uses the declared UnitType ID when adding a UnitType card to the cart", async () => {
+    localStorage.setItem('access_token', 'tenant-token')
+    localStorage.setItem('user', JSON.stringify({ id: 1, role: 'tenant' }))
+    const addSpy = vi.spyOn(agentService, 'addCartItem').mockResolvedValue({
+      id: 1,
+      property_id: 7,
+      property: { ...baseProperty, id: 7 },
+    } as any)
+    const wrapper = createWrapper({ id: 7, institute_id: 99 }, { entity: 'unit-type' })
+
+    await wrapper.find('.add-cart-btn').trigger('click')
+
+    expect(addSpy).toHaveBeenCalledOnce()
+    expect(addSpy).toHaveBeenCalledWith(7, undefined)
+  })
+
+  it("uses the Building ID for Building detail even when institute_id differs", async () => {
+    const wrapper = createWrapper({ id: 7, institute_id: 99 }, { entity: 'building' })
+
+    await wrapper.trigger('click')
+
+    expect(routerPush).toHaveBeenCalledWith({
+      name: 'building-detail',
+      params: { id: '7' },
+      query: {},
+    })
+  })
+
+  it("uses Institute ID plus UnitType query for UnitType detail", async () => {
+    const wrapper = createWrapper({ id: 7, institute_id: 99 }, { entity: 'unit-type' })
+
+    await wrapper.trigger('click')
+
+    expect(routerPush).toHaveBeenCalledWith({
+      name: 'building-detail',
+      params: { id: '99' },
+      query: { unit_type_id: '7' },
+    })
   })
 })
