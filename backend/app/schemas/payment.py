@@ -29,6 +29,8 @@ class PaymentResponse(BaseModel):
     exchange_rate_timestamp: datetime; expires_at: datetime
     checkout_url: str | None = None; snapshot: dict = Field(default_factory=dict)
     transaction_id: str | None = None; paid_at: datetime | None = None
+    booking_deposit_amount: Decimal = Decimal("2000.00")
+    booking_deposit_currency: str = "CNY"
     created_at: datetime; updated_at: datetime
 
 
@@ -43,8 +45,8 @@ class PaymentResultResponse(PaymentResponse):
 class TenantOrderListItem(BaseModel):
     booking_id: int
     order_id: str
-    agreement_id: str
-    agreement_number: str
+    agreement_id: str | None = None
+    agreement_number: str | None = None
     property_id: int
     property_name: str
     property_image_url: str | None = None
@@ -80,6 +82,10 @@ class TenantOrderDetail(TenantOrderListItem):
     monthly_rent_minor: int
     deposit_amount_minor: int
     service_fee_amount_minor: int
+    booking_deposit_amount_minor: int = 200000
+    booking_deposit_currency: str = "CNY"
+    is_refundable: bool = True
+    refund_method: str = "原支付渠道"
     tax_amount_minor: int
     exchange_rate: Decimal
     exchange_rate_source: str
@@ -90,6 +96,9 @@ class TenantOrderDetail(TenantOrderListItem):
     webhook_confirmed: bool = False
     amounts_verified: bool = False
     inventory_reserved: bool = False
+    contract: dict | None = None
+    room_assignment: dict | None = None
+    workflow: dict = Field(default_factory=dict)
 
 
 class PaymentEligibilityResponse(BaseModel):

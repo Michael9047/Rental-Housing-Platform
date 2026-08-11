@@ -32,18 +32,14 @@
           <span>{{ formatPrice(totalPrice) }}</span>
         </div>
         <div class="fee-row">
-          <span>押金</span>
-          <span>{{ formatPrice(bookingFlow.deposit_amount) }}</span>
-        </div>
-        <div class="fee-row" v-if="bookingFlow.service_fee > 0">
-          <span>服务费（{{ serviceFeeRate }}%）</span>
-          <span>{{ formatPrice(bookingFlow.service_fee) }}</span>
+          <span>预订金</span>
+          <span>CNY 2,000.00</span>
         </div>
         <div class="fee-row total">
           <span>首次应付合计</span>
           <span class="total-price">{{ formatPrice(firstPayment) }}</span>
         </div>
-        <div class="fee-note">* 首期支付：押金 + 首月租金 + 服务费</div>
+        <div class="fee-note">* 本次仅支付平台预订金 CNY 2,000.00；月租仅供参考。</div>
       </div>
     </div>
 
@@ -80,7 +76,7 @@ const serviceFeeRate = computed(() => {
 const firstPayment = computed(() => {
   if (!bookingFlow.property) return 0
   const monthly = priceMonthly.value
-  return Math.round(monthly + bookingFlow.deposit_amount + bookingFlow.service_fee)
+  return 2000
 })
 
 function selectLease(months: number) {
