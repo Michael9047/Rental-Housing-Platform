@@ -204,7 +204,6 @@ class PropertyService:
             stmt = stmt.where(Institute.country == country)
         if city:
             stmt = stmt.where(Institute.city.ilike(f"%{city}%"))
-
         # ── 价格筛选（UnitType 侧）──
         if price_min is not None:
             stmt = stmt.where(UnitType.base_rent >= price_min)
@@ -324,10 +323,19 @@ class PropertyService:
         self,
         *,
         district: str | None = None,
+        country: str | None = None,
+        city: str | None = None,
+        institute_id: int | None = None,
         price_min: Decimal | None = None,
         price_max: Decimal | None = None,
         bedrooms: int | None = None,
+        bathrooms: int | None = None,
         property_type: str | None = None,
+        amenities: list[str] | None = None,
+        area_min: float | None = None,
+        area_max: float | None = None,
+        available_from: str | None = None,
+        max_min_stay_months: int | None = None,
         near_lat: float | None = None,
         near_lng: float | None = None,
         near_distance_km: float | None = None,
@@ -343,6 +351,8 @@ class PropertyService:
             .join(Institute, UnitType.institute_id == Institute.id)
             .where(
                 UnitType.status == UnitTypeStatus.available,
+                UnitType.has_vacancy.is_(True),
+                UnitType.available_count > 0,
                 Institute.status == InstituteStatus.active,
                 UnitType.deleted_at.is_(None),
             )
@@ -351,14 +361,42 @@ class PropertyService:
 
         if district:
             stmt = stmt.where(Institute.district.ilike(f"%{district}%"))
+        if country:
+            stmt = stmt.where(Institute.country == country)
+        if city:
+            stmt = stmt.where(Institute.city.ilike(f"%{city}%"))
+        if institute_id is not None:
+            stmt = stmt.where(UnitType.institute_id == institute_id)
         if price_min is not None:
             stmt = stmt.where(UnitType.base_rent >= price_min)
         if price_max is not None:
             stmt = stmt.where(UnitType.base_rent <= price_max)
         if bedrooms is not None:
             stmt = stmt.where(UnitType.bedrooms == bedrooms)
+        if bathrooms is not None:
+            stmt = stmt.where(UnitType.bathrooms >= bathrooms)
         if property_type:
             stmt = stmt.where(UnitType.property_type == _resolve_property_type(property_type))
+        if area_min is not None:
+            stmt = stmt.where(UnitType.area_sqm >= area_min)
+        if area_max is not None:
+            stmt = stmt.where(UnitType.area_sqm <= area_max)
+        if available_from:
+            normalized = available_from.replace("-", "")
+            if len(normalized) >= 6 and normalized[:6].isdigit():
+                year = int(normalized[:4])
+                month = int(normalized[4:6])
+                if 1 <= month <= 12:
+                    requested_date = date(year, month, 1)
+                    stmt = stmt.where(
+                        or_(
+                            UnitType.available_from.is_(None),
+                            UnitType.available_from <= requested_date,
+                        )
+                    )
+        # 用户可接受的租期上限必须覆盖公寓要求的最短租期。
+        if max_min_stay_months is not None:
+            stmt = stmt.where(UnitType.min_stay_months <= max_min_stay_months)
         if female_only is not None:
             stmt = stmt.where(Institute.female_only == female_only)
 
@@ -373,9 +411,24 @@ class PropertyService:
                 Institute.longitude <= near_lng + lng_d,
             )
 
-        stmt = stmt.order_by(UnitType.base_rent.asc()).limit(limit)
+        stmt = stmt.order_by(UnitType.base_rent.asc())
+        # 设施分属两层：Institute 是楼栋配套，UnitType 是房内设施。
+        # 为保证 PostgreSQL/SQLite 语义一致，带设施条件时先取完整候选，
+        # 再按两层设施的并集做“全部包含”过滤，过滤后才应用 limit。
+        if not amenities:
+            stmt = stmt.limit(limit)
         result = await self.session.execute(stmt)
         rows = result.all()
+
+        if amenities:
+            required = {str(value).casefold() for value in amenities}
+            rows = [
+                row for row in rows
+                if required.issubset({
+                    str(value).casefold()
+                    for value in [*(row[0].amenities or []), *(row[1].amenities or [])]
+                })
+            ][:limit]
 
         return [
             {

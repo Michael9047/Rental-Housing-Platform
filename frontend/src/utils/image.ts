@@ -4,5 +4,13 @@
  */
 export function getImageUrl(filename: string | undefined | null): string {
   if (!filename) return ''
-  return filename.startsWith('http') ? filename : `/api/v1/uploads/${filename}`
+  if (
+    /^(https?:)?\/\//i.test(filename)
+    || filename.startsWith('data:')
+    || filename.startsWith('blob:')
+    || filename.startsWith('/')
+  ) {
+    return filename
+  }
+  return `/api/v1/uploads/${filename}`
 }

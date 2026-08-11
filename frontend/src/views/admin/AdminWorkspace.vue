@@ -394,6 +394,12 @@ const authStore = useAuthStore()
 const adminName = computed(() => authStore.user?.username || '房东')
 const adminEmail = computed(() => authStore.user?.email || '—')
 const adminPhone = computed(() => authStore.user?.phone || '—')
+// UserRead 当前不含管理员负责片区；明确展示未配置，避免伪造资料。
+const adminDistrict = computed(() => '未设置')
+const adminSince = computed(() => {
+  const createdAt = authStore.user?.created_at
+  return createdAt ? new Date(createdAt).toLocaleDateString('zh-CN') : '—'
+})
 const verified = ref(false)
 
 const showEditProfile = ref(false)

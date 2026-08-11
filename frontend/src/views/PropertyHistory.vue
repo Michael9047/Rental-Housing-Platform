@@ -247,7 +247,7 @@
           <div class="info-list">
             <div class="info-item">
               <span class="label">撤销操作</span>
-              <span class="value">{{ actionLabel(detailItem.details.reverted_action || '') }}</span>
+              <span class="value">{{ actionLabel(String(detailItem.details.reverted_action || '')) }}</span>
             </div>
             <div class="info-item">
               <span class="label">结果</span>
@@ -617,7 +617,8 @@ async function loadList() {
     const revoked = new Set<number>()
     for (const item of arr) {
       if (item.action === 'property_revert' && item.details?.reverted_audit_log_id) {
-        revoked.add(item.details.reverted_audit_log_id)
+        const revertedId = Number(item.details.reverted_audit_log_id)
+        if (Number.isInteger(revertedId) && revertedId > 0) revoked.add(revertedId)
       }
     }
     revertedLogIds.value = revoked

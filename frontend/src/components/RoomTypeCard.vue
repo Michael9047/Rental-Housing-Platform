@@ -166,8 +166,8 @@ const allFeatureTags = computed<string[]>(() => {
     studio: ['独立卫浴', 'WiFi', '空调'],
     shared: ['包水电', 'WiFi'],
   }
-  const defaults = typeDefaults[p.property_type] || []
-  defaults.forEach((d) => tags.add(d))
+  const defaults = typeDefaults[p.property_type || ''] || []
+  defaults.forEach((defaultTag: string) => tags.add(defaultTag))
 
   // 从描述中提取关键词
   if (p.description) {

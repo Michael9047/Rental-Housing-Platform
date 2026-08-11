@@ -91,13 +91,20 @@
       <!-- ═══ 7. 户型卡片 ═══ -->
       <section class="bd-units" v-if="building.unit_types?.length">
         <h2 class="sec-title">🏠 可选户型 ({{ building.unit_types.length }})</h2>
-        <div class="ut-card" v-for="ut in building.unit_types" :key="ut.id">
+        <div
+          v-for="ut in building.unit_types"
+          :id="`unit-type-${ut.id}`"
+          :key="ut.id"
+          class="ut-card"
+          :class="{ 'is-target-unit': highlightedUnitTypeId === Number(ut.id) }"
+          tabindex="-1"
+        >
           <!-- 横线上方：图 + 信息 + 价格 -->
           <div class="ut-above">
             <div class="ut-img" @click="openUnitGallery(ut)">
-              <img v-if="ut.images?.[0]" :src="imgUrl(ut.images[0].filename)" alt="" />
+              <img v-if="unitTypeImages(ut)[0]" :src="unitTypeImages(ut)[0]" alt="" />
               <span v-else class="ut-img-empty">暂无图片</span>
-              <span v-if="ut.images?.length > 1" class="ut-img-num">{{ ut.images.length }}张</span>
+              <span v-if="unitTypeImages(ut).length > 1" class="ut-img-num">{{ unitTypeImages(ut).length }}张</span>
             </div>
             <div class="ut-info">
               <h3 class="ut-name">{{ ut.name }}</h3>
@@ -117,6 +124,14 @@
             <div class="ut-price-col">
               <div class="ut-rent">{{ formatPrice(ut.base_rent, ut.currency) }}<em>/月</em></div>
               <div class="ut-deposit" v-if="ut.deposit_amount">押金 {{ formatPrice(ut.deposit_amount, ut.currency) }}</div>
+              <el-button
+                plain
+                :type="cartStore.has(Number(ut.id)) ? 'success' : 'primary'"
+                :loading="cartPendingUnitTypeId === Number(ut.id)"
+                @click="toggleCandidate(ut)"
+              >
+                {{ cartStore.has(Number(ut.id)) ? '已加入候选' : '加入候选清单' }}
+              </el-button>
               <el-button class="ut-book" @click="handleBook(ut.id)">立即预定</el-button>
             </div>
           </div>
@@ -160,10 +175,13 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, nextTick, watch } from 'vue'
+import { ref, computed, nextTick, onBeforeUnmount, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import api from '@/services/api'
+import { useAuthStore } from '@/stores/auth'
+import { useCartStore } from '@/stores/cart'
+import { getImageUrl } from '@/utils/image'
 import L from 'leaflet'
 import { formatPrice } from '@/data/currency'
 import 'leaflet/dist/leaflet.css'
@@ -176,10 +194,47 @@ L.Icon.Default.mergeOptions({
 })
 
 const route = useRoute(); const router = useRouter()
+const authStore = useAuthStore(); const cartStore = useCartStore()
 const loading = ref(true); const error = ref('')
 const building = ref<any>(null); const showContactDialog = ref(false)
 const descExpanded = ref(false)
 const mapContainer = ref<HTMLElement | null>(null); let mapInstance: L.Map | null = null
+const highlightedUnitTypeId = ref<number | null>(null)
+const cartPendingUnitTypeId = ref<number | null>(null)
+let buildingLoadEpoch = 0
+
+/** query 只接受正整数 UnitType ID；数组、非法值和不存在的户型均安全忽略。 */
+function requestedUnitTypeId(): number | null {
+  const raw = Array.isArray(route.query.unit_type_id)
+    ? route.query.unit_type_id[0]
+    : route.query.unit_type_id
+  if (typeof raw !== 'string' && typeof raw !== 'number') return null
+  const id = Number(raw)
+  return Number.isInteger(id) && id > 0 ? id : null
+}
+
+/** 户型列表渲染完成后定位，并用独立样式标识本次从推荐/候选带来的户型。 */
+async function focusRequestedUnitType() {
+  const unitTypeId = requestedUnitTypeId()
+  const units = Array.isArray(building.value?.unit_types) ? building.value.unit_types : []
+  if (!unitTypeId || !units.some((unit: any) => Number(unit.id) === unitTypeId)) {
+    highlightedUnitTypeId.value = null
+    return
+  }
+
+  highlightedUnitTypeId.value = unitTypeId
+  await nextTick()
+  const element = document.getElementById(`unit-type-${unitTypeId}`)
+  if (!element) return
+  window.requestAnimationFrame(() => {
+    element.focus({ preventScroll: true })
+    element.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  })
+}
+
+watch(() => route.query.unit_type_id, () => {
+  void focusRequestedUnitType()
+})
 
 // 预约看房表单
 const visitFormRef = ref()
@@ -206,7 +261,16 @@ async function submitVisit() {
   } finally { visitSubmitting.value = false }
 }
 
-const imgUrl = (fn: string) => '/api/v1/uploads/' + fn
+const imgUrl = (filename: string) => getImageUrl(filename)
+
+/** tenant-detail 主要返回 image_urls，同时兼容旧 images 对象。 */
+function unitTypeImages(unitType: any): string[] {
+  const legacyImages = Array.isArray(unitType?.images)
+    ? unitType.images.map((image: any) => typeof image === 'string' ? image : image?.filename)
+    : []
+  const imageUrls = Array.isArray(unitType?.image_urls) ? unitType.image_urls : []
+  return [...new Set([...legacyImages, ...imageUrls].filter(Boolean).map((value) => imgUrl(String(value))))]
+}
 
 watch(building, async (val) => {
   if (val?.latitude) { await nextTick(); setTimeout(() => { initMap(); mapInstance?.invalidateSize() }, 400) }
@@ -239,15 +303,15 @@ const specialMarkers = computed(() => {
 })
 
 function openUnitGallery(ut: any) {
-  const imgs = ut.images || []; if (!imgs.length) return; let i = 0
+  const imgs = unitTypeImages(ut); if (!imgs.length) return; let i = 0
   const o = document.createElement('div'); o.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.92);z-index:9999;display:flex;align-items:center;justify-content:center'
-  const el = document.createElement('img'); el.src = imgUrl(imgs[0].filename); el.style.cssText = 'max-width:90vw;max-height:85vh;object-fit:contain;border-radius:8px'
+  const el = document.createElement('img'); el.src = imgs[0]; el.style.cssText = 'max-width:90vw;max-height:85vh;object-fit:contain;border-radius:8px'
   o.appendChild(el)
   if (imgs.length > 1) {
     ['left','right'].forEach((dir, di) => {
       const b = document.createElement('button'); b.innerHTML = di ? '&#10095;' : '&#10094;'
       b.style.cssText = `position:absolute;${dir}:20px;top:50%;transform:translateY(-50%);background:rgba(255,255,255,.2);border:none;color:#fff;font-size:36px;padding:16px 20px;cursor:pointer;border-radius:8px`
-      b.onclick = (e) => { e.stopPropagation(); const n = di ? i+1 : i-1; if (n>=0 && n<imgs.length) { i=n; el.src=imgUrl(imgs[i].filename) } }
+      b.onclick = (e) => { e.stopPropagation(); const n = di ? i+1 : i-1; if (n>=0 && n<imgs.length) { i=n; el.src=imgs[i] } }
       o.appendChild(b)
     })
   }
@@ -261,6 +325,32 @@ function handleBook(id: number) {
   if (!ut) return ElMessage.warning('户型不存在')
   if (!ut.has_vacancy && ut.available_count <= 0) return ElMessage.warning('该户型暂无空房')
   router.push({ name: 'booking-move-in-date', params: { propertyId: String(id) } })
+}
+
+/** 候选清单只写入 UnitType.id，不使用当前 Building.id。 */
+async function toggleCandidate(unitType: any): Promise<void> {
+  const unitTypeId = Number(unitType?.id)
+  if (!Number.isInteger(unitTypeId) || unitTypeId <= 0) return
+  if (!authStore.isLoggedIn) {
+    ElMessage.warning('登录后即可使用候选清单')
+    await router.push({ name: 'login', query: { redirect: route.fullPath } })
+    return
+  }
+
+  cartPendingUnitTypeId.value = unitTypeId
+  try {
+    if (cartStore.has(unitTypeId)) {
+      await cartStore.remove(unitTypeId)
+      ElMessage.info(`已从候选清单移出「${unitType.name || `户型 ${unitTypeId}`}」`)
+    } else {
+      await cartStore.add(unitTypeId, `来自公寓详情：${building.value?.name || ''}`)
+      ElMessage.success(`已将「${unitType.name || `户型 ${unitTypeId}`}」加入候选清单`)
+    }
+  } catch {
+    // 接口拦截器负责显示具体错误。
+  } finally {
+    if (cartPendingUnitTypeId.value === unitTypeId) cartPendingUnitTypeId.value = null
+  }
 }
 
 let lIdx = 0
@@ -285,10 +375,48 @@ function initMap() {
   L.marker([building.value.latitude,building.value.longitude]).addTo(mapInstance)
 }
 
-onMounted(async () => {
-  try { const r = await api.get(`/buildings/${route.params.id}/tenant-detail`); building.value = r.data }
-  catch (e: any) { error.value = e?.response?.status === 404 ? '公寓不存在' : '加载失败' }
-  finally { loading.value = false }
+async function loadBuilding(rawId: unknown): Promise<void> {
+  const id = Array.isArray(rawId) ? String(rawId[0] || '') : String(rawId || '')
+  const numericId = Number(id)
+  const epoch = ++buildingLoadEpoch
+  mapInstance?.remove(); mapInstance = null
+  building.value = null
+  highlightedUnitTypeId.value = null
+  descExpanded.value = false
+  slideIdx.value = 0
+  error.value = ''
+  loading.value = true
+
+  if (!Number.isInteger(numericId) || numericId <= 0) {
+    error.value = '公寓不存在'
+    loading.value = false
+    return
+  }
+
+  try {
+    const response = await api.get(`/buildings/${numericId}/tenant-detail`)
+    if (epoch !== buildingLoadEpoch) return
+    building.value = response.data
+    if (authStore.isLoggedIn && !cartStore.loaded) void cartStore.fetch()
+  } catch (e: any) {
+    if (epoch !== buildingLoadEpoch) return
+    error.value = e?.response?.status === 404 ? '公寓不存在' : '加载失败'
+  } finally {
+    if (epoch === buildingLoadEpoch) {
+      loading.value = false
+      await focusRequestedUnitType()
+    }
+  }
+}
+
+watch(() => route.params.id, (id) => {
+  void loadBuilding(id)
+}, { immediate: true })
+
+onBeforeUnmount(() => {
+  buildingLoadEpoch += 1
+  mapInstance?.remove()
+  mapInstance = null
 })
 </script>
 
@@ -367,6 +495,13 @@ onMounted(async () => {
 .bd-units { margin-bottom: 24px }
 .ut-card { padding: 20px; margin-bottom: 14px; background: #fff; border: 1px solid #f0f0f0; border-radius: 14px; transition: all .25s; box-shadow: 0 2px 8px rgba(0,0,0,.02) }
 .ut-card:hover { box-shadow: 0 4px 20px rgba(0,0,0,.06); transform: translateY(-1px) }
+.ut-card.is-target-unit {
+  scroll-margin-top: 88px;
+  border-color: #409eff;
+  background: linear-gradient(135deg, #fff 65%, #edf6ff 100%);
+  box-shadow: 0 0 0 3px rgba(64, 158, 255, .16), 0 8px 24px rgba(64, 158, 255, .14);
+}
+.ut-card.is-target-unit:focus { outline: none; }
 .ut-above { display: flex; gap: 18px; align-items: flex-start }
 .ut-img { width: 220px; height: 165px; flex-shrink: 0; border-radius: 10px; overflow: hidden; position: relative; cursor: pointer; background: #f5f7fa }
 .ut-img img { width: 100%; height: 100%; object-fit: cover; transition: transform .4s }

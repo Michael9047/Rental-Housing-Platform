@@ -212,6 +212,8 @@ interface SuggestionProperty {
   title: string
   district: string
   price_monthly: number | null
+  /** main 搜索建议可能同时返回户型 ID 与所属公寓 ID。 */
+  institute_id?: number | null
   query: { property_id: number }
 }
 

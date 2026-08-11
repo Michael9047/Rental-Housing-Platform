@@ -5,7 +5,7 @@
     <el-table :data="staff" v-loading="loading" stripe>
       <el-table-column prop="name" label="姓名" />
       <el-table-column prop="role" label="角色" width="100">
-        <template #default="{ row }">{{ {manager:'负责人',sales:'推销员',staff:'员工'}[row.role] || row.role }}</template>
+        <template #default="{ row }">{{ roleLabel(row.role) }}</template>
       </el-table-column>
       <el-table-column prop="phone" label="联系电话" width="140" />
       <el-table-column prop="notes" label="备注" />
@@ -46,7 +46,17 @@ import api from '@/services/api'
 
 const route = useRoute()
 const instituteId = Number(route.params.id)
-const staff = ref<any[]>([])
+type StaffRole = 'manager' | 'sales' | 'staff'
+
+interface BuildingStaffMember {
+  id: number
+  name: string
+  role: StaffRole | string
+  phone: string | null
+  notes: string | null
+}
+
+const staff = ref<BuildingStaffMember[]>([])
 const loading = ref(false)
 const dialogVisible = ref(false)
 const saving = ref(false)
@@ -67,7 +77,12 @@ async function fetchStaff() {
   finally { loading.value = false }
 }
 
-function openDialog(row?: any) {
+function roleLabel(role: BuildingStaffMember['role']): string {
+  const labels: Record<string, string> = { manager: '负责人', sales: '推销员', staff: '员工' }
+  return labels[role] || role
+}
+
+function openDialog(row?: BuildingStaffMember) {
   if (row) { editingId.value = row.id; form.value = { name: row.name, role: row.role, phone: row.phone || '', notes: row.notes || '' } }
   else { editingId.value = null; form.value = { name: '', role: 'staff', phone: '', notes: '' } }
   dialogVisible.value = true
@@ -88,7 +103,7 @@ async function handleSave() {
   finally { saving.value = false }
 }
 
-async function handleDelete(row: any) {
+async function handleDelete(row: BuildingStaffMember) {
   try { await api.delete('/buildings/' + instituteId + '/staff/' + row.id); ElMessage.success('已删除'); await fetchStaff() } catch { /* */ }
 }
 </script>

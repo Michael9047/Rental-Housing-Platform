@@ -352,7 +352,7 @@
       <el-form label-width="70px">
         <el-form-item label="房源">
           <el-select v-model="repairForm.property_id" style="width:100%" placeholder="选择需要维修的房源">
-            <el-option v-for="b in bookings" :key="b.id" :label="`房源 #${b.property_id}`" :value="b.property_id" />
+            <el-option v-for="b in repairableBookings" :key="b.id" :label="`户型 #${b.unit_type_id}`" :value="b.unit_type_id!" />
           </el-select>
         </el-form-item>
         <el-form-item label="哪里坏了">
@@ -393,6 +393,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { UserFilled } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 import { bookingService } from '@/services/booking'
+import { propertyService } from '@/services/property'
 import { contractService } from '@/services/contract'
 import type { TenantContractItem } from '@/services/contract'
 import { paymentService, type TenantOrderItem } from '@/services/payment'
@@ -419,6 +420,9 @@ const contractFilter = ref('pending_effective')
 const billTab = ref('pending')
 
 const bookings = ref<Booking[]>([]) // 用于报修弹窗房源选择
+const repairableBookings = computed(() => bookings.value.filter(
+  (booking): booking is Booking & { unit_type_id: number } => booking.unit_type_id !== null,
+))
 const contracts = ref<TenantContractItem[]>([])
 const orders = ref<TenantOrderItem[]>([])
 const payingOrderId = ref<number | null>(null)

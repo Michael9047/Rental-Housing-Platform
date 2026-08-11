@@ -3,7 +3,7 @@ from fastapi import APIRouter
 
 from app.api.v1.routes import (
     admin, agent, auth, bookings,
-    building_staff, buildings, chat, commute, contracts,
+    building_staff, buildings, chat, commute, compare, contracts,
     dashboard, favorites, geocoding, health,
     imports, map_routes, notifications,
     payments, repair_workers, repairs,
@@ -47,6 +47,7 @@ api_router.include_router(geocoding.router, prefix="/geo", tags=["geo"])
 # api_router.include_router(pois.router, prefix="/pois", tags=["pois"])
 # api_router.include_router(map_routes.router, prefix="/map", tags=["map"])  # 依赖 Property
 api_router.include_router(agent.router, prefix="/agent", tags=["agent"])
+api_router.include_router(compare.router, prefix="/compare", tags=["compare"])
 # api_router.include_router(ml.router, tags=["ml"])
 api_router.include_router(repairs.router, tags=["repairs"])
 api_router.include_router(repair_workers.router, tags=["repair-workers"])

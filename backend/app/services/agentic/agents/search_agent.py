@@ -6,29 +6,30 @@ from __future__ import annotations
 
 import json
 import logging
+import re
+from collections.abc import Awaitable, Callable, Collection
 from decimal import Decimal
 from typing import Any
 
 
-def build_search_text(room) -> str:
-    """将 Room + Institute + UnitType 三层信息拼接为 embedding 用文本。
-
-    写入 rooms.embedding 前调用。搜什么就编码什么。
-    """
+def build_search_text(unit_type) -> str:
+    """将 UnitType + Institute 两层信息拼接为 embedding 文本。"""
+    institute = getattr(unit_type, "institute", None)
     parts = []
-    if room.title: parts.append(room.title)
-    if room.institute_name: parts.append(room.institute_name)
-    if room.district: parts.append(f"区域: {room.district}")
-    if room.city: parts.append(f"城市: {room.city}")
-    if room.country: parts.append(f"国家: {room.country}")
-    if room.property_type: parts.append(room.property_type)
-    if room.bedrooms: parts.append(f"{room.bedrooms}室")
-    if room.bathrooms: parts.append(f"{room.bathrooms}卫")
-    if room.area_sqm: parts.append(f"{room.area_sqm}平米")
-    if room.institute_amenities: parts.append(f"配套: {room.institute_amenities}")
-    if room.description: parts.append(room.description[:300])
-    sym = get_symbol(getattr(room, 'currency', None))
-    if room.price_monthly: parts.append(f"月租: {sym}{float(room.price_monthly):.0f}")
+    if unit_type.name: parts.append(unit_type.name)
+    if institute and institute.name: parts.append(institute.name)
+    if institute and institute.district: parts.append(f"区域: {institute.district}")
+    if institute and institute.city: parts.append(f"城市: {institute.city}")
+    if institute and institute.country: parts.append(f"国家: {institute.country}")
+    if unit_type.property_type: parts.append(str(unit_type.property_type))
+    if unit_type.bedrooms: parts.append(f"{unit_type.bedrooms}室")
+    if unit_type.bathrooms: parts.append(f"{unit_type.bathrooms}卫")
+    if unit_type.area_sqm: parts.append(f"{unit_type.area_sqm}平米")
+    amenities = [*(unit_type.amenities or []), *((institute.amenities or []) if institute else [])]
+    if amenities: parts.append(f"配套: {'、'.join(dict.fromkeys(amenities))}")
+    if unit_type.description: parts.append(unit_type.description[:300])
+    sym = get_symbol(unit_type.currency)
+    if unit_type.base_rent: parts.append(f"月租: {sym}{float(unit_type.base_rent):.0f}")
     return " | ".join(p for p in parts if p)
 
 
@@ -288,7 +289,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.institute import Institute, InstituteStatus
-from app.models.property import Property, PropertyStatus
+from app.models.unit_type import UnitType, UnitTypeStatus
 from app.services.agentic.agents.base_agent import BaseAgent
 from app.services.agentic.orchestration.types import AgentContext, AgentResult, AgentError, AgentErrorType
 from app.services.agentic.shared import property_to_dict
@@ -301,6 +302,7 @@ from app.services.score_gap import detect_score_gap
 logger = logging.getLogger(__name__)
 
 AI_UNAVAILABLE_HINT = "（AI 分析暂不可用，已按筛选条件为您检索）"
+MAX_RECOMMENDATION_CARDS = 20
 
 # ── 配置常量 ────────────────────────────────────────────────────
 RELAXATION_MIN_RESULTS = 5
@@ -330,6 +332,45 @@ _DISTRICT_CURRENCY: dict[str, str] = {
 _COUNTRY_CURRENCY: dict[str, str] = {
     "GB": "GBP", "SG": "SGD", "US": "USD", "HK": "HKD", "CN": "CNY",
 }
+_COUNTRY_ALIASES: dict[str, str] = {
+    "cn": "CN", "china": "CN", "中国": "CN", "中国大陆": "CN",
+    "sg": "SG", "singapore": "SG", "新加坡": "SG", "新加坡市": "SG",
+    "gb": "GB", "uk": "GB", "unitedkingdom": "GB", "英国": "GB",
+    "us": "US", "usa": "US", "unitedstates": "US", "美国": "US",
+    "au": "AU", "australia": "AU", "澳大利亚": "AU",
+    "ca": "CA", "canada": "CA", "加拿大": "CA",
+    "hk": "HK", "hongkong": "HK", "香港": "HK", "中国香港": "HK",
+}
+_SINGAPORE_SCOPE_ALIASES = frozenset({"sg", "singapore", "新加坡", "新加坡市"})
+
+_FALLBACK_INSTITUTIONS = (
+    "NUS", "NTU", "SMU", "SUTD", "UCL", "LSE", "KCL", "QMUL",
+    "HKU", "CUHK", "HKUST", "UCLA", "USC",
+)
+_FALLBACK_INSTITUTION_PATTERN = re.compile(
+    rf"\b({'|'.join(_FALLBACK_INSTITUTIONS)})\b",
+    re.IGNORECASE,
+)
+
+
+def _normalize_country(value: Any) -> str | None:
+    """把自然语言国家名标准化为数据库使用的两位代码。"""
+    if value is None:
+        return None
+    raw = str(value).strip()
+    if not raw:
+        return None
+    key = re.sub(r"[\s_-]+", "", raw).casefold()
+    if key in _COUNTRY_ALIASES:
+        return _COUNTRY_ALIASES[key]
+    return raw.upper() if len(raw) == 2 else raw
+
+
+def _is_singapore_scope(value: Any) -> bool:
+    """新加坡是国家/城市，不应作为 Institute.district 精确筛选。"""
+    if value is None:
+        return False
+    return str(value).strip().casefold() in _SINGAPORE_SCOPE_ALIASES
 
 
 def _infer_currency(district: str | None, country: str | None) -> str:
@@ -416,46 +457,285 @@ P2 点缀（加分项，仅描述亮点）：精装修 / 高楼层 / 阳台 / �
 → {"district":"伦敦","price_max":1500,"currency":"GBP","amenities":["独立卫浴"],"property_type":"studio","institution":"UCL","commute_mode":"walking","commute_minutes":15,"hard_filters":["amenities","institution","property_type"],"soft_preferences":["price","commute"],"p2_highlights":[]}
 
 示例2：「NUS附近800新币，最好精装带泳池」
-→ {"district":"新加坡","price_max":800,"currency":"SGD","institution":"NUS","hard_filters":["institution"],"soft_preferences":["price"],"p2_highlights":["精装修","泳池"]}
+→ {"country":"SG","city":"Singapore","district":null,"price_max":800,"currency":"SGD","institution":"NUS","hard_filters":["institution"],"soft_preferences":["price"],"p2_highlights":["精装修","泳池"]}
 
-只输出 JSON。设施映射：独卫→独立卫浴, wifi→WiFi。currency：¥/人民币/元/块→CNY, £/英镑/镑→GBP, S$/新币→SGD。未提及时填 null。"""
+只输出 JSON。设施映射：独卫→独立卫浴, wifi→WiFi。currency：¥/人民币/元/块→CNY, £/英镑/镑→GBP, S$/新币→SGD。未提及时填 null。
+新加坡/Singapore/SG 必须提取为 country="SG", city="Singapore", district=null；district 只填写杜佛、西海岸等国家内部区域。
+注意：null 只表示本轮没有提及，绝不表示删除已有条件；清除条件由系统的独立协议处理。"""
 
-RECOMMEND_SYSTEM_PROMPT = """你是留学生租房顾问，像学长学姐一样用口语化中文分析房源。按以下结构撰写回复：
+RECOMMEND_SYSTEM_PROMPT = """你是留学生租房顾问。输入是结构化 JSON，只能使用其中的真实字段。
 
-【第一段：需求确认 + 概览】
-开头说"根据你的需求，我了解到你需要的核心条件是…（列出区域、预算、户型等硬性要求）。在{学校}周边{半径}公里内共找到{总数}种户型，其中这{top_n}套最值得看，它们都满足你的基本要求。"
-如果结果偏少，诚实说明并给放宽建议。
+请用 180–320 字中文推荐 1–3 个候选户型，按实际候选数量使用以下短标记：
+【结论】一句话概括最重要的选择差异。
+【推荐1】公寓与户型名：租金、位置及最关键的 1–2 个亮点。
+【推荐2】【推荐3】按实际候选数量继续，每项只写一句。
+【怎么选】结合用户明确条件给出简短选择建议，并用一个短问题收尾。
 
-【第二段起：逐套介绍】
-每套房源用一段完整的文字介绍，不使用列表或符号。内容要连贯流畅，像朋友聊天：
-- 先点出房源名称和位置，顺带提到租金是多少、是否在预算内
-- 然后自然地聊到通勤——走路几分钟到学校、公交多久，对比其他两套是更快还是慢一点
-- 接着说说户型本身：面积多大、几室几卫、有没有独立厨房/卫浴、家具情况如何
-- 再提一下公寓配套和周边生活：楼下有什么、超市餐馆方便不方便
-- 最后如果有什么特别亮点（精装修、采光好、带阳台、有泳池等），顺口提一句
-每套之间空一行分开。
+规则：
+1. 除指定短标记外，不输出 JSON、表格、项目符号或复杂 Markdown。
+2. 不编造距离、通勤、设施、优惠、预算匹配或周边情况。
+3. 字段缺失时直接略过，不逐项写“暂无数据”。
+4. 通勤仅在分钟数非空时描述；source=lookup_table 时必须标注“估算”。
+5. 只有所有候选的 currency 都非空且一致时，才能比较租金高低。
+6. 不笼统声称“全部满足条件”，只点明数据可验证的匹配项。
+7. 控制信息密度：每个推荐只保留最有区分度的事实，不复述全部字段。
 
-【对比段】
-介绍完所有房源后，用一段话横向比较。不要用表格，用完整句子说。比如"通勤来看，A最近，步行只要10分钟，比B快了将近一半。价格上B最划算，每月省下两千块。但综合通勤、户型和价格，A是最均衡的选择。"
+直接输出带上述短标记的纯文本，不要 JSON 包裹。"""
 
-【最后：总结建议】
-用两到三句话收尾：回顾用户的核心需求是什么，三套里你最推荐哪一套、为什么，如果用户有不同优先级（比如更看重省钱）可以怎么选。最后可以问一句"要不要把这几套加入对比清单"之类的话，保持互动感。
 
-撰写规则：
-- 口语自然，像学长在给建议，不要用技术术语
-- 基于系统提供的真实数据，不编造价格、距离、设施
-- 价格带币种符号
-- 数据缺失时写"暂时没有这方面的数据"，不要跳过
-- 450-750字
-- 不要用任何 Markdown 标题符号（###、**、---等），纯文字段落
+_PROPERTY_TYPE_REASON_LABELS = {
+    "studio": "Studio",
+    "ensuite": "Ensuite",
+    "1bed": "一室",
+    "2bed": "两室",
+    "3bed": "三室",
+    "4bed": "四室",
+    "5bed+": "五室及以上",
+    "shared": "合租",
+}
 
-直接输出回复文本，不要 JSON 包裹。"""
+
+def _raw_value(value: Any) -> str:
+    """读取枚举或字符串的原始值，供推荐理由安全展示。"""
+    return str(getattr(value, "value", value) or "")
+
+
+def _build_recommendation_reason(
+    item: dict[str, Any],
+    filters: dict[str, Any],
+    *,
+    school_name: str = "",
+    commute: dict[str, Any] | None = None,
+) -> str:
+    """只用已验证字段拼接卡片推荐理由，最多保留六个事实。"""
+    unit_type = item["unit_type"]
+    institute = item["institute"]
+    facts: list[str] = []
+
+    location = str(
+        getattr(institute, "district", None)
+        or getattr(institute, "city", None)
+        or ""
+    ).strip()
+    if location:
+        facts.append(f"位于{location}")
+
+    unit_currency = str(getattr(unit_type, "currency", "") or "").upper()
+    target_currency = str(filters.get("currency") or "").upper()
+    price = float(unit_type.base_rent)
+    price_min = filters.get("price_min")
+    price_max = filters.get("price_max")
+    currency_matches = bool(unit_currency and target_currency and unit_currency == target_currency)
+    within_min = price_min is None or price >= float(price_min)
+    within_max = price_max is None or price <= float(price_max)
+    if currency_matches and (price_min is not None or price_max is not None) and within_min and within_max:
+        facts.append("月租在预算内")
+
+    property_type = _raw_value(getattr(unit_type, "property_type", None))
+    type_label = _PROPERTY_TYPE_REASON_LABELS.get(property_type, property_type)
+    specs = [type_label] if type_label else []
+    area_sqm = getattr(unit_type, "area_sqm", None)
+    if area_sqm is not None:
+        area = float(area_sqm)
+        specs.append(f"{area:g}㎡")
+    bathrooms = getattr(unit_type, "bathrooms", None)
+    if bathrooms:
+        specs.append(f"{bathrooms}卫")
+    if specs:
+        facts.append(" · ".join(specs))
+
+    requested_amenities = [
+        str(value).strip() for value in (filters.get("amenities") or [])
+        if str(value).strip()
+    ]
+    available_amenities = list(dict.fromkeys([
+        *[
+            str(value).strip()
+            for value in (getattr(unit_type, "amenities", None) or [])
+            if str(value).strip()
+        ],
+        *[
+            str(value).strip()
+            for value in (getattr(institute, "amenities", None) or [])
+            if str(value).strip()
+        ],
+    ]))
+    if requested_amenities:
+        available_by_key = {value.casefold(): value for value in available_amenities}
+        matched = [
+            available_by_key[value.casefold()]
+            for value in requested_amenities
+            if value.casefold() in available_by_key
+        ]
+        if matched:
+            facts.append(f"所需配套：{'、'.join(matched[:3])}")
+    elif available_amenities:
+        facts.append(f"配有{'、'.join(available_amenities[:3])}")
+
+    if school_name and commute:
+        walk_min = commute.get("walk_min")
+        transit_min = commute.get("transit_min")
+        commute_text = ""
+        if walk_min is not None:
+            commute_text = f"到{school_name}步行约{walk_min}分钟"
+        elif transit_min is not None:
+            commute_text = f"到{school_name}公交约{transit_min}分钟"
+        if commute_text:
+            if commute.get("source") == "lookup_table":
+                commute_text += "（估算）"
+            facts.append(commute_text)
+
+    offer = " ".join(str(getattr(unit_type, "special_offer", None) or "").split())
+    if offer:
+        facts.append(f"优惠：{offer[:36]}{'…' if len(offer) > 36 else ''}")
+
+    available_rooms = int(item.get("available_rooms") or 0)
+    if available_rooms > 0:
+        facts.append(f"目前{available_rooms}套可租")
+
+    min_stay_months = getattr(unit_type, "min_stay_months", None)
+    if min_stay_months:
+        facts.append(f"{min_stay_months}个月起租")
+
+    return "；".join(facts[:6]) + "。"
+
+
+def _fallback_extract_filters(message: str) -> dict[str, Any]:
+    """模型不可用时提取高置信度条件，让任务边界仍可可靠工作。"""
+    text = message.strip()
+    lowered = text.casefold()
+    extracted: dict[str, Any] = {}
+
+    def _last_pattern_hit(
+        patterns: tuple[tuple[str, re.Pattern[str]], ...],
+    ) -> tuple[str, int] | None:
+        """返回最后出现的规范值与位置；同位置优先更完整的写法。"""
+        latest: tuple[int, int, str] | None = None
+        for canonical, pattern in patterns:
+            for match in pattern.finditer(lowered):
+                candidate = (match.end(), len(match.group(0)), canonical)
+                if latest is None or candidate[:2] > latest[:2]:
+                    latest = candidate
+        return (latest[2], latest[0]) if latest else None
+
+    country_hit = _last_pattern_hit((
+        ("SG", re.compile(r"新加坡|\bsingapore\b", re.IGNORECASE)),
+        ("GB", re.compile(
+            r"英国|英國|英格兰|英格蘭|\bunited kingdom\b|\bgreat britain\b|\buk\b|\bgb\b",
+            re.IGNORECASE,
+        )),
+        ("HK", re.compile(r"(?:中国|中國)?香港|\bhong kong\b|\bhk\b", re.IGNORECASE)),
+        ("US", re.compile(
+            r"美国|美國|\bunited states(?: of america)?\b|\busa\b",
+            re.IGNORECASE,
+        )),
+        ("CN", re.compile(r"中国大陆|中國大陸|国内|國內|\bmainland china\b|\bchina\b", re.IGNORECASE)),
+    ))
+    if country_hit:
+        extracted["country"] = country_hit[0]
+
+    city_hit = _last_pattern_hit((
+        ("London", re.compile(r"伦敦|倫敦|\blondon\b", re.IGNORECASE)),
+        ("Singapore", re.compile(r"新加坡|\bsingapore\b", re.IGNORECASE)),
+        ("Hong Kong", re.compile(r"香港|\bhong kong\b", re.IGNORECASE)),
+        ("Los Angeles", re.compile(r"洛杉矶|洛杉磯|\blos angeles\b|\bLA\b", re.IGNORECASE)),
+    ))
+    if city_hit:
+        extracted["city"] = city_hit[0]
+
+    institution_matches = list(_FALLBACK_INSTITUTION_PATTERN.finditer(text))
+    institution_match = institution_matches[-1] if institution_matches else None
+    if institution_match:
+        extracted["institution"] = institution_match.group(1).upper()
+
+    currency_hit = _last_pattern_hit((
+        ("SGD", re.compile(r"新币|新幣|新加坡元|\bsgd\b|s\$", re.IGNORECASE)),
+        ("GBP", re.compile(r"英镑|英鎊|镑|鎊|\bgbp\b|£", re.IGNORECASE)),
+        ("HKD", re.compile(r"港币|港幣|港元|\bhkd\b|hk\$", re.IGNORECASE)),
+        ("USD", re.compile(r"美元|美金|\busd\b|(?<![A-Za-z])\$", re.IGNORECASE)),
+        ("CNY", re.compile(r"人民币|人民幣|\bcny\b|(?<!新加坡)(?<!港)[元块]", re.IGNORECASE)),
+    ))
+    if currency_hit:
+        extracted["currency"] = currency_hit[0]
+
+    institution_markets = {
+        "NUS": ("SG", "Singapore", "SGD"),
+        "NTU": ("SG", "Singapore", "SGD"),
+        "SMU": ("SG", "Singapore", "SGD"),
+        "SUTD": ("SG", "Singapore", "SGD"),
+        "UCL": ("GB", "London", "GBP"),
+        "LSE": ("GB", "London", "GBP"),
+        "KCL": ("GB", "London", "GBP"),
+        "QMUL": ("GB", "London", "GBP"),
+        "HKU": ("HK", "Hong Kong", "HKD"),
+        "CUHK": ("HK", "Hong Kong", "HKD"),
+        "HKUST": ("HK", "Hong Kong", "HKD"),
+        "UCLA": ("US", "Los Angeles", "USD"),
+        "USC": ("US", "Los Angeles", "USD"),
+    }
+    if institution_match:
+        institution = institution_match.group(1).upper()
+        inferred_country, inferred_city, inferred_currency = institution_markets[institution]
+        institution_end = institution_match.end()
+        # 绕弯表达以最后一次学校修正为准；学校之后另说币种时仍尊重用户原话。
+        if country_hit is None or institution_end > country_hit[1]:
+            extracted["country"] = inferred_country
+        if city_hit is None or institution_end > city_hit[1]:
+            extracted["city"] = inferred_city
+        if currency_hit is None or institution_end > currency_hit[1]:
+            extracted["currency"] = inferred_currency
+
+    price_patterns = (
+        # “预算 down to S$1,750”“budget £1,500”以及常见中文改价表达。
+        r"(?:预算|月租|租金|价格|\bbudget\b|\bmonthly rent\b|\brent\b)"
+        r"[^\d。！？]{0,28}(?:s\$|hk\$|£|\$)?\s*(\d[\d,]*(?:\.\d+)?)",
+        r"(?:最多|最高|上限|封顶|不超过|降到|改成|改为|调到|"
+        r"\bup to\b|\bunder\b|\bdown to\b|\bmax(?:imum)?\b)"
+        r"[^\d。！？]{0,12}(?:s\$|hk\$|£|\$)?\s*(\d[\d,]*(?:\.\d+)?)",
+        r"(\d[\d,]*(?:\.\d+)?)\s*"
+        r"(?:新币|新幣|新加坡元|sgd|英镑|英鎊|镑|鎊|gbp|港币|港幣|港元|hkd|"
+        r"美元|美金|usd|人民币|人民幣|cny|元|块)?\s*"
+        r"(?:以内|以下|之内|封顶|最多|不超过|\bor less\b|\bmaximum\b)",
+    )
+    price_matches = [
+        (match.start(), match.group(1))
+        for pattern in price_patterns
+        for match in re.finditer(pattern, lowered, re.IGNORECASE)
+    ]
+    if price_matches:
+        _, raw_price = max(price_matches, key=lambda item: item[0])
+        extracted["price_max"] = float(raw_price.replace(",", ""))
+
+    if re.search(r"\bstudio\b|单间|开间", lowered, re.IGNORECASE):
+        extracted["property_type"] = "studio"
+    elif re.search(r"\bshared\b|合租", lowered, re.IGNORECASE):
+        extracted["property_type"] = "shared"
+
+    amenity_signals = (
+        ("独立卫浴", ("独立卫浴", "独卫", "ensuite")),
+        ("健身房", ("健身房", "gym")),
+        ("泳池", ("泳池", "游泳池", "pool")),
+    )
+    positive_amenities: list[str] = []
+    for label, signals in amenity_signals:
+        signal_pattern = "|".join(map(re.escape, signals))
+        excluded = re.search(
+            rf"(?:不要|排除|避开|不考虑)[^，。；]{{0,8}}(?:{signal_pattern})",
+            lowered,
+            re.IGNORECASE,
+        )
+        if any(signal in lowered for signal in signals) and not excluded:
+            positive_amenities.append(label)
+    if positive_amenities:
+        extracted["amenities"] = positive_amenities
+
+    return extracted
 
 
 # ── 确定性评分（模块级函数，SearchAgent + ToolRegistry 共用） ──
 
 def score_properties(
-    candidates: list[Property],
+    candidates: list[UnitType],
     filters: dict[str, Any],
     extracted: dict[str, Any],
     embedding_scores: dict[int, float] | None = None,
@@ -471,7 +751,7 @@ def score_properties(
     price_min = filters.get("price_min") or extracted.get("price_min")
     price_max = filters.get("price_max") or extracted.get("price_max")
 
-    prices = [float(p.price_monthly) for p in candidates]
+    prices = [float(p.base_rent) for p in candidates]
     median_price = sorted(prices)[len(prices) // 2]
 
     target_price = median_price
@@ -486,14 +766,14 @@ def score_properties(
 
     scored: list[dict[str, Any]] = []
     for p in candidates:
-        price_diff = abs(float(p.price_monthly) - target_price)
+        price_diff = abs(float(p.base_rent) - target_price)
         price_score = max(0, 100 - (price_diff / max(price_range, 1)) * 100)
         area = float(p.area_sqm) if p.area_sqm else 0
         space_score = min(100, (min(area / max((p.bedrooms or 0) * 20 + 15, 1), 2.0)) * 60 + 20) if area > 0 else 60
         facility_score = 60
-        if p.images and len(p.images) > 0:
+        if p.image_urls:
             facility_score += 15
-        if p.address:
+        if getattr(p.institute, "address", None):
             facility_score += 10
         if p.description and len(p.description) > 20:
             facility_score += 10
@@ -510,10 +790,10 @@ def score_properties(
             highlights.append("价格在可接受范围")
         if area > 0 and space_score >= 75:
             highlights.append(f"{p.bedrooms or 0}室{p.bathrooms or 0}卫布局合理")
-        if p.images and len(p.images) > 0:
+        if p.image_urls:
             highlights.append("有实拍图片")
-        if p.district:
-            highlights.append(f"位于{p.district}")
+        if getattr(p.institute, "district", None):
+            highlights.append(f"位于{p.institute.district}")
 
         scored.append({"property": p, "score": round(total, 1), "highlights": highlights[:3]})
 
@@ -521,7 +801,7 @@ def score_properties(
     return scored[:3]
 
 
-def _props_text(props: list[Property]) -> str:
+def _props_text(props: list[UnitType]) -> str:
     """将房源列表转为 LLM 可读的文本摘要。"""
     lines = []
     for i, p in enumerate(props, 1):
@@ -577,59 +857,120 @@ class SearchAgent(BaseAgent):
             self._property_service = PropertyService(self.session)
         return self._property_service
 
+    async def extract_filters(self, message: str) -> dict[str, Any]:
+        """只提取本轮明确条件；边界判断和搜索执行复用同一份结果。"""
+        extracted = _fallback_extract_filters(message)
+        llm = get_llm_service()
+        if not llm.is_available:
+            return extracted
+        try:
+            model_result = await llm.complete_json(
+                EXTRACT_FILTERS_PROMPT,
+                message,
+                temperature=0.0,
+                max_tokens=400,
+            )
+        except Exception:
+            logger.debug("LLM 提取搜索条件失败")
+            return extracted
+        if not isinstance(model_result, dict):
+            return extracted
+        for key, value in model_result.items():
+            # null 只代表本轮没提到，不能覆盖确定性提取或承担清除语义。
+            if value is None or value == "":
+                continue
+            extracted[key] = value
+        return extracted
+
     # ── 主入口 ────────────────────────────────────────────────────
 
     async def search(
-        self, message: str, filters: dict[str, Any] | None = None,
+        self,
+        message: str,
+        filters: dict[str, Any] | None = None,
+        extracted_filters: dict[str, Any] | None = None,
+        clear_fields: Collection[str] | None = None,
+        token_sink: Callable[[str], Awaitable[None]] | None = None,
+        status_sink: Callable[[str, str], Awaitable[None]] | None = None,
     ) -> dict[str, Any]:
-        """检索 + LLM 推荐。逻辑与 AgentService.recommend_properties() 完全一致。"""
+        """检索 + LLM 推荐；SSE 调用方可直接接收模型原始 token。"""
         filters = filters or {}
         llm = get_llm_service()
 
-        # 1. LLM 提取结构化筛选条件
-        extracted: dict[str, Any] = {}
-        if llm.is_available:
-            try:
-                extracted = await llm.complete_json(EXTRACT_FILTERS_PROMPT, message, temperature=0.0, max_tokens=400)
-                if not isinstance(extracted, dict):
-                    extracted = {}
-            except Exception:
-                logger.debug("LLM 提取搜索条件失败")
+        # 1. 提取结构化条件。dispatcher 可预先提取供任务边界判断，避免二次调用。
+        extracted = (
+            dict(extracted_filters)
+            if extracted_filters is not None
+            else await self.extract_filters(message)
+        )
 
-        district = filters.get("district") or extracted.get("district") or None
-        if district and district.lower().strip() in _EN_TO_CN_CITY:
-            district = _EN_TO_CN_CITY[district.lower().strip()]
-        price_min = filters.get("price_min") or extracted.get("price_min")
-        price_max = filters.get("price_max") or extracted.get("price_max")
-        bedrooms = filters.get("bedrooms") or extracted.get("bedrooms")
-        property_type = filters.get("property_type") or extracted.get("property_type") or None
+        # 清除意图只接受 dispatcher 已确认的字段；模型返回的 null 或与清除
+        # 冲突的猜测都不能重新写回本轮搜索。
+        cleared = set(clear_fields or ())
+        for key in cleared:
+            extracted.pop(key, None)
+        for metadata_key in ("hard_filters", "soft_preferences"):
+            values = extracted.get(metadata_key)
+            if isinstance(values, list):
+                extracted[metadata_key] = [value for value in values if value not in cleared]
+
+        def _pick(key: str, default=None):
+            """自然语言本轮条件优先于历史/搜索页上下文。"""
+            value = extracted.get(key)
+            if value is not None and value != "":
+                return value
+            value = filters.get(key)
+            return value if value is not None and value != "" else default
+
+        country = _normalize_country(_pick("country"))
+        city = _pick("city")
+        district = _pick("district")
+        normalized_cleared_fields: set[str] = set()
+        if district and str(district).lower().strip() in _EN_TO_CN_CITY:
+            district = _EN_TO_CN_CITY[str(district).lower().strip()]
+        if _is_singapore_scope(district) and country in (None, "SG"):
+            # 模型旧提示或历史会话可能把城市国家“新加坡”写进 district。
+            # 这里转换为数据库真实结构，并通知 dispatcher 清除旧区域快照。
+            country = "SG"
+            city = city or "Singapore"
+            district = None
+            normalized_cleared_fields.add("district")
+            extracted["country"] = country
+            extracted["city"] = city
+            extracted.pop("district", None)
+        elif country and extracted.get("country") not in (None, ""):
+            extracted["country"] = country
+        price_min = _pick("price_min")
+        price_max = _pick("price_max")
+        bedrooms = _pick("bedrooms")
+        property_type = _pick("property_type")
 
         # ── 货币换算 ──
         # 推断房源目标币种：从 district/country 推断，默认 GBP
-        target_currency = _infer_currency(district, filters.get("country"))
+        target_currency = str(_pick("currency") or _infer_currency(district, country)).upper()
         if price_min is not None:
             price_min = resolve_search_price(message, float(price_min), target_currency)
         if price_max is not None:
             price_max = resolve_search_price(message, float(price_max), target_currency)
 
         # 硬约束字段合并
-        amenities: list[str] | None = filters.get("amenities") or extracted.get("amenities") or None
-        room_type: str | None = filters.get("room_type") or extracted.get("room_type") or None
-        bathrooms: int | None = filters.get("bathrooms") or extracted.get("bathrooms") or None
-        area_min: float | None = filters.get("area_min") or extracted.get("area_min") or None
-        area_max: float | None = filters.get("area_max") or extracted.get("area_max") or None
-        min_lease_months: int | None = filters.get("min_lease_months") or extracted.get("min_lease_months") or None
-        max_lease_months: int | None = filters.get("max_lease_months") or extracted.get("max_lease_months") or None
-        available_from: str | None = filters.get("available_from") or extracted.get("available_from") or None
+        amenities: list[str] | None = _pick("amenities")
+        room_type: str | None = _pick("room_type")
+        bathrooms: int | None = _pick("bathrooms")
+        area_min: float | None = _pick("area_min")
+        area_max: float | None = _pick("area_max")
+        min_lease_months: int | None = _pick("min_lease_months")
+        max_lease_months: int | None = _pick("max_lease_months")
+        available_from: str | None = _pick("available_from")
 
         # 2. 学校查找（查 universities 表获取坐标）
-        institution_name = filters.get("institution") or extracted.get("institution") or None
+        institution_name = _pick("institution")
         distance_km = extracted.get("distance_km", 5.0)  # P0 硬约束：默认学校周边 5km
         if not isinstance(distance_km, (int, float)) or distance_km < 0.5 or distance_km > 50.0:
             distance_km = 5.0
 
-        commute_mode = extracted.get("commute_mode") or None
-        commute_minutes = extracted.get("commute_minutes") or None
+        commute_mode = _pick("commute_mode")
+        commute_minutes = _pick("commute_minutes")
         if commute_minutes is not None:
             try:
                 commute_minutes = int(commute_minutes)
@@ -649,25 +990,32 @@ class SearchAgent(BaseAgent):
             except Exception:
                 logger.exception("大学查找失败: %s", institution_name)
 
-        # 大学匹配成功后，district 改为大学所在城市
-        # 避免 LLM 把 "NUS" 之类当作 district → ILIKE 匹配注定 0 结果
-        # 精确位置由 bounding box 保证，district 只负责城市级筛选
+        # 大学匹配成功后用 Institute.city 做城市约束；不要把城市写入 district，
+        # main 的结构化地址中两者是独立字段。
+        institution_city = None
         if uni_info:
             uni_city = (uni_info.get("city") or "").strip()
             uni_city_cn = _EN_TO_CN_CITY.get(uni_city.lower(), uni_city)
-            if uni_city_cn:
-                district = uni_city_cn
+            institution_city = uni_city or None
+            if district and str(district).strip().lower() in {
+                uni_city.lower(), uni_city_cn.lower(),
+            }:
+                district = None
 
         # 查询文本
         query_parts = [message]
-        if filters.get("country"):
-            query_parts.append(str(filters["country"]))
+        if country:
+            query_parts.append(country)
         if institution_name and not uni_info:
             query_parts.append(institution_name)
         query_text = " ".join(p for p in query_parts if p)
 
         # P0 硬约束构建
         merged_filters = {
+            "country": country or _normalize_country(uni_info.get("country") if uni_info else None),
+            "city": city or institution_city,
+            "currency": target_currency,
+            "institute_id": _pick("institute_id"),
             "district": district, "price_min": price_min, "price_max": price_max,
             "bedrooms": bedrooms, "property_type": property_type,
             "amenities": amenities, "room_type": room_type,
@@ -679,15 +1027,25 @@ class SearchAgent(BaseAgent):
             "near_lng": uni_info["lng"] if uni_info else None,
             "near_distance_km": distance_km if uni_info else None,
             # P0 硬约束补充
-            "female_only": filters.get("female_only") or extracted.get("female_only"),
+            "female_only": _pick("female_only"),
         }
 
         # 3. 搜索 unit_types（主搜索表）+ JOIN institutes + 聚合 rooms 库存
         unit_results = await self.property_service.search_unit_types(
             district=district,
+            country=merged_filters["country"],
+            city=merged_filters["city"],
+            institute_id=merged_filters["institute_id"],
             price_min=Decimal(str(price_min)) if price_min else None,
             price_max=Decimal(str(price_max)) if price_max else None,
             bedrooms=bedrooms,
+            bathrooms=bathrooms,
+            property_type=property_type or room_type,
+            amenities=amenities,
+            area_min=area_min,
+            area_max=area_max,
+            available_from=available_from,
+            max_min_stay_months=max_lease_months or min_lease_months,
             near_lat=merged_filters["near_lat"],
             near_lng=merged_filters["near_lng"],
             near_distance_km=merged_filters["near_distance_km"],
@@ -721,14 +1079,23 @@ class SearchAgent(BaseAgent):
                 for ut in unit_results: embedding_scores[ut["unit_type"].id] = 0.5
 
         # 5. LLM 推荐回复（结构化数据 → 模板回复）
-        source_info = f"\n\n---\n[检索] 共 {len(unit_results)} 种户型"
+        if status_sink is not None:
+            await status_sink("generating", "正在生成推荐回复")
+        recommendation_school_name = (
+            str(uni_info.get("name") or institution_name or "")
+            if uni_info else str(institution_name or "")
+        )
+        recommendation_commutes: dict[int, dict[str, Any]] = {}
+        source_info = f"\n\n【检索】共 {len(unit_results)} 种户型"
+        reply_streamed = False
         if llm.is_available and unit_results:
+            streamed_parts: list[str] = []
             try:
                 top_n = min(3, len(unit_results))
                 hard_filters = extracted.get("hard_filters", [])
                 soft_prefs = extracted.get("soft_preferences", [])
                 p2 = extracted.get("p2_highlights", [])
-                school = (extracted.get("institution") or filters.get("institution") or "")
+                school = institution_name or ""
                 school_name = uni_info["name"] if uni_info else school
 
                 # 构建结构化上下文
@@ -759,18 +1126,20 @@ class SearchAgent(BaseAgent):
                     sym = get_symbol(getattr(t, 'currency', None))
                     district = inst.district or ""
 
-                    # 通勤数据：查表 → room_commutes → None
+                    # 通勤数据：静态查表 → InstituteCommute → None
                     commute_data = None
                     tbl = _lookup_commute(school, district)
                     if tbl:
                         commute_data = {"walk_min": tbl[0], "transit_min": tbl[1], "source": "lookup_table"}
                     elif uni_info:
                         try:
-                            from app.models.room_commute import RoomCommute
-                            from app.models.property import Room, RoomStatus
+                            from app.models.institute_commute import InstituteCommute
                             sub_stmt = (
-                                select(RoomCommute).join(Room, RoomCommute.room_id == Room.id)
-                                .where(Room.unit_type_id == t.id, RoomCommute.university_id == uni_info["id"])
+                                select(InstituteCommute)
+                                .where(
+                                    InstituteCommute.institute_id == inst.id,
+                                    InstituteCommute.university_id == uni_info["id"],
+                                )
                                 .limit(1)
                             )
                             rc = (await self.session.execute(sub_stmt)).scalar_one_or_none()
@@ -788,6 +1157,7 @@ class SearchAgent(BaseAgent):
                         "institute": inst.name or "",
                         "district": district,
                         "price": float(t.base_rent),
+                        "currency": str(getattr(t, "currency", "") or ""),
                         "symbol": sym,
                         "bedrooms": t.bedrooms,
                         "bathrooms": t.bathrooms,
@@ -802,50 +1172,138 @@ class SearchAgent(BaseAgent):
                         "embedding_score": embedding_scores.get(t.id, 0.5),
                     }
                     ctx["candidates"].append(candidate)
+                    recommendation_commutes[t.id] = commute_data
 
                 user_prompt = json.dumps(ctx, ensure_ascii=False, indent=2)
-                # 用 complete_text 代替 complete_json——结构化回复太长，
-                # LLM 生成的 JSON 容易格式损坏导致解析失败
+                # SSE 路径直接转发供应商返回的原始增量 token；普通接口仍保持
+                # 一次性 complete_text，避免改变现有非流式契约。
                 try:
-                    reply = await llm.complete_text(
-                        messages=[
-                            {"role": "system", "content": RECOMMEND_SYSTEM_PROMPT},
-                            {"role": "user", "content": user_prompt},
-                        ],
-                        max_tokens=2000,
-                    )
-                    reply = (reply or "").strip()
+                    messages = [
+                        {"role": "system", "content": RECOMMEND_SYSTEM_PROMPT},
+                        {"role": "user", "content": user_prompt},
+                    ]
+                    if token_sink is None:
+                        reply = await llm.complete_text(
+                            messages=messages,
+                            temperature=0.25,
+                            max_tokens=700,
+                        )
+                        reply = (reply or "").strip()
+                    else:
+                        async for token in llm.complete_text_stream(
+                            messages=messages,
+                            temperature=0.25,
+                            max_tokens=700,
+                        ):
+                            if not token:
+                                continue
+                            streamed_parts.append(token)
+                            await token_sink(token)
+                        reply = "".join(streamed_parts)
                 except Exception:
                     raise  # 交给外层 except 做规则降级
-                if not reply or len(reply) < 20:
+                if not reply or (token_sink is None and len(reply) < 20):
                     raise ValueError("LLM 返回空回复")
                 reply = reply + source_info
+                if token_sink is not None:
+                    await token_sink(source_info)
+                    reply_streamed = True
             except Exception as _e:
                 logger.exception("LLM 推荐生成失败，降级为规则摘要: %s", _e)
-                # 规则降级：列出 top 3 结果的关键信息
-                lines = [f"为您找到 {len(unit_results)} 种户型（AI 暂不可用，以下是筛选结果摘要）：", ""]
-                for i, ut in enumerate(unit_results[:5], 1):
-                    t = ut["unit_type"]; inst = ut["institute"]
-                    sym = get_symbol(getattr(t, 'currency', None))
-                    commute = _lookup_commute(school, inst.district or "")
-                    commute_str = f" | 到{school}: 步行{commute[0]}分钟/公交{commute[1]}分钟" if commute else ""
-                    lines.append(f"{i}. {t.name} — {sym}{float(t.base_rent):.0f}/月 | {t.bedrooms}室{t.bathrooms}卫 | {inst.district}{commute_str}")
-                if len(unit_results) > 5:
-                    lines.append(f"...还有 {len(unit_results)-5} 种")
-                reply = "\n".join(lines) + source_info
+                # 规则降级也沿用紧凑标记，避免恢复成冗长的五项列表。
+                lines = [f"【结论】找到 {len(unit_results)} 种户型，先看前 {min(3, len(unit_results))} 个。"]
+                for i, item in enumerate(unit_results[:3], 1):
+                    t = item["unit_type"]
+                    inst = item["institute"]
+                    commute_data = recommendation_commutes.get(t.id)
+                    if commute_data is None and school:
+                        estimated = _lookup_commute(school, inst.district or "")
+                        if estimated:
+                            commute_data = {
+                                "walk_min": estimated[0],
+                                "transit_min": estimated[1],
+                                "source": "lookup_table",
+                            }
+                    reason = _build_recommendation_reason(
+                        item,
+                        merged_filters,
+                        school_name=recommendation_school_name,
+                        commute=commute_data,
+                    )
+                    sym = get_symbol(getattr(t, "currency", None))
+                    lines.append(
+                        f"【推荐{i}】{inst.name} · {t.name}："
+                        f"{sym}{float(t.base_rent):.0f}/月。{reason}"
+                    )
+                lines.append("【怎么选】可以先把更符合你优先级的户型加入候选清单。")
+                fallback_reply = "\n".join(lines) + source_info
+                if token_sink is not None and streamed_parts:
+                    suffix = "\n\n（AI 生成中断，以上内容可能不完整。）" + source_info
+                    await token_sink(suffix)
+                    reply = "".join(streamed_parts) + suffix
+                    reply_streamed = True
+                else:
+                    reply = fallback_reply
         elif not llm.is_available:
             reply = f"为您找到 {len(unit_results)} 种户型。{AI_UNAVAILABLE_HINT}{source_info}"
         else:
             reply = f"为您找到 {len(unit_results)} 种户型。尝试放宽条件或换个区域试试？{source_info}"
 
-        top_picks = [{"property_id": ut["unit_type"].id, "match_reason": f"{ut['institute'].name} | {ut['unit_type'].bedrooms}室 | ¥{float(ut['unit_type'].base_rent):.0f}/月 | {ut['available_rooms']}间可租", "pros": [], "cons": [], "property": ut["unit_type"]} for ut in unit_results[:3]]
-        all_recs = [{"property_id": ut["unit_type"].id, "match_reason": "", "pros": [], "cons": [], "property": ut["unit_type"]} for ut in unit_results]
+        def _recommendation(item: dict, rank: int) -> dict[str, Any]:
+            unit_type = item["unit_type"]
+            institute = item["institute"]
+            commute_data = recommendation_commutes.get(unit_type.id)
+            if commute_data is None and institution_name:
+                estimated = _lookup_commute(
+                    str(institution_name),
+                    str(institute.district or ""),
+                )
+                if estimated:
+                    commute_data = {
+                        "walk_min": estimated[0],
+                        "transit_min": estimated[1],
+                        "source": "lookup_table",
+                    }
+            return {
+                # 对外保留 property_id 字段名，但值严格为 UnitType.id。
+                "property_id": unit_type.id,
+                "rank": rank,
+                "match_reason": _build_recommendation_reason(
+                    item,
+                    merged_filters,
+                    school_name=recommendation_school_name,
+                    commute=commute_data,
+                ),
+                "pros": [],
+                "cons": [],
+                "property": unit_type,
+                "source_metadata": {
+                    "entity": "unit_type",
+                    "unit_type_id": unit_type.id,
+                    "institute_id": institute.id,
+                },
+            }
+
+        all_recs = [
+            _recommendation(item, rank)
+            for rank, item in enumerate(unit_results, 1)
+        ]
+        top_picks = all_recs[:3]
+        visible_recs = all_recs[:MAX_RECOMMENDATION_CARDS]
 
         return {
-            "reply": reply, "recommendations": all_recs, "ai_available": llm.is_available,
+            "reply": reply, "recommendations": visible_recs,
+            "recommendation_total": len(all_recs), "ai_available": llm.is_available,
             "extracted_filters": extracted, "top_picks": top_picks,
             "score_gap": None, "relaxation_level": 0,
-            "candidate_snapshot": [ut["unit_type"].id for ut in unit_results], "source_info": source_info,
+            "candidate_snapshot": [ut["unit_type"].id for ut in unit_results],
+            "normalized_cleared_filters": sorted(normalized_cleared_fields),
+            "source_info": source_info,
+            "effective_filters": {
+                key: value for key, value in merged_filters.items()
+                if value is not None and key not in {"near_lat", "near_lng", "near_distance_km"}
+            },
+            "_reply_streamed": reply_streamed,
         }
 
     # ── 辅助方法 ──────────────────────────────────────────────────
@@ -902,7 +1360,7 @@ class SearchAgent(BaseAgent):
             "price_max": Decimal(str(filters["price_max"])) if filters.get("price_max") is not None else None,
             "bedrooms": filters.get("bedrooms"),
             "property_type": filters.get("property_type"),
-            "status": PropertyStatus.available.value,
+            "status": UnitTypeStatus.available.value,
             "limit": limit,
         }
         district = filters.get("district")

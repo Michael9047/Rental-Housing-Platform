@@ -8,6 +8,7 @@ DELETE /buildings/{id}     — 删除
 """
 import re
 import logging
+from math import asin, cos, radians, sin, sqrt as _sqrt
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select, func, or_
@@ -17,6 +18,7 @@ from sqlalchemy.orm import selectinload
 
 from app.api.deps import get_current_user, get_db_session, require_landlord
 from app.models.institute import Institute, InstituteStatus
+from app.models.unit_type import UnitType, UnitTypeStatus
 from app.models.user import User
 from app.schemas.institute import InstituteCreate, InstituteUpdate
 
@@ -42,10 +44,37 @@ def _validate_phone(phone: str | None) -> str | None:
     )
 
 
-def _build_card(b: Institute) -> dict:
-    """构建公寓卡片数据 — 含价格区间、图片等展示字段"""
+def _build_card(
+    b: Institute,
+    *,
+    price_min: int | None = None,
+    price_max: int | None = None,
+    property_type: str | None = None,
+    amenities: list[str] | None = None,
+) -> dict:
+    """构建公寓卡片数据，并选出符合本轮筛选的最低价代表户型。"""
     uts = b.unit_types or []
-    available_uts = [ut for ut in uts if ut.deleted_at is None and ut.status.value == "available"]
+    available_uts = [ut for ut in uts if _is_rentable_unit_type(ut)]
+    matching_uts = [
+        ut
+        for ut in uts
+        if _unit_type_matches_filters(
+            ut,
+            b,
+            price_min=price_min,
+            price_max=price_max,
+            property_type=property_type,
+            amenities=amenities,
+        )
+    ]
+    representative_unit_type = min(
+        matching_uts,
+        key=lambda ut: (
+            float(ut.base_rent) if ut.base_rent is not None else float("inf"),
+            int(ut.id),
+        ),
+        default=None,
+    )
     prices = [float(ut.base_rent) for ut in available_uts if ut.base_rent]
     min_rent = min(prices) if prices else None
     max_rent = max(prices) if prices else None
@@ -60,7 +89,7 @@ def _build_card(b: Institute) -> dict:
     # 户型类型汇总
     pt_set = set(getattr(ut, 'property_type', None) for ut in available_uts)
     pt_vals = [v for v in pt_set if v]
-    property_type = pt_vals[0] if len(pt_vals) == 1 else None
+    aggregate_property_type = pt_vals[0] if len(pt_vals) == 1 else None
     # 户型标签列表（如 ["studio","1bed","2bed"]）
     pt_labels: dict = {"studio":"Studio","ensuite":"Ensuite","1bed":"一室","2bed":"两室","3bed":"三室","4bed":"四室","5bed+":"五室+","shared":"合租"}
     unit_type_tags = [pt_labels.get(v.value if hasattr(v,'value') else str(v), str(v)) for v in pt_set if v]
@@ -75,9 +104,16 @@ def _build_card(b: Institute) -> dict:
         "couples_allowed": bool(b.couples_allowed) if b.couples_allowed is not None else False,
         "unit_type_count": len(available_uts),
         "unit_type_tags": unit_type_tags,
+        "representative_unit_type_id": (
+            representative_unit_type.id if representative_unit_type is not None else None
+        ),
         "min_rent": min_rent, "max_rent": max_rent,
         "avg_bedrooms": 0,
-        "property_type": property_type.value if hasattr(property_type, 'value') else str(property_type) if property_type else None,
+        "property_type": (
+            aggregate_property_type.value
+            if hasattr(aggregate_property_type, 'value')
+            else str(aggregate_property_type) if aggregate_property_type else None
+        ),
         "primary_image": primary,
         "images": [{"id": img.id, "filename": img.filename, "original_name": img.original_name,
                      "sort_order": img.sort_order, "is_primary": img.is_primary}
@@ -86,8 +122,70 @@ def _build_card(b: Institute) -> dict:
         "institute_name": b.name,
     }
 
+_PROPERTY_TYPE_ALIASES = {
+    "one_bed": "1bed",
+    "1-bed": "1bed",
+    "two_bed": "2bed",
+    "2-bed": "2bed",
+    "three_bed_plus": "3bed",
+    "3-bed": "3bed",
+    "four_bed": "4bed",
+    "4-bed": "4bed",
+    "five_bed_plus": "5bed+",
+    "5-bed": "5bed+",
+}
 
-from math import radians, cos, sin, asin, sqrt as _sqrt
+
+def _enum_value(value: object | None) -> str | None:
+    """兼容 SQLAlchemy 返回枚举实例或字符串的两种情况。"""
+    if value is None:
+        return None
+    raw = getattr(value, "value", value)
+    return str(raw)
+
+
+def _is_rentable_unit_type(unit_type: UnitType) -> bool:
+    """判断户型是否仍可作为公开搜索中的可租库存。"""
+    return (
+        unit_type.deleted_at is None
+        and _enum_value(unit_type.status) == UnitTypeStatus.available.value
+        and bool(unit_type.has_vacancy)
+        and int(unit_type.available_count or 0) > 0
+    )
+
+
+def _unit_type_matches_filters(
+    unit_type: UnitType,
+    institute: Institute,
+    *,
+    price_min: int | None,
+    price_max: int | None,
+    property_type: str | None,
+    amenities: list[str] | None,
+) -> bool:
+    """在同一个可租户型上同时应用价格、类型和设施条件。"""
+    if not _is_rentable_unit_type(unit_type):
+        return False
+    if price_min is not None and unit_type.base_rent < price_min:
+        return False
+    if price_max is not None and unit_type.base_rent > price_max:
+        return False
+    if property_type:
+        requested_type = property_type.strip().lower()
+        normalized_type = _PROPERTY_TYPE_ALIASES.get(requested_type, requested_type)
+        if _enum_value(unit_type.property_type) != normalized_type:
+            return False
+    if amenities:
+        required = {str(item).strip().casefold() for item in amenities if str(item).strip()}
+        available = {
+            str(item).strip().casefold()
+            for item in [*(institute.amenities or []), *(unit_type.amenities or [])]
+            if str(item).strip()
+        }
+        if not required.issubset(available):
+            return False
+    return True
+
 
 def _haversine(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
     """Haversine 距离（km）"""
@@ -101,9 +199,11 @@ async def _search_buildings(
     district: str | None = None,
     country: str | None = None,
     city: str | None = None,
+    institute_id: int | None = None,
     price_min: int | None = None,
     price_max: int | None = None,
     property_type: str | None = None,
+    amenities: list[str] | None = None,
     sort_by: str | None = None,
     near_lat: float | None = None,
     near_lng: float | None = None,
@@ -111,6 +211,13 @@ async def _search_buildings(
     skip: int = 0,
     limit: int = 50,
 ) -> list[dict]:
+    page_limit = min(limit, 200)
+    has_radius_filter = (
+        near_lat is not None
+        and near_lng is not None
+        and bool(near_distance_km)
+    )
+
     stmt = (select(Institute)
             .options(selectinload(Institute.images))
             .options(selectinload(Institute.unit_types))
@@ -127,35 +234,112 @@ async def _search_buildings(
         stmt = stmt.where(Institute.country == country)
     if city:
         stmt = stmt.where(Institute.city.ilike(f"%{city}%"))
+    if institute_id is not None:
+        stmt = stmt.where(Institute.id == institute_id)
+
+    # “真实可租库存”、价格和户型都放进同一个相关 EXISTS，数据库可以在分页前
+    # 完成联合筛选。设施横跨 JSON/ARRAY 两种字段，留到下方做跨数据库兼容判断。
+    unit_type_filter = select(UnitType.id).where(
+        UnitType.institute_id == Institute.id,
+        UnitType.deleted_at.is_(None),
+        UnitType.status == UnitTypeStatus.available,
+        UnitType.has_vacancy.is_(True),
+        UnitType.available_count > 0,
+    )
+    if price_min is not None:
+        unit_type_filter = unit_type_filter.where(UnitType.base_rent >= price_min)
+    if price_max is not None:
+        unit_type_filter = unit_type_filter.where(UnitType.base_rent <= price_max)
+    if property_type:
+        requested_type = property_type.strip().lower()
+        normalized_type = _PROPERTY_TYPE_ALIASES.get(requested_type, requested_type)
+        unit_type_filter = unit_type_filter.where(UnitType.property_type == normalized_type)
+    stmt = stmt.where(unit_type_filter.exists())
+
+    # Building 卡片的价格取所有 available、未删除户型的最低正租金；使用同一
+    # 相关子查询排序，可避免为价格排序全量加载公寓和关系。
+    min_rent = (
+        select(func.min(UnitType.base_rent))
+        .where(
+            UnitType.institute_id == Institute.id,
+            UnitType.deleted_at.is_(None),
+            UnitType.status == UnitTypeStatus.available,
+            UnitType.has_vacancy.is_(True),
+            UnitType.available_count > 0,
+            UnitType.base_rent > 0,
+        )
+        .correlate(Institute)
+        .scalar_subquery()
+    )
     if sort_by == 'price_asc':
-        stmt = stmt.order_by(Institute.id.asc())
+        stmt = stmt.order_by(func.coalesce(min_rent, 0).asc(), Institute.id.asc())
     elif sort_by == 'price_desc':
-        stmt = stmt.order_by(Institute.id.desc())
+        stmt = stmt.order_by(func.coalesce(min_rent, 0).desc(), Institute.id.desc())
     elif sort_by == 'created_at':
         stmt = stmt.order_by(Institute.created_at.desc())
     else:
         stmt = stmt.order_by(Institute.id.desc())
-    stmt = stmt.offset(skip).limit(limit if limit <= 200 else 200)
+
+    # 普通首页、文本/地区、精确公寓和纯价格/户型查询都已能由 SQL 完整表达，
+    # 先在数据库分页，selectinload 只会加载当前页的图片与户型关系。
+    needs_post_filter = bool(amenities) or has_radius_filter
+    if not needs_post_filter:
+        stmt = stmt.offset(skip).limit(page_limit)
+
     result = await session.scalars(stmt)
-    cards = [_build_card(b) for b in result]
+    buildings = list(result)
 
-    # 客户端过滤（价格 / 户型 / 地理位置）
-    if price_min is not None:
-        cards = [c for c in cards if c.get("min_rent") is not None and c["min_rent"] >= price_min]
-    if price_max is not None:
-        cards = [c for c in cards if c.get("min_rent") is not None and c["min_rent"] <= price_max]
-    if property_type:
-        cards = [c for c in cards if c.get("property_type") == property_type]
-    if near_lat is not None and near_lng is not None and near_distance_km:
-        cards = [c for c in cards if c.get("latitude") and c.get("longitude")
-                 and _haversine(near_lat, near_lng, float(c["latitude"]), float(c["longitude"])) <= near_distance_km]
+    # 设施条件使用 Institute（楼栋配套）与同一 UnitType（房内设施）的并集；
+    # Python 层只负责 PostgreSQL ARRAY 与 SQLite JSON 难以统一表达的这一部分。
+    if amenities:
+        buildings = [
+            building
+            for building in buildings
+            if any(
+                _unit_type_matches_filters(
+                    unit_type,
+                    building,
+                    price_min=price_min,
+                    price_max=price_max,
+                    property_type=property_type,
+                    amenities=amenities,
+                )
+                for unit_type in (building.unit_types or [])
+            )
+        ]
 
-    # 按价格排序（需在过滤后）
-    if sort_by == 'price_asc':
-        cards.sort(key=lambda c: c.get("min_rent") or 0)
-    elif sort_by == 'price_desc':
-        cards.sort(key=lambda c: c.get("min_rent") or 0, reverse=True)
+    # 地理位置也必须在分页前过滤，避免前一页非匹配项挤掉后续结果。
+    if has_radius_filter:
+        radius_lat = float(near_lat)
+        radius_lng = float(near_lng)
+        radius_km = float(near_distance_km)
+        buildings = [
+            building
+            for building in buildings
+            if building.latitude is not None
+            and building.longitude is not None
+            and _haversine(
+                radius_lat,
+                radius_lng,
+                float(building.latitude),
+                float(building.longitude),
+            ) <= radius_km
+        ]
 
+    cards = [
+        _build_card(
+            building,
+            price_min=price_min,
+            price_max=price_max,
+            property_type=property_type,
+            amenities=amenities,
+        )
+        for building in buildings
+    ]
+
+    # 只有存在 Python 后置过滤时才在内存分页；普通路径已由数据库分页。
+    if needs_post_filter:
+        return cards[skip:skip + page_limit]
     return cards
 
 
@@ -176,9 +360,11 @@ async def search_public_buildings(
     district: str | None = Query(default=None),
     country: str | None = Query(default=None),
     city: str | None = Query(default=None),
+    institute_id: int | None = Query(default=None, ge=1),
     price_min: int | None = Query(default=None),
     price_max: int | None = Query(default=None),
     property_type: str | None = Query(default=None),
+    amenities: list[str] | None = Query(default=None),
     sort_by: str | None = Query(default=None),
     near_lat: float | None = Query(default=None),
     near_lng: float | None = Query(default=None),
@@ -189,7 +375,9 @@ async def search_public_buildings(
     """公开搜索——按名称/区域/价格/户型搜索公寓，返回卡片级数据"""
     return await _search_buildings(
         session, q=q, district=district, country=country, city=city,
+        institute_id=institute_id,
         price_min=price_min, price_max=price_max, property_type=property_type,
+        amenities=amenities,
         sort_by=sort_by, near_lat=near_lat, near_lng=near_lng,
         near_distance_km=near_distance_km, skip=skip, limit=limit,
     )

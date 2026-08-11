@@ -6,9 +6,10 @@ from __future__ import annotations
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.models.agent_cart import AgentCart, AgentCartItem
-from app.models.property import Property
+from app.models.unit_type import UnitType
 
 
 class CartService:
@@ -35,32 +36,47 @@ class CartService:
     async def add_to_cart(
         self, user_id: int, property_id: int, reason: str | None = None
     ) -> AgentCartItem:
-        """加入购物车；重复添加返回已有项。"""
-        prop = await self.session.get(Property, property_id)
-        if prop is None:
-            raise ValueError("房源不存在")
+        """按 UnitType.id 加入候选清单；重复添加返回已有项。
+
+        ``property_id`` 仅为前端兼容字段名，禁止传 Institute.id。
+        """
+        unit_type = await self.session.get(UnitType, property_id)
+        if unit_type is None or unit_type.deleted_at is not None:
+            raise ValueError("户型不存在")
 
         cart = await self.get_or_create_cart(user_id)
-        stmt = select(AgentCartItem).where(
-            AgentCartItem.cart_id == cart.id,
-            AgentCartItem.property_id == property_id,
+        stmt = (
+            select(AgentCartItem)
+            .options(
+                selectinload(AgentCartItem.unit_type).selectinload(UnitType.institute)
+            )
+            .where(
+                AgentCartItem.cart_id == cart.id,
+                AgentCartItem.unit_type_id == property_id,
+            )
         )
         existing = (await self.session.scalars(stmt)).first()
         if existing is not None:
             return existing
 
-        item = AgentCartItem(cart_id=cart.id, property_id=property_id, reason=reason)
+        item = AgentCartItem(cart_id=cart.id, unit_type_id=property_id, reason=reason)
         self.session.add(item)
         await self.session.commit()
-        await self.session.refresh(item)
-        return item
+        loaded = await self.session.scalar(
+            select(AgentCartItem)
+            .options(
+                selectinload(AgentCartItem.unit_type).selectinload(UnitType.institute)
+            )
+            .where(AgentCartItem.id == item.id)
+        )
+        return loaded or item
 
     async def remove_from_cart(self, user_id: int, property_id: int) -> bool:
         """从购物车移除房源。返回是否实际删除了记录。"""
         cart = await self.get_or_create_cart(user_id)
         stmt = select(AgentCartItem).where(
             AgentCartItem.cart_id == cart.id,
-            AgentCartItem.property_id == property_id,
+            AgentCartItem.unit_type_id == property_id,
         )
         item = (await self.session.scalars(stmt)).first()
         if item is None:
@@ -74,6 +90,9 @@ class CartService:
         cart = await self.get_or_create_cart(user_id)
         stmt = (
             select(AgentCartItem)
+            .options(
+                selectinload(AgentCartItem.unit_type).selectinload(UnitType.institute)
+            )
             .where(AgentCartItem.cart_id == cart.id)
             .order_by(AgentCartItem.created_at.asc())
         )

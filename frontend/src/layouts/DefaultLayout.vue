@@ -133,7 +133,7 @@
                       @mousedown.prevent="selectProperty(prop)"
                     >
                       <span class="card-name">{{ prop.title }}</span>
-                      <span class="card-sub">{{ prop.district }} · {{ formatPrice(prop.price_monthly, prop.currency) }}/月</span>
+                      <span class="card-sub">{{ prop.district }} · {{ formatPrice(prop.price_monthly, prop.currency || undefined) }}/月</span>
                     </div>
                   </div>
                 </div>
@@ -260,6 +260,7 @@ interface SuggestionSchool {
   name_cn: string | null
   abbreviation: string | null
   address: string | null
+  city?: string | null
   count: number
   query: { school_id: number }
 }
@@ -278,6 +279,7 @@ interface SuggestionProperty {
   title: string
   district: string
   price_monthly: number | null
+  currency?: string | null
   query: { property_id: number }
 }
 

@@ -2,7 +2,7 @@
 import enum
 from datetime import datetime, date
 
-from sqlalchemy import Boolean, Date, DateTime, Enum, ForeignKey, Integer, String, Text as SAText
+from sqlalchemy import Boolean, Date, DateTime, Enum, ForeignKey, Integer, JSON, String, Text as SAText
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -78,7 +78,9 @@ class Booking(TimestampMixin, Base):
     inventory_reserved: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     # ── 快照 ──
-    application_data: Mapped[dict | None] = mapped_column(JSONB, nullable=True, comment="{pricing_snapshot}")
+    application_data: Mapped[dict | None] = mapped_column(
+        JSONB().with_variant(JSON(), "sqlite"), nullable=True, comment="{pricing_snapshot}"
+    )
 
     # ── 关系 ──
     user:      Mapped["User"] = relationship(foreign_keys=[user_id])

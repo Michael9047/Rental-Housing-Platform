@@ -154,7 +154,7 @@ const filteredList = computed(() => {
   return currentList.value.filter(
     (p) => p.title.toLowerCase().includes(q) ||
            p.address?.toLowerCase().includes(q) ||
-           p.district.toLowerCase().includes(q)
+           p.district?.toLowerCase().includes(q)
   )
 })
 
@@ -163,7 +163,7 @@ const emptyText = computed(() => {
   return '暂无房源数据'
 })
 
-function typeLabel(t?: string) {
+function typeLabel(t?: string | null) {
   const m: Record<string, string> = { studio: '单间', '1-bed': '一室', '2-bed': '两室+', shared: '合租', house: '别墅' }
   return m[t || ''] || t || '-'
 }

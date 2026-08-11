@@ -11,7 +11,7 @@
       <div class="booking-body">
         <div class="booking-meta">
           <p><strong>租客 ID：</strong>{{ booking.tenant_id }}</p>
-          <p><strong>房源 ID：</strong>{{ booking.property_id }}</p>
+          <p><strong>户型 ID：</strong>{{ booking.unit_type_id ?? '—' }}</p>
           <p v-if="booking.scheduled_date"><strong>预约时间：</strong>{{ booking.scheduled_date }}</p>
           <p v-if="booking.message"><strong>留言：</strong>{{ booking.message }}</p>
         </div>

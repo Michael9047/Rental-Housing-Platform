@@ -29,6 +29,12 @@
         <el-tag v-for="t in property.unit_type_tags" :key="t" size="small" type="info" effect="plain">{{ t }}</el-tag>
       </div>
 
+      <!-- 户型搜索结果没有公寓聚合标签时，保留关键户型数据。 -->
+      <div v-else class="card-facts">
+        <span>{{ p.bedrooms }}室{{ p.bathrooms }}卫</span>
+        <span v-if="p.area_sqm != null">{{ p.area_sqm }}㎡</span>
+      </div>
+
       <!-- 公寓配套 -->
       <div class="card-amenities" v-if="property.amenities?.length">
         <el-tag v-for="a in property.amenities.slice(0,4)" :key="a" size="small" effect="plain" round class="amenity-tag">{{ a }}</el-tag>
@@ -70,14 +76,15 @@
             查看详情
           </el-button>
           <el-tooltip
-            v-if="authStore.isLoggedIn"
-            :content="inCart ? '点击移出候选清单' : '加入候选清单'"
+            v-if="canUseCart"
+            :content="!authStore.isLoggedIn ? '登录后加入候选清单' : inCart ? '点击移出候选清单' : '加入候选清单'"
             placement="top"
           >
             <button
               class="add-cart-btn"
               :class="{ 'is-added': inCart }"
               :disabled="busy"
+              :aria-label="!authStore.isLoggedIn ? '登录后加入候选清单' : inCart ? '移出候选清单' : '加入候选清单'"
               @click="handleToggleCart"
             >
               <el-icon><Check v-if="inCart" /><Plus v-else /></el-icon>
@@ -91,7 +98,7 @@
 
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { PictureFilled, LocationFilled, Plus, Check } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import type { Property, PropertySearchResult, PropertyType } from '@/types/property'
@@ -110,6 +117,11 @@ export interface CommuteInfo {
 
 const props = defineProps<{
   property: Property | PropertySearchResult
+  /**
+   * Building 与 UnitType 的数字 ID 可能碰号，必须由调用方明确声明实体类型。
+   * 候选接口只接受 UnitType；Building 卡须使用后端明确返回的代表户型 ID。
+   */
+  entity: 'building' | 'unit-type'
   showSimilarity?: boolean
   showQuickBook?: boolean
   commute?: CommuteInfo | null
@@ -124,10 +136,20 @@ const emit = defineEmits<{
 }>()
 
 const router = useRouter()
+const route = useRoute()
 const authStore = useAuthStore()
 const cartStore = useCartStore()
 
 const busy = ref(false)
+/** 候选清单只接受 UnitType ID；Building 卡必须使用后端明确返回的代表户型。 */
+const cartUnitTypeId = computed(() => {
+  const rawId = props.entity === 'unit-type'
+    ? props.property.id
+    : props.property.representative_unit_type_id
+  const unitTypeId = Number(rawId)
+  return Number.isInteger(unitTypeId) && unitTypeId > 0 ? unitTypeId : null
+})
+const canUseCart = computed(() => cartUnitTypeId.value !== null)
 // 兼容新旧字段名 — 公寓数据(Institute)用 min_rent/primary_image，户型数据(UnitType)用 base_rent/images
 const p = computed(() => ({
   ...props.property,
@@ -147,17 +169,25 @@ const p = computed(() => ({
       ? (props.property.images[0].filename.startsWith('http') ? props.property.images[0].filename : `/api/v1/uploads/${props.property.images[0].filename}`)
       : null,
 }))
-const inCart = computed(() => cartStore.has(props.property.id))
+const inCart = computed(() => (
+  cartUnitTypeId.value !== null && cartStore.has(cartUnitTypeId.value)
+))
 
 async function handleToggleCart() {
-  if (busy.value) return
+  const unitTypeId = cartUnitTypeId.value
+  if (unitTypeId === null || busy.value) return
+  if (!authStore.isLoggedIn) {
+    ElMessage.warning('登录后即可使用候选清单')
+    await router.push({ name: 'login', query: { redirect: route.fullPath } })
+    return
+  }
   busy.value = true
   try {
     if (inCart.value) {
-      await cartStore.remove(props.property.id)
+      await cartStore.remove(unitTypeId)
       ElMessage.info(`已从候选清单移出「${p.value.title}」`)
     } else {
-      await cartStore.add(props.property.id)
+      await cartStore.add(unitTypeId)
       ElMessage.success(`已将「${p.value.title}」加入候选清单`)
     }
   } catch (e: any) {
@@ -168,7 +198,7 @@ async function handleToggleCart() {
   }
 }
 
-const typeLabels: Record<PropertyType, string> = {
+const typeLabels: Partial<Record<PropertyType, string>> = {
   studio: '单间',
   '1-bed': '一室',
   '2-bed': '两室+',
@@ -242,8 +272,7 @@ const amenityTags = computed(() => {
 
 function goDetail() {
   if (props.noNavigate) return
-  // 两层结构：始终导航到公寓详情页
-  router.push({ name: 'building-detail', params: { id: props.property.institute_id || props.property.id } })
+  openDetail()
 }
 
 function handleBook() {
@@ -251,7 +280,33 @@ function handleBook() {
 }
 
 function openDetail() {
-  router.push({ name: 'building-detail', params: { id: props.property.institute_id || props.property.id } })
+  const query = { ...(props.linkQuery || {}) }
+  if (props.entity === 'building') {
+    void router.push({
+      name: 'building-detail',
+      params: { id: String(props.property.id) },
+      query,
+    })
+    return
+  }
+
+  const unitTypeId = String(props.property.id)
+  const instituteId = Number(props.property.institute_id)
+  if (Number.isInteger(instituteId) && instituteId > 0) {
+    void router.push({
+      name: 'building-detail',
+      params: { id: String(instituteId) },
+      query: { ...query, unit_type_id: unitTypeId },
+    })
+    return
+  }
+
+  // 兼容缺少 institute_id 的旧 UnitType 数据，由 /room/:id 适配器解析归属公寓。
+  void router.push({
+    name: 'property-detail',
+    params: { id: unitTypeId },
+    query: { ...query, unit_type_id: unitTypeId },
+  })
 }
 </script>
 
@@ -272,6 +327,13 @@ function openDetail() {
   transform: translateY(-4px);
   box-shadow: var(--shadow-lg);
   border-color: var(--primary);
+}
+
+.card-facts {
+  display: flex;
+  gap: 12px;
+  color: var(--text-secondary);
+  font-size: 13px;
 }
 
 /* ── Image ────────────────────────── */

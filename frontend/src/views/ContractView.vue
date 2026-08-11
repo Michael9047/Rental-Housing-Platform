@@ -22,9 +22,9 @@
         <div class="contract-section">
           <h3>第一条 租赁双方信息</h3>
           <el-descriptions :column="2" border>
-            <el-descriptions-item label="出租方（房东）">房东 #{{ booking.landlord_id }}</el-descriptions-item>
+            <el-descriptions-item label="公寓/运营方编号">#{{ booking.bm_id ?? booking.institute_id ?? '—' }}</el-descriptions-item>
             <el-descriptions-item label="承租方（租客）">{{ authStore.user?.username || '租客' }}</el-descriptions-item>
-            <el-descriptions-item label="房源编号">#{{ booking.property_id }}</el-descriptions-item>
+            <el-descriptions-item label="户型编号">#{{ booking.unit_type_id ?? '—' }}</el-descriptions-item>
             <el-descriptions-item label="签订日期">{{ today }}</el-descriptions-item>
           </el-descriptions>
         </div>

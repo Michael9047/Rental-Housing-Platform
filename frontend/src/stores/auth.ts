@@ -4,6 +4,8 @@ import { authService } from '@/services/auth'
 import type { User } from '@/types/user'
 import type { LoginRequest, RegisterRequest, PhoneLoginRequest, PhoneRegisterRequest } from '@/types/auth'
 import router from '@/router'
+import { useAgentChatStore } from '@/stores/agentChat'
+import { useCartStore } from '@/stores/cart'
 
 export const useAuthStore = defineStore('auth', () => {
   const user = ref<User | null>(null)
@@ -27,6 +29,9 @@ export const useAuthStore = defineStore('auth', () => {
     user.value = null
     localStorage.removeItem('access_token')
     localStorage.removeItem('user')
+    // AI 历史/长期偏好和候选清单都属于当前账号，身份失效时必须同步隔离。
+    useAgentChatStore().reset()
+    useCartStore().clear()
   }
 
   function loadFromStorage() {
@@ -131,5 +136,6 @@ export const useAuthStore = defineStore('auth', () => {
     fetchCurrentUser,
     loadFromStorage,
     setAuth,
+    clearAuth,
   }
 })
