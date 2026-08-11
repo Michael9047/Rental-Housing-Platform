@@ -37,10 +37,9 @@ def notification_target(event_type: str, role: object, booking_id: int) -> str:
             return f"/booking/{booking_id}/contract"
         return f"/my-orders/{booking_id}"
 
-    if event in _BOOKING_RESULT_EVENTS:
-        return f"/tenants?booking_id={booking_id}"
-    if event in _BOOKING_TERMINATION_EVENTS:
-        return f"/bookings/landlord?order_id={booking_id}"
+    # 最终完成或取消的订单统一进入管理员订单详情；处理中订单仍由合约管理承接。
+    if event in _BOOKING_RESULT_EVENTS or event in _BOOKING_TERMINATION_EVENTS:
+        return f"/admin/orders/{booking_id}"
     # 支付成功、合同待确认、合同签署临近、异常合同等均由合同管理承接。
     return f"/contracts/landlord?order_id={booking_id}"
 
@@ -50,10 +49,8 @@ def notification_action_label(event_type: str, role: object) -> str:
     role_value = getattr(role, "value", role)
     event = str(event_type)
     if role_value in {"admin", "landlord"}:
-        if event in _BOOKING_RESULT_EVENTS:
-            return "查看租客管理"
-        if event in _BOOKING_TERMINATION_EVENTS:
-            return "查看订单处理"
+        if event in _BOOKING_RESULT_EVENTS or event in _BOOKING_TERMINATION_EVENTS:
+            return "查看订单详情"
         return "进入合约管理"
     if event in {"CONTRACT_SENT", "CONTRACT_EXPIRING_12H", "contract_generated", "contract_resign_required"}:
         return "前往签署合同"

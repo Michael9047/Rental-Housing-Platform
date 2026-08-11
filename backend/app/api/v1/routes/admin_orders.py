@@ -33,7 +33,11 @@ _CANCEL_REASON = {
 
 
 def _category(status: BookingStatus) -> str:
-    return "completed" if status in FINAL_SUCCESS else "cancelled"
+    if status in FINAL_SUCCESS:
+        return "completed"
+    if status in FINAL_CANCELLED:
+        return "cancelled"
+    return "contract_signed"
 
 
 def _payment_amount_minor(payment: Payment | None, booking: Booking) -> int | None:
@@ -192,7 +196,7 @@ async def get_order(
     session: AsyncSession = Depends(get_db_session),
     current_user: User = Depends(require_landlord),
 ) -> dict:
-    """返回单个最终订单；详情接口执行与列表相同的 BM 范围校验。"""
+    """返回订单详情；历史签约完成通知可直达详情，但不会进入最终订单列表。"""
     statement = select(Booking).where(Booking.id == booking_id).options(
         selectinload(Booking.user),
         selectinload(Booking.institute),
@@ -201,7 +205,8 @@ async def get_order(
     booking = await session.scalar(statement)
     if booking is None:
         raise HTTPException(status_code=404, detail="订单不存在")
-    if booking.status not in FINAL_SUCCESS | FINAL_CANCELLED:
+    allowed_detail_statuses = FINAL_SUCCESS | FINAL_CANCELLED | {BookingStatus.contract_signed}
+    if booking.status not in allowed_detail_statuses:
         raise HTTPException(status_code=404, detail="该订单尚未归档")
     if current_user.role != UserRole.admin and booking.bm_id != current_user.id:
         raise HTTPException(status_code=403, detail="无权查看该订单")

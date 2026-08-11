@@ -34,13 +34,26 @@ import { computed, onMounted, ref } from 'vue'
 import { useRouter, RouterLink } from 'vue-router'
 import { notificationService } from '@/services/notification'
 import type { Notification } from '@/types/booking'
+import { useAuthStore } from '@/stores/auth'
 
-const router = useRouter(); const items = ref<Notification[]>([]); const unreadCount = ref(0); const loading = ref(true); const loadError = ref(false); const filter = ref('all')
+const router = useRouter(); const auth = useAuthStore(); const items = ref<Notification[]>([]); const unreadCount = ref(0); const loading = ref(true); const loadError = ref(false); const filter = ref('all')
 const filteredItems = computed(() => filter.value === 'unread' ? items.value.filter((item) => !item.is_read) : items.value)
-const orderRoute = (item: Notification) => item.entity_type === 'order' && item.entity_id ? `/my-orders/${item.entity_id}` : null
+const managerDetailTypes = new Set(['contract_signed', 'booking_completed', 'booking_cancelled', 'payment_expired', 'refund_started', 'refund_completed', 'refund_failed'])
+const orderRoute = (item: Notification) => {
+  if (item.entity_type !== 'order') return null
+  const bookingId = [item.entity_id, item.order_id].find((value) => Boolean(value && /^\d+$/.test(value)))
+  if (!bookingId) return null
+  const isManager = ['admin', 'landlord', 'bd_manager'].includes(auth.user?.role || '')
+  if (isManager && managerDetailTypes.has(item.type)) return `/admin/orders/${encodeURIComponent(bookingId)}`
+  return `/my-orders/${encodeURIComponent(bookingId)}`
+}
 const formatDate = (value: string) => new Date(value).toLocaleString('zh-CN', { dateStyle: 'medium', timeStyle: 'short' })
 const statusText = (item: Notification) => ({ payment_pending: '待支付', payment_processing: '处理中', payment_failed: '支付失败', paid: '已支付', payment_expired: '已失效', payment_review: '退款核对', refunded: '已退款' }[item.payment_status || ''] || '订单通知')
-const actionText = (item: Notification) => ({ payment_pending: '查看并支付', payment_processing: '查看支付状态', payment_failed: '重新支付', paid: '查看预订', payment_expired: '查看取消详情', payment_review: '查看退款状态', refunded: '查看退款详情' }[item.payment_status || ''] || '查看订单')
+const actionText = (item: Notification) => {
+  const isManager = ['admin', 'landlord', 'bd_manager'].includes(auth.user?.role || '')
+  if (isManager && managerDetailTypes.has(item.type)) return '查看订单详情'
+  return ({ payment_pending: '查看并支付', payment_processing: '查看支付状态', payment_failed: '重新支付', paid: '查看预订', payment_expired: '查看取消详情', payment_review: '查看退款状态', refunded: '查看退款详情' }[item.payment_status || ''] || '查看订单')
+}
 const typeIcon = (item: Notification) => item.payment_status === 'paid' ? '✓' : ['payment_failed', 'payment_expired'].includes(item.payment_status || '') ? '!' : item.payment_status === 'payment_processing' ? '…' : '●'
 const cardClasses = (item: Notification) => ({ unread: !item.is_read, danger: ['payment_failed', 'payment_expired'].includes(item.payment_status || ''), success: item.payment_status === 'paid' })
 const cardLabel = (item: Notification) => `${item.order_id ? `查看订单 ${item.order_id}` : '查看消息'}：${item.title}`

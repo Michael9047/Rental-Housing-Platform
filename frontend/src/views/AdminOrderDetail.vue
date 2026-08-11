@@ -70,8 +70,8 @@ import api from '@/services/api'
 const StatusTag = defineComponent({
   props: { status: { type: String, required: true } },
   setup(props) {
-    return () => h(ElTag, { type: props.status === 'completed' ? 'success' : 'info' }, () => (
-      props.status === 'completed' ? '预订成功' : '已取消'
+    return () => h(ElTag, { type: props.status === 'completed' ? 'success' : props.status === 'cancelled' ? 'info' : 'warning' }, () => (
+      props.status === 'completed' ? '预订成功' : props.status === 'cancelled' ? '已取消' : '合同已签署'
     ))
   },
 })
