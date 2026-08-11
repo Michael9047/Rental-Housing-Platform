@@ -2,7 +2,7 @@
 from fastapi import APIRouter
 
 from app.api.v1.routes import (
-    admin, agent, auth, bookings,
+    admin, admin_orders, agent, auth, bookings,
     building_staff, buildings, chat, commute, contracts,
     dashboard, favorites, geocoding, health,
     images, imports, map_routes, me, notifications,
@@ -32,6 +32,7 @@ api_router.include_router(bookings.router, prefix="/bookings", tags=["bookings"]
 api_router.include_router(notifications.router, prefix="/notifications", tags=["notifications"])
 api_router.include_router(chat.router, prefix="/chat", tags=["chat"])
 api_router.include_router(admin.router, prefix="/admin", tags=["admin"])
+api_router.include_router(admin_orders.router, tags=["admin-orders"])
 api_router.include_router(imports.router, prefix="/import", tags=["import"])
 api_router.include_router(wechat.router, tags=["wechat"])
 api_router.include_router(search_suggestions.router, prefix="/search", tags=["search"])

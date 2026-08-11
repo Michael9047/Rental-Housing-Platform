@@ -1,6 +1,7 @@
 """从订单价格快照创建支付单并以验签 webhook 原子确认结果。"""
 import hashlib
 import json
+import logging
 import uuid
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
@@ -16,9 +17,12 @@ from app.models.payment import Payment, PaymentStatus, PaymentWebhookEvent
 from app.models.property import Property, PropertyStatus
 from app.models.notification import Notification, NotificationType
 from app.models.user import User, UserRole
+from app.core.config import get_settings
 from app.services.payment_provider import MockHostedPaymentProvider, PaymentMethod, PaymentRequest, get_test_provider
 from app.services.lease_pricing_service import LeasePricingService
 from app.services.order_notification_service import OrderNotificationService
+
+logger = logging.getLogger(__name__)
 
 
 class PaymentOrderService:
@@ -49,6 +53,41 @@ class PaymentOrderService:
     def _notify(self, user_id: int, kind: NotificationType, title: str, content: str) -> None:
         self.session.add(Notification(user_id=user_id, type=kind, title=title, content=content))
 
+    async def _enqueue_notification_safely(self, event_type: str, booking: Booking, *, payment: Payment, discriminator: str) -> None:
+        """通知为后置副作用，任何异常均不得中断支付状态更新或浏览器跳转。"""
+        try:
+            await OrderNotificationService(self.session).enqueue(
+                event_type, booking, payment=payment, discriminator=discriminator,
+            )
+        except Exception:
+            logger.exception("订单通知入队失败 event=%s booking_id=%s", event_type, booking.id)
+
+    async def _send_payment_success_email_safely(self, booking: Booking, payment: Payment) -> None:
+        """支付事务提交后投递租客模拟邮件，邮件异常不影响已完成的支付。"""
+        try:
+            tenant = await self.session.get(User, booking.user_id)
+            if not tenant or not tenant.email:
+                logger.warning("支付成功邮件跳过：租客没有邮箱 booking_id=%s", booking.id)
+                return
+            from app.services.email_service import EmailService
+
+            deadline = payment.paid_at + timedelta(days=3) if payment.paid_at else None
+            amount = f"{payment.settlement_amount_minor / 100:.2f} {payment.settlement_currency}"
+            deadline_text = deadline.isoformat() if deadline else "待管理员确认"
+            await EmailService().send(
+                tenant.email,
+                "支付成功，订单正在审核",
+                (
+                    f"<h2>支付成功，订单正在审核</h2>"
+                    f"<p>订单编号：{booking.id}</p><p>支付金额：{amount}</p>"
+                    f"<p>支付时间：{payment.paid_at.isoformat() if payment.paid_at else ''}</p>"
+                    f"<p>管理员最晚处理时间：{deadline_text}</p>"
+                    f"<p><a href='{get_settings().frontend_url.rstrip('/')}/my-orders/{booking.id}'>查看订单详情</a></p>"
+                ),
+            )
+        except Exception:
+            logger.exception("租客支付成功模拟邮件投递失败 booking_id=%s", booking.id)
+
     @staticmethod
     def webhook_target(status: BookingStatus, event_status: str, now: datetime, expires_at: datetime) -> BookingStatus:
         """将验签后的服务商结果映射为订单状态，便于独立测试边界时间。"""
@@ -72,7 +111,7 @@ class PaymentOrderService:
         booking.inventory_reserved = False
 
     @staticmethod
-    def _price_snapshot(booking: Booking, contract: Contract, property_obj: Property, tenant_name: str) -> tuple[dict, dict]:
+    def _price_snapshot(booking: Booking, contract: Contract | None, property_obj: Property, tenant_name: str) -> tuple[dict, dict]:
         pricing = (booking.application_data or {}).get("pricing_snapshot") or {}
         option = next((x for x in pricing.get("options", []) if x.get("months") == booking.lease_months), None)
         if not option:
@@ -97,16 +136,18 @@ class PaymentOrderService:
                 }
             }
         prices = option["prices"]
-        ut = getattr(property_obj, 'unit_type', None)
-        inst = getattr(ut, 'institute', None) if ut else None
+        # Property 兼容别名在当前模型中实际指向 UnitType，不再访问已删除的 Room 字段。
+        unit_type = getattr(property_obj, 'unit_type', None) or property_obj
+        inst = getattr(unit_type, 'institute', None)
         snapshot = {
             "order_number": str(booking.id), "property_id": booking.institute_id,
-            "property_name": getattr(ut, 'name', property_obj.room_number or ''), "property_address": getattr(inst, 'address', ''),
+            "property_name": getattr(unit_type, 'name', '') or '', "property_address": getattr(inst, 'address', '') or '',
             "commencement_date": booking.scheduled_date, "expiry_date": option["end_date"],
             "tenancy_months": booking.lease_months, "tenant_name": tenant_name,
-            "agreement_id": contract.id, "agreement_number": contract.agreement_number,
-            "agreement_version": contract.version, "agreement_content_hash": contract.content_hash,
-            "fees": {"deposit": prices["deposit"]["local"], "service_fee": prices["service_fee"]["local"], "tax": {"currency": pricing["local_currency"], "minor_units": 0, "minor_unit_exponent": 2, "decimal": "0.00"}, "current_total": prices["amount_due_now"]["local"]},
+            # 合同仅在支付审核通过后生成；支付前订单快照不伪造合同信息。
+            "agreement_id": contract.id if contract else "", "agreement_number": contract.agreement_number if contract else "待审核后生成",
+            "agreement_version": contract.version if contract else None, "agreement_content_hash": contract.content_hash if contract else None,
+            "fees": {"booking_deposit": prices.get("booking_deposit", prices["deposit"])["cny"], "tax": {"currency": "CNY", "minor_units": 0, "minor_unit_exponent": 2, "decimal": "0.00"}, "current_total": prices["amount_due_now"]["cny"]},
         }
         return pricing, snapshot
 
@@ -117,7 +158,7 @@ class PaymentOrderService:
         start = datetime.fromisoformat(booking.scheduled_date).date()
         end = LeasePricingService.add_calendar_months(start, booking.lease_months)
         candidates = await self.session.scalars(select(Booking).where(
-            Booking.property_id == booking.institute_id,
+            Booking.unit_type_id == booking.unit_type_id,
             Booking.id != booking.id,
             Booking.status.in_([BookingStatus.contract_signed, BookingStatus.payment_pending, BookingStatus.completed]),
         ))
@@ -139,7 +180,8 @@ class PaymentOrderService:
             return by_key
         booking = await self.session.scalar(select(Booking).where(Booking.id == booking_id).with_for_update())
         if not booking: raise LookupError("订单不存在")
-        if booking.tenant_id != user_id: raise PermissionError("只能支付本人的订单")
+        owner_user_id = getattr(booking, "user_id", booking.tenant_id)
+        if owner_user_id != user_id: raise PermissionError("只能支付本人的订单")
         active = await self.session.scalar(select(Payment).where(Payment.booking_id == booking_id, Payment.status.in_([PaymentStatus.pending, PaymentStatus.processing])).order_by(Payment.created_at.desc()))
         if active:
             active.booking = booking
@@ -147,25 +189,23 @@ class PaymentOrderService:
         now = datetime.now(timezone.utc)
         if booking.payment_expires_at and booking.payment_expires_at <= now: raise TimeoutError("支付订单已超过24小时有效期")
         if booking.status == BookingStatus.payment_expired: raise RuntimeError("订单支付已过期，请重新发起预订")
-        if booking.status not in {BookingStatus.contract_signed, BookingStatus.payment_pending, BookingStatus.payment_failed}: raise RuntimeError("必须先签署当前版本合同，且订单处于可付款状态")
+        if booking.status not in {BookingStatus.contract_signed, BookingStatus.payment_pending, BookingStatus.payment_failed}:
+            raise RuntimeError("订单当前不可支付；历史订单需先完成合同签署")
+        # 新流程在付款后审核并发送合同；若历史订单已有已签合同，继续复用其快照。
         contract = await self.session.scalar(select(Contract).where(Contract.booking_id == booking.id, Contract.status == "signed").order_by(Contract.version.desc()))
-        if not contract or not await self.session.scalar(select(ContractSignature).where(ContractSignature.agreement_id == contract.id, ContractSignature.tenant_user_id == user_id)):
-            raise RuntimeError("未找到当前合同的有效租客签名")
-        property_obj = await self.session.get(Property, booking.institute_id)
+        # 当前 Property 兼容别名实际为 UnitType；支付快照必须按订单的户型外键查询并预加载公寓关联。
+        property_obj = await self.session.scalar(
+            select(Property)
+            .options(selectinload(Property.institute))
+            .where(Property.id == booking.unit_type_id)
+        )
         if not property_obj or property_obj.status != PropertyStatus.available: raise RuntimeError("房源当前不可支付预订")
         await self._ensure_availability(booking)
         pricing, snapshot = self._price_snapshot(booking, contract, property_obj, tenant_name)
-        local = snapshot["fees"]["current_total"]
-        cny_option = next((x for x in pricing["options"] if x.get("months") == booking.lease_months), None)
-        if cny_option:
-            cny = cny_option["prices"]["amount_due_now"]["cny"]
-        else:
-            # 自定义月数：用首选项 CNH 金额同比例换算
-            base = pricing["options"][0]["prices"]
-            cny = {"currency": base["amount_due_now"]["cny"]["currency"],
-                   "minor_units": int(int(base["amount_due_now"]["cny"]["minor_units"]) * booking.lease_months / base["months"]),
-                   "minor_unit_exponent": base["amount_due_now"]["cny"]["minor_unit_exponent"],
-                   "decimal": f"{int(int(base['amount_due_now']['cny']['minor_units'])) * booking.lease_months // base['months'] / 100:.2f}"}
+        # 支付金额只取服务端配置的固定预订金，绝不从前端或房源快照推导。
+        configured_amount = get_settings().booking_deposit_amount_cny
+        local = {"currency": get_settings().booking_deposit_currency, "minor_units": int(configured_amount * 100), "minor_unit_exponent": 2, "decimal": f"{configured_amount:.2f}"}
+        cny = local
         expires = booking.payment_expires_at or now + timedelta(hours=24)
         payment_attempt_id = str(uuid.uuid4())
         order_id = f"PAY-{datetime.now(timezone.utc):%Y%m%d}-{uuid.uuid4().hex[:20].upper()}"
@@ -198,7 +238,7 @@ class PaymentOrderService:
                 payment.status, payment.trade_state, payment.trade_state_desc = PaymentStatus.review, "LATE_SUCCESS", "订单过期后收到成功付款，等待人工退款或核对"
                 self._transition(booking, BookingStatus.payment_review, reason="过期后收到成功支付 webhook", payment_id=payment.id)
                 self.release_inventory(booking)
-                await OrderNotificationService(self.session).enqueue("late_payment_review", booking, payment=payment, discriminator=payment.id)
+                await self._enqueue_notification_safely("late_payment_review", booking, payment=payment, discriminator=payment.id)
                 admins = await self.session.scalars(select(User).where(User.role == UserRole.admin))
                 for admin in admins:
                     self._notify(admin.id, NotificationType.system, "迟到付款待处理", f"订单 #{booking.id} 已过期后收到付款，请人工核对或退款。")
@@ -209,17 +249,23 @@ class PaymentOrderService:
             booking.deposit_status, booking.payment_transaction_id = "paid", payment.transaction_id
             self._transition(booking, BookingStatus.paid, reason="支付服务商有效成功 webhook", payment_id=payment.id)
             booking.inventory_reserved = False
-            property_obj.status = PropertyStatus.rented
-            await OrderNotificationService(self.session).enqueue("payment_succeeded", booking, payment=payment, discriminator=payment.id)
-            await OrderNotificationService(self.session).enqueue_landlord_booking_confirmed(booking, payment)
+            await self._enqueue_notification_safely("payment_succeeded", booking, payment=payment, discriminator=payment.id)
+            from app.services.notification_service import NotificationService
+            await NotificationService(self.session).add_admin_order_notifications(
+                booking.id, booking.bm_id, booking.unit_type_id, NotificationType.payment_received,
+                "新支付订单待确认合同",
+                f"订单 #{booking.id} 已完成支付。请在 3 个自然日内确认房号、合同信息并上传合同。",
+            )
         else:
             payment.status, payment.trade_state, payment.trade_state_desc = PaymentStatus.failed, "FAILED", "测试支付失败，可在有效期内重试"
             if booking.status == BookingStatus.payment_expired:
                 await self.session.commit(); await self.session.refresh(payment)
                 return payment
             self._transition(booking, BookingStatus.payment_failed, reason="支付服务商失败 webhook", payment_id=payment.id)
-            await OrderNotificationService(self.session).enqueue("payment_failed", booking, payment=payment, discriminator=payment.id)
+            await self._enqueue_notification_safely("payment_failed", booking, payment=payment, discriminator=payment.id)
         await self.session.commit(); await self.session.refresh(payment)
+        if event.get("status") == "succeeded" and payment.status == PaymentStatus.success:
+            await self._send_payment_success_email_safely(booking, payment)
         return payment
 
     async def expire_due_orders(self, now: datetime | None = None) -> dict[str, int]:
@@ -256,7 +302,7 @@ class PaymentOrderService:
             payment.status, payment.trade_state, payment.trade_state_desc = PaymentStatus.expired, "EXPIRED", "24小时内未完成付款"
         self._transition(booking, BookingStatus.payment_expired, reason="到期且服务商未确认成功", payment_id=payment.id if payment else None)
         self.release_inventory(booking)
-        await OrderNotificationService(self.session).enqueue("payment_expired", booking, payment=payment, discriminator="24h")
+        await self._enqueue_notification_safely("payment_expired", booking, payment=payment, discriminator="24h")
         await self.session.commit()
         return True
 
@@ -273,7 +319,7 @@ class PaymentOrderService:
         else:
             event = "refund_failed"
             self.session.add(AuditLog(user_id=None, action="payment_refund_failed", resource_type="booking", resource_id=booking.id, details={"payment_id":payment.id,"provider_event_id":provider_event_id}))
-        await OrderNotificationService(self.session).enqueue(event, booking, payment=payment, discriminator=provider_event_id)
+        await self._enqueue_notification_safely(event, booking, payment=payment, discriminator=provider_event_id)
         await self.session.commit()
 
     @staticmethod

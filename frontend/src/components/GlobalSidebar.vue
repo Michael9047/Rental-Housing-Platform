@@ -50,6 +50,10 @@
           <el-icon><Document /></el-icon>
           <span>合约管理</span>
         </el-menu-item>
+        <el-menu-item index="/admin/orders">
+          <el-icon><Tickets /></el-icon>
+          <span>订单管理</span>
+        </el-menu-item>
         <el-menu-item index="/tenants">
           <el-icon><User /></el-icon>
           <span>租客管理</span>
@@ -96,6 +100,7 @@ watch(collapsed, (v) => localStorage.setItem(SIDEBAR_KEY, String(v)))
 // 当前激活菜单高亮
 const activeMenu = computed(() => {
   const path = route.path
+  if (path.startsWith('/admin/orders')) return '/admin/orders'
   if (path.startsWith('/admin')) return path
   if (path.startsWith('/bookings/')) return path
   if (path.startsWith('/buildings')) return '/buildings'

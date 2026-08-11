@@ -16,12 +16,84 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from app.celery_app import celery_app
 from app.core.config import get_settings
 from app.models.payment import Payment, PaymentStatus
-from app.services.payment_service import WeChatPayService
+from app.models.booking import Booking, BookingStatus
+from app.models.contract import Contract
 
 logger = logging.getLogger(__name__)
 
 PAYMENT_SUCCESS_TEMPLATE = "payment_success_template_id"
 PAYMENT_FAILED_TEMPLATE = "payment_failed_template_id"
+
+
+@celery_app.task(
+    name="send_payment_expiring_3h_reminders",
+    autoretry_for=(Exception,),
+    retry_backoff=True,
+    max_retries=2,
+)
+def send_payment_expiring_3h_reminders() -> dict:
+    """扫描支付截止前三小时订单；outbox 事件键保证每个订单只提醒一次。"""
+    async def _run() -> dict:
+        settings = get_settings()
+        engine = create_async_engine(settings.database_url)
+        async_session = async_sessionmaker(engine, expire_on_commit=False)
+        now = datetime.now(timezone.utc)
+        window_end = now + timedelta(hours=3)
+        sent = 0
+        async with async_session() as session:
+            bookings = list(await session.scalars(
+                select(Booking).where(
+                    Booking.status.in_([BookingStatus.payment_pending, BookingStatus.payment_failed]),
+                    Booking.payment_expires_at > now,
+                    Booking.payment_expires_at <= window_end,
+                )
+            ))
+            from app.services.notification_simulation_service import NotificationSimulationService
+            notifier = NotificationSimulationService(session)
+            for booking in bookings:
+                results = await notifier.dispatch(booking, "PAYMENT_EXPIRING_3H", "success")
+                sent += int(any(result.status == "sent" for result in results))
+            await session.commit()
+        await engine.dispose()
+        return {"checked": len(bookings), "notified": sent}
+
+    return asyncio.run(_run())
+
+
+@celery_app.task(
+    name="send_contract_expiring_12h_reminders",
+    autoretry_for=(Exception,),
+    retry_backoff=True,
+    max_retries=2,
+)
+def send_contract_expiring_12h_reminders() -> dict:
+    """在合同发送后七天保留期的最后十二小时发送一次签署提醒。"""
+    async def _run() -> dict:
+        settings = get_settings()
+        engine = create_async_engine(settings.database_url)
+        async_session = async_sessionmaker(engine, expire_on_commit=False)
+        now = datetime.now(timezone.utc)
+        window_start = now - timedelta(minutes=5)
+        window_end = now + timedelta(hours=12)
+        notified = 0
+        async with async_session() as session:
+            contracts = list(await session.scalars(
+                select(Contract).where(Contract.status == "generated", Contract.generated_at.is_not(None))
+            ))
+            from app.services.notification_simulation_service import NotificationSimulationService
+            notifier = NotificationSimulationService(session)
+            for contract in contracts:
+                deadline = contract.generated_at + timedelta(days=7)
+                if window_start <= deadline <= window_end:
+                    booking = await session.get(Booking, contract.booking_id)
+                    if booking:
+                        results = await notifier.dispatch(booking, "CONTRACT_EXPIRING_12H", "success")
+                        notified += int(any(result.status == "sent" for result in results))
+            await session.commit()
+        await engine.dispose()
+        return {"checked": len(contracts), "notified": notified}
+
+    return asyncio.run(_run())
 
 
 async def _sync_single_payment(payment: Payment, session: AsyncSession) -> bool:
@@ -32,7 +104,8 @@ async def _sync_single_payment(payment: Payment, session: AsyncSession) -> bool:
     if not payment.out_trade_no:
         return False
 
-    wechat_pay = WeChatPayService()
+    from app.services.payment_provider import get_test_provider
+    wechat_pay = get_test_provider()
     try:
         wx_order = await wechat_pay.query_by_out_trade_no(payment.out_trade_no)
     except Exception:
@@ -74,6 +147,8 @@ async def _sync_single_payment(payment: Payment, session: AsyncSession) -> bool:
             settings = get_settings()
             amount_str = f"{payment.amount / 100:.2f}"
             if payment.status == PaymentStatus.success:
+                from app.services.notification_link_service import notification_target
+                order_url = f"{settings.frontend_url.rstrip('/')}{notification_target('PAYMENT_SUCCEEDED', 'tenant', payment.booking_id)}"
                 send_email_notification_with_template.delay(
                     user_id=payment.user_id,
                     subject="支付到账",
@@ -85,9 +160,20 @@ async def _sync_single_payment(payment: Payment, session: AsyncSession) -> bool:
                         "payment_id": payment.id,
                         "paid_at": payment.paid_at.strftime("%Y-%m-%d %H:%M") if payment.paid_at else "",
                         "frontend_url": settings.frontend_url,
+                        "tenant_name": "",
+                        "order_number": str(payment.booking_id),
+                        "property_name": "订单关联房源",
+                        "property_city": "待确认",
+                        "lease_start_date": "待确认",
+                        "settlement_amount": amount_str,
+                        "settlement_currency": payment.settlement_currency or "CNY",
+                        "payment_time": payment.paid_at.strftime("%Y-%m-%d %H:%M") if payment.paid_at else "待确认",
+                        "secure_order_url": order_url,
                     },
                 )
             else:
+                from app.services.notification_link_service import notification_target
+                order_url = f"{settings.frontend_url.rstrip('/')}{notification_target('PAYMENT_FAILED', 'tenant', payment.booking_id)}"
                 send_email_notification_with_template.delay(
                     user_id=payment.user_id,
                     subject="支付失败",
@@ -99,6 +185,13 @@ async def _sync_single_payment(payment: Payment, session: AsyncSession) -> bool:
                         "payment_id": payment.id,
                         "reason": payment.trade_state_desc or "未知错误",
                         "frontend_url": settings.frontend_url,
+                        "tenant_name": "",
+                        "order_number": str(payment.booking_id),
+                        "property_name": "订单关联房源",
+                        "settlement_amount": amount_str,
+                        "settlement_currency": payment.settlement_currency or "CNY",
+                        "localized_expires_at": "请以订单详情显示的支付截止时间为准",
+                        "secure_order_url": order_url,
                     },
                 )
         except Exception:
@@ -204,6 +297,8 @@ def close_expired_payments() -> dict:
                         from app.tasks.notification_tasks import send_email_notification_with_template
                         from app.core.config import get_settings
                         settings = get_settings()
+                        from app.services.notification_link_service import notification_target
+                        order_url = f"{settings.frontend_url.rstrip('/')}{notification_target('payment_expired', 'tenant', payment.booking_id)}"
                         send_email_notification_with_template.delay(
                             user_id=payment.user_id,
                             subject="支付已过期",
@@ -214,6 +309,13 @@ def close_expired_payments() -> dict:
                                 "amount": f"{payment.amount / 100:.2f}",
                                 "payment_id": payment.id,
                                 "frontend_url": settings.frontend_url,
+                                "secure_order_url": order_url,
+                                "tenant_name": "",
+                                "order_number": str(payment.booking_id),
+                                "property_name": "订单关联房源",
+                                "settlement_amount": f"{payment.amount / 100:.2f}",
+                                "settlement_currency": payment.settlement_currency or "CNY",
+                                "cancelled_at": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
                             },
                         )
                     except Exception:
