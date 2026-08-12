@@ -1,7 +1,7 @@
 <template>
   <div class="admin-detail-page" v-loading="loading">
     <div class="page-head">
-      <h2>异常处理</h2>
+      <h2>系统异常检测</h2>
       <el-button :icon="Refresh" @click="loadData">刷新</el-button>
     </div>
 
@@ -57,7 +57,7 @@ const alerts = ref<SystemAlert[]>([])
 const selectedCategory = ref('全部')
 
 const categoryStats = computed(() => {
-  const orderedCategories = ['全部', '预约', '维修', '合同', '支付', '对接', '通知', '系统']
+  const orderedCategories = ['全部', '系统', '通知', '对接', '支付', '合同']
   const seen = new Set(orderedCategories)
   const dynamicCategories = alerts.value
     .map((alert) => alert.category)

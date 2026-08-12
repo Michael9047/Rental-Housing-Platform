@@ -165,6 +165,7 @@ async def confirm_import(
 ) -> dict:
     """确认导入：根据预览中忽略的行号列表，仅导入其余行。"""
     skip_rows: list[int] = body.get("skip_rows", []) if body else []
+    user_id = current_user.id
 
     import_service = ImportService(session)
     import_task = await import_service.get_import_task(task_id)

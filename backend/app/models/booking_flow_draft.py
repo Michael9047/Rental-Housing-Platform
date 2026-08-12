@@ -1,5 +1,5 @@
 """预订流程草稿模型 — 存流程中间态，个人信息走 Tenant 表"""
-from sqlalchemy import ForeignKey, Integer, String
+from sqlalchemy import ForeignKey, Integer, JSON, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.mixins import TimestampMixin
@@ -22,6 +22,8 @@ class BookingFlowDraft(TimestampMixin, Base):
     current_step: Mapped[str] = mapped_column(String(32), default="move_in_date")
     move_in_date: Mapped[str | None] = mapped_column(String(32))
     lease_months: Mapped[int | None] = mapped_column(Integer)
+    personal_info: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    emergency_contact: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
     # ── 关系 ──
     user: Mapped["User"] = relationship(foreign_keys=[user_id])

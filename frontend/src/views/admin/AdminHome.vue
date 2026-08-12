@@ -36,7 +36,7 @@
     <div class="ops-grid">
       <section class="section ops-panel">
         <div class="section-head">
-          <h3>异常中心</h3>
+          <h3>系统异常中心</h3>
           <div class="head-actions">
             <el-tag :type="systemAlerts.length ? 'warning' : 'success'" size="small">
               {{ systemAlerts.length ? `${systemAlerts.length} 条异常` : '正常' }}

@@ -68,7 +68,7 @@
         </el-menu-item>
         <el-menu-item index="/admin/alerts">
           <el-icon><Warning /></el-icon>
-          <span>异常处理</span>
+          <span>系统异常</span>
         </el-menu-item>
         <el-menu-item index="/admin/notifications">
           <el-icon><Bell /></el-icon>

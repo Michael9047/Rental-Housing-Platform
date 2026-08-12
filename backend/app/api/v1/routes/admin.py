@@ -12,7 +12,6 @@ from app.models.contract import Contract
 from app.models.notification import NotificationOutbox, NotificationOutboxStatus
 from app.models.payment import Payment, PaymentStatus
 from app.models.pms_connection import PMSConnection, PMSSyncStatus
-from app.models.repair import RepairRequest, RepairStatus
 from app.models.system_alert import (
     SystemAlert as PersistedSystemAlert,
     SystemAlertSeverity,
@@ -23,6 +22,7 @@ from app.schemas.system_alert import SystemAlertCreate
 from app.schemas.user import UserRead
 from app.services.audit_service import AuditService
 from app.services.payment_provider import provider_availability
+from app.services.pms.sync_service import PMSSyncService
 from app.services.property_service import PropertyService
 from app.services.stats_service import StatsService
 from app.services.user_service import UserService
@@ -46,6 +46,54 @@ def _alert_action(
         "label": action_label,
         "resource_id": action_resource_id,
     }
+
+
+HUMAN_PROCESS_ALERT_CATEGORIES = {"预约", "维修"}
+HUMAN_PROCESS_ALERT_SOURCE_PREFIXES = ("booking", "repair", "maintenance")
+HUMAN_PROCESS_ALERT_KEYWORDS = (
+    "预约超时",
+    "待处理预约",
+    "booking_pending",
+    "booking_payment",
+    "payment_review",
+    "payment_expired",
+    "维修未处理",
+    "维修待派单",
+    "repair_pending",
+    "repair_assigned",
+    "repair_stalled",
+    "repair_completed",
+    "合同未签署",
+    "未签署合同",
+    "contract_unsigned",
+    "待人工",
+    "人工审核",
+    "退款核对",
+)
+
+
+def _is_system_runtime_alert(row: PersistedSystemAlert) -> bool:
+    """过滤人为流程待办，只保留系统运行异常。"""
+    if row.category in HUMAN_PROCESS_ALERT_CATEGORIES:
+        return False
+
+    source = (row.source or "").lower()
+    if source.startswith(HUMAN_PROCESS_ALERT_SOURCE_PREFIXES):
+        return False
+
+    searchable = " ".join(
+        str(value or "")
+        for value in (
+            row.source,
+            row.source_id,
+            row.action_type,
+            row.action_label,
+            row.title,
+            row.summary,
+            row.detail,
+        )
+    ).lower()
+    return not any(keyword.lower() in searchable for keyword in HUMAN_PROCESS_ALERT_KEYWORDS)
 
 
 def _persisted_alert_to_card(row: PersistedSystemAlert) -> dict:
@@ -161,11 +209,13 @@ async def list_system_alerts(
     now = datetime.now(timezone.utc)
     alerts: list[dict] = []
 
+    # 只汇总系统运行异常：服务投递、外部对接、支付通道、后台任务产物等。
+    # 预约超时、维修未处理、合同未签署等人为流程待办不进入管理员异常检测。
     persisted_stmt = select(PersistedSystemAlert).order_by(PersistedSystemAlert.updated_at.desc()).limit(60)
     if not include_resolved:
         persisted_stmt = persisted_stmt.where(PersistedSystemAlert.status != SystemAlertStatus.resolved)
     persisted_rows = await session.scalars(persisted_stmt)
-    alerts.extend(_persisted_alert_to_card(row) for row in persisted_rows)
+    alerts.extend(_persisted_alert_to_card(row) for row in persisted_rows if _is_system_runtime_alert(row))
 
     failed_outbox_rows = await session.scalars(
         select(NotificationOutbox)
@@ -192,202 +242,6 @@ async def list_system_alerts(
             },
         })
 
-    overdue_booking_rows = await session.scalars(
-        select(Booking)
-        .where(
-            Booking.status == BookingStatus.pending,
-            Booking.created_at < now - timedelta(hours=2),
-        )
-        .order_by(Booking.created_at.asc())
-        .limit(12)
-    )
-    for row in overdue_booking_rows:
-        alerts.append({
-            "id": f"booking_pending:{row.id}",
-            "category": "预约",
-            "severity": "high",
-            "title": "预约待处理超时",
-            "summary": f"预约 #{row.id} 超过 2 小时仍未处理",
-            "detail": f"租客用户 ID：{row.user_id}，户型 ID：{row.unit_type_id or '-'}，预计入住：{row.scheduled_date or '-'}。",
-            "source": "booking",
-            "source_id": row.id,
-            "status": row.status.value,
-            "updated_at": row.updated_at.isoformat(),
-            "action": None,
-        })
-
-    payment_review_booking_rows = await session.scalars(
-        select(Booking)
-        .where(
-            Booking.status == BookingStatus.payment_review,
-            Booking.updated_at < now - timedelta(hours=2),
-        )
-        .order_by(Booking.updated_at.asc())
-        .limit(12)
-    )
-    for row in payment_review_booking_rows:
-        alerts.append({
-            "id": f"booking_payment_review:{row.id}",
-            "category": "支付",
-            "severity": "high",
-            "title": "订单支付待人工核验",
-            "summary": f"订单 #{row.id} 已进入支付核验超过 2 小时",
-            "detail": "需要核对支付流水、订单金额与合同状态，避免租客订单卡在待确认状态。",
-            "source": "booking",
-            "source_id": row.id,
-            "status": row.status.value,
-            "updated_at": row.updated_at.isoformat(),
-            "action": None,
-        })
-
-    expired_payment_booking_rows = await session.scalars(
-        select(Booking)
-        .where(
-            Booking.status.in_([BookingStatus.payment_pending, BookingStatus.payment_processing]),
-            Booking.payment_expires_at.is_not(None),
-            Booking.payment_expires_at < now,
-        )
-        .order_by(Booking.payment_expires_at.asc())
-        .limit(12)
-    )
-    for row in expired_payment_booking_rows:
-        alerts.append({
-            "id": f"booking_payment_expired:{row.id}",
-            "category": "支付",
-            "severity": "medium",
-            "title": "支付窗口已过期但订单未关闭",
-            "summary": f"订单 #{row.id} 支付有效期已过",
-            "detail": f"过期时间：{row.payment_expires_at.isoformat() if row.payment_expires_at else '-'}，当前状态：{row.status.value}。",
-            "source": "booking",
-            "source_id": row.id,
-            "status": row.status.value,
-            "updated_at": row.updated_at.isoformat(),
-            "action": None,
-        })
-
-    failed_payment_rows = await session.scalars(
-        select(Payment)
-        .where(Payment.status.in_([PaymentStatus.failed, PaymentStatus.review, PaymentStatus.refund_pending]))
-        .order_by(Payment.updated_at.desc())
-        .limit(12)
-    )
-    for row in failed_payment_rows:
-        severity = "high" if row.status in (PaymentStatus.review, PaymentStatus.refund_pending) else "medium"
-        title = {
-            PaymentStatus.failed: "支付失败记录待查看",
-            PaymentStatus.review: "支付流水待复核",
-            PaymentStatus.refund_pending: "退款待处理",
-        }.get(row.status, "支付异常")
-        alerts.append({
-            "id": f"payment:{row.id}",
-            "category": "支付",
-            "severity": severity,
-            "title": title,
-            "summary": f"支付单 {row.order_id} 当前状态：{row.status.value}",
-            "detail": row.trade_state_desc or f"金额：{row.amount}，预约 ID：{row.booking_id}，支付方式：{row.payment_method}。",
-            "source": "payment",
-            "source_id": row.id,
-            "status": row.status.value,
-            "updated_at": row.updated_at.isoformat(),
-            "action": None,
-        })
-
-    pending_repair_rows = await session.scalars(
-        select(RepairRequest)
-        .where(
-            RepairRequest.status.in_([RepairStatus.pending, RepairStatus.pending_escalated]),
-            RepairRequest.updated_at < now - timedelta(hours=4),
-        )
-        .order_by(RepairRequest.updated_at.asc())
-        .limit(12)
-    )
-    for row in pending_repair_rows:
-        alerts.append({
-            "id": f"repair_pending:{row.id}",
-            "category": "维修",
-            "severity": "high",
-            "title": "维修工单待派单超时",
-            "summary": f"工单 #{row.id} 超过 4 小时未派单",
-            "detail": f"问题类型：{row.issue_type.value}，租客 ID：{row.tenant_id}，负责人 ID：{row.bm_id}。",
-            "source": "repair_request",
-            "source_id": row.id,
-            "status": row.status.value,
-            "updated_at": row.updated_at.isoformat(),
-            "action": None,
-        })
-
-    assigned_repair_rows = await session.scalars(
-        select(RepairRequest)
-        .where(
-            RepairRequest.status == RepairStatus.assigned,
-            RepairRequest.updated_at < now - timedelta(hours=24),
-        )
-        .order_by(RepairRequest.updated_at.asc())
-        .limit(12)
-    )
-    for row in assigned_repair_rows:
-        alerts.append({
-            "id": f"repair_assigned:{row.id}",
-            "category": "维修",
-            "severity": "medium",
-            "title": "维修已派单但未开工",
-            "summary": f"工单 #{row.id} 已派单超过 24 小时",
-            "detail": f"维修工用户 ID：{row.assigned_worker_id or '-'}，计划时间：{row.scheduled_time or '-'}。",
-            "source": "repair_request",
-            "source_id": row.id,
-            "status": row.status.value,
-            "updated_at": row.updated_at.isoformat(),
-            "action": None,
-        })
-
-    stalled_repair_rows = await session.scalars(
-        select(RepairRequest)
-        .where(
-            RepairRequest.status == RepairStatus.in_progress,
-            RepairRequest.updated_at < now - timedelta(hours=48),
-        )
-        .order_by(RepairRequest.updated_at.asc())
-        .limit(12)
-    )
-    for row in stalled_repair_rows:
-        alerts.append({
-            "id": f"repair_stalled:{row.id}",
-            "category": "维修",
-            "severity": "high",
-            "title": "维修进度停滞",
-            "summary": f"工单 #{row.id} 维修中超过 48 小时未更新",
-            "detail": f"维修工用户 ID：{row.assigned_worker_id or '-'}，最近记录：{row.work_record or '暂无维修记录'}。",
-            "source": "repair_request",
-            "source_id": row.id,
-            "status": row.status.value,
-            "updated_at": row.updated_at.isoformat(),
-            "action": None,
-        })
-
-    completed_unconfirmed_repair_rows = await session.scalars(
-        select(RepairRequest)
-        .where(
-            RepairRequest.status == RepairStatus.completed,
-            RepairRequest.updated_at < now - timedelta(hours=48),
-        )
-        .order_by(RepairRequest.updated_at.asc())
-        .limit(12)
-    )
-    for row in completed_unconfirmed_repair_rows:
-        alerts.append({
-            "id": f"repair_unconfirmed:{row.id}",
-            "category": "维修",
-            "severity": "low",
-            "title": "维修完成待租客确认",
-            "summary": f"工单 #{row.id} 完成超过 48 小时未确认",
-            "detail": "需要提醒租客确认维修结果，或由管理员核实后结案。",
-            "source": "repair_request",
-            "source_id": row.id,
-            "status": row.status.value,
-            "updated_at": row.updated_at.isoformat(),
-            "action": None,
-        })
-
     contract_pdf_failed_rows = await session.scalars(
         select(Contract)
         .where(Contract.pdf_status == "failed")
@@ -405,30 +259,6 @@ async def list_system_alerts(
             "source": "contract",
             "source_id": row.id,
             "status": row.pdf_status,
-            "updated_at": row.updated_at.isoformat(),
-            "action": None,
-        })
-
-    unsigned_contract_rows = await session.scalars(
-        select(Contract)
-        .where(
-            Contract.status == "generated",
-            Contract.updated_at < now - timedelta(hours=24),
-        )
-        .order_by(Contract.updated_at.asc())
-        .limit(12)
-    )
-    for row in unsigned_contract_rows:
-        alerts.append({
-            "id": f"contract_unsigned:{row.id}",
-            "category": "合同",
-            "severity": "medium",
-            "title": "合同生成后未签署",
-            "summary": f"合同 {row.agreement_number or row.id} 超过 24 小时未签署",
-            "detail": f"预约 ID：{row.booking_id}，租客用户 ID：{row.tenant_id}，模板：{row.template_name}。",
-            "source": "contract",
-            "source_id": row.id,
-            "status": row.status,
             "updated_at": row.updated_at.isoformat(),
             "action": None,
         })
@@ -459,28 +289,6 @@ async def list_system_alerts(
                     "resource_id": conn.id,
                 },
             })
-        if conn.sync_status == PMSSyncStatus.pending_review:
-            alerts.append({
-                **base,
-                "id": f"pms_review:{conn.id}",
-                "severity": "medium",
-                "title": "PMS 映射待确认",
-                "summary": f"{conn.label} 有字段映射需要人工确认",
-                "detail": "对接字段或房型映射需要确认后再同步入库。",
-                "status": conn.sync_status.value,
-                "action": None,
-            })
-        if not conn.is_active:
-            alerts.append({
-                **base,
-                "id": f"pms_inactive:{conn.id}",
-                "severity": "low",
-                "title": "PMS 对接已停用",
-                "summary": f"{conn.label} 当前未启用",
-                "detail": "该公寓不会继续从 PMS 自动同步房源。",
-                "status": "inactive",
-                "action": None,
-            })
         if conn.is_active and not conn.base_url.startswith("mock://") and not conn.api_key:
             alerts.append({
                 **base,
@@ -492,41 +300,25 @@ async def list_system_alerts(
                 "status": "credential_missing",
                 "action": None,
             })
-        if conn.is_active:
-            if conn.last_synced_at is None:
+        if conn.is_active and conn.last_synced_at is not None:
+            synced_at = conn.last_synced_at
+            if synced_at.tzinfo is None:
+                synced_at = synced_at.replace(tzinfo=timezone.utc)
+            if now - synced_at > timedelta(hours=24):
                 alerts.append({
                     **base,
-                    "id": f"pms_never_synced:{conn.id}",
+                    "id": f"pms_stale:{conn.id}",
                     "severity": "medium",
-                    "title": "PMS 从未完成同步",
-                    "summary": f"{conn.label} 尚无成功同步记录",
-                    "detail": "该对接创建后还没有完成过一次同步。",
-                    "status": "never_synced",
+                    "title": "PMS 同步任务停滞",
+                    "summary": f"{conn.label} 超过 24 小时未同步",
+                    "detail": f"上次同步时间：{conn.last_synced_at.isoformat()}，请检查定时任务或外部 API 状态。",
+                    "status": "stale",
                     "action": {
                         "type": "retry_pms_sync",
-                        "label": "立即同步",
+                        "label": "重新同步",
                         "resource_id": conn.id,
                     },
                 })
-            else:
-                synced_at = conn.last_synced_at
-                if synced_at.tzinfo is None:
-                    synced_at = synced_at.replace(tzinfo=timezone.utc)
-                if now - synced_at > timedelta(hours=24):
-                    alerts.append({
-                        **base,
-                        "id": f"pms_stale:{conn.id}",
-                        "severity": "medium",
-                        "title": "PMS 同步超时",
-                        "summary": f"{conn.label} 超过 24 小时未同步",
-                        "detail": f"上次同步时间：{conn.last_synced_at.isoformat()}",
-                        "status": "stale",
-                        "action": {
-                            "type": "retry_pms_sync",
-                            "label": "重新同步",
-                            "resource_id": conn.id,
-                        },
-                    })
 
     for item in provider_availability():
         if not item.available and not item.test_mode:
@@ -593,6 +385,25 @@ async def resolve_system_alert(
     alert.mark_resolved(current_user.id)
     await session.commit()
     return {"id": alert.id, "status": alert.status.value}
+
+
+@router.post("/pms-connections/{connection_id}/sync")
+async def retry_pms_connection_sync(
+    connection_id: int,
+    session: AsyncSession = Depends(get_db_session),
+    _: User = Depends(require_admin),
+) -> dict:
+    """异常处理页触发 PMS 连接重新同步。"""
+    try:
+        stats = await PMSSyncService(session).sync_connection(connection_id)
+        return {"status": "success", **stats}
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"PMS sync failed: {exc}",
+        ) from exc
 
 
 @router.get("/stats")
