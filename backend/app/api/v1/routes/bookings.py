@@ -23,6 +23,10 @@ from app.services.property_service import PropertyService
 router = APIRouter()
 
 
+def _policy_version_number(policy) -> int:
+    return int(str(policy.version).split(".")[0])
+
+
 @router.get("/drafts/{unit_type_id}", response_model=BookingFlowDraftRead)
 async def get_booking_flow_draft(
     unit_type_id: int,
@@ -94,7 +98,7 @@ async def confirm_booking_with_policies(
 ) -> BookingConfirmationRead:
     flow_draft = await session.scalar(select(BookingFlowDraft).where(
         BookingFlowDraft.user_id == current_user.id,
-        BookingFlowDraft.unit_type_id == confirmation.unit_type_id,
+        BookingFlowDraft.unit_type_id == confirmation.property_id,
     ))
     if not flow_draft:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Booking flow steps are incomplete: draft not found")
@@ -114,14 +118,14 @@ async def confirm_booking_with_policies(
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="All current policies must be accepted")
     for key, policy in POLICIES.items():
         acceptance = acceptance_map[key]
-        if acceptance.version != int(policy.version.split(".")[0]) or acceptance.content_hash != policy.content_hash:
+        if acceptance.version != _policy_version_number(policy) or acceptance.content_hash != policy.content_hash:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail=f"Policy {key} has changed; please review the latest version",
             )
 
-    # 获取 UnitType（不再使用旧的 Property/Room）
-    unit_type_id = getattr(confirmation, 'unit_type_id', None) or getattr(confirmation, 'unit_type_id', None)
+    # 前端字段仍叫 property_id，当前三层模型中这里实际对应 UnitType ID。
+    unit_type_id = confirmation.property_id
     if not unit_type_id:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing unit_type_id")
 
@@ -254,9 +258,9 @@ async def get_policy(key: str) -> dict:
     policy = POLICIES[key]
     return {
         "key": policy.key,
-        "title": policy.title_zh,
-        "version": int(policy.version.split(".")[0]),
-        "content": policy.summary_zh,
+        "title": policy.title,
+        "version": _policy_version_number(policy),
+        "content": policy.content,
         "content_hash": policy.content_hash,
     }
 

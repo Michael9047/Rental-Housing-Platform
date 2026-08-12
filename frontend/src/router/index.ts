@@ -146,10 +146,6 @@ const routes: RouteRecordRaw[] = [
         component: () => import('@/views/PropertyImages.vue'),
         meta: { requiresAuth: true, requiresLandlord: true },
       },
-      {
-        path: 'booking/:id/move-in-date',
-        redirect: (to: any) => ({ name: 'property-detail', params: { id: to.params.id } }),
-      },
       // ── 新版预订流程（6步）──
       {
         path: 'booking/:propertyId/move-in-date',

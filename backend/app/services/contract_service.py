@@ -11,7 +11,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.booking import Booking, BookingStatus
 from app.models.contract import Contract
 from app.models.policy_consent import PolicyConsent
-from app.models.property import Property, PropertyType
 from app.models.user import User
 from app.services.lease_pricing_service import LeasePricingService
 
@@ -20,15 +19,6 @@ TEMPLATE_VERSION = "2026.1"
 DEVELOPMENT_NOTICE = "业务开发模板，待房源所在地法务审核"
 PLATFORM_NAME = "Rental Housing Platform / 租房平台"
 PLATFORM_ROLE = "预订信息与交易流程中介平台 / booking intermediary and process facilitator"
-
-PROPERTY_TYPE_LABELS = {
-    PropertyType._1bed: "一室公寓 / 1-Bed Apartment",
-    PropertyType._2bed: "两室公寓 / 2-Bed Apartment",
-    PropertyType._3bed: "三室公寓 / 3-Bed Apartment",
-    PropertyType.studio: "单间公寓 / Studio",
-    PropertyType.shared: "合租房间 / Shared accommodation",
-}
-
 
 def _money(value: dict | None) -> str:
     if not value:
@@ -43,9 +33,12 @@ class ContractService:
     async def _build_source_snapshot(self, booking: Booking) -> dict:
         tenant = await self.session.get(User, booking.tenant_id)
         landlord = await self.session.get(User, booking.bm_id)
-        property_obj = await self.session.get(Property, booking.institute_id)
-        if not property_obj:
-            raise ValueError("Property not found")
+        unit_type = booking.unit_type
+        institute = booking.institute
+        if not unit_type:
+            raise ValueError("Unit type not found")
+        if not institute:
+            raise ValueError("Institute not found")
 
         application = booking.application_data or {}
         personal = application.get("personal_info") or {}
@@ -56,7 +49,7 @@ class ContractService:
         )
         if option is None and booking.scheduled_date:
             calculated = LeasePricingService.calculate(
-                property_obj, datetime.fromisoformat(booking.scheduled_date).date()
+                unit_type, datetime.fromisoformat(booking.scheduled_date).date()
             ).model_dump(mode="json")
             pricing = calculated
             option = next(
@@ -119,11 +112,11 @@ class ContractService:
             "platform_role": PLATFORM_ROLE,
             "tenant_name_cn": tenant_cn,
             "tenant_name_en": tenant_en,
-            "property_name": getattr(getattr(property_obj, 'unit_type', None), 'name', property_obj.room_number or ''),
-            "property_address": getattr(getattr(getattr(property_obj, 'unit_type', None), 'institute', None), 'address', ''),
-            "property_id": property_obj.id,
-            "room_type": getattr(getattr(property_obj, 'unit_type', None), 'name', '') or '',
-            "occupancy_limit": property_rules.get("occupancy_limit") or max(1, getattr(getattr(property_obj, 'unit_type', None), 'bedrooms', 0) or 1),
+            "property_name": f"{institute.name} - {unit_type.name}",
+            "property_address": institute.address or "",
+            "property_id": unit_type.id,
+            "room_type": unit_type.name,
+            "occupancy_limit": property_rules.get("occupancy_limit") or max(1, unit_type.bedrooms or 1),
             "commencement_date": commencement,
             "expiry_date": option["end_date"],
             "tenancy_months": booking.lease_months,
@@ -204,7 +197,7 @@ class ContractService:
         ).hexdigest()
         snapshot["content_hash"] = content_hash
         contract = Contract(
-            booking_id=booking.id, tenant_id=booking.tenant_id, property_id=booking.institute_id,
+            booking_id=booking.id, tenant_id=booking.tenant_id, unit_type_id=booking.unit_type_id,
             template_name="housing_reservation_tenancy_bilingual", agreement_number=agreement_number,
             version=version, template_version=TEMPLATE_VERSION, content_hash=content_hash,
             snapshot=snapshot, generated_at=generated_at, content=content, status="generated",

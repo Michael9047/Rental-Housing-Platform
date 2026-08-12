@@ -14,7 +14,8 @@ class ContractResponse(BaseModel):
     id: str
     booking_id: int
     tenant_id: int
-    property_id: int
+    unit_type_id: int | None = None
+    property_id: int | None = None
     template_name: str
     agreement_number: str | None = None
     version: int = 1

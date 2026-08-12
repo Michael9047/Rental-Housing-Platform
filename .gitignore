@@ -15,6 +15,7 @@ frontend/dist/
 
 # Uploads
 backend/uploads/
+backend/private_objects/
 
 # Dev database (SQLite)
 *.db

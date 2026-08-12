@@ -380,10 +380,9 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, reactive, onMounted } from 'vue'
+import { ref, computed, reactive } from 'vue'
 import { UserFilled } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { dashboardService } from '@/services/dashboard'
 import { adminService } from '@/services/admin'
 import type { Property } from '@/types/property'
 import { useAuthStore } from '@/stores/auth'
@@ -394,13 +393,14 @@ const authStore = useAuthStore()
 const adminName = computed(() => authStore.user?.username || '房东')
 const adminEmail = computed(() => authStore.user?.email || '—')
 const adminPhone = computed(() => authStore.user?.phone || '—')
+const adminDistrict = computed(() => '新加坡 · 核心公寓片区')
+const adminSince = computed(() => authStore.user?.created_at ? new Date(authStore.user.created_at).toLocaleDateString() : '—')
 const verified = ref(false)
 
 const showEditProfile = ref(false)
 const showUploadQualification = ref(false)
 
 // ── 真实数据 ──
-const loading = ref(false)
 const dashboard = reactive({
   properties: { total: 0, available: 0, rented: 0, maintenance: 0 },
   bookings: { pending: 0 },
@@ -417,16 +417,6 @@ const statsCards = computed(() => [
   { icon: '📊', label: 'Mock 演示', value: 48, sub: '以下 Tab 为演示数据', tab: 'messages' },
   { icon: '👁️', label: 'Mock 演示', value: 156, sub: '待接通真实 API', tab: 'messages' },
 ])
-
-async function fetchData() {
-  loading.value = true
-  try {
-    Object.assign(dashboard, await dashboardService.getLandlord())
-  } catch { /* ignore */ }
-  finally { loading.value = false }
-}
-
-onMounted(fetchData)
 
 // ── Tab 状态 ──
 const activeTab = ref('properties')
@@ -583,8 +573,6 @@ async function reviewReject(row: Property) {
   } catch { /* cancelled */ }
 }
 
-// 页面加载时自动拉取
-loadPendingReviews()
 </script>
 
 <style scoped>

@@ -13,7 +13,7 @@ from app.models.booking import Booking, BookingStatus
 from app.models.audit_log import AuditLog
 from app.models.contract import Contract, ContractSignature
 from app.models.payment import Payment, PaymentStatus, PaymentWebhookEvent
-from app.models.property import Property, PropertyStatus
+from app.models.unit_type import UnitType, UnitTypeStatus
 from app.models.notification import Notification, NotificationType
 from app.models.user import User, UserRole
 from app.services.payment_provider import MockHostedPaymentProvider, PaymentMethod, PaymentRequest, get_test_provider
@@ -72,7 +72,7 @@ class PaymentOrderService:
         booking.inventory_reserved = False
 
     @staticmethod
-    def _price_snapshot(booking: Booking, contract: Contract, property_obj: Property, tenant_name: str) -> tuple[dict, dict]:
+    def _price_snapshot(booking: Booking, contract: Contract, unit_type: UnitType, tenant_name: str) -> tuple[dict, dict]:
         pricing = (booking.application_data or {}).get("pricing_snapshot") or {}
         option = next((x for x in pricing.get("options", []) if x.get("months") == booking.lease_months), None)
         if not option:
@@ -97,11 +97,11 @@ class PaymentOrderService:
                 }
             }
         prices = option["prices"]
-        ut = getattr(property_obj, 'unit_type', None)
-        inst = getattr(ut, 'institute', None) if ut else None
+        inst = booking.institute or getattr(unit_type, "institute", None)
         snapshot = {
-            "order_number": str(booking.id), "property_id": booking.institute_id,
-            "property_name": getattr(ut, 'name', property_obj.room_number or ''), "property_address": getattr(inst, 'address', ''),
+            "order_number": str(booking.id), "property_id": booking.unit_type_id,
+            "property_name": f"{getattr(inst, 'name', '')} - {unit_type.name}".strip(" -"),
+            "property_address": getattr(inst, 'address', '') or '',
             "commencement_date": booking.scheduled_date, "expiry_date": option["end_date"],
             "tenancy_months": booking.lease_months, "tenant_name": tenant_name,
             "agreement_id": contract.id, "agreement_number": contract.agreement_number,
@@ -117,9 +117,15 @@ class PaymentOrderService:
         start = datetime.fromisoformat(booking.scheduled_date).date()
         end = LeasePricingService.add_calendar_months(start, booking.lease_months)
         candidates = await self.session.scalars(select(Booking).where(
-            Booking.property_id == booking.institute_id,
+            Booking.unit_type_id == booking.unit_type_id,
             Booking.id != booking.id,
-            Booking.status.in_([BookingStatus.contract_signed, BookingStatus.payment_pending, BookingStatus.completed]),
+            Booking.status.in_([
+                BookingStatus.contract_signed,
+                BookingStatus.payment_pending,
+                BookingStatus.payment_processing,
+                BookingStatus.paid,
+                BookingStatus.completed,
+            ]),
         ))
         for other in candidates:
             if not other.scheduled_date or not other.lease_months:
@@ -137,7 +143,10 @@ class PaymentOrderService:
         if by_key:
             if by_key.booking_id != booking_id or by_key.user_id != user_id: raise PermissionError("幂等键已用于其他订单")
             return by_key
-        booking = await self.session.scalar(select(Booking).where(Booking.id == booking_id).with_for_update())
+        booking = await self.session.scalar(select(Booking).options(
+            selectinload(Booking.unit_type).selectinload(UnitType.institute),
+            selectinload(Booking.institute),
+        ).where(Booking.id == booking_id).with_for_update())
         if not booking: raise LookupError("订单不存在")
         if booking.tenant_id != user_id: raise PermissionError("只能支付本人的订单")
         active = await self.session.scalar(select(Payment).where(Payment.booking_id == booking_id, Payment.status.in_([PaymentStatus.pending, PaymentStatus.processing])).order_by(Payment.created_at.desc()))
@@ -151,10 +160,11 @@ class PaymentOrderService:
         contract = await self.session.scalar(select(Contract).where(Contract.booking_id == booking.id, Contract.status == "signed").order_by(Contract.version.desc()))
         if not contract or not await self.session.scalar(select(ContractSignature).where(ContractSignature.agreement_id == contract.id, ContractSignature.tenant_user_id == user_id)):
             raise RuntimeError("未找到当前合同的有效租客签名")
-        property_obj = await self.session.get(Property, booking.institute_id)
-        if not property_obj or property_obj.status != PropertyStatus.available: raise RuntimeError("房源当前不可支付预订")
+        unit_type = booking.unit_type or await self.session.get(UnitType, booking.unit_type_id)
+        status_value = unit_type.status.value if unit_type and hasattr(unit_type.status, "value") else (unit_type.status if unit_type else None)
+        if not unit_type or status_value != UnitTypeStatus.available.value: raise RuntimeError("房源当前不可支付预订")
         await self._ensure_availability(booking)
-        pricing, snapshot = self._price_snapshot(booking, contract, property_obj, tenant_name)
+        pricing, snapshot = self._price_snapshot(booking, contract, unit_type, tenant_name)
         local = snapshot["fees"]["current_total"]
         cny_option = next((x for x in pricing["options"] if x.get("months") == booking.lease_months), None)
         if cny_option:
@@ -204,12 +214,15 @@ class PaymentOrderService:
                     self._notify(admin.id, NotificationType.system, "迟到付款待处理", f"订单 #{booking.id} 已过期后收到付款，请人工核对或退款。")
                 await self.session.commit(); await self.session.refresh(payment)
                 return payment
-            property_obj = await self.session.scalar(select(Property).where(Property.id == booking.institute_id).with_for_update())
+            unit_type = await self.session.scalar(
+                select(UnitType).where(UnitType.id == booking.unit_type_id).with_for_update()
+            )
             payment.status, payment.paid_at, payment.transaction_id, payment.trade_state = PaymentStatus.success, datetime.now(timezone.utc), event.get("transaction_id"), "SUCCESS"
             booking.deposit_status, booking.payment_transaction_id = "paid", payment.transaction_id
             self._transition(booking, BookingStatus.paid, reason="支付服务商有效成功 webhook", payment_id=payment.id)
             booking.inventory_reserved = False
-            property_obj.status = PropertyStatus.rented
+            if unit_type:
+                unit_type.status = UnitTypeStatus.rented
             await OrderNotificationService(self.session).enqueue("payment_succeeded", booking, payment=payment, discriminator=payment.id)
             await OrderNotificationService(self.session).enqueue_landlord_booking_confirmed(booking, payment)
         else:
