@@ -27,8 +27,8 @@ class BookingRead(BaseModel):
 
     id: int
     tenant_id: int
-    property_id: int
-    landlord_id: int
+    property_id: int | None
+    landlord_id: int | None
     status: BookingStatus
     message: str | None
     scheduled_date: str | None

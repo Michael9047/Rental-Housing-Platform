@@ -15,6 +15,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.mixins import TimestampMixin
 from app.db.session import Base
+from app.models.unit_type import UnitType
 
 
 class RepairIssueType(str, enum.Enum):
@@ -60,8 +61,9 @@ class RepairRequest(TimestampMixin, Base):
     __tablename__ = "repair_requests"
 
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    # 三层架构后 property 即 UnitType（原指向已删除的 rooms 表）
     property_id: Mapped[int] = mapped_column(
-        ForeignKey("rooms.id", ondelete="CASCADE"), index=True
+        ForeignKey("unit_types.id", ondelete="CASCADE"), index=True
     )
     tenant_id: Mapped[int] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE"), index=True
@@ -98,7 +100,7 @@ class RepairRequest(TimestampMixin, Base):
     reject_reason: Mapped[str | None] = mapped_column(SAText, nullable=True)
 
     # 关系
-    property: Mapped["Room"] = relationship()
+    property: Mapped["UnitType"] = relationship()
     tenant: Mapped["User"] = relationship(foreign_keys=[tenant_id])
     landlord: Mapped["User"] = relationship(foreign_keys=[landlord_id])
     assigned_worker: Mapped["User | None"] = relationship(foreign_keys=[assigned_worker_id])

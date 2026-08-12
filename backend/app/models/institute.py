@@ -35,6 +35,10 @@ class Institute(TimestampMixin, Base):
     longitude: Mapped[Decimal | None] = mapped_column(Numeric(9, 6), nullable=True)
     contact_phone: Mapped[str | None] = mapped_column(String(32))
     contact_email: Mapped[str | None] = mapped_column(String(255))
+    # BD 负责人（三层架构：公寓由 business manager 管理）
+    bm_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), index=True, nullable=True
+    )
     logo_url: Mapped[str | None] = mapped_column(String(500))
     amenities: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
     female_only: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, server_default=text("false"))

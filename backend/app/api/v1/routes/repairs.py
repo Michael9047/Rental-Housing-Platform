@@ -64,7 +64,7 @@ async def _repair_to_read(repair) -> RepairRead:
         tenant_name=tenant.username if tenant else None,
         landlord_name=landlord.username if landlord else None,
         worker_name=worker.username if worker else None,
-        property_title=getattr(prop, 'title', getattr(prop, 'room_number', None)) if prop else None,
+        property_title=getattr(prop, 'name', getattr(prop, 'title', None)) if prop else None,
         institute_contact=institute_contact,
     )
 

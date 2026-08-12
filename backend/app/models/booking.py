@@ -8,6 +8,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.mixins import TimestampMixin
 from app.db.session import Base
+from app.models.unit_type import UnitType
 
 
 class BookingStatus(str, enum.Enum):
@@ -35,11 +36,18 @@ class Booking(TimestampMixin, Base):
     tenant_id: Mapped[int] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE"), index=True
     )
-    property_id: Mapped[int] = mapped_column(
-        ForeignKey("rooms.id", ondelete="CASCADE"), index=True
+    property_id: Mapped[int | None] = mapped_column(
+        ForeignKey("rooms.id", ondelete="CASCADE"), index=True, nullable=True
     )
-    landlord_id: Mapped[int] = mapped_column(
-        ForeignKey("users.id", ondelete="CASCADE"), index=True
+    landlord_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=True
+    )
+    # 三层架构列（与旧列并存，读取时用新列填充旧列兼容字段）
+    unit_type_id: Mapped[int | None] = mapped_column(
+        ForeignKey("unit_types.id", ondelete="CASCADE"), index=True, nullable=True
+    )
+    bm_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), index=True, nullable=True
     )
     status: Mapped[BookingStatus] = mapped_column(
         Enum(BookingStatus, name="booking_status"),
@@ -60,5 +68,6 @@ class Booking(TimestampMixin, Base):
     application_data: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
 
     tenant: Mapped["User"] = relationship(foreign_keys=[tenant_id])
-    property: Mapped["Room"] = relationship()
+    # 三层架构后 property 即 UnitType（原指向已删除的 rooms 表）
+    property: Mapped["UnitType"] = relationship()
     landlord: Mapped["User"] = relationship(foreign_keys=[landlord_id])

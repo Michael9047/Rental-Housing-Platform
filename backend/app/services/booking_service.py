@@ -145,6 +145,16 @@ class BookingService:
 
         return booking
 
+    @staticmethod
+    def _fill_compat(bookings: list["Booking"]) -> list["Booking"]:
+        """三层架构：用 unit_type_id/bm_id 填充旧列 property_id/landlord_id（兼容旧前端）。"""
+        for b in bookings:
+            if b.property_id is None and b.unit_type_id is not None:
+                b.property_id = b.unit_type_id
+            if b.landlord_id is None and b.bm_id is not None:
+                b.landlord_id = b.bm_id
+        return bookings
+
     async def list_by_tenant(self, tenant_id: int) -> list[Booking]:
         stmt = (
             select(Booking)
@@ -152,7 +162,7 @@ class BookingService:
             .order_by(Booking.created_at.desc())
         )
         result = await self.session.scalars(stmt)
-        return list(result)
+        return self._fill_compat(list(result))
 
     async def list_by_landlord(self, landlord_id: int) -> list[Booking]:
         stmt = (
@@ -161,7 +171,7 @@ class BookingService:
             .order_by(Booking.created_at.desc())
         )
         result = await self.session.scalars(stmt)
-        return list(result)
+        return self._fill_compat(list(result))
 
     async def get(self, booking_id: int) -> Booking | None:
         return await self.session.get(Booking, booking_id)

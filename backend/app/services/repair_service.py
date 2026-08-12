@@ -25,21 +25,26 @@ class RepairService:
         if not property_obj:
             raise ValueError("Property not found")
 
-        # 获取公寓联系人电话（从 institute 取）
+        # 获取公寓联系人电话 + BD 负责人（从 institute 取）
         institute_contact = None
+        bm_id = None
         from app.models.institute import Institute
         inst_id = getattr(property_obj, 'institute_id', None)
+        inst = None
         if inst_id:
             inst_stmt = select(Institute).where(Institute.id == inst_id)
             inst_result = await self.session.execute(inst_stmt)
             inst = inst_result.scalar_one_or_none()
             if inst:
                 institute_contact = inst.contact_phone
+                bm_id = inst.bm_id
+        if not bm_id:
+            raise ValueError("该房源所属公寓未配置 BD 负责人")
 
         repair = RepairRequest(
             property_id=repair_in.property_id,
             tenant_id=tenant_id,
-            landlord_id=property_obj.landlord_id,
+            landlord_id=bm_id,
             issue_type=repair_in.issue_type,
             severity=repair_in.severity,
             description=repair_in.description,
