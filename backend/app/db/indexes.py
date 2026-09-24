@@ -20,7 +20,7 @@ async def create_pgvector_indexes(session: AsyncSession) -> None:
     If fewer than 1000 rows exist a simple exact-neighbor scan is used instead.
     """
     result = await session.execute(
-        text("SELECT COUNT(*) FROM properties WHERE embedding IS NOT NULL")
+        text("SELECT COUNT(*) FROM rooms WHERE embedding IS NOT NULL")
     )
     row_count: int = result.scalar() or 0
 
@@ -100,7 +100,7 @@ async def check_query_performance(session: AsyncSession, query_sql: str, query_n
 async def run_performance_checks(session: AsyncSession) -> None:
     """Run performance checks on common queries."""
     queries = [
-        ("SELECT p.*, p.created_at FROM properties p WHERE p.district = $1 AND p.status = $2 ORDER BY p.created_at DESC LIMIT 20",
+        ("SELECT r.*, r.created_at FROM rooms r WHERE r.district = $1 AND r.status = $2 ORDER BY r.created_at DESC LIMIT 20",
          "Property Search (district + status)", ["Changning", "available"]),
         ("SELECT b.* FROM bookings b WHERE b.tenant_id = $1 AND b.status = $2 ORDER BY b.created_at DESC LIMIT 50",
          "Tenant Bookings (user + status)", ["1", "pending"]),

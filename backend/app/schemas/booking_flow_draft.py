@@ -1,5 +1,6 @@
 """预订流程草稿 schema。"""
-from datetime import datetime
+from datetime import date, datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
 
@@ -8,8 +9,9 @@ class BookingPersonalInfoData(BaseModel):
     chinese_name: str | None = None
     given_name_pinyin: str | None = None
     surname_pinyin: str | None = None
-    birth_date: str | None = None
+    birth_date: date | str | None = None
     gender: str | None = None
+    phone_country_code: str | None = None
     phone: str | None = None
     email: str | None = None
     nationality: str | None = None
@@ -17,6 +19,7 @@ class BookingPersonalInfoData(BaseModel):
     enrollment_grade: str | None = None
     major_english: str | None = None
     region: str | None = None
+    address_line: str | None = None
     address_detail: str | None = None
     postal_code: str | None = None
 
@@ -26,20 +29,23 @@ class BookingEmergencyContactData(BaseModel):
     given_name_pinyin: str | None = None
     surname_pinyin: str | None = None
     relation: str | None = None
-    birth_date: str | None = None
+    birth_date: date | str | None = None
+    phone_country_code: str | None = None
     phone: str | None = None
     email: str | None = None
     gender: str | None = None
     region: str | None = None
+    address_line: str | None = None
     address_detail: str | None = None
     postal_code: str | None = None
     consultant_id: str | None = None
+    same_as_personal_address: bool | None = None
 
 
 class BookingFlowDraftUpdate(BaseModel):
-    move_in_date: str | None = None
+    move_in_date: date | str | None = None
     lease_months: int | None = None
-    current_step: str | None = None
+    current_step: Literal["move_in_date", "lease_term", "personal_info", "emergency_contact", "review"] | None = None
     personal_info: BookingPersonalInfoData | None = None
     emergency_contact: BookingEmergencyContactData | None = None
 

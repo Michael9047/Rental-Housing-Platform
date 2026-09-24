@@ -1,16 +1,83 @@
 """户型路由 — 三层架构中间层"""
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_db_session, require_landlord
+from app.api.deps import get_current_user_optional, get_db_session, require_landlord
 from app.models.user import User
+from app.models.unit_type import UnitType
 from app.schemas.unit_type import (
     UnitTypeCreate, UnitTypeUpdate, UnitTypeRead, UnitTypeListResponse,
 )
 from app.services.unit_type_service import UnitTypeService
+from app.services.institute_access import can_manage_institute
 
 router = APIRouter(tags=["unit-types"])
+
+
+class UnitTypeLifecycleBatchRequest(BaseModel):
+    """户型批量上下架请求。"""
+
+    ids: list[int] = Field(min_length=1, max_length=100)
+
+
+def _lifecycle_http_error(exc: Exception) -> HTTPException:
+    """将生命周期领域错误转换为稳定的接口错误。"""
+    from app.services.listing_lifecycle_service import ListingLifecycleError
+
+    if isinstance(exc, PermissionError):
+        return HTTPException(status_code=403, detail=str(exc))
+    if isinstance(exc, ListingLifecycleError):
+        detail: dict[str, object] = {"message": str(exc)}
+        if exc.missing_fields:
+            detail["missing_fields"] = list(exc.missing_fields)
+        return HTTPException(status_code=422, detail=detail)
+    return HTTPException(status_code=400, detail=str(exc))
+
+
+@router.post("/batch/offline")
+async def batch_offline_unit_types(
+    body: UnitTypeLifecycleBatchRequest,
+    session: AsyncSession = Depends(get_db_session),
+    current_user: User = Depends(require_landlord),
+) -> dict:
+    """批量下架户型。"""
+    from app.services.listing_lifecycle_service import ListingLifecycleService
+
+    service = ListingLifecycleService(session)
+    success: list[int] = []
+    errors: list[dict] = []
+    for unit_type_id in body.ids:
+        try:
+            await service.offline_unit_type(unit_type_id, current_user)
+            success.append(unit_type_id)
+        except Exception as exc:
+            errors.append({"id": unit_type_id, "error": str(exc)})
+    return {"success": success, "failed": len(errors), "errors": errors}
+
+
+@router.post("/batch/publish")
+async def batch_publish_unit_types(
+    body: UnitTypeLifecycleBatchRequest,
+    session: AsyncSession = Depends(get_db_session),
+    current_user: User = Depends(require_landlord),
+) -> dict:
+    """批量重新上架户型。"""
+    from app.services.listing_lifecycle_service import ListingLifecycleError, ListingLifecycleService
+
+    service = ListingLifecycleService(session)
+    success: list[int] = []
+    errors: list[dict] = []
+    for unit_type_id in body.ids:
+        try:
+            await service.publish_unit_type(unit_type_id, current_user)
+            success.append(unit_type_id)
+        except ListingLifecycleError as exc:
+            errors.append({"id": unit_type_id, "error": str(exc), "missing_fields": list(exc.missing_fields)})
+        except Exception as exc:
+            errors.append({"id": unit_type_id, "error": str(exc)})
+    return {"success": success, "failed": len(errors), "errors": errors}
 
 
 # ═══ 注意：不带路径参数的路由必须放在带路径参数的路由之前 ═══
@@ -19,8 +86,10 @@ router = APIRouter(tags=["unit-types"])
 async def create_unit_type(
     data: UnitTypeCreate,
     session: AsyncSession = Depends(get_db_session),
-    _current_user: User = Depends(require_landlord),
+    current_user: User = Depends(require_landlord),
 ):
+    if not await can_manage_institute(session, current_user, data.institute_id):
+        raise HTTPException(status_code=403, detail="无权在该公寓下创建户型")
     ut = await UnitTypeService(session).create(data)
     return _to_read(ut)
 
@@ -28,13 +97,14 @@ async def create_unit_type(
 @router.get("", response_model=UnitTypeListResponse)
 async def list_unit_types(
     session: AsyncSession = Depends(get_db_session),
+    current_user: User | None = Depends(get_current_user_optional),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=500),
     institute_id: int | None = Query(default=None, description="筛选公寓"),
 ):
     skip = (page - 1) * page_size
     result = await UnitTypeService(session).list(
-        skip=skip, limit=page_size, institute_id=institute_id
+        skip=skip, limit=page_size, institute_id=institute_id, current_user=current_user
     )
     items = [_to_read(ut) for ut in result["items"]]
     return UnitTypeListResponse(
@@ -96,9 +166,8 @@ async def get_lease_pricing(
     from app.models.unit_type import UnitType
     ut = await session.get(UnitType, unit_type_id)
     if not ut:
-        from fastapi import HTTPException
         raise HTTPException(404, "户型不存在")
-    result = LeasePricingService.calculate(ut, move_in_date)
+    result = await LeasePricingService.calculate(ut, move_in_date)
     return result.model_dump()
 
 
@@ -117,7 +186,6 @@ async def get_booking_availability(
 
     ut = await session.get(UnitType, unit_type_id)
     if not ut:
-        from fastapi import HTTPException
         raise HTTPException(404, "户型不存在")
 
     year_int = int(year); month_int = int(month)
@@ -182,12 +250,10 @@ async def validate_booking_date(
 
     move_in_date = body.get("move_in_date")
     if not move_in_date:
-        from fastapi import HTTPException
         raise HTTPException(400, "缺少 move_in_date")
 
     ut = await session.get(UnitType, unit_type_id)
     if not ut:
-        from fastapi import HTTPException
         raise HTTPException(404, "户型不存在")
 
     if not ut.has_vacancy or ut.available_count <= 0:
@@ -210,14 +276,16 @@ async def validate_booking_date(
 @router.get("/recycle-bin", response_model=UnitTypeListResponse)
 async def list_deleted_unit_types(
     session: AsyncSession = Depends(get_db_session),
-    _current_user: User = Depends(require_landlord),
+    current_user: User = Depends(require_landlord),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=2000),
     institute_id: int | None = Query(default=None),
 ):
     """已删除户型回收站"""
     skip = (page - 1) * page_size
-    result = await UnitTypeService(session).list_deleted(skip=skip, limit=page_size, institute_id=institute_id)
+    result = await UnitTypeService(session).list_deleted(
+        current_user=current_user, skip=skip, limit=page_size, institute_id=institute_id
+    )
     items = [_to_read(ut) for ut in result["items"]]
     return UnitTypeListResponse(
         items=items, total=result["total"], page=result["page"],
@@ -232,7 +300,6 @@ async def get_unit_type(
 ):
     ut = await UnitTypeService(session).get(unit_type_id)
     if not ut:
-        from fastapi import HTTPException
         raise HTTPException(404, "户型不存在")
     return _to_read(ut)
 
@@ -242,25 +309,69 @@ async def update_unit_type(
     unit_type_id: int,
     data: UnitTypeUpdate,
     session: AsyncSession = Depends(get_db_session),
-    _current_user: User = Depends(require_landlord),
+    current_user: User = Depends(require_landlord),
 ):
+    existing = await UnitTypeService(session).get(unit_type_id)
+    if not existing:
+        raise HTTPException(status_code=404, detail="户型不存在")
+    if not await can_manage_institute(session, current_user, existing.institute_id):
+        raise HTTPException(status_code=403, detail="无权管理该户型")
+    if data.institute_id is not None and not await can_manage_institute(session, current_user, data.institute_id):
+        raise HTTPException(status_code=403, detail="无权将户型转移到该公寓")
     ut = await UnitTypeService(session).update(unit_type_id, data)
     if not ut:
-        from fastapi import HTTPException
         raise HTTPException(404, "户型不存在")
     return _to_read(ut)
+
+
+@router.post("/{unit_type_id}/offline", response_model=UnitTypeRead)
+async def offline_unit_type(
+    unit_type_id: int,
+    session: AsyncSession = Depends(get_db_session),
+    current_user: User = Depends(require_landlord),
+):
+    """下架户型，不影响已有订单。"""
+    from app.services.listing_lifecycle_service import ListingLifecycleService
+
+    try:
+        unit_type = await ListingLifecycleService(session).offline_unit_type(unit_type_id, current_user)
+    except Exception as exc:
+        raise _lifecycle_http_error(exc) from exc
+    return _to_read(unit_type)
+
+
+@router.post("/{unit_type_id}/publish", response_model=UnitTypeRead)
+async def publish_unit_type(
+    unit_type_id: int,
+    session: AsyncSession = Depends(get_db_session),
+    current_user: User = Depends(require_landlord),
+):
+    """资料完整时重新上架户型。"""
+    from app.services.listing_lifecycle_service import ListingLifecycleService
+
+    try:
+        unit_type = await ListingLifecycleService(session).publish_unit_type(unit_type_id, current_user)
+    except Exception as exc:
+        raise _lifecycle_http_error(exc) from exc
+    return _to_read(unit_type)
 
 
 @router.delete("/{unit_type_id}", status_code=204)
 async def delete_unit_type(
     unit_type_id: int,
     session: AsyncSession = Depends(get_db_session),
-    _current_user: User = Depends(require_landlord),
+    current_user: User = Depends(require_landlord),
 ):
     """软删除户型 — 移入回收站"""
+    from app.services.listing_lifecycle_service import ListingLifecycleService
+
+    unit_type = await session.get(UnitType, unit_type_id)
+    if unit_type and not await can_manage_institute(session, current_user, unit_type.institute_id):
+        raise HTTPException(403, "无权管理该户型")
+    if await ListingLifecycleService(session).has_business_history(unit_type_id=unit_type_id):
+        raise HTTPException(409, "该户型已有订单记录，不能删除，请改用下架")
     ok = await UnitTypeService(session).delete(unit_type_id)
     if not ok:
-        from fastapi import HTTPException
         raise HTTPException(404, "户型不存在")
 
 
@@ -268,12 +379,14 @@ async def delete_unit_type(
 async def restore_unit_type(
     unit_type_id: int,
     session: AsyncSession = Depends(get_db_session),
-    _current_user: User = Depends(require_landlord),
+    current_user: User = Depends(require_landlord),
 ):
     """从回收站恢复户型"""
+    existing = await UnitTypeService(session).get(unit_type_id)
+    if existing and not await can_manage_institute(session, current_user, existing.institute_id):
+        raise HTTPException(status_code=403, detail="无权管理该户型")
     ut = await UnitTypeService(session).restore(unit_type_id)
     if not ut:
-        from fastapi import HTTPException
         raise HTTPException(404, "户型不存在或未被删除")
     return _to_read(ut)
 
@@ -282,16 +395,21 @@ async def restore_unit_type(
 async def hard_delete_unit_type(
     unit_type_id: int,
     session: AsyncSession = Depends(get_db_session),
-    _current_user: User = Depends(require_landlord),
+    current_user: User = Depends(require_landlord),
 ):
     """硬删除户型（Room 表已在三层改两层重构中移除）"""
     ut = await UnitTypeService(session).get(unit_type_id)
     if not ut:
-        from fastapi import HTTPException
         raise HTTPException(404, "户型不存在")
     if ut.deleted_at is None:
-        from fastapi import HTTPException
         raise HTTPException(400, "请先将户型移入回收站再硬删除")
+    if not await can_manage_institute(session, current_user, ut.institute_id):
+        raise HTTPException(403, "无权管理该户型")
+    from app.services.listing_lifecycle_service import ListingLifecycleService
+    try:
+        await ListingLifecycleService(session).ensure_hard_delete_allowed(unit_type_id=unit_type_id)
+    except Exception as exc:
+        raise HTTPException(409, str(exc)) from exc
     # 硬删除户型
     ut_name = ut.name
     await session.delete(ut)
@@ -308,18 +426,20 @@ async def hard_delete_unit_type(
 async def copy_unit_type(
     unit_type_id: int,
     session: AsyncSession = Depends(get_db_session),
-    _current_user: User = Depends(require_landlord),
+    current_user: User = Depends(require_landlord),
 ):
     """复制户型 — 除名称外全部参数一致"""
     original = await UnitTypeService(session).get(unit_type_id)
     if not original:
-        from fastapi import HTTPException
         raise HTTPException(404, "户型不存在")
+    if not await can_manage_institute(session, current_user, original.institute_id):
+        raise HTTPException(status_code=403, detail="无权管理该户型")
     from app.schemas.unit_type import UnitTypeCreate
     import copy
     data = UnitTypeCreate(
         institute_id=original.institute_id,
         name=f"{original.name} (副本)",
+        property_type=_safe_enum(original.property_type),
         bedrooms=original.bedrooms,
         bathrooms=original.bathrooms,
         hall_count=original.hall_count,
@@ -337,6 +457,9 @@ async def copy_unit_type(
         description=original.description,
         available_from=original.available_from,
         min_stay_months=original.min_stay_months,
+        total_count=original.total_count,
+        available_count=original.available_count,
+        has_vacancy=original.has_vacancy,
         status=_safe_enum(original.status),
     )
     ut = await UnitTypeService(session).create(data)
@@ -377,6 +500,7 @@ def _to_read(ut) -> UnitTypeRead:
         institute_name=_safe_institute_name(ut),
         institute_business_id=_safe_institute_biz(ut),
         name=ut.name,
+        property_type=_safe_enum(ut.property_type),
         bedrooms=ut.bedrooms,
         bathrooms=ut.bathrooms,
         hall_count=ut.hall_count,
@@ -387,6 +511,7 @@ def _to_read(ut) -> UnitTypeRead:
         lease_start=ut.lease_start,
         lease_end=ut.lease_end,
         currency=ut.currency,
+        rent_period=_safe_enum(ut.rent_period) or 'monthly',
         special_offer=ut.special_offer,
         floor_pricing=ut.floor_pricing,
         amenities=ut.amenities,
@@ -394,8 +519,12 @@ def _to_read(ut) -> UnitTypeRead:
         description=ut.description,
         available_from=ut.available_from,
         min_stay_months=ut.min_stay_months,
+        has_vacancy=ut.has_vacancy,
+        total_count=ut.total_count,
+        available_count=ut.available_count,
         status=_safe_enum(ut.status),
         room_count=getattr(ut, "_room_count", 0),
+        rented_count=getattr(ut, "_rented_count", 0),
         deleted_at=ut.deleted_at,
         created_at=ut.created_at,
         updated_at=ut.updated_at,

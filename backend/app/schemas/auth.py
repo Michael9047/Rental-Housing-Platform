@@ -108,5 +108,39 @@ class WeChatLoginResponse(BaseModel):
     user: CurrentUserResponse
 
 
+class ChangePasswordRequest(BaseModel):
+    """已登录用户修改密码"""
+    old_password: str = Field(min_length=1, max_length=128)
+    new_password: str = Field(min_length=8, max_length=128)
+
+
+class ChangePhoneRequest(BaseModel):
+    """已登录用户更换手机号（需短信验证）"""
+    new_phone: str = Field(min_length=11, max_length=32)
+    sms_code: str = Field(min_length=6, max_length=6)
+
+
 class WeChatConfigResponse(BaseModel):
     appid: str
+
+
+# ── 微信开放平台扫码登录（Web OAuth）────────────────
+
+
+class WeChatQrUrlResponse(BaseModel):
+    qr_url: str
+    state: str
+    expires_in: int = 300
+
+
+class WeChatQrLoginRequest(BaseModel):
+    code: str = Field(min_length=1)
+    state: str = Field(min_length=1)
+
+
+class WeChatQrStatusResponse(BaseModel):
+    status: str  # "pending" | "scanned" | "expired"
+    access_token: str | None = None
+    token_type: str | None = None
+    is_new_user: bool | None = None
+    user: CurrentUserResponse | None = None

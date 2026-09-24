@@ -19,6 +19,7 @@ from sqlalchemy.orm import selectinload
 from app.models.unit_type import UnitType, UnitTypeStatus, PropertyType, DepositType
 from app.models.institute import Institute, InstituteStatus
 from app.schemas.property import PropertyCreate, PropertyUpdate
+from app.services.listing_visibility import listable_clause
 
 logger = logging.getLogger(__name__)
 
@@ -204,7 +205,6 @@ class PropertyService:
             stmt = stmt.where(Institute.country == country)
         if city:
             stmt = stmt.where(Institute.city.ilike(f"%{city}%"))
-
         # ── 价格筛选（UnitType 侧）──
         if price_min is not None:
             stmt = stmt.where(UnitType.base_rent >= price_min)
@@ -324,41 +324,88 @@ class PropertyService:
         self,
         *,
         district: str | None = None,
+        country: str | None = None,
+        city: str | None = None,
+        institute_id: int | None = None,
         price_min: Decimal | None = None,
         price_max: Decimal | None = None,
         bedrooms: int | None = None,
+        bathrooms: int | None = None,
         property_type: str | None = None,
+        amenities: list[str] | None = None,
+        area_min: float | None = None,
+        area_max: float | None = None,
+        available_from: str | None = None,
+        max_min_stay_months: int | None = None,
         near_lat: float | None = None,
         near_lng: float | None = None,
         near_distance_km: float | None = None,
         female_only: bool | None = None,
+        query_vec: list[float] | None = None,
         limit: int = 50,
     ) -> list[dict]:
         """搜户型 — UnitType + Institute JOIN，不再聚合 Room。
 
         返回 [{"unit_type": UnitType, "institute": Institute, "available_rooms": int, "min_price": Decimal, "embedding": str}, ...]
         """
+        dialect_name = getattr(getattr(self.session, "bind", None), "dialect", None)
+        supports_vector_distance = (
+            query_vec is not None
+            and getattr(dialect_name, "name", "") == "postgresql"
+        )
+        distance_expr = (
+            UnitType.embedding.cosine_distance(query_vec)
+            if supports_vector_distance else None
+        )
+        select_columns = [UnitType, Institute]
+        if distance_expr is not None:
+            select_columns.append(distance_expr.label("embedding_distance"))
+
         stmt = (
-            select(UnitType, Institute)
+            select(*select_columns)
             .join(Institute, UnitType.institute_id == Institute.id)
-            .where(
-                UnitType.status == UnitTypeStatus.available,
-                Institute.status == InstituteStatus.active,
-                UnitType.deleted_at.is_(None),
-            )
+            .where(listable_clause())
             .options(selectinload(UnitType.institute))
         )
 
         if district:
             stmt = stmt.where(Institute.district.ilike(f"%{district}%"))
+        if country:
+            stmt = stmt.where(Institute.country == country)
+        if city:
+            stmt = stmt.where(Institute.city.ilike(f"%{city}%"))
+        if institute_id is not None:
+            stmt = stmt.where(UnitType.institute_id == institute_id)
         if price_min is not None:
             stmt = stmt.where(UnitType.base_rent >= price_min)
         if price_max is not None:
             stmt = stmt.where(UnitType.base_rent <= price_max)
         if bedrooms is not None:
             stmt = stmt.where(UnitType.bedrooms == bedrooms)
+        if bathrooms is not None:
+            stmt = stmt.where(UnitType.bathrooms >= bathrooms)
         if property_type:
             stmt = stmt.where(UnitType.property_type == _resolve_property_type(property_type))
+        if area_min is not None:
+            stmt = stmt.where(UnitType.area_sqm >= area_min)
+        if area_max is not None:
+            stmt = stmt.where(UnitType.area_sqm <= area_max)
+        if available_from:
+            normalized = available_from.replace("-", "")
+            if len(normalized) >= 6 and normalized[:6].isdigit():
+                year = int(normalized[:4])
+                month = int(normalized[4:6])
+                if 1 <= month <= 12:
+                    requested_date = date(year, month, 1)
+                    stmt = stmt.where(
+                        or_(
+                            UnitType.available_from.is_(None),
+                            UnitType.available_from <= requested_date,
+                        )
+                    )
+        # 用户可接受的租期上限必须覆盖公寓要求的最短租期。
+        if max_min_stay_months is not None:
+            stmt = stmt.where(UnitType.min_stay_months <= max_min_stay_months)
         if female_only is not None:
             stmt = stmt.where(Institute.female_only == female_only)
 
@@ -373,9 +420,30 @@ class PropertyService:
                 Institute.longitude <= near_lng + lng_d,
             )
 
-        stmt = stmt.order_by(UnitType.base_rent.asc()).limit(limit)
+        if distance_expr is not None:
+            stmt = stmt.order_by(
+                distance_expr.asc().nullslast(),
+                UnitType.base_rent.asc(),
+            )
+        else:
+            stmt = stmt.order_by(UnitType.base_rent.asc())
+        # 设施分属两层：Institute 是楼栋配套，UnitType 是房内设施。
+        # 为保证 PostgreSQL/SQLite 语义一致，带设施条件时先取完整候选，
+        # 再按两层设施的并集做“全部包含”过滤，过滤后才应用 limit。
+        if not amenities:
+            stmt = stmt.limit(limit)
         result = await self.session.execute(stmt)
         rows = result.all()
+
+        if amenities:
+            required = {str(value).casefold() for value in amenities}
+            rows = [
+                row for row in rows
+                if required.issubset({
+                    str(value).casefold()
+                    for value in [*(row[0].amenities or []), *(row[1].amenities or [])]
+                })
+            ][:limit]
 
         return [
             {
@@ -384,6 +452,13 @@ class PropertyService:
                 "available_rooms": row[0].available_count,
                 "min_price": row[0].base_rent,
                 "embedding": row[0].embedding,
+                "embedding_score": (
+                    max(0.0, 1.0 - float(row[2]))
+                    if distance_expr is not None and row[2] is not None
+                    else None
+                ),
+                "_unit_type_id": int(row[0].id),
+                "_property_id": int(row[0].id),
             }
             for row in rows
         ]

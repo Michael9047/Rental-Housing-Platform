@@ -115,6 +115,7 @@ import { formatPrice } from '@/data/currency'
 import { usePropertyStore } from '@/stores/property'
 import { bookingService } from '@/services/booking'
 import { contractService } from '@/services/contract'
+import { toUserFriendly } from '@/services/api'
 
 const route = useRoute()
 const router = useRouter()
@@ -215,8 +216,7 @@ async function submitBooking() {
         application_data: { pricing_snapshot: pricing, personal_info: {}, emergency_contact: {} },
       })
     } catch (e: any) {
-      const d = e?.response?.data?.detail
-      ElMessage.error('创建预定失败: ' + (d || e?.message || '未知错误'))
+      ElMessage.error(toUserFriendly(e))
       submitting.value = false
       return
     }
@@ -226,8 +226,7 @@ async function submitBooking() {
     try {
       contract = await contractService.generate(booking.id)
     } catch (e: any) {
-      const d = e?.response?.data?.detail
-      ElMessage.error('合同生成失败: ' + (d || e?.message || '未知错误'))
+      ElMessage.error(toUserFriendly(e))
       submitting.value = false
       return
     }
@@ -244,15 +243,13 @@ async function submitBooking() {
         electronic_signature_consent: true,
       })
     } catch (e: any) {
-      const d = e?.response?.data?.detail
-      ElMessage.error('合同签署失败: ' + (d || e?.message || '未知错误'))
+      ElMessage.error(toUserFriendly(e))
       submitting.value = false
       return
     }
 
-    ElMessage.success('合同已签署，即将跳转支付')
-    // 跳转到支付页
-    setTimeout(() => router.push(`/booking/payment/${booking.id}/deposit`), 1500)
+    ElMessage.success('合同已签署，预订成功')
+    setTimeout(() => router.push(`/booking/result/${booking.id}`), 800)
   } catch (err: any) {
     const status = err?.response?.status
     const detail = err?.response?.data?.detail || err?.response?.data?.message
@@ -264,15 +261,13 @@ async function submitBooking() {
     } else if (status === 403) {
       ElMessage.error('仅租客身份可预定房源，请切换为租客账号')
     } else if (status === 401) {
+      // 标记已处理，避免拦截器重复弹窗
+      if (err.config) err.config._handled = true
       ElMessage.error('请先登录后再预定')
     } else if (status === 404) {
       ElMessage.error('房源不存在或已下架')
-    } else if (detail && typeof detail === 'string') {
-      ElMessage.error(detail)
-    } else if (err?.message && typeof err.message === 'string') {
-      ElMessage.error('提交失败: ' + err.message)
     } else {
-      ElMessage.error('预定提交失败，请重试 (HTTP ' + (status || '?') + ')')
+      ElMessage.error(toUserFriendly(err))
     }
   } finally {
     submitting.value = false

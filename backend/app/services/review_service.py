@@ -31,7 +31,7 @@ class ReviewService:
         booking = await self.session.get(Booking, review_in.booking_id)
         if not booking:
             raise ValueError("Booking not found")
-        if booking.tenant_id != tenant_id:
+        if booking.user_id != tenant_id:
             raise ValueError("This booking does not belong to you")
         if booking.status not in (BookingStatus.approved, BookingStatus.completed):
             raise ValueError("评价仅限已确认或已完成的租赁")

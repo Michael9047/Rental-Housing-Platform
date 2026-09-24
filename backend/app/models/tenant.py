@@ -23,19 +23,32 @@ class Tenant(Base):
         ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False
     )
     label: Mapped[str | None] = mapped_column(String(100), nullable=True, comment="租客标签")
+    is_default: Mapped[bool] = mapped_column(default=False, nullable=False, comment="是否默认租客")
 
-    # ── 个人信息（14 字段，名复用 booking_flow_drafts.personal_info JSONB 的 key）──
+    # ── 个人信息 ──
     chinese_name:      Mapped[str | None] = mapped_column(String(100), nullable=True)
     given_name_pinyin: Mapped[str | None] = mapped_column(String(100), nullable=True)
     surname_pinyin:    Mapped[str | None] = mapped_column(String(100), nullable=True)
     birth_date:        Mapped[date | None] = mapped_column(Date, nullable=True)
     gender:            Mapped[str | None] = mapped_column(String(20), nullable=True)
+    phone_country_code: Mapped[str | None] = mapped_column(String(8), nullable=True, default="+86")
     phone:             Mapped[str | None] = mapped_column(String(32), nullable=True)
     email:             Mapped[str | None] = mapped_column(String(255), nullable=True)
     nationality:       Mapped[str | None] = mapped_column(String(100), nullable=True)
     school_name:       Mapped[str | None] = mapped_column(String(200), nullable=True)
     enrollment_grade:  Mapped[str | None] = mapped_column(String(100), nullable=True)
     major_english:     Mapped[str | None] = mapped_column(String(200), nullable=True)
+    enrollment_level:          Mapped[str | None] = mapped_column(String(50), nullable=True)
+    enrollment_term:           Mapped[str | None] = mapped_column(String(20), nullable=True)
+    student_classification:    Mapped[str | None] = mapped_column(String(50), nullable=True)
+    preferred_name:            Mapped[str | None] = mapped_column(String(100), nullable=True)
+    is_international:          Mapped[bool] = mapped_column(default=True, nullable=False)
+    visa_type:                 Mapped[str | None] = mapped_column(String(50), nullable=True)
+    visa_expiry:               Mapped[date | None] = mapped_column(Date, nullable=True)
+    citizenship_country:       Mapped[str | None] = mapped_column(String(100), nullable=True)
+    disability_needs:          Mapped[str | None] = mapped_column(String(500), nullable=True)
+    dietary_needs:             Mapped[str | None] = mapped_column(String(500), nullable=True)
+    gender_identity:           Mapped[str | None] = mapped_column(String(100), nullable=True)
     region:            Mapped[str | None] = mapped_column(String(200), nullable=True)
     address_detail:    Mapped[str | None] = mapped_column(String(500), nullable=True)
     postal_code:       Mapped[str | None] = mapped_column(String(20), nullable=True)
@@ -46,6 +59,7 @@ class Tenant(Base):
     emergency_surname_pinyin:    Mapped[str | None] = mapped_column(String(100), nullable=True)
     emergency_relation:          Mapped[str | None] = mapped_column(String(50), nullable=True)
     emergency_birth_date:        Mapped[date | None] = mapped_column(Date, nullable=True)
+    emergency_phone_country_code: Mapped[str | None] = mapped_column(String(8), nullable=True, default="+86")
     emergency_phone:             Mapped[str | None] = mapped_column(String(32), nullable=True)
     emergency_email:             Mapped[str | None] = mapped_column(String(255), nullable=True)
     emergency_gender:            Mapped[str | None] = mapped_column(String(20), nullable=True)
@@ -58,6 +72,8 @@ class Tenant(Base):
     current_unit_type_id: Mapped[int | None] = mapped_column(
         ForeignKey("unit_types.id", ondelete="SET NULL"), nullable=True, index=True
     )
+    room_number: Mapped[str | None] = mapped_column(String(50), nullable=True, comment="房间号")
+
     housing_status: Mapped[HousingStatus | None] = mapped_column(
         String(20), nullable=True, default="active"
     )
@@ -66,10 +82,10 @@ class Tenant(Base):
 
     # ── 时间戳 ──
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=text("now()"), nullable=False
+        DateTime(timezone=True), server_default=text("CURRENT_TIMESTAMP"), nullable=False
     )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=text("now()"), nullable=False
+        DateTime(timezone=True), server_default=text("CURRENT_TIMESTAMP"), nullable=False
     )
 
     # ── 关系 ──

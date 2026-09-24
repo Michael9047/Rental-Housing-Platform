@@ -57,15 +57,17 @@ class InstituteCreate(BaseModel):
     female_only: bool = False
     couples_allowed: bool = False
 
-    # 负责人（保存时同步到 building_staff）
-    manager_name: str | None = Field(default=None, max_length=100)
-    manager_phone: str | None = Field(default=None, max_length=32)
-    manager_email: str | None = Field(default=None, max_length=255)
-
     # BM 联系信息
     bm_id: int | None = Field(default=None, description="商务经理用户ID")
     bm_wechat: str | None = Field(default=None, max_length=100, description="BM微信号")
     bm_wechat_qr: str | None = Field(default=None, max_length=500, description="BM微信二维码URL")
+
+    # 负责人信息会同步写入 building_staff，供租客端预约弹窗展示。
+    manager_name: str | None = Field(default=None, max_length=100)
+    manager_phone: str | None = Field(default=None, max_length=32)
+    manager_wechat: str | None = Field(default=None, max_length=100)
+    manager_wechat_qr: str | None = Field(default=None, max_length=500)
+    manager_email: str | None = Field(default=None, max_length=255)
 
     # 图片
     image_urls: list[str] | None = Field(default=None)
@@ -111,13 +113,16 @@ class InstituteUpdate(BaseModel):
     female_only: bool | None = None
     couples_allowed: bool | None = None
 
-    manager_name: str | None = Field(default=None, max_length=100)
-    manager_phone: str | None = Field(default=None, max_length=32)
-    manager_email: str | None = Field(default=None, max_length=255)
-
     bm_id: int | None = None
     bm_wechat: str | None = Field(default=None, max_length=100)
     bm_wechat_qr: str | None = Field(default=None, max_length=500)
+
+    # 负责人信息会同步写入 building_staff，供租客端预约弹窗展示。
+    manager_name: str | None = Field(default=None, max_length=100)
+    manager_phone: str | None = Field(default=None, max_length=32)
+    manager_wechat: str | None = Field(default=None, max_length=100)
+    manager_wechat_qr: str | None = Field(default=None, max_length=500)
+    manager_email: str | None = Field(default=None, max_length=255)
 
     image_urls: list[str] | None = None
 

@@ -607,51 +607,109 @@ def bind_tool_handlers(
         mode: str = "transit",
         **kwargs: Any,
     ) -> dict[str, Any]:
-        """计算房源到指定地点的通勤时间和距离。"""
+        """计算房源到指定地点的通勤时间和距离。优先查 DB 缓存，无缓存时调用高德→ORS 降级链。"""
         from app.services.commute_service import (
-            calculate_commute_batch,
             CommuteDestination,
+            calculate_commute_batch_resilient,
         )
-        from app.models.property import Property
-        from sqlalchemy import select
+        from app.models.unit_type import UnitType
+        from app.models.institute import Institute
+        from app.models.institute_commute import InstituteCommute
+        from app.models.university import University
+        from sqlalchemy import select, and_
 
         sess = _current_session.get()
         if sess is None:
             return {"error": "数据库会话不可用"}
 
         try:
-            # 获取房源坐标
-            stmt = select(Property).where(Property.id == property_id)
+            # 获取 property（可能是 UnitType）
+            stmt = select(UnitType).where(UnitType.id == property_id)
             result = await sess.execute(stmt)
-            prop = result.scalar_one_or_none()
-            if prop is None:
+            unit_type = result.scalar_one_or_none()
+            if unit_type is None:
                 return {"error": f"房源 {property_id} 不存在"}
-            if prop.latitude is None or prop.longitude is None:
+
+            institute = unit_type.institute
+            if institute is None:
+                return {"error": f"房源 {property_id} 缺少公寓信息"}
+            if institute.latitude is None or institute.longitude is None:
                 return {"error": f"房源 {property_id} 缺少坐标信息"}
 
-            # 先用 destination 当作坐标解析（如果是学校名或地址）
-            # 简单处理：destination 作为标签，用默认起点（如学校坐标）
+            # ── 第一步：查 DB 缓存 ──
+            uni_stmt = select(University).where(
+                and_(University.name.ilike(f"%{destination}%"), University.is_active == True)
+            ).limit(1)
+            uni_result = await sess.execute(uni_stmt)
+            uni = uni_result.scalar_one_or_none()
+            if uni is not None:
+                cache_stmt = select(InstituteCommute).where(
+                    and_(
+                        InstituteCommute.institute_id == institute.id,
+                        InstituteCommute.university_id == uni.id,
+                    )
+                )
+                cache_result = await sess.execute(cache_stmt)
+                cached = cache_result.scalar_one_or_none()
+                if cached is not None:
+                    duration = cached.transit_min or cached.walk_min or cached.drive_min
+                    if duration is not None:
+                        return {
+                            "property_id": property_id,
+                            "destination": destination,
+                            "mode": mode,
+                            "duration_minutes": duration,
+                            "distance_km": None,
+                            "mode_used": "transit" if cached.transit_min else "walk",
+                            "source": "db_cache",
+                        }
+
+            # ── 第二步：DB 未命中，调外部 API ──
+            # 确定起点（大学）和终点（公寓）坐标
+            if uni is not None and uni.latitude is not None and uni.longitude is not None:
+                origin_lat = float(uni.latitude)
+                origin_lng = float(uni.longitude)
+                origin_city = uni.city
+                origin_country = uni.country
+            else:
+                # 大学查找失败 → 无法计算通勤
+                return {
+                    "property_id": property_id,
+                    "destination": destination,
+                    "error": f"未找到学校「{destination}」，无法计算通勤",
+                }
+
             dest = CommuteDestination(
-                property_id=property_id,
-                lat=float(prop.latitude),
-                lng=float(prop.longitude),
-                label=destination,
+                dest_id=property_id,
+                lat=float(institute.latitude),
+                lng=float(institute.longitude),
             )
-            batch_result = await calculate_commute_batch(
-                origin_lat=float(prop.latitude),
-                origin_lng=float(prop.longitude),
+            batch_result = await calculate_commute_batch_resilient(
+                origin_lat=origin_lat,
+                origin_lng=origin_lng,
                 destinations=[dest],
-                city=getattr(prop, "district", None),
+                city=origin_city or institute.district,
+                country=origin_country or institute.country,
             )
             if batch_result.results:
                 r = batch_result.results[0]
+                # CommuteResult 字段: dist_km, walk_min, bike_min, drive_min, transit_min, source
+                mode_duration = {
+                    "walking": r.walk_min,
+                    "bicycling": r.bike_min,
+                    "driving": r.drive_min,
+                    "transit": r.transit_min,
+                }.get(mode, r.transit_min)
                 return {
                     "property_id": property_id,
                     "destination": destination,
                     "mode": mode,
-                    "duration_minutes": r.duration_minutes,
-                    "distance_km": r.distance_km,
-                    "mode_used": getattr(r, "mode", mode),
+                    "duration_minutes": mode_duration,
+                    "distance_km": r.dist_km,
+                    "walk_min": r.walk_min,
+                    "transit_min": r.transit_min,
+                    "drive_min": r.drive_min,
+                    "bike_min": r.bike_min,
                     "source": batch_result.source,
                 }
             return {"property_id": property_id, "destination": destination, "error": "无法计算通勤"}

@@ -14,7 +14,7 @@
         <div class="card-info">
           <h3>{{ p.title }}</h3>
           <p class="addr">{{ p.address || p.district }}</p>
-          <span class="price">¥{{ Number(p.price_monthly).toLocaleString() }}/月</span>
+          <span class="price">¥{{ Number(p.price_monthly).toLocaleString() }}{{ (p as any).rent_period === 'weekly' ? '/周' : '/月' }}</span>
         </div>
       </div>
     </div>

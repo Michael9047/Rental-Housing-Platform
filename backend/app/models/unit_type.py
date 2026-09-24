@@ -3,9 +3,10 @@ import enum
 from datetime import date, datetime
 from decimal import Decimal
 
-from sqlalchemy import Boolean, Date, DateTime, Enum, ForeignKey, Integer, Numeric, String, Text, text
+from sqlalchemy import Boolean, Date, DateTime, Enum, ForeignKey, Integer, JSON, Numeric, String, Text, text
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+from pgvector.sqlalchemy import Vector
 
 from app.models.mixins import TimestampMixin
 from app.db.session import Base
@@ -23,10 +24,16 @@ class PropertyType(str, enum.Enum):
     shared = "shared"          # 合租单间
 
 
+class RentPeriod(str, enum.Enum):
+    monthly = "monthly"   # /月
+    weekly = "weekly"     # /周
+
+
 class UnitTypeStatus(str, enum.Enum):
     available = "available"
     rented = "rented"
     maintenance = "maintenance"
+    offline = "offline"
 
 
 class DepositType(str, enum.Enum):
@@ -67,11 +74,20 @@ class UnitType(TimestampMixin, Base):
     lease_start: Mapped[str | None] = mapped_column(String(50), nullable=True)
     lease_end: Mapped[str | None] = mapped_column(String(50), nullable=True)
     currency: Mapped[str | None] = mapped_column(String(10), nullable=True, server_default=text("'CNY'"))
+    rent_period: Mapped[RentPeriod] = mapped_column(
+        Enum(RentPeriod, name="rent_period"), default=RentPeriod.monthly, nullable=False,
+        server_default=text("'monthly'"),
+    )
     special_offer: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # ── 租赁要求（自由文本，替代起止租期）──
+    rental_requirements: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # ── 楼层差异化加价 ──
     # [{"floor_min": 1, "floor_max": 5, "adjustment": 0}, {"floor_min": 6, "floor_max": 10, "adjustment": 200}]
-    floor_pricing: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    floor_pricing: Mapped[dict | None] = mapped_column(
+        JSONB().with_variant(JSON(), "sqlite"), nullable=True
+    )
 
     # ── 库存 ──
     total_count: Mapped[int] = mapped_column(Integer, default=1, nullable=False, server_default=text("1"))
@@ -79,13 +95,17 @@ class UnitType(TimestampMixin, Base):
     has_vacancy: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False, server_default=text("true"))
 
     # ── 配置 ──
-    amenities: Mapped[list[str] | None] = mapped_column(ARRAY(String(50)), nullable=True)
-    image_urls: Mapped[list[str] | None] = mapped_column(ARRAY(String(500)), nullable=True)
+    amenities: Mapped[list[str] | None] = mapped_column(
+        ARRAY(String(50)).with_variant(JSON(), "sqlite"), nullable=True
+    )
+    image_urls: Mapped[list[str] | None] = mapped_column(
+        ARRAY(String(500)).with_variant(JSON(), "sqlite"), nullable=True
+    )
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     available_from: Mapped[date | None] = mapped_column(Date, nullable=True)
     min_stay_months: Mapped[int] = mapped_column(Integer, default=3, nullable=False)
 
-    embedding: Mapped[str | None] = mapped_column(Text, nullable=True)
+    embedding: Mapped[list[float] | None] = mapped_column(Vector(1536), nullable=True)
 
     # ── 状态 ──
     status: Mapped[UnitTypeStatus] = mapped_column(
@@ -99,7 +119,43 @@ class UnitType(TimestampMixin, Base):
 
     # ── 关系 ──
     institute: Mapped["Institute"] = relationship(back_populates="unit_types")
+    images: Mapped[list["UnitTypeImage"]] = relationship(back_populates="unit_type")
     # Room 表已删除，rooms 关系移除
+
+    # ── 向后兼容属性（旧代码引用 Room/Property 字段名）──
+    @property
+    def price_monthly(self) -> Decimal:
+        """兼容旧 Property.price_monthly → UnitType.base_rent。"""
+        return self.base_rent
+
+    @property
+    def title(self) -> str | None:
+        """兼容旧 Property.title → UnitType.name。"""
+        return self.name
+
+    @property
+    def institute_amenities(self) -> list[str] | None:
+        """兼容旧 Property.institute_amenities → Institute.amenities。"""
+        inst = self.institute
+        return inst.amenities if inst else None
+
+class UnitTypeImage(TimestampMixin, Base):
+    """户型图片 — 独立子表"""
+    __tablename__ = "unit_type_images"
+
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    unit_type_id: Mapped[int] = mapped_column(
+        ForeignKey("unit_types.id", ondelete="CASCADE"), index=True
+    )
+    filename: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
+    original_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    mime_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    file_size: Mapped[int] = mapped_column(Integer, nullable=False)
+    sort_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    is_primary: Mapped[bool] = mapped_column(default=False, nullable=False)
+
+    unit_type: Mapped["UnitType"] = relationship(back_populates="images")
+
 
 # 向后兼容别名
 import enum as _enum

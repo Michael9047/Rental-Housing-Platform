@@ -91,7 +91,8 @@ async def calculate_commute(body: CommuteCalculateRequest, response: Response):
     if result.source == "haversine_fallback":
         response.headers["X-Commute-Fallback"] = "true"
     if result.error_reason:
-        response.headers["X-Commute-Fallback-Reason"] = result.error_reason
+        from urllib.parse import quote
+        response.headers["X-Commute-Fallback-Reason"] = quote(result.error_reason, safe="")
 
     return CommuteCalculateResponse(
         results=[

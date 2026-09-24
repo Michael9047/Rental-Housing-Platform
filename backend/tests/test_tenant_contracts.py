@@ -8,7 +8,6 @@ import pytest
 
 from app.models.booking import BookingStatus
 from app.models.payment import PaymentStatus
-from app.models.property import CountryCode
 from app.services.tenant_contract_service import TenantContractService
 from app.schemas.contract import TenantContractListResponse
 
@@ -16,7 +15,7 @@ from app.schemas.contract import TenantContractListResponse
 def objects(*, booking_status=BookingStatus.payment_pending, payment_status=PaymentStatus.processing, end_days=365, contract_status="signed"):
     today=date.today(); start=today+timedelta(days=10); end=today+timedelta(days=end_days)
     booking=SimpleNamespace(id=5,status=booking_status,scheduled_date=start.isoformat(),lease_months=12,payment_expires_at=datetime.now(timezone.utc)+timedelta(hours=12),application_data={"pricing_snapshot":{"options":[{"months":12,"end_date":end.isoformat()}]}})
-    property_obj=SimpleNamespace(id=8,title="测试房源",address="测试地址",country=CountryCode.CN)
+    property_obj=SimpleNamespace(id=8,title="测试房源",address="测试地址",country="CN")
     payment=SimpleNamespace(id="p1",order_id="PAY-1",status=payment_status,snapshot={"commencement_date":start.isoformat(),"expiry_date":end.isoformat(),"fees":{"current_total":{"currency":"CNY","minor_units":10000}}},settlement_currency="CNY",settlement_amount_minor=10000,expires_at=datetime.now(timezone.utc)+timedelta(hours=12),created_at=datetime.now(timezone.utc),paid_at=datetime.now(timezone.utc) if payment_status==PaymentStatus.success else None,transaction_id="mock_txn_success" if payment_status==PaymentStatus.success else None)
     contract=SimpleNamespace(id="c1",agreement_number="A-1",version=1,content_hash="a"*64,booking_id=5,property_id=8,tenant_id=7,status=contract_status,snapshot={},file_path=None,content="locked")
     signature=SimpleNamespace(signed_at=datetime.now(timezone.utc),property_timezone="Asia/Shanghai",signed_pdf_object_key="private/signed.pdf")

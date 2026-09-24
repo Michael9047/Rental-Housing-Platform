@@ -22,7 +22,7 @@
       <div class="mini-card__actions">
         <el-button size="small" text type="primary" @click.stop="goDetail">详情</el-button>
         <el-button
-          v-if="authStore.isLoggedIn"
+          v-if="canUseCart && authStore.isLoggedIn"
           size="small"
           :type="inCart ? 'success' : 'primary'"
           plain
@@ -44,12 +44,12 @@
     </div>
     <div class="mini-card__body mini-card__body--scroll">
       <h4 class="mini-card__title mini-card__title--scroll">{{ property.title }}</h4>
-      <div class="mini-card__price mini-card__price--scroll">{{ fmtPrice }}/月</div>
+      <div class="mini-card__price mini-card__price--scroll">{{ fmtPrice }}{{ (property as any).rent_period === 'weekly' ? '/周' : '/月' }}</div>
       <div class="mini-card__meta--scroll">
         {{ property.area_sqm ? property.area_sqm + '㎡ · ' : '' }}{{ typeLabel }} · {{ property.bedrooms }}室
       </div>
       <el-button
-        v-if="authStore.isLoggedIn"
+        v-if="canUseCart && authStore.isLoggedIn"
         size="small"
         :type="inCart ? 'success' : 'primary'"
         plain
@@ -73,6 +73,8 @@ import { formatPrice } from '@/data/currency'
 
 const props = withDefaults(defineProps<{
   property: Property | PropertySearchResult
+  /** Building 与 UnitType ID 可能碰号，调用方必须明确实体语义。 */
+  entity: 'building' | 'unit-type'
   variant?: 'chat' | 'scroll'
   desc?: string
 }>(), {
@@ -84,32 +86,51 @@ const router = useRouter()
 const cartStore = useCartStore()
 const authStore = useAuthStore()
 const busy = ref(false)
+const canUseCart = computed(() => props.entity === 'unit-type')
 
 const typeLabels: Record<string, string> = {
   studio: '单间', '1-bed': '一室', '2-bed': '两室+', shared: '合租', house: '别墅',
 }
 
-const typeLabel = computed(() => typeLabels[props.property.property_type] || props.property.property_type)
+const typeLabel = computed(() => {
+  const type = props.property.property_type || ''
+  return typeLabels[type] || type || '户型待确认'
+})
 const fmtPrice = computed(() => {
   const p = props.property.price_monthly
-  return p ? formatPrice(p, props.property.currency, props.property.country) : '?'
+  return p ? formatPrice(p, props.property.currency || undefined, props.property.country || undefined) : '?'
 })
 const imageUrl = computed(() => {
   const imgs = props.property.images
   if (!imgs || imgs.length === 0) return null
-  const primary = imgs.find((i: any) => i.is_primary) || imgs[0]
+  const primary = imgs.find((image) => image.is_primary) || imgs[0]
   const fn = primary.filename || ''
   if (!fn) return null
   return fn.startsWith('http') ? fn : `/api/v1/uploads/${fn}`
 })
-const inCart = computed(() => cartStore.has(props.property.id))
+const inCart = computed(() => canUseCart.value && cartStore.has(props.property.id))
 
 function goDetail() {
-  router.push(`/building/${props.property.institute_id || props.property.id}`)
+  if (props.entity === 'building') {
+    void router.push({ name: 'building-detail', params: { id: String(props.property.id) } })
+    return
+  }
+
+  const unitTypeId = String(props.property.id)
+  const instituteId = Number(props.property.institute_id)
+  if (Number.isInteger(instituteId) && instituteId > 0) {
+    void router.push({
+      name: 'building-detail',
+      params: { id: String(instituteId) },
+      query: { unit_type_id: unitTypeId },
+    })
+    return
+  }
+  void router.push({ name: 'property-detail', params: { id: unitTypeId } })
 }
 
 async function toggleCart() {
-  if (busy.value) return
+  if (!canUseCart.value || busy.value) return
   // 未登录 → 跳转登录页（保留返回路径）
   const token = localStorage.getItem('access_token')
   if (!token) {

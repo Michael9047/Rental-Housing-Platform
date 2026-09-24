@@ -1,12 +1,13 @@
 <template>
   <main class="payment-page" v-loading="loading">
-    <header><h1>支付当前应付金额</h1><el-tag type="warning">支付服务商测试模式 · 不会真实扣款</el-tag></header>
+    <header><h1>支付预订金</h1><el-tag type="warning">支付服务商测试模式 · 不会真实扣款</el-tag></header>
     <el-result v-if="error" icon="error" title="无法加载支付订单" :sub-title="error" />
     <template v-else-if="payment">
       <section class="amount-panel">
-        <p>本次应付押金 / 当前应付金额</p>
+        <p>支付项目：预订金</p>
         <strong>{{ money(payment.settlement_amount_minor, payment.settlement_currency) }}</strong>
-        <span class="charge-label">实际扣款币种：{{ payment.settlement_currency }}</span>
+        <span class="charge-label">应付金额：CNY 2,000.00 · 支付币种：CNY</span>
+        <p class="refund-note">本次支付为平台预订金，不属于房屋租金或公寓押金。租约正常到期且符合退款条件后，预订金将按原支付渠道退还。</p>
         <div class="currency-grid">
           <div><small>人民币金额</small><b>{{ money(payment.cny_reference_amount_minor, 'CNY') }}</b><em>{{ payment.settlement_currency === 'CNY' ? '实际扣款' : '汇率参考' }}</em></div>
           <div><small>房源所在地货币</small><b>{{ money(payment.settlement_amount_minor, payment.property_currency) }}</b><em>{{ payment.settlement_currency === payment.property_currency ? '实际扣款' : '汇率参考' }}</em></div>
@@ -24,8 +25,8 @@
           <dt>支付截止</dt><dd>{{ dateTime(payment.expires_at) }}</dd>
         </dl></el-card>
         <el-card shadow="never"><template #header><b>费用明细</b></template><dl class="fees">
-          <dt>押金</dt><dd>{{ format(payment.snapshot.fees.deposit) }}</dd><dt>服务费</dt><dd>{{ format(payment.snapshot.fees.service_fee) }}</dd>
-          <dt>税费</dt><dd>{{ format(payment.snapshot.fees.tax) }}</dd><dt class="total">当前总计</dt><dd class="total">{{ format(payment.snapshot.fees.current_total) }}</dd>
+          <dt>预订金</dt><dd>{{ format(payment.snapshot.fees.booking_deposit || payment.snapshot.fees.current_total) }}</dd>
+          <dt class="total">当前应付金额</dt><dd class="total">{{ format(payment.snapshot.fees.current_total) }}</dd>
         </dl><el-divider/><p><b>支付方式</b></p>
           <el-radio-group v-model="selectedMethod" class="payment-methods">
             <el-radio v-for="item in methods" :key="item.method" :value="item.method" :disabled="!item.available">

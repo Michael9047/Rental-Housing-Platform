@@ -1,7 +1,7 @@
 <template>
   <div class="admin-detail-page" v-loading="loading">
     <div class="page-head">
-      <h2>异常处理</h2>
+      <h2>系统异常检测</h2>
       <el-button :icon="Refresh" @click="loadData">刷新</el-button>
     </div>
 

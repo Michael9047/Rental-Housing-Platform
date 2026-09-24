@@ -17,8 +17,9 @@
       </div>
     </el-card>
 
-    <!-- 新建公寓弹窗 -->
-    <el-dialog v-model="showNewBuildingDialog" title="新建公寓" width="440px">
+    <BuildingCreateDialog v-model="showNewBuildingDialog" @created="onSharedBuildingCreated" />
+    <!-- 旧简版弹窗不再渲染。 -->
+    <el-dialog v-if="false" v-model="showNewBuildingDialog" title="新建公寓" width="440px">
       <el-form :model="newBuilding" label-width="80px">
         <el-form-item label="公寓名称" required><el-input v-model="newBuilding.name" placeholder="如：翰林缘公寓" /></el-form-item>
         <el-form-item label="地址"><el-input v-model="newBuilding.address" /></el-form-item>
@@ -175,8 +176,9 @@ import { UploadFilled, CircleCheckFilled } from '@element-plus/icons-vue'
 import * as XLSX from 'xlsx'
 import { adminService } from '@/services/admin'
 import { buildingService, type Building } from '@/services/building'
-import { extractErrorMessage } from '@/services/api'
+import { toUserFriendly } from '@/services/api'
 import ImageUploader from '@/components/ImageUploader.vue'
+import BuildingCreateDialog from '@/components/building/BuildingCreateDialog.vue'
 import type { ImportResult, ColumnMapping } from '@/types/admin'
 
 const router = useRouter()
@@ -190,7 +192,8 @@ const newBuilding = reactive({name:'',address:''})
 
 async function loadBuildings(){try{buildings.value=await buildingService.list({limit:200})}catch{}}
 function confirmBuilding(){const b=buildings.value.find(x=>x.id===selectedBuildingId.value);if(b){selectedBuilding.value=b;step.value=0}}
-async function createBuilding(){if(!newBuilding.name.trim()){ElMessage.error('请输入公寓名称');return};creatingB.value=true;try{const b=await buildingService.create({name:newBuilding.name,address:newBuilding.address});buildings.value.unshift(b);selectedBuildingId.value=b.id;selectedBuilding.value=b;showNewBuildingDialog.value=false;newBuilding.name='';newBuilding.address='';ElMessage.success('公寓创建成功');step.value=0}catch(e:any){ElMessage.error(extractErrorMessage(e)||'创建失败')}finally{creatingB.value=false}}
+function onSharedBuildingCreated(b: Building){buildings.value.unshift(b);selectedBuildingId.value=b.id;selectedBuilding.value=b;step.value=0}
+async function createBuilding(){if(!newBuilding.name.trim()){ElMessage.error('请输入公寓名称');return};creatingB.value=true;try{const b=await buildingService.create({name:newBuilding.name,address:newBuilding.address});buildings.value.unshift(b);selectedBuildingId.value=b.id;selectedBuilding.value=b;showNewBuildingDialog.value=false;newBuilding.name='';newBuilding.address='';ElMessage.success('公寓创建成功');step.value=0}catch(e:any){ElMessage.error(toUserFriendly(e)||'创建失败')}finally{creatingB.value=false}}
 
 const step = ref(0); const isDragging = ref(false)
 const fileInputRef = ref<HTMLInputElement>(); const batchFile = ref<File|null>(null)
@@ -248,7 +251,7 @@ function clearFile(){batchFile.value=null;batchHeaders.value=[];batchPreviewRows
 
 function parseFile(raw:File):Promise<{headers:string[];rows:Record<string,string>[]}>{return new Promise((resolve,reject)=>{const ext=(raw.name.split('.').pop()||'').toLowerCase();const reader=new FileReader();reader.onload=(e)=>{try{const data=new Uint8Array(e.target!.result as ArrayBuffer);if(ext==='csv'){const text=new TextDecoder('utf-8').decode(data);const lines=text.trim().split('\n');if(!lines.length){resolve({headers:[],rows:[]});return};const headers=lines[0].split(',').map(h=>h.trim().replace(/^"|"$/g,''));const rows=lines.slice(1).map(line=>{const vals:string[]=[];let cur='',iq=false;for(const ch of line){if(ch==='"')iq=!iq;else if(ch===','&&!iq){vals.push(cur.trim());cur=''}else cur+=ch};vals.push(cur.trim());const row:Record<string,string>={};headers.forEach((h,i)=>{row[h]=(vals[i]||'').trim().replace(/^"|"$/g,'')});return row});resolve({headers,rows})}else{const wb=XLSX.read(data,{type:'array'});const ws=wb.Sheets[wb.SheetNames[0]];const sd=XLSX.utils.sheet_to_json<(string|number|null)[]>(ws,{header:1});if(!sd.length){resolve({headers:[],rows:[]});return};const headers=sd[0].map(h=>String(h||'').trim());const rows:Record<string,string>[]=[];for(let i=1;i<sd.length;i++){const ra=sd[i] as (string|number|null)[];if(!ra||ra.every(c=>!c))continue;const row:Record<string,string>={};headers.forEach((h,j)=>{row[h]=String(ra[j]||'').trim()});rows.push(row)};resolve({headers,rows})}}catch(err){reject(err)}};reader.onerror=()=>reject(new Error('读取失败'));reader.readAsArrayBuffer(raw)})}
 
-async function processFile(raw:File){if(!raw?.name){ElMessage.error('无法读取文件');return};const ext=(raw.name.split('.').pop()||'').toLowerCase();if(!['csv','xlsx','xls'].includes(ext)){ElMessage.error('仅支持.csv/.xlsx/.xls');return};if(raw.size>10*1024*1024){ElMessage.error('文件不超过10MB');return};clearFile();batchFile.value=raw;try{const {headers,rows}=await parseFile(raw);if(!headers.length){ElMessage.error('文件无内容或格式无法识别');return};if(!rows.length){ElMessage.error('未检测到有效数据，仅有表头');batchFile.value=null;return};if(rows.length>500){ElMessage.error('最多500行，当前'+rows.length+'行');batchFile.value=null;return};batchHeaders.value=headers;batchPreviewRows.value=rows.slice(0,5);batchTotalRows.value=rows.length;const matched:Record<string,string>={};const unmatched:string[]=[];const cf:Record<string,string>={};for(const h of headers){if(!h){unmatched.push('(空)');continue};const k=h.toLowerCase().trim().replace(/\(.*?\)/g,'').replace(/\*$/,'');if(ALIAS[k]){matched[h]=ALIAS[k];cf[h]='exact'}else if(ALIAS[h.toLowerCase().trim()]){matched[h]=ALIAS[h.toLowerCase().trim()];cf[h]='exact'}else{unmatched.push(h)}};columnMapping.value={matched,unmatched,confidence:cf};const prices=rows.map(r=>parseFloat(r['price_monthly']||r['月租金']||r['price']||'0')).filter(p=>p>0);if(prices.length>=4){const s=[...prices].sort((a,b)=>a-b);const q1=s[Math.floor(s.length*.25)];const q3=s[Math.floor(s.length*.75)];const iqr=q3-q1;const up=q3+1.5*iqr;const lo=q1-1.5*iqr;const ol:number[]=[];rows.forEach((r,i)=>{const v=parseFloat(r['price_monthly']||r['月租金']||r['price']||'0');if(v>up||v<lo)ol.push(i+2)});batchOutlierRows.value=ol};step.value=2}catch(e:any){ElMessage.error(e.message||'文件解析失败');batchFile.value=null}}
+async function processFile(raw:File){if(!raw?.name){ElMessage.error('无法读取文件');return};const ext=(raw.name.split('.').pop()||'').toLowerCase();if(!['csv','xlsx','xls'].includes(ext)){ElMessage.error('仅支持.csv/.xlsx/.xls');return};if(raw.size>10*1024*1024){ElMessage.error('文件不超过10MB');return};clearFile();batchFile.value=raw;try{const {headers,rows}=await parseFile(raw);if(!headers.length){ElMessage.error('文件无内容或格式无法识别');return};if(!rows.length){ElMessage.error('未检测到有效数据，仅有表头');batchFile.value=null;return};if(rows.length>500){ElMessage.error('最多500行，当前'+rows.length+'行');batchFile.value=null;return};batchHeaders.value=headers;batchPreviewRows.value=rows.slice(0,5);batchTotalRows.value=rows.length;const matched:Record<string,string>={};const unmatched:string[]=[];const cf:Record<string,string>={};for(const h of headers){if(!h){unmatched.push('(空)');continue};const k=h.toLowerCase().trim().replace(/\(.*?\)/g,'').replace(/\*$/,'');if(ALIAS[k]){matched[h]=ALIAS[k];cf[h]='exact'}else if(ALIAS[h.toLowerCase().trim()]){matched[h]=ALIAS[h.toLowerCase().trim()];cf[h]='exact'}else{unmatched.push(h)}};columnMapping.value={matched,unmatched,confidence:cf};const prices=rows.map(r=>parseFloat(r['price_monthly']||r['月租金']||r['price']||'0')).filter(p=>p>0);if(prices.length>=4){const s=[...prices].sort((a,b)=>a-b);const q1=s[Math.floor(s.length*.25)];const q3=s[Math.floor(s.length*.75)];const iqr=q3-q1;const up=q3+1.5*iqr;const lo=q1-1.5*iqr;const ol:number[]=[];rows.forEach((r,i)=>{const v=parseFloat(r['price_monthly']||r['月租金']||r['price']||'0');if(v>up||v<lo)ol.push(i+2)});batchOutlierRows.value=ol};step.value=2}catch(e:any){ElMessage.error(toUserFriendly(e)||'文件解析失败');batchFile.value=null}}
 
 async function doImport(){
   if(!batchFile.value)return
@@ -261,10 +264,10 @@ async function doImport(){
     if(r.failed_records===0&&r.success_records>0){ElMessage.success(`全部导入成功！共${r.success_records}条，跳转至房源列表...`);setTimeout(()=>router.push('/property/manage'),1500)}
     else if(r.success_records>0){ElMessage.warning(`成功${r.success_records}条，失败${r.failed_records}条`)}
     else{ElMessage.error(`全部${r.failed_records}条未通过校验`)}
-  }catch(e:any){ElMessage.error(extractErrorMessage(e)||'导入失败');step.value=2}
+  }catch(e:any){ElMessage.error(toUserFriendly(e));step.value=2}
   finally{batchImporting.value=false}
 }
-async function retryBatchImport(){if(!batchResult.value?.id)return;try{const r=await adminService.retryImportTask(batchResult.value.id);batchResult.value=r;ElMessage.success('重试完成')}catch(e:any){ElMessage.error(extractErrorMessage(e)||'重试失败')}}
+async function retryBatchImport(){if(!batchResult.value?.id)return;try{const r=await adminService.retryImportTask(batchResult.value.id);batchResult.value=r;ElMessage.success('重试完成')}catch(e:any){ElMessage.error(toUserFriendly(e))}}
 function goToList(){router.push('/property/manage')}
 function resetAll(){step.value=0;clearFile()}
 onMounted(loadBuildings)

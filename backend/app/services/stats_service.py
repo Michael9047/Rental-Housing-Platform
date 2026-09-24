@@ -2,6 +2,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.booking import Booking, BookingStatus
+from app.models.institute import Institute
 from app.models.property import Property
 from app.models.user import User
 
@@ -25,8 +26,9 @@ class StatsService:
         )
 
         district_result = await self.session.execute(
-            select(Property.district, func.count(Property.id))
-            .group_by(Property.district)
+            select(Institute.district, func.count(Property.id))
+            .join(Institute, Property.institute_id == Institute.id)
+            .group_by(Institute.district)
             .order_by(func.count(Property.id).desc())
             .limit(10)
         )

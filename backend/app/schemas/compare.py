@@ -7,7 +7,8 @@ from pydantic import BaseModel, Field
 # ── 创建会话 ──────────────────────────────────────────────────────
 
 class CompareSessionCreate(BaseModel):
-    property_ids: list[int] = Field(..., min_length=2, max_length=10)
+    # 兼容字段名；每个值始终是 UnitType.id。
+    property_ids: list[int] = Field(..., min_length=2, max_length=5)
     priority: str = Field("balanced", pattern=r"^(balanced|budget|commute|space|safety)$")
 
 
@@ -19,7 +20,7 @@ class CompareSessionResponse(BaseModel):
     status: str
     result_cache: dict | None = None
     created_at: datetime
-    messages: list["CompareMessageRead"] = []
+    messages: list["CompareMessageRead"] = Field(default_factory=list)
 
     model_config = {"from_attributes": True}
 
@@ -43,6 +44,6 @@ class CompareMessageRequest(BaseModel):
 
 class CompareMessageResponse(BaseModel):
     reply: str
-    scores: dict[int, dict] = {}         # {property_id: {total: int, breakdown: {dim: int}}}
-    tool_trail: list[dict] = []          # 调试/审计：工具调用轨迹
-    property_data: dict[int, dict] = {}  # {property_id: EnrichedPropertyData}
+    scores: dict[int, dict] = Field(default_factory=dict)
+    tool_trail: list[dict] = Field(default_factory=list)
+    property_data: dict[int, dict] = Field(default_factory=dict)

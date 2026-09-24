@@ -21,7 +21,7 @@
 
         <el-descriptions :column="2" border>
           <el-descriptions-item label="订单编号">#{{ booking.id }}</el-descriptions-item>
-          <el-descriptions-item label="房源编号">#{{ booking.property_id }}</el-descriptions-item>
+          <el-descriptions-item label="户型编号">#{{ booking.unit_type_id ?? '—' }}</el-descriptions-item>
           <el-descriptions-item label="预约日期">{{ booking.scheduled_date || '未指定' }}</el-descriptions-item>
           <el-descriptions-item label="订单状态">
             <el-tag :type="statusTagType" size="small">{{ statusLabel }}</el-tag>
@@ -43,7 +43,7 @@
         <template #header><span class="card-title">👤 租客信息</span></template>
         <el-descriptions :column="2" border>
           <el-descriptions-item label="租客ID">#{{ booking.tenant_id }}</el-descriptions-item>
-          <el-descriptions-item label="房东ID">#{{ booking.landlord_id }}</el-descriptions-item>
+          <el-descriptions-item label="公寓/运营方ID">#{{ booking.bm_id ?? booking.institute_id ?? '—' }}</el-descriptions-item>
         </el-descriptions>
       </el-card>
 
@@ -55,7 +55,7 @@
             <img :src="primaryImage" :alt="propertyInfo.title" />
           </div>
           <div class="preview-body">
-            <a class="preview-title" @click="goPropertyDetail(propertyInfo.id || (booking && booking.property_id))">
+            <a class="preview-title" @click="goPropertyDetail(propertyInfo.id || (booking && booking.unit_type_id) || undefined)">
               {{ propertyInfo.title }}
             </a>
             <p class="preview-addr">{{ propertyInfo.address }}</p>
@@ -66,7 +66,7 @@
             </div>
             <div class="preview-price">
               <span class="price-num">{{ formatPrice(propertyInfo.price_monthly, propertyInfo?.currency) }}</span>
-              <span class="price-unit">/月</span>
+              <span class="price-unit">{{ (propertyInfo as any).rent_period === 'weekly' ? '/周' : '/月' }}</span>
             </div>
           </div>
         </div>
@@ -163,7 +163,9 @@ async function fetchViaBooking(bookingId: number): Promise<void> {
   booking.value = await bookingService.getById(bookingId)
   if (booking.value) {
     try {
-      propertyInfo.value = await propertyService.getById(booking.value.property_id)
+      if (booking.value.unit_type_id) {
+        propertyInfo.value = await propertyService.getById(booking.value.unit_type_id)
+      }
     } catch { /* property fetch failed */ }
   }
 }

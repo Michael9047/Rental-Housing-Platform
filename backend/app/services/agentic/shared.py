@@ -1,31 +1,92 @@
 """Agent 共享工具函数 —— 从 AgentService 提取，供多个 Agent 复用。"""
 from __future__ import annotations
 
+import re
 from typing import Any
 
-from app.models.property import Property
-from app.services.compare_scoring import DIMENSION_LABELS
+from app.models.unit_type import UnitType
+from app.services.compare_scoring import DIMENSION_LABELS, currencies_are_comparable
 
 
-def property_to_dict(prop: Property) -> dict[str, Any]:
-    """将 Property ORM 转为 LLM 上下文用的 dict（仅真实字段）。"""
+INCOMPARABLE_PRICE_SUMMARY = (
+    "候选币种缺失或不一致，原始月租仅并列展示，价格维度按中性分处理。"
+)
+INCOMPARABLE_PRICE_RECOMMENDATION = (
+    "当前建议不依据租金高低；请先确认所有候选的币种和统一换算口径，再做价格决策。"
+)
+_RELATIVE_PRICE_CLAIM = re.compile(
+    r"最便宜|更便宜|较便宜|最贵|更贵|较贵|最低价|最高价|"
+    r"价格(?:最低|最高|偏高|偏低|更高|更低|较高|较低|最有优势)|"
+    r"性价比|最划算|更划算"
+)
+
+
+def guard_price_narrative(
+    summary: str,
+    recommendation: str,
+    currencies: list[str | None],
+) -> tuple[str, str]:
+    """LLM 只能在价格可比时输出价格结论；否则改用确定性安全文本。"""
+    if currencies_are_comparable(currencies):
+        return summary, recommendation
+    return INCOMPARABLE_PRICE_SUMMARY, INCOMPARABLE_PRICE_RECOMMENDATION
+
+
+def guard_price_item_narratives(
+    pros: list[str],
+    cons: list[str],
+    currencies: list[str | None],
+) -> tuple[list[str], list[str]]:
+    """币种不可比时删除 LLM 单卡中的相对价格判断，保留绝对租金事实。"""
+    if currencies_are_comparable(currencies):
+        return pros, cons
+    return (
+        [claim for claim in pros if not _RELATIVE_PRICE_CLAIM.search(claim)],
+        [claim for claim in cons if not _RELATIVE_PRICE_CLAIM.search(claim)],
+    )
+
+
+def unit_type_title(unit_type: UnitType) -> str:
+    """返回带公寓名的户型标题。"""
+    institute = getattr(unit_type, "institute", None)
+    institute_name = getattr(institute, "name_cn", None) or getattr(institute, "name", None)
+    return " · ".join(part for part in (institute_name, unit_type.name) if part)
+
+
+def format_unit_type_money(unit_type: UnitType, value: float) -> str:
+    """按户型真实币种格式化金额。"""
+    currency = str(unit_type.currency or "").upper()
+    if not currency:
+        return f"{value:.0f}（币种未知）"
+    symbol = {"GBP": "£", "SGD": "S$", "USD": "$", "HKD": "HK$", "CNY": "¥"}.get(
+        currency, f"{currency} "
+    )
+    return f"{symbol}{value:.0f}"
+
+
+def property_to_dict(prop: UnitType) -> dict[str, Any]:
+    """将 UnitType + Institute 转为 LLM 上下文（仅真实字段）。"""
+    institute = getattr(prop, "institute", None)
+    property_type = prop.property_type
     return {
         "property_id": prop.id,
-        "title": prop.title,
-        "district": prop.district,
-        "address": prop.address,
-        "currency": getattr(prop, 'currency', None),
-        "price_monthly": float(prop.price_monthly),
+        "title": unit_type_title(prop),
+        "district": getattr(institute, "district", None),
+        "address": getattr(institute, "address", None),
+        "currency": prop.currency,
+        "price_monthly": float(prop.base_rent),
         "area_sqm": float(prop.area_sqm) if prop.area_sqm else None,
         "bedrooms": prop.bedrooms,
         "bathrooms": prop.bathrooms,
-        "property_type": prop.property_type.value if hasattr(prop.property_type, "value") else str(prop.property_type),
+        "property_type": property_type.value if hasattr(property_type, "value") else str(property_type or ""),
         "description": (prop.description or "")[:200],
+        "amenities": list(prop.amenities or []),
+        "institute_id": prop.institute_id,
     }
 
 
 def build_dimension_analysis(
-    props: list[Property],
+    props: list[UnitType],
     scores: dict[int, dict],
     extras: dict[int, dict],
     priority: str,
@@ -38,7 +99,11 @@ def build_dimension_analysis(
     by_id = {p.id: p for p in props}
     lines: list[str] = []
 
-    summary = (llm_result or {}).get("summary", "") if llm_result else ""
+    summary = str((llm_result or {}).get("summary", "")) if llm_result else ""
+    recommendation = str((llm_result or {}).get("recommendation", "")) if llm_result else ""
+    summary, recommendation = guard_price_narrative(
+        summary, recommendation, [p.currency for p in props]
+    )
     if summary:
         lines.append(f"> {summary}\n")
 
@@ -53,11 +118,11 @@ def build_dimension_analysis(
     for p in sorted_commute:
         c = extras[p.id].get("commute") or "暂无数据"
         s = scores[p.id]["breakdown"].get("commute", 0)
-        lines.append(f"- **{p.title}**：{c}（通勤得分 {s}）")
+        lines.append(f"- **{unit_type_title(p)}**：{c}（通勤得分 {s}）")
     if sorted_commute:
         best = sorted_commute[0]
         if extras[best.id].get("commute"):
-            lines.append(f"\n✅ 通勤最优：**{best.title}**\n")
+            lines.append(f"\n✅ 通勤最优：**{unit_type_title(best)}**\n")
 
     # 2. 周边配套
     lines.append("### 🏪 周边配套")
@@ -67,29 +132,41 @@ def build_dimension_analysis(
         desc = (d.get("description") or "")[:120]
         facility_hints = extract_facility_hints(desc)
         hint_text = f"（{'、'.join(facility_hints)}）" if facility_hints else ""
-        lines.append(f"- **{p.title}**：位于{district_info}{hint_text}")
+        lines.append(f"- **{unit_type_title(p)}**：位于{district_info}{hint_text}")
     lines.append("")
 
     # 3. 房内设施
     lines.append("### 🛋️ 房内设施")
     for p in props:
         desc = (p.description or "")[:200]
-        amenities = extract_amenities_from_desc(desc)
+        amenities = list(p.amenities or []) or extract_amenities_from_desc(desc)
         if amenities:
-            lines.append(f"- **{p.title}**：{'、'.join(amenities)}")
+            lines.append(f"- **{unit_type_title(p)}**：{'、'.join(amenities)}")
         else:
-            lines.append(f"- **{p.title}**：设施信息待补充（请联系房东确认）")
+            lines.append(f"- **{unit_type_title(p)}**：设施信息待补充（请联系公寓确认）")
     lines.append("")
 
     # 4. 价格对比
     lines.append("### 💰 价格对比")
-    sorted_price = sorted(props, key=lambda p: float(p.price_monthly))
+    price_comparable = currencies_are_comparable(p.currency for p in props)
+    sorted_price = (
+        sorted(props, key=lambda p: float(p.base_rent))
+        if price_comparable else list(props)
+    )
     for p in sorted_price:
         s = scores[p.id]["breakdown"].get("price", 0)
         deposit = getattr(p, "deposit_amount", None)
-        deposit_text = f"（押金 ¥{float(deposit):.0f}）" if deposit else ""
-        lines.append(f"- **{p.title}**：¥{float(p.price_monthly):.0f}/月 {deposit_text}（价格得分 {s}）")
-    lines.append(f"\n💰 价格最低：**{sorted_price[0].title}**（¥{float(sorted_price[0].price_monthly):.0f}/月）\n")
+        deposit_text = f"（押金 {format_unit_type_money(p, float(deposit))}）" if deposit else ""
+        rent_text = format_unit_type_money(p, float(p.base_rent))
+        lines.append(f"- **{unit_type_title(p)}**：{rent_text}/月 {deposit_text}（价格得分 {s}）")
+    if price_comparable:
+        cheapest = sorted_price[0]
+        lines.append(
+            f"\n💰 价格最低：**{unit_type_title(cheapest)}**"
+            f"（{format_unit_type_money(cheapest, float(cheapest.base_rent))}/月）\n"
+        )
+    else:
+        lines.append("\nℹ️ 候选币种缺失或不一致，未直接比较租金高低；请先确认币种与换算口径。\n")
 
     # 5. 空间户型
     lines.append("### 📐 空间户型")
@@ -97,17 +174,32 @@ def build_dimension_analysis(
     for p in sorted_space:
         s = scores[p.id]["breakdown"].get("space", 0)
         area = f"{p.area_sqm}㎡" if p.area_sqm else "未知"
-        lines.append(f"- **{p.title}**：{area}，{p.bedrooms}室{p.bathrooms}卫（空间得分 {s}）")
-    lines.append(f"\n📐 空间最大：**{sorted_space[0].title}**\n")
+        lines.append(f"- **{unit_type_title(p)}**：{area}，{p.bedrooms}室{p.bathrooms}卫（空间得分 {s}）")
+    known_space = [p for p in sorted_space if p.area_sqm is not None]
+    if known_space:
+        max_area = float(known_space[0].area_sqm)
+        largest = [p for p in known_space if float(p.area_sqm) == max_area]
+        if len(largest) == 1:
+            lines.append(f"\n📐 空间最大：**{unit_type_title(largest[0])}**\n")
+        else:
+            names = "、".join(f"**{unit_type_title(p)}**" for p in largest)
+            lines.append(f"\n📐 已知面积并列最大：{names}（{max_area:g}㎡）\n")
+    else:
+        lines.append("\nℹ️ 候选均缺少面积数据，暂时无法比较空间大小。\n")
 
     # 6. 评价与安全
     lines.append("### ⭐ 评价与安全")
     for p in props:
         e = extras[p.id]
         if e.get("rating") is not None:
-            lines.append(f"- **{p.title}**：★ {e['rating']:.1f}（{e['review_count']}条评价）")
+            rating_text = f"★ {e['rating']:.1f}（{e['review_count']}条评价）"
         else:
-            lines.append(f"- **{p.title}**：暂无评价数据")
+            rating_text = "暂无评价数据"
+        safety_text = (
+            f"安全 {e['safety_score']:.1f}/5"
+            if e.get("safety_score") is not None else "暂无安全数据"
+        )
+        lines.append(f"- **{unit_type_title(p)}**：{rating_text}；{safety_text}")
     lines.append("")
 
     # 7. 综合排序与推荐
@@ -119,9 +211,8 @@ def build_dimension_analysis(
         total = scores[p.id]["total"]
         bd = scores[p.id]["breakdown"]
         dim_parts = [f"{DIMENSION_LABELS.get(k, k)} {v}" for k, v in bd.items()]
-        lines.append(f"{emoji} **{p.title}** — {total} 分（{' | '.join(dim_parts)}）")
+        lines.append(f"{emoji} **{unit_type_title(p)}** — {total} 分（{' | '.join(dim_parts)}）")
 
-    recommendation = (llm_result or {}).get("recommendation", "") if llm_result else ""
     if recommendation:
         lines.append(f"\n💡 {recommendation}")
 
@@ -131,12 +222,13 @@ def build_dimension_analysis(
 def parse_commute_meters(commute_text: str) -> float:
     """从通勤文本中提取米数，用于排序。"""
     import re
-    m = re.search(r"(\d+)\s*[m米]", commute_text)
-    if m:
-        return float(m.group(1))
-    m = re.search(r"(\d+\.?\d*)\s*[kK][mM]", commute_text)
+    # 先匹配 km；否则 ``1.5km`` 会被米制正则误读成 ``5m``。
+    m = re.search(r"(\d+(?:\.\d+)?)\s*(?:km|公里|千米)", commute_text, re.IGNORECASE)
     if m:
         return float(m.group(1)) * 1000
+    m = re.search(r"(\d+(?:\.\d+)?)\s*(?:m|米)(?![a-z])", commute_text, re.IGNORECASE)
+    if m:
+        return float(m.group(1))
     return 10000
 
 

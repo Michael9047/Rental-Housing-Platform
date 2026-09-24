@@ -9,6 +9,11 @@ from app.models.mixins import TimestampMixin
 from app.db.session import Base
 
 
+# 现有表没有 session_kind 字段；在不改变 main 数据结构的前提下，以保留标题
+# 作为 Agent 会话类型标记。普通客服 API 必须显式排除这个标题。
+AGENT_SESSION_TITLE = "租房推荐 Agent"
+
+
 class ChatSessionStatus(str, enum.Enum):
     active = "active"
     closed = "closed"
@@ -24,8 +29,8 @@ class ChatSession(TimestampMixin, Base):
     __tablename__ = "chat_sessions"
 
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
-    user_id: Mapped[int] = mapped_column(
-        ForeignKey("users.id", ondelete="CASCADE"), index=True
+    user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), index=True, nullable=True
     )
     session_id: Mapped[str] = mapped_column(
         String(64), unique=True, index=True, default=lambda: uuid.uuid4().hex
@@ -36,7 +41,16 @@ class ChatSession(TimestampMixin, Base):
         default=ChatSessionStatus.active,
         nullable=False,
     )
+    session_kind: Mapped[str] = mapped_column(
+        String(32), default="chat", nullable=False, index=True
+    )
     accumulated_filters: Mapped[dict | None] = mapped_column(
+        JSON, nullable=True, default=None
+    )
+    search_id: Mapped[str | None] = mapped_column(
+        String(96), unique=True, index=True, nullable=True
+    )
+    search_workspace: Mapped[dict | None] = mapped_column(
         JSON, nullable=True, default=None
     )
 

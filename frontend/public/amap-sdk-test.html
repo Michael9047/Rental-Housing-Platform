@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>高德 JS SDK 测试 — 新加坡街道级</title>
+<style>
+  body { margin:0; font-family: system-ui; }
+  h2 { padding:12px 16px 0; margin:0; font-size:16px; }
+  .grid { display:grid; grid-template-columns:1fr 1fr; gap:8px; padding:8px; height:calc(100vh - 50px); }
+  .cell { display:flex; flex-direction:column; }
+  .cell .label { font-size:13px; padding:4px 8px; background:#eee; border-radius:4px 4px 0 0; }
+  .map { flex:1; border-radius:0 0 4px 4px; border:1px solid #ddd; }
+</style>
+</head>
+<body>
+<h2>高德 JS SDK v2.0 — 新加坡 Buona Vista z=17</h2>
+<div class="grid">
+  <div class="cell">
+    <div class="label">SDK 标准地图 (vector)</div>
+    <div id="m1" class="map"></div>
+  </div>
+  <div class="cell">
+    <div class="label">SDK 卫星图层</div>
+    <div id="m2" class="map"></div>
+  </div>
+</div>
+
+<script>
+window._AMapSecurityConfig = { securityJsCode: '' }
+</script>
+<script src="https://webapi.amap.com/maps?v=2.0&key=d236c5d4b0bb068d9da00e0066a8f85c&plugin=AMap.Scale,AMap.ToolBar"></script>
+<script>
+const center = [103.791, 1.3075] // Amap uses [lng, lat]
+
+const m1 = new AMap.Map('m1', {
+  center, zoom: 17, layers: [new AMap.TileLayer()],
+  viewMode: '2D',
+})
+m1.addControl(new AMap.Scale())
+m1.addControl(new AMap.ToolBar())
+
+const m2 = new AMap.Map('m2', {
+  center, zoom: 17, layers: [new AMap.TileLayer.Satellite()],
+  viewMode: '2D',
+})
+m2.addControl(new AMap.Scale())
+m2.addControl(new AMap.ToolBar())
+
+console.log('AMap SDK loaded, version:', AMap.version)
+</script>
+</body>
+</html>

@@ -109,7 +109,7 @@ async def migrate():
 
         r = await s.execute(text(
             "SELECT DISTINCT district, country, MIN(latitude) as lat, MIN(longitude) as lng, "
-            "MIN(address) as addr FROM properties WHERE district IS NOT NULL "
+            "MIN(address) as addr FROM rooms WHERE district IS NOT NULL "
             "GROUP BY district, country ORDER BY country, district"
         ))
         inst_map = {}
@@ -128,7 +128,7 @@ async def migrate():
         # ── 3. room_types → unit_types ──
         print("[3] room_types → unit_types...")
         # 为每个 property 找到 institute
-        r = await s.execute(text("SELECT id, district, country FROM properties"))
+        r = await s.execute(text("SELECT id, district, country FROM rooms"))
         prop_inst = {}
         for row in r:
             key = (row[1], row[2])
@@ -171,7 +171,7 @@ async def migrate():
 
         # ── 4. properties → rooms ──
         print("[4] properties → rooms...")
-        r = await s.execute(text("SELECT * FROM properties ORDER BY id"))
+        r = await s.execute(text("SELECT * FROM rooms ORDER BY id"))
         cols = list(r.keys())
         room_count = 0
         for row in r:

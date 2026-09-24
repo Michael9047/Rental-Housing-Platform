@@ -4,6 +4,8 @@ import { authService } from '@/services/auth'
 import type { User } from '@/types/user'
 import type { LoginRequest, RegisterRequest, PhoneLoginRequest, PhoneRegisterRequest } from '@/types/auth'
 import router from '@/router'
+import { useAgentChatStore } from '@/stores/agentChat'
+import { useCartStore } from '@/stores/cart'
 
 export const useAuthStore = defineStore('auth', () => {
   const user = ref<User | null>(null)
@@ -11,6 +13,7 @@ export const useAuthStore = defineStore('auth', () => {
   const loading = ref(false)
 
   const isLoggedIn = computed(() => !!token.value)
+  // 管理员使用独立的精简后台，不继承 BM/房东工作台权限。
   const isLandlord = computed(() => user.value?.role === 'landlord')
   const isAdmin = computed(() => user.value?.role === 'admin')
   const isMaintenance = computed(() => user.value?.role === 'maintenance_worker')
@@ -22,11 +25,35 @@ export const useAuthStore = defineStore('auth', () => {
     localStorage.setItem('user', JSON.stringify(newUser))
   }
 
+  function setRefreshToken(refreshToken?: string | null) {
+    if (refreshToken) localStorage.setItem('refresh_token', refreshToken)
+  }
+
+  async function finishLogin(newToken: string, refreshToken?: string | null): Promise<User> {
+    const guestToken = localStorage.getItem('guest_token')
+    setAuth(newToken, {} as User)
+    setRefreshToken(refreshToken)
+    const currentUser = await authService.getMe()
+    setAuth(newToken, currentUser)
+    if (guestToken) {
+      try {
+        await useAgentChatStore().claimGuestSessions(guestToken)
+      } catch {
+        // 认领失败时保留 guest_token，之后登录或进入 AI 页面可再次尝试。
+      }
+    }
+    return currentUser
+  }
+
   function clearAuth() {
     token.value = null
     user.value = null
     localStorage.removeItem('access_token')
+    localStorage.removeItem('refresh_token')
     localStorage.removeItem('user')
+    // AI 历史/长期偏好和候选清单都属于当前账号，身份失效时必须同步隔离。
+    useAgentChatStore().reset()
+    useCartStore().clear()
   }
 
   function loadFromStorage() {
@@ -56,11 +83,7 @@ export const useAuthStore = defineStore('auth', () => {
     loading.value = true
     try {
       const tokenResp = await authService.login(data)
-      setAuth(tokenResp.access_token, { } as User)
-      // Fetch full user profile
-      const currentUser = await authService.getMe()
-      setAuth(tokenResp.access_token, currentUser)
-      return currentUser
+      return await finishLogin(tokenResp.access_token)
     } finally {
       loading.value = false
     }
@@ -72,10 +95,7 @@ export const useAuthStore = defineStore('auth', () => {
     try {
       const resp = await authService.phoneLogin(data)
       if (!resp.is_new_user && resp.access_token) {
-        // 已注册用户：直接登录
-        setAuth(resp.access_token, {} as User)
-        const currentUser = await authService.getMe()
-        setAuth(resp.access_token, currentUser)
+        await finishLogin(resp.access_token)
       }
       return resp
     } finally {
@@ -88,10 +108,17 @@ export const useAuthStore = defineStore('auth', () => {
     loading.value = true
     try {
       const tokenResp = await authService.phoneRegister(data)
-      setAuth(tokenResp.access_token, {} as User)
-      const currentUser = await authService.getMe()
-      setAuth(tokenResp.access_token, currentUser)
-      return currentUser
+      return await finishLogin(tokenResp.access_token)
+    } finally {
+      loading.value = false
+    }
+  }
+
+  async function wechatQrLogin(data: { code: string; state: string }) {
+    loading.value = true
+    try {
+      const tokenResp = await authService.wechatQrLogin(data)
+      return await finishLogin(tokenResp.access_token)
     } finally {
       loading.value = false
     }
@@ -127,9 +154,11 @@ export const useAuthStore = defineStore('auth', () => {
     login,
     phoneLogin,
     phoneRegister,
+    wechatQrLogin,
     logout,
     fetchCurrentUser,
     loadFromStorage,
     setAuth,
+    clearAuth,
   }
 })

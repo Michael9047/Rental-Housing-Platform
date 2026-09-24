@@ -6,11 +6,23 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, get_db_session, require_landlord
+from app.core.config import Settings, get_settings
 from app.models.user import User
 from app.services.audit_service import AuditService
 from app.services.import_service import ImportService
 
-router = APIRouter()
+async def require_bulk_import_enabled(
+    settings: Settings = Depends(get_settings),
+) -> None:
+    """旧房源导入器迁移完成前统一关闭全部入口。"""
+    if not settings.bulk_import_enabled:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="批量导入功能正在维护，暂不可用",
+        )
+
+
+router = APIRouter(dependencies=[Depends(require_bulk_import_enabled)])
 
 
 

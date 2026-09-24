@@ -9,6 +9,7 @@ class BookingPersonalInfoValidation(BaseModel):
     surname_pinyin: str | None = None
     birth_date: str | None = None
     gender: str | None = None
+    phone_country_code: str | None = None
     phone: str | None = None
     email: str | None = None
     nationality: str | None = None
@@ -16,6 +17,7 @@ class BookingPersonalInfoValidation(BaseModel):
     enrollment_grade: str | None = None
     major_english: str | None = None
     region: str | None = None
+    address_line: str | None = None
     address_detail: str | None = None
     postal_code: str | None = None
 

@@ -32,6 +32,14 @@
           <el-form-item label="户型名称" prop="name">
             <el-input v-model="f.name" placeholder="如：Studio A、Ensuite B、2Bed Deluxe" maxlength="100" />
           </el-form-item>
+          <el-form-item label="户型类型" prop="property_type">
+            <el-select v-model="f.property_type" placeholder="请选择户型类型" style="width:260px">
+              <el-option label="Studio" value="studio" /><el-option label="Ensuite" value="ensuite" />
+              <el-option label="1 Bedroom" value="1bed" /><el-option label="2 Bedroom" value="2bed" />
+              <el-option label="3 Bedroom" value="3bed" /><el-option label="4 Bedroom" value="4bed" />
+              <el-option label="5+ Bedroom" value="5bed+" /><el-option label="合租" value="shared" />
+            </el-select>
+          </el-form-item>
 
           <el-row :gutter="16">
             <el-col :span="8">
@@ -91,6 +99,21 @@
                   <el-option label="免押金" value="free" />
                   <el-option label="自定义" value="custom" />
                 </el-select>
+              </el-form-item>
+            </el-col>
+          </el-row>
+
+          <el-divider content-position="left">库存信息</el-divider>
+          <el-form-item label="最早可入住"><el-date-picker v-model="f.available_from" type="date" value-format="YYYY-MM-DD" /></el-form-item>
+          <el-row :gutter="16">
+            <el-col :span="8">
+              <el-form-item label="总套数">
+                <el-input-number v-model="f.total_count" :min="0" :max="999" controls-position="right" style="width:100%" />
+              </el-form-item>
+            </el-col>
+            <el-col :span="8">
+              <el-form-item label="可租套数">
+                <el-input-number v-model="f.available_count" :min="0" :max="999" controls-position="right" style="width:100%" />
               </el-form-item>
             </el-col>
           </el-row>
@@ -180,8 +203,9 @@
       </template>
     </el-card>
 
-    <!-- 创建公寓弹窗 -->
-    <el-dialog v-model="showBuildingDialog" title="新建公寓" width="480px">
+    <BuildingCreateDialog v-model="showBuildingDialog" @created="onSharedBuildingCreated" />
+    <!-- 旧简版弹窗不再渲染。 -->
+    <el-dialog v-if="false" v-model="showBuildingDialog" title="新建公寓" width="480px">
       <el-form :model="newBuilding" label-width="80px">
         <el-form-item label="公寓名称" required><el-input v-model="newBuilding.name" placeholder="如：翰林缘公寓" /></el-form-item>
         <el-form-item label="地址"><el-input v-model="newBuilding.address" placeholder="公寓详细地址" /></el-form-item>
@@ -211,9 +235,14 @@ import { ElMessage } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
 import { useAuthStore } from '@/stores/auth'
 import { buildingService, type Building } from '@/services/building'
-import { extractErrorMessage } from '@/services/api'
+import { toUserFriendly } from '@/services/api'
 import api from '@/services/api'
+import { createLogger } from '@/utils/logger'
 import ImageUploader from '@/components/ImageUploader.vue'
+import BuildingCreateDialog from '@/components/building/BuildingCreateDialog.vue'
+import { validateUnitTypePayload } from '@/utils/unitTypePayload'
+
+const log = createLogger('CreateProperty')
 
 const router = useRouter(); const route = useRoute()
 const authStore = useAuthStore()
@@ -256,10 +285,14 @@ const selectedAmenities = ref<string[]>([])
 const f = reactive({
   institute_id: null as number | null,
   name: '',
+  property_type: '' as string,
   bedrooms: 0, bathrooms: 1, hall_count: 0,
   area_sqm: undefined as number | undefined,
   base_rent: undefined as number | undefined,
   deposit_amount: undefined as number | undefined,
+  total_count: 1,
+  available_count: 1,
+  available_from: '' as string,
   deposit_type: undefined as string | undefined,
   rental_requirements: '' as string | undefined,
   currency: 'CNY' as string | undefined,
@@ -282,6 +315,7 @@ function addFloorTier() {
 const rules: FormRules = {
   institute_id: [{ required: true, message: '请选择公寓', trigger: 'change' }],
   name: [{ required: true, message: '请输入户型名称', trigger: 'blur' }],
+  property_type: [{ required: true, message: '请选择户型类型', trigger: 'change' }],
   base_rent: [{ required: true, message: '请输入标准月租金', trigger: 'blur' }],
   area_sqm: [{ required: true, message: '请输入套内面积', trigger: 'change' }],
 }
@@ -295,6 +329,11 @@ async function loadBuildings() {
   try { buildings.value = await buildingService.list({ limit: 200 }) } catch { /* */ }
 }
 
+function onSharedBuildingCreated(building: Building) {
+  buildings.value.unshift(building)
+  f.institute_id = building.id
+}
+
 async function createBuilding() {
   if (!newBuilding.name.trim()) { ElMessage.error('请输入公寓名称'); return }
   creatingBuilding.value = true
@@ -306,7 +345,7 @@ async function createBuilding() {
     buildings.value.unshift(b); f.institute_id = b.id; showBuildingDialog.value = false
     newBuilding.name = ''; newBuilding.address = ''; newBuilding.contact_phone = ''; newBuilding.description = ''
     ElMessage.success('公寓创建成功')
-  } catch (e: any) { ElMessage.error(extractErrorMessage(e) || '创建失败') }
+  } catch (e: any) { if (e.config) e.config._handled = true; ElMessage.error(toUserFriendly(e)) }
   finally { creatingBuilding.value = false }
 }
 
@@ -318,6 +357,7 @@ async function loadUnitType(id: number) {
     const ut = r.data
     f.institute_id = ut.institute_id
     f.name = isCopy.value ? `${ut.name} (副本)` : ut.name
+    f.property_type = ut.property_type || ''
     f.bedrooms = ut.bedrooms ?? 0
     f.bathrooms = ut.bathrooms ?? 1
     f.hall_count = ut.hall_count ?? 0
@@ -325,6 +365,9 @@ async function loadUnitType(id: number) {
     f.base_rent = ut.base_rent ? Number(ut.base_rent) : undefined
     f.deposit_amount = ut.deposit_amount ?? undefined
     f.deposit_type = ut.deposit_type ?? undefined
+    f.total_count = ut.total_count ?? 1
+    f.available_count = ut.available_count ?? 1
+    f.available_from = ut.available_from || ''
     f.rental_requirements = ut.rental_requirements ?? ''
     f.currency = ut.currency || 'CNY'
     f.special_offer = ut.special_offer ?? ''
@@ -350,15 +393,21 @@ async function handleSubmit() {
   const valid = await formRef.value?.validate().catch(() => false)
   if (!valid) { submitting.value = false; return }
   if (!f.institute_id) { ElMessage.error('请先选择公寓'); submitting.value = false; return }
+  const payloadError = validateUnitTypePayload(f)
+  if (payloadError) { ElMessage.error(payloadError); submitting.value = false; return }
   const data: any = {
     institute_id: f.institute_id,
     name: f.name.trim(),
+    property_type: f.property_type,
     bedrooms: f.bedrooms,
     bathrooms: f.bathrooms,
     hall_count: f.hall_count,
     area_sqm: f.area_sqm ?? null,
     base_rent: f.base_rent ?? 0,
     deposit_amount: f.deposit_amount ?? null,
+    total_count: f.total_count ?? 1,
+    available_count: f.available_count ?? 1,
+    available_from: f.available_from || null,
     deposit_type: f.deposit_type || null,
     rental_requirements: f.rental_requirements?.trim() || null,
     currency: f.currency || null,
@@ -378,10 +427,8 @@ async function handleSubmit() {
     }
     showSuccessDialog.value = true
   } catch (e: any) {
-    const msg = extractErrorMessage(e) || e?.message || e?.response?.statusText || '保存失败'
-    console.error('[CreateProperty] save error:', e)
-    console.error('[CreateProperty] response:', e?.response?.data)
-    ElMessage.error(typeof msg === 'string' ? msg : JSON.stringify(msg))
+    log.error('保存户型失败', { action: isEdit.value ? 'edit' : 'create', status: e?.response?.status }, e)
+    ElMessage.error(toUserFriendly(e))
   } finally { submitting.value = false }
 }
 

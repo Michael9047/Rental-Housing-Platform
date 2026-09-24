@@ -28,7 +28,7 @@ export const policyService = {
 
   /** 确认预订并提交政策同意记录。 */
   confirmBooking(data: {
-    property_id: number
+    unit_type_id: number
     move_in_date: string
     lease_months: number
     policy_acceptances: PolicyAcceptanceItem[]

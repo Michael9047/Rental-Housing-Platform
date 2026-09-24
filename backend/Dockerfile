@@ -38,7 +38,7 @@ COPY --chown=appuser:appuser alembic/ alembic/
 COPY --chown=appuser:appuser app/ app/
 
 # Create directories
-RUN mkdir -p /app/uploads && chown -R appuser:appuser /app
+RUN mkdir -p /app/uploads /app/private_objects && chown -R appuser:appuser /app
 
 USER appuser
 

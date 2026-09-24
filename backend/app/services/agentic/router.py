@@ -19,7 +19,11 @@ _REMOVE_PATTERN = re.compile(r"(移除|删除|去掉|拿掉|清除)")
 _COMPARE_PATTERN = re.compile(r"(对比|比较|哪个好|哪套好|哪一?[个套]更)")
 _CART_PATTERN = re.compile(r"(购物车|候选|清单|收藏)")
 _RECOMMEND_SIGNAL = re.compile(
-    r"找|推荐|租|房源|房子|居室|单间|公寓|合租|别墅|预算|地铁|学校|大学|附近|[0-9一二两三四五]\s*室|元|块|㎡|平米|平方"
+    r"找|推荐|租|房源|房子|居室|单间|公寓|合租|别墅|预算|地铁|学校|大学|附近|"
+    r"[0-9一二两三四五]\s*室|元|块|㎡|平米|平方|"
+    r"\b(?:find|search|rent|apartment|flat|room|studio|housing|listing|"
+    r"budget|price|near|around|cheaper|more expensive)\b|(?:s\$|hk\$|£)\s*[\d,]+",
+    re.IGNORECASE,
 )
 
 # ── 中文序号解析 ────────────────────────────────────────────────

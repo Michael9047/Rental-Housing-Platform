@@ -1,354 +1,25 @@
-"""对比 Agent 服务 —— ReAct 模式
-
-使用 LLM 工具调用对 2-5 套房源进行深度多维对比分析。
-评分由 compare_scoring 确定性计算，LLM 只负责解释和 trade-off 推理。
-"""
+"""独立户型对比服务 —— 复用 CompareAgent 的确定性五维评分与解释。"""
 from __future__ import annotations
 
-import json
-import logging
+from collections.abc import Awaitable, Callable
 from typing import Any
 
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.property import Property
+from app.services.agentic.agents.compare_agent import CompareAgent
 from app.services.compare_scoring import (
-    DIMENSION_LABELS,
     PRIORITY_LABELS,
-    compute_scores,
+    currencies_are_comparable,
     normalize_priority,
+    parse_distance_meters,
 )
-from app.services.comparison_data import (
-    EnrichedPropertyData,
-    gather_comprehensive_metrics,
-)
-from app.services.llm_service import get_llm_service
-from app.services.safety_scoring import SafetyScoringService
 
-logger = logging.getLogger(__name__)
-
-# ── System Prompt ─────────────────────────────────────────────────
-
-COMPARISON_SYSTEM_PROMPT = """你是一个租房平台的深度对比分析师。你的任务是对用户选定的几套房源进行多维度系统性对比，帮助用户做出最终决策。
-
-## 工具使用规则
-
-你必须使用工具来获取真实数据，绝不能编造任何房源信息、价格或评分。
-典型流程：
-1. 先用 get_property_details 获取每套房的基本信息
-2. 再用 get_commute_data、get_review_summary、get_safety_scores 获取补充数据
-3. 最后用 compute_comparison 获取确定性评分
-4. 综合所有数据，给出结构化的对比分析
-
-## 回复要求
-
-- 使用中文回复（用户是中国留学生）
-- 引用具体数字（价格、距离、分数）来支撑你的分析
-- 重点做 trade-off 分析："A 虽然贵 200/月，但通勤每天省 30 分钟"
-- 根据用户指定的优先级给出推荐
-- 指出值得实地验证的风险点（如某套房评价数太少）
-- 分数由 compute_comparison 工具计算，你绝对不能修改或捏造分数
-- 回复结构清晰：总览 → 逐维度分析 → 综合推荐"""
-
-# ── 工具定义 ──────────────────────────────────────────────────────
-
-def _build_tools(property_ids: list[int]) -> list[dict[str, Any]]:
-    """构建 OpenAI 兼容的工具定义"""
-    return [
-        {
-            "type": "function",
-            "function": {
-                "name": "get_property_details",
-                "description": f"获取指定房源的全部详细信息：价格、面积、户型、设施、押金、楼层、描述、图片数量等。可用房源 ID：{property_ids}",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "property_id": {
-                            "type": "integer",
-                            "description": "房源 ID",
-                            "enum": property_ids,
-                        },
-                    },
-                    "required": ["property_id"],
-                },
-            },
-        },
-        {
-            "type": "function",
-            "function": {
-                "name": "get_commute_data",
-                "description": "获取一批房源的最近交通站点距离（米），用于评估通勤便利度。",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "property_ids": {
-                            "type": "array",
-                            "items": {"type": "integer"},
-                            "description": "房源 ID 列表",
-                        },
-                    },
-                    "required": ["property_ids"],
-                },
-            },
-        },
-        {
-            "type": "function",
-            "function": {
-                "name": "get_review_summary",
-                "description": "获取一批房源的机构评价汇总（均分 + 评价数量）。评价挂靠在管理公司/机构下，不是单套房源的评价。",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "property_ids": {
-                            "type": "array",
-                            "items": {"type": "integer"},
-                            "description": "房源 ID 列表",
-                        },
-                    },
-                    "required": ["property_ids"],
-                },
-            },
-        },
-        {
-            "type": "function",
-            "function": {
-                "name": "get_safety_scores",
-                "description": "获取一批房源所在区域的安全评分（0.0-5.0，越高越安全）。新加坡房源同时返回 om_score（非礼专项评分，3.0-5.0），英国房源仅返回综合 crime 评分。",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "property_ids": {
-                            "type": "array",
-                            "items": {"type": "integer"},
-                            "description": "房源 ID 列表",
-                        },
-                    },
-                    "required": ["property_ids"],
-                },
-            },
-        },
-        {
-            "type": "function",
-            "function": {
-                "name": "get_poi_analysis",
-                "description": "获取指定房源周边的设施分析（超市、餐厅、医院等）。",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "property_id": {"type": "integer", "description": "房源 ID"},
-                    },
-                    "required": ["property_id"],
-                },
-            },
-        },
-        {
-            "type": "function",
-            "function": {
-                "name": "compute_comparison",
-                "description": f"计算所有房源的确定性加权对比评分（五维度：价格/通勤/空间/评价/安全）。你必须使用此工具的分数，不能自己编造。可选优先级：{list(PRIORITY_LABELS.keys())}",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "property_ids": {
-                            "type": "array",
-                            "items": {"type": "integer"},
-                            "description": "所有参与对比的房源 ID",
-                        },
-                        "priority": {
-                            "type": "string",
-                            "enum": list(PRIORITY_LABELS.keys()),
-                            "description": f"用户偏好权重：{json.dumps(PRIORITY_LABELS, ensure_ascii=False)}",
-                        },
-                    },
-                    "required": ["property_ids", "priority"],
-                },
-            },
-        },
-        {
-            "type": "function",
-            "function": {
-                "name": "list_properties",
-                "description": "列出当前对比会话中所有房源的基本信息（ID + 标题 + 区域）。",
-                "parameters": {"type": "object", "properties": {}},
-            },
-        },
-    ]
-
-
-# ── Service ───────────────────────────────────────────────────────
 
 class ComparisonService:
-    """ReAct 对比 Agent"""
+    """为 /compare/sessions 提供可持久化的 2-5 户型对比结果。"""
 
     def __init__(self, session: AsyncSession) -> None:
         self.db = session
-        self._llm = get_llm_service()
-        self._safety = SafetyScoringService()
-        # 单次 ReAct 循环内的数据缓存
-        self._cache: dict[int, EnrichedPropertyData] = {}
-        self._property_ids: list[int] = []
-
-    # ── 工具执行器 ──────────────────────────────────────────────
-
-    async def _execute_tool(self, tool_name: str, args: dict[str, Any]) -> str:
-        """执行一个工具并返回 JSON 字符串结果"""
-        logger.debug("ReAct tool: %s(%s)", tool_name, args)
-        try:
-            if tool_name == "get_property_details":
-                result = await self._tool_get_property_details(args)
-            elif tool_name == "get_commute_data":
-                result = await self._tool_get_commute(args)
-            elif tool_name == "get_review_summary":
-                result = await self._tool_get_reviews(args)
-            elif tool_name == "get_safety_scores":
-                result = await self._tool_get_safety(args)
-            elif tool_name == "get_poi_analysis":
-                result = await self._tool_get_poi(args)
-            elif tool_name == "compute_comparison":
-                result = await self._tool_compute_comparison(args)
-            elif tool_name == "list_properties":
-                result = self._tool_list_properties()
-            else:
-                result = {"error": f"未知工具: {tool_name}"}
-        except Exception as exc:
-            result = {"error": str(exc)}
-        return json.dumps(result, ensure_ascii=False, default=str)
-
-    async def _ensure_cache(self, property_ids: list[int]) -> None:
-        """确保缓存中有指定房源的数据"""
-        missing = [pid for pid in property_ids if pid not in self._cache]
-        if not missing:
-            return
-        props = (
-            await self.db.execute(
-                select(Property).where(Property.id.in_(missing))
-            )
-        ).scalars().all()
-        enriched = await gather_comprehensive_metrics(
-            list(props), self.db, self._safety
-        )
-        self._cache.update(enriched)
-
-    async def _tool_get_property_details(self, args: dict) -> dict:
-        pid = args["property_id"]
-        await self._ensure_cache([pid])
-        data = self._cache.get(pid)
-        if not data:
-            return {"error": f"房源 {pid} 不存在"}
-        return {
-            "property_id": data.property_id,
-            "title": data.title,
-            "district": data.district,
-            "address": data.address,
-            "price_monthly": data.price_monthly,
-            "area_sqm": data.area_sqm,
-            "bedrooms": data.bedrooms,
-            "bathrooms": data.bathrooms,
-            "property_type": data.property_type,
-            "amenities": data.amenities,
-            "deposit_amount": data.deposit_amount,
-            "deposit_type": data.deposit_type,
-            "service_fee_rate": data.service_fee_rate,
-            "min_lease_months": data.min_lease_months,
-            "floor": data.floor,
-            "room_number": data.room_number,
-            "description": data.description,
-            "image_count": data.image_count,
-        }
-
-    async def _tool_get_commute(self, args: dict) -> dict:
-        pids = args["property_ids"]
-        await self._ensure_cache(pids)
-        return {
-            str(pid): {
-                "transit_meters": self._cache[pid].transit_meters,
-                "display": self._cache[pid].transit_display,
-            }
-            for pid in pids if pid in self._cache
-        }
-
-    async def _tool_get_reviews(self, args: dict) -> dict:
-        pids = args["property_ids"]
-        await self._ensure_cache(pids)
-        return {
-            str(pid): {
-                "rating": self._cache[pid].rating,
-                "review_count": self._cache[pid].review_count,
-            }
-            for pid in pids if pid in self._cache
-        }
-
-    async def _tool_get_safety(self, args: dict) -> dict:
-        pids = args["property_ids"]
-        await self._ensure_cache(pids)
-        return {
-            str(pid): {"safety_score": self._cache[pid].safety_score}
-            for pid in pids if pid in self._cache
-        }
-
-    async def _tool_get_poi(self, args: dict) -> dict:
-        pid = args["property_id"]
-        from app.models.poi import PropertyPOI
-
-        poi = (
-            await self.db.execute(
-                select(PropertyPOI).where(PropertyPOI.property_id == pid)
-            )
-        ).scalar_one_or_none()
-        if not poi:
-            return {"property_id": pid, "poi_data": None, "content": "暂无周边设施数据"}
-        return {
-            "property_id": pid,
-            "poi_data": poi.poi_data,
-            "content": poi.content or "",
-        }
-
-    async def _tool_compute_comparison(self, args: dict) -> dict:
-        pids = args["property_ids"]
-        priority = normalize_priority(args.get("priority", "balanced"))
-        await self._ensure_cache(pids)
-
-        metrics = [self._cache[pid].metrics for pid in pids if pid in self._cache]
-        scores = compute_scores(metrics, priority)
-
-        # 附加维度标签和权重信息
-        from app.services.compare_scoring import PRIORITY_WEIGHTS
-
-        weights = PRIORITY_WEIGHTS.get(priority, {})
-        return {
-            "scores": {
-                str(pid): {
-                    "total": s["total"],
-                    "breakdown": {
-                        DIMENSION_LABELS.get(k, k): v
-                        for k, v in s["breakdown"].items()
-                    },
-                }
-                for pid, s in scores.items()
-            },
-            "priority": priority,
-            "priority_label": PRIORITY_LABELS.get(priority, "未知"),
-            "weights": {
-                DIMENSION_LABELS.get(k, k): w
-                for k, w in weights.items()
-            },
-            "dimensions": list(DIMENSION_LABELS.values()),
-        }
-
-    def _tool_list_properties(self) -> dict:
-        return {
-            "properties": [
-                {
-                    "property_id": pid,
-                    "title": self._cache[pid].title if pid in self._cache else "未知",
-                    "district": self._cache[pid].district if pid in self._cache else "未知",
-                }
-                for pid in self._property_ids
-            ]
-        }
-
-    # ── 主入口 ──────────────────────────────────────────────────
 
     async def analyze(
         self,
@@ -356,80 +27,337 @@ class ComparisonService:
         user_message: str,
         priority: str = "balanced",
         conversation_history: list[dict[str, Any]] | None = None,
+        token_sink: Callable[[str], Awaitable[None]] | None = None,
+        status_sink: Callable[[str, str], Awaitable[None]] | None = None,
     ) -> dict[str, Any]:
-        """运行 ReAct 对比循环。
+        """执行对比；流式调用方可直接接收模型原始 token。"""
+        unit_type_ids = list(dict.fromkeys(property_ids))
+        if not 2 <= len(unit_type_ids) <= 5:
+            raise ValueError("请选择 2-5 个户型进行对比")
 
-        Args:
-            property_ids: 待对比房源 ID 列表（2~5）
-            user_message: 用户的消息/问题
-            priority: 评分优先级
-            conversation_history: 之前的消息（追问时传入）
-
-        Returns:
-            {
-                "reply": str,          # LLM 最终回复
-                "scores": dict,        # {property_id: {total, breakdown}}
-                "tool_trail": list,    # 工具调用轨迹
-                "property_data": dict, # {property_id: dict} 前端渲染数据
-            }
-        """
-        self._property_ids = property_ids
-        self._cache = {}
-
-        # 预加载所有房源数据（后续工具调用直接走缓存）
-        await self._ensure_cache(property_ids)
-
-        # 构建对话上下文
-        if conversation_history:
-            context = f"当前对比房源: {property_ids}。用户偏好: {priority}。"
-            full_message = f"{context}\n用户追问: {user_message}"
-        else:
-            context = f"请对比分析以下房源: {property_ids}。用户偏好: {PRIORITY_LABELS.get(priority, '均衡')}。"
-            full_message = f"{context}\n{user_message}" if user_message else f"{context}\n请给出全面的对比分析。"
-
-        tools = _build_tools(property_ids)
-
-        reply, tool_trail = await self._llm.run_react_loop(
-            system_prompt=COMPARISON_SYSTEM_PROMPT,
-            user_message=full_message,
-            tools=tools,
-            tool_executor=self._execute_tool,
+        effective_priority = _infer_priority(user_message, priority)
+        compared = await CompareAgent(session=self.db).compare(
+            user_id=0,
+            property_ids=unit_type_ids,
+            priority=effective_priority,
+            token_sink=token_sink,
+            status_sink=status_sink,
         )
-
-        # 确定性计算最终评分（前端需要权威分数用于雷达图）
-        metrics = [self._cache[pid].metrics for pid in property_ids if pid in self._cache]
-        scores = compute_scores(metrics, priority)
-
-        # 构建前端渲染数据
+        scores: dict[int, dict] = {}
         property_data: dict[int, dict] = {}
-        for pid in property_ids:
-            if pid in self._cache:
-                d = self._cache[pid]
-                property_data[pid] = {
-                    "property_id": d.property_id,
-                    "title": d.title,
-                    "district": d.district,
-                    "price_monthly": d.price_monthly,
-                    "area_sqm": d.area_sqm,
-                    "bedrooms": d.bedrooms,
-                    "bathrooms": d.bathrooms,
-                    "property_type": d.property_type,
-                    "amenities": d.amenities,
-                    "deposit_amount": d.deposit_amount,
-                    "deposit_type": d.deposit_type,
-                    "service_fee_rate": d.service_fee_rate,
-                    "min_lease_months": d.min_lease_months,
-                    "floor": d.floor,
-                    "image_count": d.image_count,
-                    "transit_display": d.transit_display,
-                    "rating": d.rating,
-                    "review_count": d.review_count,
-                    "safety_score": d.safety_score,
-                }
+        for item in compared["items"]:
+            unit_type = item["property"]
+            institute = unit_type.institute
+            scores[item["property_id"]] = {
+                "total": item["score"],
+                "breakdown": item.get("score_breakdown") or {},
+            }
+            property_data[item["property_id"]] = {
+                # 对外字段名兼容旧前端，ID 语义为 UnitType.id。
+                "property_id": unit_type.id,
+                "unit_type_id": unit_type.id,
+                "institute_id": unit_type.institute_id,
+                "institute_name": institute.name_cn or institute.name,
+                "title": item["title"],
+                "name": unit_type.name,
+                "district": institute.district,
+                "address": institute.address,
+                "institute_address": institute.address,
+                "country": institute.country,
+                "city": institute.city,
+                "price_monthly": float(unit_type.base_rent),
+                "base_rent": float(unit_type.base_rent),
+                "currency": unit_type.currency,
+                "area_sqm": float(unit_type.area_sqm) if unit_type.area_sqm is not None else None,
+                "bedrooms": unit_type.bedrooms,
+                "bathrooms": unit_type.bathrooms,
+                "property_type": (
+                    unit_type.property_type.value
+                    if hasattr(unit_type.property_type, "value") else unit_type.property_type
+                ),
+                "amenities": list(dict.fromkeys([
+                    *list(unit_type.amenities or []),
+                    *list(institute.amenities or []),
+                ])),
+                "deposit_amount": unit_type.deposit_amount,
+                "deposit_type": (
+                    unit_type.deposit_type.value
+                    if hasattr(unit_type.deposit_type, "value") else unit_type.deposit_type
+                ),
+                "min_lease_months": unit_type.min_stay_months,
+                "min_stay_months": unit_type.min_stay_months,
+                "has_vacancy": unit_type.has_vacancy,
+                "available_count": unit_type.available_count,
+                "total_count": unit_type.total_count,
+                "image_urls": list(unit_type.image_urls or []),
+                "image_count": len(unit_type.image_urls or []),
+                "transit_display": item.get("commute"),
+                "rating": item.get("rating"),
+                "review_count": item.get("review_count", 0),
+                "safety_score": item.get("safety_score"),
+            }
 
+        base_reply = compared.get("dimension_analysis") or compared["summary"]
+        is_initial = user_message.strip() in {"", "请对比分析这些户型", "请对比分析这些房源"}
+        focused_reply, focuses = _build_question_focused_reply(
+            user_message,
+            property_data,
+            effective_priority,
+            conversation_history,
+        )
+        if is_initial:
+            reply = base_reply
+        elif focused_reply:
+            reply = focused_reply
+        else:
+            reply = (
+                f"针对你的追问“{user_message.strip()}”，我已按「{PRIORITY_LABELS[effective_priority]}」"
+                f"重新计算并整理现有真实数据：\n\n{base_reply}"
+            )
         return {
             "reply": reply,
             "scores": scores,
-            "tool_trail": tool_trail,
+            "tool_trail": [{
+                "tool": "compare_unit_types",
+                "status": "success",
+                "unit_type_ids": unit_type_ids,
+                "priority": compared.get("priority", effective_priority),
+                "question_focus": focuses,
+            }],
             "property_data": property_data,
+            "priority": effective_priority,
+            "_reply_streamed": bool(compared.get("_reply_streamed")),
         }
+
+
+def _infer_priority(message: str, fallback: str) -> str:
+    """让追问中的明确侧重点真正改变本轮确定性评分。"""
+    text = message.lower()
+    patterns = (
+        ("safety", ("安全", "治安", "犯罪")),
+        ("commute", ("通勤", "学校", "地铁", "距离", "时间")),
+        ("budget", ("预算", "便宜", "价格", "租金", "省钱")),
+        ("space", ("空间", "面积", "宽敞", "卧室")),
+    )
+    for candidate, keywords in patterns:
+        if any(keyword in text for keyword in keywords):
+            return candidate
+    return normalize_priority(fallback)
+
+
+_AMENITY_TERMS = (
+    "健身房", "泳池", "独立卫浴", "独卫", "空调", "洗衣机", "厨房",
+    "电梯", "门禁", "安保", "停车", "车位", "阳台", "WiFi", "wifi",
+)
+
+
+def _detect_focuses(text: str) -> list[str]:
+    """识别追问关注点；只决定展示维度，不生成或修改任何房源事实。"""
+    lowered = text.casefold()
+    signals = (
+        ("amenities", (*_AMENITY_TERMS, "设施", "配套")),
+        ("lease", ("长期", "短租", "租期", "几个月", "最短入住")),
+        ("safety", ("安全", "治安", "犯罪")),
+        ("commute", ("通勤", "学校", "地铁", "公交", "交通", "距离")),
+        ("budget", ("预算", "便宜", "价格", "租金", "省钱", "性价比")),
+        ("space", ("空间", "面积", "宽敞", "卧室", "几室")),
+        ("rating", ("评价", "评分", "口碑", "评论")),
+    )
+    return [name for name, keywords in signals if any(keyword.casefold() in lowered for keyword in keywords)]
+
+
+def _build_question_focused_reply(
+    question: str,
+    property_data: dict[int, dict],
+    priority: str,
+    conversation_history: list[dict[str, Any]] | None,
+) -> tuple[str | None, list[str]]:
+    """根据真实字段回答追问；历史只用于补足“那这个呢”等省略问法。"""
+    focuses = _detect_focuses(question)
+    if not focuses:
+        for message in reversed(conversation_history or []):
+            if message.get("role") != "user":
+                continue
+            previous = str(message.get("content") or "").strip()
+            if not previous or previous == question.strip():
+                continue
+            focuses = _detect_focuses(previous)
+            if focuses:
+                break
+    if not focuses:
+        return None, []
+
+    sections: list[str] = []
+    for focus in focuses:
+        builder = _FOCUS_BUILDERS[focus]
+        sections.append(builder(question, property_data))
+    intro = (
+        f"针对你的追问“{question.strip()}”，我按「{PRIORITY_LABELS[priority]}」权重重新计算，"
+        "并只使用当前户型与公寓记录回答："
+    )
+    return intro + "\n\n" + "\n\n".join(sections), focuses
+
+
+def _title(data: dict) -> str:
+    return str(data.get("title") or data.get("name") or f"户型 #{data.get('property_id')}")
+
+
+def _money(data: dict) -> str:
+    currency = str(data.get("currency") or "未知币种").upper()
+    symbols = {"GBP": "£", "SGD": "S$", "USD": "$", "HKD": "HK$", "CNY": "¥"}
+    amount = data.get("base_rent")
+    if amount is None:
+        return "租金未知"
+    return f"{symbols.get(currency, currency + ' ')}{float(amount):g}/月"
+
+
+def _budget_section(_question: str, property_data: dict[int, dict]) -> str:
+    rows = list(property_data.values())
+    lines = ["### 价格与预算"]
+    lines.extend(f"- **{_title(data)}**：{_money(data)}" for data in rows)
+    priced = [data for data in rows if data.get("base_rent") is not None]
+    price_comparable = (
+        len(priced) == len(rows)
+        and currencies_are_comparable(data.get("currency") for data in rows)
+    )
+    if not price_comparable:
+        lines.append("- 结论：币种缺失或不一致，不直接比较租金高低；请先确认币种与统一换算口径。")
+    elif priced:
+        cheapest = min(priced, key=lambda data: float(data["base_rent"]))
+        lines.append(f"- 结论：按当前同币种月租，**{_title(cheapest)}** 最低（{_money(cheapest)}）。")
+    else:
+        lines.append("- 结论：当前缺少可比较的租金数据。")
+    return "\n".join(lines)
+
+
+def _commute_section(_question: str, property_data: dict[int, dict]) -> str:
+    rows = list(property_data.values())
+    lines = ["### 通勤与交通"]
+    known: list[tuple[int, dict]] = []
+    for data in rows:
+        display = data.get("transit_display")
+        lines.append(f"- **{_title(data)}**：{display or '暂无交通距离数据'}")
+        distance = parse_distance_meters(display)
+        if distance is not None:
+            known.append((distance, data))
+    if known:
+        best = min(known, key=lambda item: item[0])[1]
+        lines.append(f"- 结论：按“最近交通站点距离”，**{_title(best)}** 最有优势；这不是到学校的门到门时间。")
+    else:
+        lines.append("- 结论：当前没有足够的真实交通距离，无法判断通勤最优。")
+    return "\n".join(lines)
+
+
+def _space_section(_question: str, property_data: dict[int, dict]) -> str:
+    rows = list(property_data.values())
+    lines = ["### 空间与户型"]
+    known: list[dict] = []
+    for data in rows:
+        area = data.get("area_sqm")
+        area_text = f"{float(area):g}㎡" if area is not None else "面积未知"
+        lines.append(
+            f"- **{_title(data)}**：{area_text}，{data.get('bedrooms', 0)}室{data.get('bathrooms', 0)}卫"
+        )
+        if area is not None:
+            known.append(data)
+    if known:
+        largest = max(known, key=lambda data: float(data["area_sqm"]))
+        lines.append(f"- 结论：按已登记面积，**{_title(largest)}** 最大。")
+    else:
+        lines.append("- 结论：所有候选都缺少面积，无法判断哪套更宽敞。")
+    return "\n".join(lines)
+
+
+def _safety_section(_question: str, property_data: dict[int, dict]) -> str:
+    rows = list(property_data.values())
+    lines = ["### 安全与治安"]
+    known: list[dict] = []
+    for data in rows:
+        score = data.get("safety_score")
+        lines.append(
+            f"- **{_title(data)}**：{f'{float(score):g}/5' if score is not None else '暂无安全评分'}"
+        )
+        if score is not None:
+            known.append(data)
+    if known:
+        safest = max(known, key=lambda data: float(data["safety_score"]))
+        lines.append(f"- 结论：按现有安全评分，**{_title(safest)}** 最高。")
+    else:
+        lines.append("- 结论：当前候选均无安全数据，不能据此判断治安优劣。")
+    return "\n".join(lines)
+
+
+def _amenities_section(question: str, property_data: dict[int, dict]) -> str:
+    rows = list(property_data.values())
+    requested = [term for term in _AMENITY_TERMS if term.casefold() in question.casefold()]
+    requested = list(dict.fromkeys("WiFi" if term.casefold() == "wifi" else term for term in requested))
+    lines = ["### 设施与配套"]
+    matching: list[dict] = []
+    for data in rows:
+        amenities = [str(value) for value in (data.get("amenities") or [])]
+        lines.append(f"- **{_title(data)}**：{'、'.join(amenities) if amenities else '暂无已登记设施'}")
+        if requested and all(
+            any(term.casefold() in amenity.casefold() for amenity in amenities)
+            for term in requested
+        ):
+            matching.append(data)
+    if requested and matching:
+        names = "、".join(f"**{_title(data)}**" for data in matching)
+        lines.append(f"- 结论：明确记录有{'、'.join(requested)}的是 {names}。")
+    elif requested:
+        lines.append(
+            f"- 结论：现有记录未确认哪套具备{'、'.join(requested)}；“未登记”不等于“一定没有”，建议向公寓确认。"
+        )
+    return "\n".join(lines)
+
+
+def _lease_section(question: str, property_data: dict[int, dict]) -> str:
+    rows = list(property_data.values())
+    lines = ["### 租期与长期居住"]
+    known: list[dict] = []
+    for data in rows:
+        months = data.get("min_stay_months")
+        lines.append(
+            f"- **{_title(data)}**：{f'最短租期 {months} 个月' if months is not None else '最短租期未知'}"
+        )
+        if months is not None:
+            known.append(data)
+    if "短租" in question and known:
+        flexible = min(known, key=lambda data: int(data["min_stay_months"]))
+        lines.append(f"- 结论：按最短租期，**{_title(flexible)}** 对短租更灵活。")
+    else:
+        lines.append(
+            "- 结论：main 当前只记录最短租期，没有最长租期或续租承诺；长期住还应结合设施、空间和续租政策确认。"
+        )
+    return "\n".join(lines)
+
+
+def _rating_section(_question: str, property_data: dict[int, dict]) -> str:
+    rows = list(property_data.values())
+    lines = ["### 评价与口碑"]
+    known: list[dict] = []
+    for data in rows:
+        rating = data.get("rating")
+        count = int(data.get("review_count") or 0)
+        lines.append(
+            f"- **{_title(data)}**：{f'{float(rating):g}/5（{count} 条）' if rating is not None else '暂无已审核评价'}"
+        )
+        if rating is not None:
+            known.append(data)
+    if known:
+        best = max(known, key=lambda data: float(data["rating"]))
+        lines.append(f"- 结论：按现有已审核评分，**{_title(best)}** 最高。")
+    else:
+        lines.append("- 结论：当前没有足够评价数据，无法判断口碑最好。")
+    return "\n".join(lines)
+
+
+_FOCUS_BUILDERS = {
+    "budget": _budget_section,
+    "commute": _commute_section,
+    "space": _space_section,
+    "safety": _safety_section,
+    "amenities": _amenities_section,
+    "lease": _lease_section,
+    "rating": _rating_section,
+}

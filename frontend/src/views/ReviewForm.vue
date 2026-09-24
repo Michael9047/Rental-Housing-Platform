@@ -92,6 +92,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ArrowLeft } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
+import { toUserFriendly } from '@/services/api'
 import type { FormInstance } from 'element-plus'
 import { reviewService } from '@/services/review'
 import { propertyService } from '@/services/property'
@@ -144,7 +145,7 @@ onMounted(async () => {
   loading.value = true
   try {
     const [prop, bookings] = await Promise.all([
-      propertyService.getProperty(propertyId.value),
+      propertyService.getById(propertyId.value),
       bookingService.list().catch(() => []),
     ])
     property.value = prop
@@ -176,7 +177,7 @@ async function submit() {
     ElMessage.success('评价提交成功，等待审核')
     router.back()
   } catch (e: any) {
-    ElMessage.error(e?.response?.data?.detail || '提交失败')
+    ElMessage.error(toUserFriendly(e))
   } finally {
     submitting.value = false
   }

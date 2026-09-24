@@ -9,6 +9,11 @@
       <h2 class="auth-title">欢迎回来</h2>
       <p class="auth-subtitle">登录您的账号，开始智能找房</p>
 
+      <!-- 返回首页 -->
+      <div class="back-row">
+        <router-link to="/" class="back-link">← 返回首页，先随便看看</router-link>
+      </div>
+
       <!-- 登录方式切换 -->
       <div class="login-tabs">
         <span
@@ -167,10 +172,6 @@
         </el-button>
       </el-form>
 
-      <el-divider>其他登录方式</el-divider>
-      <el-button class="wechat-btn" @click="handleWechatLogin" :loading="wechatLoading" size="large" round>
-        💚 微信登录
-      </el-button>
       <div class="auth-footer">
         还没有账号？<router-link to="/register">立即注册</router-link>
       </div>
@@ -185,6 +186,7 @@ import { User, Lock, Phone, Message } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
 import { useAuthStore } from '@/stores/auth'
+import { extractErrorMessage, toUserFriendly } from '@/services/api'
 
 const router = useRouter()
 const route = useRoute()
@@ -194,7 +196,6 @@ const authStore = useAuthStore()
 
 const activeTab = ref<'password' | 'phone'>('password')
 const loading = ref(false)
-const wechatLoading = ref(false)
 
 // 密码登录
 const passwordFormRef = ref<FormInstance>()
@@ -291,12 +292,22 @@ function switchTab(tab: 'password' | 'phone') {
   phoneForm.confirmPassword = ''
 }
 
+/** 登录成功后跳转 */
+async function afterLogin() {
+  ElMessage.success('登录成功')
+  if (authStore.isAdmin) {
+    await router.push('/admin/users')
+    return
+  }
+  const redirect = (route.query.redirect as string) || '/search'
+  await router.push(redirect)
+}
+
 // ── 密码登录 ──────────────────────────────
 
 async function handlePasswordLogin() {
-  if (!passwordFormRef.value) return
-  const valid = await passwordFormRef.value.validate().catch(() => false)
-  if (!valid) return
+  if (!passwordFormRef.value) { console.warn('Login: form ref missing'); return }
+  try { await passwordFormRef.value.validate() } catch { /* validation failed */ return }
 
   loading.value = true
   try {
@@ -304,15 +315,12 @@ async function handlePasswordLogin() {
       username_or_email: passwordForm.username_or_email,
       password: passwordForm.password,
     })
-    ElMessage.success('登录成功')
-    const redirect = (route.query.redirect as string) || '/'
-    router.push(redirect)
+    await afterLogin()
   } catch (err: any) {
-    // error message handled by axios interceptor
-    // 兜底：interceptor 未捕获到的情况下显示通用错误
-    const msg = err?.response?.data?.error?.message || err?.response?.data?.detail || err?.message
-    if (msg) ElMessage.error(typeof msg === 'string' ? msg : '登录失败，请重试')
-    else ElMessage.error('登录失败，请检查网络连接后重试')
+    if (err.config) err.config._handled = true
+    // 短消息是后端写的用户提示，直接用；长消息是技术细节，用通用文案
+    const msg = extractErrorMessage(err)
+    ElMessage.error(msg && msg.length <= 15 ? msg : '操作失败，请稍后重试')
   } finally {
     loading.value = false
   }
@@ -335,9 +343,8 @@ async function handleSendSms() {
     ElMessage.success('验证码已发送')
     startCountdown()
   } catch (err: any) {
-    const msg = err?.response?.data?.error?.message || err?.response?.data?.detail || err?.message
-    if (msg) ElMessage.error(typeof msg === 'string' ? msg : '发送失败，请重试')
-    else ElMessage.error('发送失败，请检查网络连接后重试')
+    if (err.config) err.config._handled = true
+    ElMessage.error(toUserFriendly(err))
   } finally {
     sendingSms.value = false
   }
@@ -364,14 +371,11 @@ async function handlePhoneLogin() {
       isNewUser.value = true
       ElMessage.info('手机号验证通过，请设置账号信息')
     } else {
-      ElMessage.success('登录成功')
-      const redirect = (route.query.redirect as string) || '/'
-      router.push(redirect)
+      await afterLogin()
     }
   } catch (err: any) {
-    const msg = err?.response?.data?.error?.message || err?.response?.data?.detail || err?.message
-    if (msg) ElMessage.error(typeof msg === 'string' ? msg : '手机登录失败，请重试')
-    else ElMessage.error('登录失败，请检查网络连接后重试')
+    if (err.config) err.config._handled = true
+    ElMessage.error(toUserFriendly(err))
   } finally {
     loading.value = false
   }
@@ -393,28 +397,15 @@ async function handlePhoneRegister() {
       username: (phoneForm.username || '').trim(),
       password: phoneForm.password,
     })
-    ElMessage.success('注册成功')
-    const redirect = (route.query.redirect as string) || '/'
-    router.push(redirect)
+    await afterLogin()
   } catch (err: any) {
-    const msg = err?.response?.data?.error?.message || err?.response?.data?.detail || err?.message
-    if (msg) ElMessage.error(typeof msg === 'string' ? msg : '注册失败，请重试')
-    else ElMessage.error('注册失败，请检查网络连接后重试')
+    if (err.config) err.config._handled = true
+    ElMessage.error(toUserFriendly(err))
   } finally {
     loading.value = false
   }
 }
 
-// ── 微信登录 ──────────────────────────────
-
-async function handleWechatLogin() {
-  wechatLoading.value = true
-  try {
-    ElMessage.info('微信登录需要微信内置浏览器或小程序环境。请使用微信扫码或在微信中打开。')
-  } finally {
-    wechatLoading.value = false
-  }
-}
 </script>
 
 <style scoped>
@@ -471,7 +462,24 @@ async function handleWechatLogin() {
   text-align: center;
   font-size: 14px;
   color: var(--text-muted);
-  margin-bottom: 20px;
+  margin-bottom: 12px;
+}
+
+/* ── 返回按钮 ─────────────────────────── */
+.back-row {
+  text-align: center;
+  margin-bottom: 16px;
+}
+
+.back-link {
+  font-size: 13px;
+  color: var(--primary);
+  text-decoration: none;
+  transition: color 0.2s;
+}
+
+.back-link:hover {
+  color: var(--primary-dark, #1a6fd4);
 }
 
 /* ── Tab 切换 ─────────────────────────── */
@@ -538,19 +546,6 @@ async function handleWechatLogin() {
 
 .forgot-row a:hover {
   color: var(--primary);
-}
-
-.wechat-btn {
-  width: 100%;
-  background: #07c160;
-  border-color: #07c160;
-  color: #fff;
-}
-
-.wechat-btn:hover {
-  background: #06ad56;
-  border-color: #06ad56;
-  color: #fff;
 }
 
 .auth-footer {

@@ -204,7 +204,7 @@ const cityOptions = computed(() => {
 
 const districtOptions = computed(() => {
   if (!showDistrict.value || !selectedCountry.value || !selectedProvince.value || !selectedCity.value) return []
-  return getDistricts(selectedCountry.value, selectedProvince.value, selectedCity.value)
+  return getDistricts(selectedCity.value, selectedProvince.value)
 })
 
 const errors = reactive<Record<string, string>>({})

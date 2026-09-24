@@ -3,26 +3,29 @@
 评分与"讲道理"分离：分数由本模块用真实数据计算（可复现、可审计），
 LLM 只负责解释分数背后的优劣势，不允许修改分数。
 
-四个维度（各归一化到 0-100，在参与对比的房源集合内相对计算）：
+五个维度（各归一化到 0-100，在参与对比的房源集合内相对计算）：
 - price   价格：越便宜越高
 - commute 通勤：POI 交通类目里最近站点越近越高（无数据取中性分）
 - space   空间：面积越大越高（无面积取中性分）
 - rating  评分：机构真实评价均分（1-5 星 → 0-100；无评价取中性分）
+- safety  安全：公寓周边安全评分（0-5 → 0-100；无数据取中性分）
 
-用户优先级决定四维权重，"哪套更好"跟着用户看重的维度走。
+用户优先级决定五维权重，"哪套更好"跟着用户看重的维度走。
 """
 from __future__ import annotations
 
 import re
+from collections.abc import Iterable
 from dataclasses import dataclass
 
 # ── 优先级权重 ────────────────────────────────────────────────────
 
 PRIORITY_WEIGHTS: dict[str, dict[str, float]] = {
-    "balanced": {"price": 0.30, "commute": 0.25, "space": 0.25, "rating": 0.20},
-    "budget":   {"price": 0.50, "commute": 0.20, "space": 0.15, "rating": 0.15},
-    "commute":  {"price": 0.20, "commute": 0.50, "space": 0.15, "rating": 0.15},
-    "space":    {"price": 0.20, "commute": 0.15, "space": 0.50, "rating": 0.15},
+    "balanced": {"price": 0.25, "commute": 0.20, "space": 0.20, "rating": 0.15, "safety": 0.20},
+    "budget":   {"price": 0.45, "commute": 0.15, "space": 0.15, "rating": 0.10, "safety": 0.15},
+    "commute":  {"price": 0.15, "commute": 0.45, "space": 0.10, "rating": 0.10, "safety": 0.20},
+    "space":    {"price": 0.15, "commute": 0.10, "space": 0.45, "rating": 0.10, "safety": 0.20},
+    "safety":   {"price": 0.15, "commute": 0.15, "space": 0.10, "rating": 0.10, "safety": 0.50},
 }
 
 PRIORITY_LABELS: dict[str, str] = {
@@ -30,6 +33,7 @@ PRIORITY_LABELS: dict[str, str] = {
     "budget": "预算优先",
     "commute": "通勤优先",
     "space": "空间优先",
+    "safety": "安全优先",
 }
 
 DIMENSION_LABELS: dict[str, str] = {
@@ -37,9 +41,16 @@ DIMENSION_LABELS: dict[str, str] = {
     "commute": "通勤",
     "space": "空间",
     "rating": "评价",
+    "safety": "安全",
 }
 
 NEUTRAL_SCORE = 60  # 缺数据时的中性分：不奖励也不重罚
+
+
+def currencies_are_comparable(currencies: Iterable[str | None]) -> bool:
+    """只有每个候选都有币种且币种一致时，才能直接比较金额。"""
+    codes = [str(currency or "").strip().upper() for currency in currencies]
+    return bool(codes) and all(codes) and len(set(codes)) == 1
 
 
 def normalize_priority(priority: str | None) -> str:
@@ -56,6 +67,8 @@ class PropertyMetrics:
     transit_meters: int | None = None  # 最近交通站点距离（米），来自 POI
     rating: float | None = None        # 机构评价均分 1-5
     review_count: int = 0
+    safety_score: float | None = None  # 周边安全评分 0-5
+    currency: str | None = None        # 币种不同的候选不直接比较价格
 
 
 _DISTANCE_RE = re.compile(r"([\d.]+)\s*(km|m|公里|千米|米)", re.IGNORECASE)
@@ -120,12 +133,18 @@ def _rating_score(rating: float | None) -> int:
     return round(max(1.0, min(5.0, rating)) * 20)
 
 
+def _safety_score(safety_score: float | None) -> int:
+    if safety_score is None:
+        return NEUTRAL_SCORE
+    return round(max(0.0, min(5.0, safety_score)) * 20)
+
+
 def compute_scores(
     metrics: list[PropertyMetrics], priority: str | None = None
 ) -> dict[int, dict]:
-    """计算每套房源的四维分与加权总分。
+    """计算每套户型的五维分与加权总分。
 
-    返回 {property_id: {"total": int, "breakdown": {"price": int, "commute": int, "space": int, "rating": int}}}
+    返回 {property_id: {"total": int, "breakdown": 五个维度的 0-100 分}}。
     """
     if not metrics:
         return {}
@@ -134,13 +153,17 @@ def compute_scores(
 
     prices = [m.price for m in metrics]
     lo_p, hi_p = min(prices), max(prices)
+    price_comparable = currencies_are_comparable(m.currency for m in metrics)
     areas = [m.area for m in metrics if m.area is not None]
     lo_a, hi_a = (min(areas), max(areas)) if areas else (0.0, 0.0)
 
     result: dict[int, dict] = {}
     for m in metrics:
         breakdown = {
-            "price": _relative_score(m.price, lo_p, hi_p, lower_is_better=True),
+            "price": (
+                _relative_score(m.price, lo_p, hi_p, lower_is_better=True)
+                if price_comparable else NEUTRAL_SCORE
+            ),
             "commute": _commute_score(m.transit_meters),
             "space": (
                 _relative_score(m.area, lo_a, hi_a, lower_is_better=False)
@@ -148,6 +171,7 @@ def compute_scores(
                 else NEUTRAL_SCORE
             ),
             "rating": _rating_score(m.rating),
+            "safety": _safety_score(m.safety_score),
         }
         total = round(sum(breakdown[k] * w for k, w in weights.items()))
         result[m.property_id] = {"total": total, "breakdown": breakdown}

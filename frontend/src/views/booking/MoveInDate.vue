@@ -32,7 +32,7 @@
         show-icon
       />
 
-      <div class="calendar">
+      <div v-if="!availabilityLoadFailed" class="calendar">
         <div v-for="weekday in weekdays" :key="weekday" class="weekday">{{ weekday }}</div>
         <button
           v-for="day in calendarDays"
@@ -48,12 +48,17 @@
         </button>
       </div>
 
-      <div class="legend">
+      <div v-if="!availabilityLoadFailed" class="legend">
         <span><i class="legend-dot unavailable" />不可入住</span>
         <span><i class="legend-dot selected-dot" />已选择</span>
       </div>
 
-      <el-alert v-if="errorMessage" :title="errorMessage" type="error" :closable="false" />
+      <el-alert v-if="availabilityLoadFailed" title="可入住日期加载失败，请重试" type="error" :closable="false" show-icon>
+        <template #default>
+          <el-button type="primary" link @click="loadAvailability">重试</el-button>
+        </template>
+      </el-alert>
+      <el-alert v-else-if="errorMessage" :title="errorMessage" type="error" :closable="false" />
 
       <div class="selected-date">
         <span>选中的入住日期</span>
@@ -69,11 +74,12 @@ import { useRoute, useRouter } from 'vue-router'
 import BookingFlowLayout from '@/components/booking/BookingFlowLayout.vue'
 import { propertyService, type BookingDateAvailability } from '@/services/property'
 import { bookingDraftService } from '@/services/bookingDraft'
-import { extractErrorMessage } from '@/services/api'
+import { toUserFriendly } from '@/services/api'
 
 const route = useRoute()
 const router = useRouter()
-const propertyId = computed(() => Number(route.params.propertyId))
+// 预订流程的路由参数保存的是户型 ID；可入住日期、校验和定价均以 unit_type_id 为准。
+const unitTypeId = computed(() => Number(route.params.propertyId))
 const weekdays = ['日', '一', '二', '三', '四', '五', '六']
 const loading = ref(false)
 const timezone = ref('UTC')
@@ -83,6 +89,7 @@ const blockedDates = ref(new Set<string>())
 const selectedDate = ref('')
 const isSelectionValid = ref(false)
 const errorMessage = ref('')
+const availabilityLoadFailed = ref(false)
 
 const initialDate = new Date()
 const viewYear = ref(initialDate.getUTCFullYear())
@@ -105,12 +112,12 @@ const calendarDays = computed(() => {
 })
 
 function draftKey() {
-  return `booking_draft_${propertyId.value}`
+  return `booking_draft_${unitTypeId.value}`
 }
 
 function saveDraft() {
   localStorage.setItem(draftKey(), JSON.stringify({
-    unit_type_id: propertyId.value,
+    unit_type_id: unitTypeId.value,
     move_in_date: selectedDate.value,
     timezone: timezone.value,
   }))
@@ -119,7 +126,7 @@ function saveDraft() {
 function loadDraft() {
   try {
     const draft = JSON.parse(localStorage.getItem(draftKey()) || '{}')
-    if (draft.unit_type_id === propertyId.value && typeof draft.move_in_date === 'string') {
+    if (draft.unit_type_id === unitTypeId.value && typeof draft.move_in_date === 'string') {
       selectedDate.value = draft.move_in_date
       const [year, month] = draft.move_in_date.split('-').map(Number)
       if (year && month) {
@@ -133,22 +140,24 @@ function loadDraft() {
 }
 
 async function loadAvailability() {
-  if (!propertyId.value) {
-    errorMessage.value = '房源信息无效'
+  if (!Number.isSafeInteger(unitTypeId.value) || unitTypeId.value <= 0) {
+    errorMessage.value = '户型信息无效'
+    availabilityLoadFailed.value = true
     return
   }
   loading.value = true
   errorMessage.value = ''
+  availabilityLoadFailed.value = false
   isSelectionValid.value = false
   try {
-    const result: BookingDateAvailability = await propertyService.getBookingDateAvailability(propertyId.value, viewYear.value, viewMonth.value)
+    const result: BookingDateAvailability = await propertyService.getBookingDateAvailability(unitTypeId.value, viewYear.value, viewMonth.value)
     timezone.value = result.timezone
     localToday.value = result.local_today
     availableFrom.value = result.available_from
     blockedDates.value = new Set(result.blocked_dates)
     if (selectedDate.value) await validateSelection(selectedDate.value)
-  } catch (error: any) {
-    errorMessage.value = extractErrorMessage(error) || '无法加载房源可入住日期'
+  } catch {
+    availabilityLoadFailed.value = true
   } finally {
     loading.value = false
   }
@@ -162,7 +171,7 @@ async function validateSelection(iso: string) {
     return
   }
   try {
-    const result = await propertyService.validateBookingDate(propertyId.value, iso)
+    const result = await propertyService.validateBookingDate(unitTypeId.value, iso)
     isSelectionValid.value = result.available
     if (!result.available) errorMessage.value = result.reason || '该日期不可入住'
     return result.available
@@ -170,9 +179,10 @@ async function validateSelection(iso: string) {
     if (!error?.response) {
       errorMessage.value = '暂时无法连接服务器，请稍后重试'
     } else if (error.response.status === 401) {
+      if (error.config) error.config._handled = true
       errorMessage.value = '登录状态已失效，请重新登录后再试'
     } else {
-      errorMessage.value = extractErrorMessage(error) || '日期校验暂时失败，请稍后重试'
+      errorMessage.value = toUserFriendly(error) || '日期校验暂时失败，请稍后重试'
     }
     return false
   }
@@ -190,7 +200,7 @@ async function handleNext() {
   try {
     if (!await validateSelection(selectedDate.value)) return
     try {
-      await bookingDraftService.save(propertyId.value, {
+      await bookingDraftService.save(unitTypeId.value, {
         move_in_date: selectedDate.value,
         current_step: 'lease_term',
       })
@@ -198,16 +208,17 @@ async function handleNext() {
       if (!error?.response) {
         errorMessage.value = '暂时无法连接服务器，请稍后重试'
       } else if (error.response.status === 401) {
+        if (error.config) error.config._handled = true
         errorMessage.value = '登录状态已失效，请重新登录后再试'
       } else {
-        errorMessage.value = extractErrorMessage(error) || '入住日期草稿保存失败，请稍后重试'
+        errorMessage.value = toUserFriendly(error) || '入住日期草稿保存失败，请稍后重试'
       }
       return
     }
     saveDraft()
     await router.push({
       name: 'booking-lease-term',
-      params: { propertyId: String(propertyId.value) },
+      params: { propertyId: String(unitTypeId.value) },
     })
   } finally {
     loading.value = false
@@ -224,7 +235,7 @@ onMounted(async () => {
   loadDraft()
   if (!selectedDate.value) {
     try {
-      const serverDraft = await bookingDraftService.get(propertyId.value)
+      const serverDraft = await bookingDraftService.get(unitTypeId.value)
       if (serverDraft.move_in_date) {
         selectedDate.value = serverDraft.move_in_date
         const [year, month] = serverDraft.move_in_date.split('-').map(Number)

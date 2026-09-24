@@ -33,7 +33,7 @@ def fixtures(*, booking_status=BookingStatus.payment_pending, payment_status=Pay
 async def eligibility(**kwargs):
     booking, payment, contract, signature = fixtures(**kwargs)
     session = AsyncMock()
-    session.scalar.side_effect = [booking, payment, contract, signature, None]
+    session.scalar.side_effect = [booking, payment, None]
     return await TenantOrderService(session).payment_eligibility(21, 7)
 
 
@@ -47,7 +47,7 @@ async def test_pending_order_can_pay_before_deadline():
 async def test_signed_booking_before_first_payment_attempt_is_still_payable_order():
     booking, _, contract, signature = fixtures()
     session = AsyncMock()
-    session.scalar.side_effect = [booking, None, contract, signature, None]
+    session.scalar.side_effect = [booking, None, None]
     result = await TenantOrderService(session).payment_eligibility(21, 7)
     assert result.can_pay is True
     assert result.payment_status == "payment_pending"
@@ -67,7 +67,7 @@ async def test_processing_order_cannot_create_another_payment():
         payment_status=PaymentStatus.processing,
     )
     session = AsyncMock()
-    session.scalar.side_effect = [booking, payment, contract, signature, "processing-payment"]
+    session.scalar.side_effect = [booking, payment, "processing-payment"]
     result = await TenantOrderService(session).payment_eligibility(21, 7)
     assert result.can_pay is False
     assert "不允许支付" in result.reason or "请勿重复支付" in result.reason
@@ -86,7 +86,7 @@ async def test_amount_or_currency_change_blocks_payment():
     booking, payment, contract, signature = fixtures()
     payment.settlement_amount_minor = 9999
     session = AsyncMock()
-    session.scalar.side_effect = [booking, payment, contract, signature, None]
+    session.scalar.side_effect = [booking, payment, None]
     result = await TenantOrderService(session).payment_eligibility(21, 7)
     assert result.can_pay is False and "金额或币种" in result.reason
 
@@ -105,6 +105,31 @@ def test_masked_contact_never_returns_complete_values():
     service = TenantOrderService(AsyncMock())
     assert service._mask_phone("+8613212341770") == "+86 132****1770"
     assert service._mask_email("wang@example.com") == "w***@example.com"
+
+
+def test_applicant_contact_prefers_booking_tenant_profile():
+    service = TenantOrderService(AsyncMock())
+    tenant = SimpleNamespace(phone="+8613912345678", email="tenant@example.com")
+    user = SimpleNamespace(phone=None, email=None)
+    assert service._applicant_masked_contact(tenant, user) == ("+86 139****5678", "t***@example.com")
+
+
+def test_applicant_contact_falls_back_to_user_account():
+    service = TenantOrderService(AsyncMock())
+    user = SimpleNamespace(phone="+8613212341770", email="user@example.com")
+    assert service._applicant_masked_contact(None, user) == ("+86 132****1770", "u***@example.com")
+
+
+def test_applicant_name_prefers_booking_personal_info_over_account_username():
+    booking = SimpleNamespace(application_data={"personal_info": {"chinese_name": "李明"}})
+    assert TenantOrderService._booking_applicant_name(booking) == "李明"
+
+
+def test_applicant_name_falls_back_to_passport_pinyin():
+    booking = SimpleNamespace(application_data={
+        "personal_info": {"chinese_name": "", "surname_pinyin": "LI", "given_name_pinyin": "MING"}
+    })
+    assert TenantOrderService._booking_applicant_name(booking) == "LI MING"
 
 
 def test_empty_order_collection_is_http_200_shape():

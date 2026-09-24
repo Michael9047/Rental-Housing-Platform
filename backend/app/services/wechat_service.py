@@ -1,5 +1,7 @@
+import hashlib
 import time
 from dataclasses import dataclass
+from urllib.parse import urlencode
 
 import httpx
 
@@ -20,6 +22,17 @@ class WeChatPhoneInfo:
     country_code: str
 
 
+@dataclass
+class WeChatOAuthToken:
+    """微信开放平台 OAuth2 access_token 响应"""
+    openid: str
+    access_token: str
+    refresh_token: str | None = None
+    expires_in: int = 7200
+    scope: str = "snsapi_login"
+    unionid: str | None = None
+
+
 class WeChatService:
     """WeChat Mini Program service for login, template messages, and access token management."""
 
@@ -27,6 +40,10 @@ class WeChatService:
     TOKEN_URL = "https://api.weixin.qq.com/cgi-bin/token"
     SEND_TEMPLATE_URL = "https://api.weixin.qq.com/cgi-bin/message/subscribe/send"
     CUSTOMER_SERVICE_URL = "https://api.weixin.qq.com/cgi-bin/message/custom/send"
+
+    # 微信开放平台 OAuth（Web 扫码登录）
+    QR_CONNECT_URL = "https://open.weixin.qq.com/connect/qrconnect"
+    OAUTH_ACCESS_TOKEN_URL = "https://api.weixin.qq.com/sns/oauth2/access_token"
 
     _access_token: str | None = None
     _token_expires_at: float = 0.0
@@ -143,3 +160,53 @@ class WeChatService:
             raise ValueError(f"Customer service message failed: {result.get('errmsg', 'unknown error')}")
 
         return result
+
+    # ── 微信开放平台 OAuth（Web 扫码登录）────────────────
+
+    def get_qr_connect_url(self, redirect_uri: str, state: str) -> str:
+        """生成微信开放平台扫码登录 URL"""
+        params = {
+            "appid": self.settings.wechat_open_appid,
+            "redirect_uri": redirect_uri,
+            "response_type": "code",
+            "scope": "snsapi_login",
+            "state": state,
+        }
+        return f"{self.QR_CONNECT_URL}?{urlencode(params)}#wechat_redirect"
+
+    async def exchange_qr_code(self, code: str) -> WeChatOAuthToken:
+        """用 authorization_code 换取 openid（Web 扫码回调）"""
+        if self.settings.wechat_open_dev_mode:
+            return self._exchange_qr_code_dev(code)
+
+        params = {
+            "appid": self.settings.wechat_open_appid,
+            "secret": self.settings.wechat_open_secret,
+            "code": code,
+            "grant_type": "authorization_code",
+        }
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(self.OAUTH_ACCESS_TOKEN_URL, params=params)
+            resp.raise_for_status()
+            data = await resp.json()
+
+        if "errcode" in data and data["errcode"] != 0:
+            raise ValueError(f"WeChat OAuth failed: {data.get('errmsg', 'unknown error')}")
+
+        return WeChatOAuthToken(
+            openid=data["openid"],
+            access_token=data.get("access_token", ""),
+            refresh_token=data.get("refresh_token"),
+            expires_in=data.get("expires_in", 7200),
+            scope=data.get("scope", "snsapi_login"),
+            unionid=data.get("unionid"),
+        )
+
+    def _exchange_qr_code_dev(self, code: str) -> WeChatOAuthToken:
+        """开发模式：用 code 的 hash 生成确定性 mock openid"""
+        mock_openid = f"wx_open_mock_{hashlib.md5(code.encode()).hexdigest()[:16]}"
+        return WeChatOAuthToken(
+            openid=mock_openid,
+            access_token="dev_access_token",
+            expires_in=7200,
+        )

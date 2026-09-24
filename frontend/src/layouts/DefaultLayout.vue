@@ -1,19 +1,15 @@
 <template>
-  <el-container class="layout-container">
+  <el-container class="layout-container" :class="{ 'fixed-page': route.meta.fixedPage }">
     <!-- Top Navigation -->
     <el-header class="layout-header">
       <div class="header-left">
         <router-link to="/" class="logo">
           <span class="logo-icon">🏠</span>
-          <span class="logo-text">AI全球公寓租赁</span>
+          <span class="logo-text">安寓</span>
         </router-link>
       </div>
 
-      <div class="header-center">
-        <!-- 候选清单入口 -->
-        <el-badge v-if="authStore.isLoggedIn" :value="cartStore.count" :hidden="cartStore.count === 0" :max="99" class="cart-badge">
-          <el-button :icon="ShoppingCart" circle class="cart-btn" @click="router.push('/cart')" />
-        </el-badge>
+      <div class="header-center" v-if="route.path !== '/'">
         <div class="header-search-area">
           <div class="header-search-wrapper" :class="{ focused: searchFocused }">
             <el-input
@@ -28,7 +24,7 @@
               @blur="onSearchBlur"
               @input="onSearchInput"
             />
-            <el-button type="primary" @click="handleSearchSubmit" class="search-btn">搜索</el-button>
+            <el-button type="primary" @click="handleSearchSubmit" class="search-btn" aria-label="搜索"><el-icon :size="18"><Search /></el-icon></el-button>
           </div>
 
           <!-- 搜索建议下拉 -->
@@ -133,7 +129,7 @@
                       @mousedown.prevent="selectProperty(prop)"
                     >
                       <span class="card-name">{{ prop.title }}</span>
-                      <span class="card-sub">{{ prop.district }} · {{ formatPrice(prop.price_monthly, prop.currency) }}/月</span>
+                      <span class="card-sub">{{ prop.district || '' }}</span>
                     </div>
                   </div>
                 </div>
@@ -149,6 +145,10 @@
       </div>
 
       <div class="header-right">
+        <!-- 候选清单入口 -->
+        <el-badge v-if="authStore.isLoggedIn" :value="cartStore.count" :hidden="cartStore.count === 0" :max="99" class="cart-badge">
+          <el-button :icon="ShoppingCart" circle class="cart-btn" @click="router.push('/cart')" />
+        </el-badge>
         <template v-if="authStore.isLoggedIn">
           <el-tag v-if="authStore.isAdmin" type="danger" size="small" effect="dark">管理员</el-tag>
           <el-tag v-else-if="authStore.isLandlord" type="warning" size="small" effect="dark">公寓运营商</el-tag>
@@ -172,8 +172,11 @@
                   <el-dropdown-item @click="router.push('/profile')">
                     <el-icon><User /></el-icon> 个人中心
                   </el-dropdown-item>
-                  <el-dropdown-item @click="router.push('/bookings/tenant')">
-                    <el-icon><List /></el-icon> 我的预订
+                  <el-dropdown-item @click="router.push('/repairs')">
+                    <el-icon><Tools /></el-icon> 报修
+                  </el-dropdown-item>
+                  <el-dropdown-item @click="router.push('/notifications')">
+                    <el-icon><Bell /></el-icon> 消息
                   </el-dropdown-item>
                 </template>
                 <!-- 房东菜单 -->
@@ -199,11 +202,11 @@
                 </template>
                 <!-- 管理员菜单 -->
                 <template v-if="authStore.isAdmin">
-                  <el-dropdown-item @click="router.push('/admin')">
-                    <el-icon><DataAnalysis /></el-icon> 仪表盘
-                  </el-dropdown-item>
                   <el-dropdown-item @click="router.push('/admin/users')">
                     <el-icon><User /></el-icon> 用户管理
+                  </el-dropdown-item>
+                  <el-dropdown-item @click="router.push('/admin/alerts')">
+                    <el-icon><Warning /></el-icon> 系统异常
                   </el-dropdown-item>
                   <el-dropdown-item @click="router.push('/admin/logs')">
                     <el-icon><Document /></el-icon> 审计日志
@@ -217,7 +220,7 @@
           </el-dropdown>
         </template>
         <template v-else>
-          <el-button type="primary" @click="router.push('/login')" round>登录</el-button>
+          <el-button type="primary" @click="router.push({ path: '/login', query: { redirect: route.fullPath } })" round>登录</el-button>
           <el-button @click="router.push('/register')" round>注册</el-button>
         </template>
       </div>
@@ -227,9 +230,6 @@
       <!-- 全局侧边栏 -->
       <GlobalSidebar v-if="authStore.isLandlord || authStore.isAdmin || authStore.isMaintenance" />
       <el-main class="layout-main">
-        <div class="back-bar" v-if="route.path !== '/'">
-          <el-button text :icon="ArrowLeft" @click="router.back()">返回上一页</el-button>
-        </div>
         <router-view />
         <GlobalFooter v-if="!route.meta.hideFooter" />
       </el-main>
@@ -242,13 +242,15 @@
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import {
-  Search, User, UserFilled, ArrowDown, ArrowLeft, Setting, SwitchButton,
-  List, Bell, ChatDotRound, DataAnalysis, Tickets, Loading, ShoppingCart, Grid,} from '@element-plus/icons-vue'
+  Search, User, UserFilled, ArrowDown, Setting, SwitchButton,
+  Bell, ChatDotRound, DataAnalysis, Tickets, Loading, ShoppingCart, Grid, Tools, Warning,} from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 import { useAgentChatStore } from '@/stores/agentChat'
+import { normalSearchQuery } from '@/utils/normalSearch'
 import { useCartStore } from '@/stores/cart'
 import { notificationService } from '@/services/notification'
 import api from '@/services/api'
+import { propertyService } from '@/services/property'
 import GlobalFooter from '@/components/GlobalFooter.vue'
 import GlobalSidebar from '@/components/GlobalSidebar.vue'
 import { formatPrice } from '@/data/currency'
@@ -260,6 +262,7 @@ interface SuggestionSchool {
   name_cn: string | null
   abbreviation: string | null
   address: string | null
+  city?: string | null
   count: number
   query: { school_id: number }
 }
@@ -409,7 +412,8 @@ function popularUniDisplay(uni: PopularUniversity): string {
 function selectPopularUniversity(uni: PopularUniversity) {
   showSuggestions.value = false
   const name = uni.name_cn || uni.name
-  router.push({ name: 'search', query: { uni_id: String(uni.id), radius: '5', uni_name: name } })
+  searchQuery.value = name
+  router.push({ name: 'search', query: normalSearchQuery({ uni_id: String(uni.id), radius: '5', uni_name: name }, name) })
 }
 
 // Called on mount
@@ -427,33 +431,48 @@ function cityLabel(city: SuggestionCity): string {
 function selectUniversity(uni: SuggestionSchool) {
   showSuggestions.value = false
   const name = uni.name_cn || uni.name
-  router.push({ name: 'search', query: { uni_id: String(uni.id), radius: '5', uni_name: name } })
+  searchQuery.value = name
+  router.push({ name: 'search', query: normalSearchQuery({ uni_id: String(uni.id), radius: '5', uni_name: name }, name) })
 }
 
 function selectSchool(school: SuggestionSchool) {
   showSuggestions.value = false
   searchQuery.value = school.name
-  router.push({ name: 'search', query: { school_id: String(school.id) } })
+  router.push({ name: 'search', query: normalSearchQuery({ school_id: String(school.id) }, school.name) })
 }
 
 function selectCity(city: SuggestionCity) {
   showSuggestions.value = false
   searchQuery.value = city.name
-  router.push({ name: 'search', query: { district: city.name } })
+  router.push({ name: 'search', query: normalSearchQuery({ city: city.name }, city.name) })
 }
 
 function selectProperty(prop: SuggestionProperty) {
   showSuggestions.value = false
-  router.push({ name: 'property-detail', params: { id: prop.id } })
+  router.push({ name: 'building-detail', params: { id: prop.id } })
 }
 
 // ── 搜索提交 ─────────────────────────────
 
-function handleSearchSubmit() {
+async function handleSearchSubmit() {
+  const q = searchQuery.value.trim()
+  if (!q) return
   showSuggestions.value = false
-  if (searchQuery.value.trim()) {
-    router.push({ name: 'search', query: { q: searchQuery.value.trim() } })
-  }
+  // 地理编码：把地址文本转为坐标 → 直接传给搜索结果页做半径搜索
+  try {
+    const geo = await propertyService.geocodeAddress(q)
+    if (geo.latitude && geo.longitude) {
+      const query: Record<string, string> = {
+        q, lat: String(geo.latitude), lng: String(geo.longitude), radius: '5',
+      }
+      // 传递城市信息作为补充筛选
+      if (geo.city) query.geo_city = geo.city
+      if (geo.district) query.geo_district = geo.district
+      router.push({ name: 'search', query: normalSearchQuery(query, q) })
+      return
+    }
+  } catch { /* 地理编码失败则走纯文本搜索 */ }
+  router.push({ name: 'search', query: normalSearchQuery({ q }, q) })
 }
 
 // ── 通知 ─────────────────────────────────
@@ -469,6 +488,9 @@ async function fetchUnreadCount() {
 }
 
 onMounted(() => {
+  if (route.name === 'search' && typeof route.query.q === 'string') {
+    searchQuery.value = route.query.q
+  }
   fetchUnreadCount()
   window.addEventListener('notifications:changed', fetchUnreadCount)
   if (authStore.isLoggedIn) cartStore.fetch()
@@ -477,7 +499,10 @@ onMounted(() => {
 onUnmounted(() => window.removeEventListener('notifications:changed', fetchUnreadCount))
 
 // 每次路由变化刷新未读数（从通知页回来时数字更新）
-watch(() => route.path, () => {
+watch(() => route.fullPath, () => {
+  if (route.name === 'search') {
+    searchQuery.value = typeof route.query.q === 'string' ? route.query.q : ''
+  }
   fetchUnreadCount()
   // 路由变化时关闭建议
   showSuggestions.value = false
@@ -504,12 +529,17 @@ watch(
   flex-direction: column;
 }
 
+.layout-container.fixed-page {
+  height: 100vh;
+  min-height: 0;
+  overflow: hidden;
+}
+
 /* ── Header ───────────────────────── */
 
 .layout-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   background: var(--bg-white);
   border-bottom: 1px solid var(--border);
   padding: 0 24px;
@@ -518,6 +548,20 @@ watch(
   top: 0;
   z-index: 100;
   box-shadow: var(--shadow-sm);
+}
+
+/* ── 三栏等宽布局，确保搜索栏真正居中 ── */
+
+.header-left {
+  flex: 1;
+  display: flex;
+  justify-content: flex-start;
+}
+
+.header-right {
+  flex: 1;
+  display: flex;
+  justify-content: flex-end;
 }
 
 .header-left .logo {
@@ -539,12 +583,10 @@ watch(
 }
 
 .header-center {
-  flex: 1;
+  flex: 0 1 640px;
   max-width: 640px;
-  margin: 0 auto;
   display: flex;
   align-items: center;
-  gap: 12px;
   justify-content: center;
 }
 
@@ -567,6 +609,7 @@ watch(
 }
 
 .header-search-area {
+  width: 100%;
   position: static;
 }
 
@@ -581,7 +624,7 @@ watch(
 }
 
 .header-search-wrapper.focused {
-  box-shadow: 0 0 0 3px rgba(64, 158, 255, 0.15);
+  box-shadow: 0 0 0 3px rgba(108, 92, 231, 0.15);
 }
 
 .search-input {
@@ -593,10 +636,19 @@ watch(
 .search-input :deep(.el-input__wrapper) {
   border-radius: 36px 0 0 36px !important;
   background: var(--bg-white) !important;
-  border: 2px solid var(--primary) !important;
+  border: 2px solid #d0c8f0 !important;
   box-shadow: none !important;
   height: 48px;
   padding-left: 16px;
+  transition: border-color 0.2s;
+}
+
+.search-input :deep(.el-input__wrapper:hover) {
+  border-color: #6c5ce7 !important;
+}
+
+.search-input :deep(.el-input__wrapper.is-focus) {
+  border-color: #6c5ce7 !important;
 }
 
 .search-input :deep(.el-input__inner) {
@@ -609,18 +661,19 @@ watch(
 
 .search-btn {
   height: 48px !important;
-  border: 2px solid var(--primary) !important;
+  border: 2px solid #6c5ce7 !important;
   border-radius: 0 36px 36px 0 !important;
-  background: var(--primary) !important;
+  background: linear-gradient(135deg, #6c5ce7, #e94560) !important;
   color: #fff !important;
   font-size: 15px;
   font-weight: 600;
   margin-left: -2px;
-  padding: 0 20px !important;
+  padding: 0 18px !important;
+  transition: opacity 0.2s;
 }
 
 .search-btn:hover {
-  background: var(--primary-light) !important;
+  opacity: 0.9 !important;
 }
 
 /* ── 搜索建议下拉 ─────────────────────────── */
@@ -780,7 +833,11 @@ watch(
 
 .layout-body {
   flex: 1;
-  min-width: 0;
+}
+
+.fixed-page .layout-body {
+  min-height: 0;
+  overflow: hidden;
 }
 
 /* ── Main ─────────────────────────── */
@@ -792,19 +849,11 @@ watch(
   padding: 24px;
   display: flex;
   flex-direction: column;
-  min-width: 0;
 }
 
-.back-bar {
-  margin-bottom: 12px;
+.fixed-page .layout-main {
+  min-height: 0;
+  overflow: hidden;
 }
 
-.back-bar .el-button {
-  font-size: 13px;
-  color: var(--text-secondary, #606266);
-}
-
-.back-bar .el-button:hover {
-  color: var(--primary);
-}
 </style>

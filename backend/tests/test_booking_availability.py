@@ -5,14 +5,14 @@ from types import SimpleNamespace
 from unittest import IsolatedAsyncioTestCase, TestCase
 from unittest.mock import AsyncMock
 
-from app.models.property import CountryCode, PropertyStatus
+from app.models.property import PropertyStatus
 from app.services.booking_availability_service import BookingAvailabilityService
 
 
 def make_property(**overrides):
     return SimpleNamespace(
         id=10,
-        country=overrides.get("country", CountryCode.CN),
+        country=overrides.get("country", "CN"),
         status=overrides.get("status", PropertyStatus.available),
         available_from=overrides.get("available_from"),
         available_until=overrides.get("available_until"),
@@ -22,11 +22,11 @@ def make_property(**overrides):
 class BookingTimezoneTests(TestCase):
     def test_country_uses_property_timezone(self) -> None:
         self.assertEqual(
-            BookingAvailabilityService.timezone_for_country(CountryCode.CN),
+            BookingAvailabilityService.timezone_for_country("CN"),
             "Asia/Shanghai",
         )
         self.assertEqual(
-            BookingAvailabilityService.timezone_for_country(CountryCode.GB),
+            BookingAvailabilityService.timezone_for_country("GB"),
             "Europe/London",
         )
 

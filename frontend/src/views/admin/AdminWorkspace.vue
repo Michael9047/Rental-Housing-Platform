@@ -41,7 +41,7 @@
     <el-card shadow="never" class="tabs-card">
       <el-tabs v-model="activeTab" class="workspace-tabs">
         <!-- Tab1: 托管房源管理 -->
-        <el-tab-pane label="🏠 房源管理" name="properties">
+        <el-tab-pane label="🏠 房源管理" name="properties" v-if="false">
           <div class="tab-toolbar">
             <el-radio-group v-model="propertyFilter" size="small">
               <el-radio-button value="all">全部 ({{ mockProperties.length }})</el-radio-button>
@@ -82,7 +82,7 @@
         </el-tab-pane>
 
         <!-- TabX: 房源审核 -->
-        <el-tab-pane label="🔍 房源审核" name="review">
+        <el-tab-pane label="🔍 房源审核" name="review" v-if="false">
           <div class="tab-toolbar">
             <span style="color:#606266;font-size:14px">待审核房源由AI批量导入自动标记，需人工确认后上架</span>
             <el-button type="primary" size="small" @click="loadPendingReviews" :loading="reviewLoading">刷新</el-button>
@@ -195,7 +195,7 @@
         </el-tab-pane>
 
         <!-- Tab4: 财务收支 -->
-        <el-tab-pane label="💰 财务中心" name="finance">
+        <el-tab-pane label="💰 财务中心" name="finance" v-if="false">
           <el-row :gutter="16" class="finance-summary">
             <el-col :span="6"><el-card shadow="hover"><el-statistic title="本月应收" :value="98500" prefix="¥" /></el-card></el-col>
             <el-col :span="6"><el-card shadow="hover"><el-statistic title="已收租金" :value="76200" prefix="¥" /></el-card></el-col>
@@ -274,7 +274,7 @@
         </el-tab-pane>
 
         <!-- Tab7: 咨询&消息 -->
-        <el-tab-pane label="💬 消息中心" name="messages">
+        <el-tab-pane label="💬 消息中心" name="messages" v-if="false">
           <el-row :gutter="16">
             <el-col :span="12">
               <el-card shadow="never" class="msg-card">
@@ -303,7 +303,7 @@
         </el-tab-pane>
 
         <!-- Tab8: 门店设置 -->
-        <el-tab-pane label="⚙️ 门店设置" name="settings">
+        <el-tab-pane label="⚙️ 门店设置" name="settings" v-if="false">
           <el-row :gutter="24">
             <el-col :span="12">
               <el-card shadow="never" class="setting-card">
@@ -394,6 +394,12 @@ const authStore = useAuthStore()
 const adminName = computed(() => authStore.user?.username || '房东')
 const adminEmail = computed(() => authStore.user?.email || '—')
 const adminPhone = computed(() => authStore.user?.phone || '—')
+// UserRead 当前不含管理员负责片区；明确展示未配置，避免伪造资料。
+const adminDistrict = computed(() => '未设置')
+const adminSince = computed(() => {
+  const createdAt = authStore.user?.created_at
+  return createdAt ? new Date(createdAt).toLocaleDateString('zh-CN') : '—'
+})
 const verified = ref(false)
 
 const showEditProfile = ref(false)

@@ -34,7 +34,12 @@ def payment_status_value(payment_status: PaymentStatus | None, booking_status: B
 
 
 def booking_is_confirmed(booking_status: BookingStatus, payment_status: str, *, amounts_verified: bool = True, webhook_confirmed: bool = True) -> bool:
-    return booking_status == BookingStatus.paid and payment_status == "paid" and amounts_verified and webhook_confirmed
+    return (
+        booking_status in {BookingStatus.paid, BookingStatus.contract_signed, BookingStatus.completed}
+        and payment_status == "paid"
+        and amounts_verified
+        and webhook_confirmed
+    )
 
 
 def payment_status_can_pay(payment_status: str) -> bool:

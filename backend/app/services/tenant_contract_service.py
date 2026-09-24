@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.booking import Booking, BookingStatus
 from app.models.contract import Contract, ContractSignature
 from app.models.payment import Payment, PaymentStatus
-from app.models.property import Room
+from app.models.property import Property, Room
 from app.models.unit_type import UnitType
 from app.models.property_image import RoomImage
 from app.schemas.contract import TenantContractDetail, TenantContractListItem
@@ -29,6 +29,13 @@ CATEGORY_LABELS = {
     "expiring_soon": "即将到期",
     "invalid": "已失效",
 }
+
+
+def remaining_payment_seconds(payment_status: str, expires_at: datetime | None, now: datetime | None = None) -> int | None:
+    """仅对仍允许付款的订单返回倒计时；已支付或已完成订单不展示历史期限。"""
+    if not payment_status_can_pay(payment_status) or not expires_at:
+        return None
+    return max(0, int((expires_at - (now or datetime.now(timezone.utc))).total_seconds()))
 
 
 class TenantContractService:
@@ -58,16 +65,16 @@ class TenantContractService:
         )
 
     async def _build_item(self, booking, contract, payment, room, image):
-        ut = getattr(room, 'unit_type', None)
-        inst = getattr(ut, 'institute', None) if ut else None
+        # Room=UnitType 别名，room 本身就是 UnitType
+        ut = room  # room is already UnitType (Room alias)
+        inst = room.institute if room else None
         payment_status = payment_status_value(
             payment.status if payment else None, booking.status
         )
         category = self._category(booking, contract)
         expires_at = payment.expires_at if payment else booking.payment_expires_at
-        remaining_seconds = 0
-        if expires_at:
-            remaining_seconds = max(0, int((expires_at - datetime.now(timezone.utc)).total_seconds()))
+        can_pay = payment_status_can_pay(payment_status)
+        remaining_seconds = remaining_payment_seconds(payment_status, expires_at)
         remaining_contract_days = None
         if booking.scheduled_date and contract.status == "signed":
             try:
@@ -88,13 +95,13 @@ class TenantContractService:
             order_id=payment.order_id if payment else f"BOOKING-{booking.id}",
             booking_id=booking.id,
             property_id=room.id,
-            tenant_user_id=booking.tenant_id,
+            tenant_user_id=booking.user_id,
             signed_at=contract.signed_at,
             lease_start_date=booking.scheduled_date,
             lease_end_date=LeasePricingService.add_calendar_months(datetime.fromisoformat(booking.scheduled_date).date(), booking.lease_months).isoformat() if booking.scheduled_date and booking.lease_months else None,
             lease_months=booking.lease_months,
             property_timezone="Asia/Shanghai",
-            property_name=getattr(ut, 'name', None) or room.room_number or f"Room #{room.id}",
+            property_name=getattr(ut, 'name', None) or f"UnitType #{room.id}",
             property_address=getattr(inst, 'address', None) or "",
             property_image_url=f"/api/v1/uploads/{image.filename}" if image else None,
             payment_status=payment_status,
@@ -110,14 +117,14 @@ class TenantContractService:
             payment_expires_at=expires_at,
             remaining_payment_seconds=remaining_seconds,
             remaining_contract_days=remaining_contract_days,
-            can_pay=payment_status_can_pay(payment_status),
+            can_pay=can_pay,
             waiting_for_move_in=category == "pending_effective" and contract.status == "signed",
             signed_pdf_available=contract.status == "signed" and contract.file_path is not None,
         )
 
     async def list_for_tenant(self, user_id: int):
         bookings = list(await self.session.scalars(
-            select(Booking).where(Booking.tenant_id == user_id).order_by(Booking.created_at.desc())
+            select(Booking).where(Booking.user_id == user_id).order_by(Booking.created_at.desc())
         ))
         result = []
         for booking in bookings:
@@ -126,14 +133,15 @@ class TenantContractService:
             )
             if not contract:
                 continue
-            room = (await self.session.scalars(
-                select(Room).where(Room.id == booking.property_id).options(selectinload(Room.unit_type).selectinload(UnitType.institute))
-            )).unique().first()
+            # Room=UnitType 别名，直接用 Property 查，bookings 用 unit_type_id 关联
+            room = await self.session.scalar(
+                select(Property).where(Property.id == booking.unit_type_id).options(selectinload(Property.institute))
+            )
             if not room:
                 continue
             payment = await self._latest_payment(booking.id)
             image = await self.session.scalar(
-                select(RoomImage).where(RoomImage.room_id == room.id)
+                select(RoomImage).where(RoomImage.institute_id == room.institute_id)
                 .order_by(RoomImage.is_primary.desc(), RoomImage.sort_order, RoomImage.id)
             )
             item = await self._build_item(booking, contract, payment, room, image)
@@ -150,12 +158,17 @@ class TenantContractService:
         booking = await self.session.get(Booking, contract.booking_id)
         if not booking:
             raise LookupError("订单不存在")
-        room = await self.session.get(Room, booking.property_id)
+        # 异步会话不能在 _build_item 中隐式懒加载 institute；详情查询必须与列表查询一样显式预加载。
+        room = await self.session.scalar(
+            select(Property)
+            .where(Property.id == booking.unit_type_id)
+            .options(selectinload(Property.institute))
+        )
         if not room:
             raise LookupError("房源不存在")
         payment = await self._latest_payment(booking.id)
         image = await self.session.scalar(
-            select(RoomImage).where(RoomImage.room_id == room.id)
+            select(RoomImage).where(RoomImage.institute_id == room.institute_id)
             .order_by(RoomImage.is_primary.desc(), RoomImage.sort_order, RoomImage.id)
         )
         item = await self._build_item(booking, contract, payment, room, image)

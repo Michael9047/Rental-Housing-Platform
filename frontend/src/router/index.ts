@@ -16,6 +16,7 @@ const routes: RouteRecordRaw[] = [
         path: 'search',
         name: 'search',
         component: () => import('@/views/Search.vue'),
+        meta: { hideFooter: true, fixedPage: true },
       },
       {
         path: 'ai-search',
@@ -29,6 +30,12 @@ const routes: RouteRecordRaw[] = [
         meta: { requiresAuth: true },
       },
       {
+        path: 'compare',
+        name: 'compare',
+        component: () => import('@/views/CompareView.vue'),
+        meta: { requiresAuth: true },
+      },
+      {
         path: 'room/:id',
         name: 'property-detail',
         component: () => import('@/views/BuildingRedirect.vue'),
@@ -36,7 +43,7 @@ const routes: RouteRecordRaw[] = [
       // 兼容旧版 /property/:id 链接
       {
         path: 'property/:id',
-        redirect: (to: any) => ({ path: `/building/${to.params.id}` }),
+        redirect: (to: any) => ({ path: `/building/${to.params.id}`, query: to.query }),
       },
       {
         path: 'profile',
@@ -188,6 +195,12 @@ const routes: RouteRecordRaw[] = [
         meta: { requiresAuth: true },
       },
       {
+        path: 'booking/order/:bookingId/contract',
+        name: 'booking-contract',
+        component: () => import('@/views/booking/ContractPlaceholder.vue'),
+        meta: { requiresAuth: true },
+      },
+      {
         path: 'booking/order/:bookingId/:status',
         name: 'booking-result',
         component: () => import('@/views/BookingResult.vue'),
@@ -209,12 +222,6 @@ const routes: RouteRecordRaw[] = [
         path: 'booking/payment/:id/deposit',
         name: 'deposit-payment',
         component: () => import('@/views/DepositPayment.vue'),
-        meta: { requiresAuth: true },
-      },
-      {
-        path: 'bookings/tenant',
-        name: 'tenant-bookings',
-        component: () => import('@/views/TenantBookings.vue'),
         meta: { requiresAuth: true },
       },
       {
@@ -287,6 +294,25 @@ const routes: RouteRecordRaw[] = [
         component: () => import('@/views/landlord/WorkerManagement.vue'),
         meta: { requiresAuth: true, requiresLandlord: true },
       },
+      // ---- BM 核心页面 ----
+      {
+        path: 'contracts/landlord',
+        name: 'landlord-contracts',
+        component: () => import('@/views/LandlordContracts.vue'),
+        meta: { requiresAuth: true, requiresLandlord: true },
+      },
+      {
+        path: 'tenants/manage',
+        name: 'tenant-management',
+        component: () => import('@/views/TenantManagement.vue'),
+        meta: { requiresAuth: true, requiresLandlord: true },
+      },
+      {
+        path: 'landlord/profile',
+        name: 'landlord-profile',
+        component: () => import('@/views/LandlordProfile.vue'),
+        meta: { requiresAuth: true, requiresLandlord: true },
+      },
       // ---- 维修师傅 ----
       {
         path: 'worker/dashboard',
@@ -304,7 +330,7 @@ const routes: RouteRecordRaw[] = [
       {
         path: 'admin',
         name: 'admin-dashboard',
-        component: () => import('@/views/admin/AdminHome.vue'),
+        redirect: { name: 'admin-users' },
         meta: { requiresAuth: true, requiresAdmin: true },
       },
       {
@@ -331,6 +357,20 @@ const routes: RouteRecordRaw[] = [
         component: () => import('@/views/admin/AdminLogs.vue'),
         meta: { requiresAuth: true, requiresAdmin: true },
       },
+      {
+        path: 'orders/manage',
+        name: 'bm-orders',
+        component: () => import('@/views/AdminOrderManagement.vue'),
+        meta: { requiresAuth: true, requiresLandlord: true },
+      },
+      {
+        path: 'orders/:id',
+        name: 'bm-order-detail',
+        component: () => import('@/views/AdminOrderDetail.vue'),
+        meta: { requiresAuth: true, requiresLandlord: true },
+      },
+      { path: 'admin/orders', redirect: { name: 'bm-orders' } },
+      { path: 'admin/orders/:id', redirect: (to: any) => ({ name: 'bm-order-detail', params: { id: to.params.id } }) },
     ],
   },
   {
@@ -394,11 +434,11 @@ router.beforeEach((to, _from, next) => {
   }
 
   if (to.meta.guest && token) {
-    if (user?.role === 'admin') return next({ name: 'admin-dashboard' })
+    if (user?.role === 'admin') return next({ name: 'admin-users' })
     return next({ name: 'home' })
   }
 
-  if (to.meta.requiresLandlord && user && user.role !== 'landlord' && user.role !== 'admin' && user.role !== 'bd_manager') {
+  if (to.meta.requiresLandlord && user && user.role !== 'landlord' && user.role !== 'bd_manager') {
     return next({ name: 'home' })
   }
 
@@ -406,11 +446,11 @@ router.beforeEach((to, _from, next) => {
     return next({ name: 'home' })
   }
 
-  if (to.meta.requiresMaintenance && user && user.role !== 'maintenance_worker' && user.role !== 'admin') {
+  if (to.meta.requiresMaintenance && user && user.role !== 'maintenance_worker') {
     return next({ name: 'home' })
   }
 
-  if (to.meta.requiresBdManager && user && user.role !== 'bd_manager' && user.role !== 'admin') {
+  if (to.meta.requiresBdManager && user && user.role !== 'bd_manager') {
     return next({ name: 'home' })
   }
 

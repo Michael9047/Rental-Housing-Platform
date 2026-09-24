@@ -4,6 +4,9 @@ from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from pydantic import BaseModel
 
+from app.services.exchange_rate_service import ExchangeRateService
+from app.core.config import get_settings
+
 
 class Money(BaseModel):
     currency: str = "CNY"
@@ -18,6 +21,8 @@ class FeeBucket(BaseModel):
 
 
 class PriceSet(BaseModel):
+    # deposit/service_fee 为历史快照兼容键；新接口请使用 booking_deposit。
+    booking_deposit: FeeBucket = FeeBucket()
     deposit: FeeBucket = FeeBucket()
     service_fee: FeeBucket = FeeBucket()
     monthly_rent: FeeBucket = FeeBucket()
@@ -55,17 +60,18 @@ class LeasePricingService:
         return date(year, month, day)
 
     @staticmethod
-    def calculate(unit_type, move_in_date_str: str) -> LeasePricing:
+    async def calculate(unit_type, move_in_date_str: str) -> LeasePricing:
         """为指定 UnitType 和入住日期生成价格选项。"""
         move_in = date.fromisoformat(move_in_date_str) if isinstance(move_in_date_str, str) else move_in_date_str
 
         # 直接从 UnitType 读取价格
         monthly = int(getattr(unit_type, "base_rent", 0) or 0) if unit_type else 0
-        deposit_raw = int(getattr(unit_type, "deposit_amount", 0) or 0) if unit_type else 0
         currency = str(getattr(unit_type, "currency", None) or "CNY") if unit_type else "CNY"
+        quote = await ExchangeRateService.quote_to_cny(currency)
         min_stay = int(getattr(unit_type, "min_stay_months", 3) or 3) if unit_type else 3
-        # 默认服务费 0（UnitType 无 service_fee_rate 字段）
-        service_rate = 0.0
+        settings = get_settings()
+        booking_deposit_cny = settings.booking_deposit_amount_cny
+        booking_deposit_minor = int(booking_deposit_cny * 100)
 
         # 租期选项：基于最短租期生成（最少3个月起步）
         min_months = max(3, min_stay)
@@ -77,28 +83,43 @@ class LeasePricingService:
         options = []
         for months in term_months:
             end = LeasePricingService.add_calendar_months(move_in, months)
-            deposit = deposit_raw or monthly * 2
-            service_fee = int(monthly * float(service_rate))
-            amount_due_now = deposit + service_fee
             rent_total = monthly * months
 
-            def _mk(amount: int) -> Money:
+            def _mk(amount: int, target_currency: str = currency) -> Money:
                 return Money(
-                    currency=currency,
+                    currency=target_currency,
                     minor_units=amount * 100,
                     minor_unit_exponent=2,
                     decimal=f"{amount}.00",
                 )
 
+            def _cny(amount: int) -> Money:
+                converted = (Decimal(amount) * quote.rate_to_cny).quantize(Decimal("0.01"))
+                return Money(
+                    currency="CNY",
+                    minor_units=int(converted * 100),
+                    minor_unit_exponent=2,
+                    decimal=f"{converted:.2f}",
+                )
+
+            booking_deposit = Money(
+                currency=settings.booking_deposit_currency,
+                minor_units=booking_deposit_minor,
+                minor_unit_exponent=2,
+                decimal=f"{booking_deposit_cny:.2f}",
+            )
+
             options.append(PricingOption(
                 months=months,
                 end_date=end.isoformat(),
                 prices=PriceSet(
-                    deposit=FeeBucket(local=_mk(deposit), cny=_mk(deposit)),
-                    service_fee=FeeBucket(local=_mk(service_fee), cny=_mk(service_fee)),
-                    monthly_rent=FeeBucket(local=_mk(monthly), cny=_mk(monthly)),
-                    amount_due_now=FeeBucket(local=_mk(amount_due_now), cny=_mk(amount_due_now)),
-                    rent_total=FeeBucket(local=_mk(rent_total), cny=_mk(rent_total)),
+                    booking_deposit=FeeBucket(local=booking_deposit, cny=booking_deposit),
+                    # 历史字段不再表示房屋押金，仅镜像预订金以兼容旧客户端。
+                    deposit=FeeBucket(local=booking_deposit, cny=booking_deposit),
+                    service_fee=FeeBucket(local=_mk(0), cny=_cny(0)),
+                    monthly_rent=FeeBucket(local=_mk(monthly), cny=_cny(monthly)),
+                    amount_due_now=FeeBucket(local=booking_deposit, cny=booking_deposit),
+                    rent_total=FeeBucket(local=_mk(rent_total), cny=_cny(rent_total)),
                 ),
             ))
 
@@ -107,8 +128,8 @@ class LeasePricingService:
             calculation_date=datetime.now(timezone.utc).date().isoformat(),
             move_in_date=move_in.isoformat(),
             local_currency=currency,
-            exchange_rate_to_cny="1.0",
-            exchange_rate_at=datetime.now(timezone.utc).isoformat(),
-            exchange_rate_source="platform snapshot",
+            exchange_rate_to_cny=str(quote.rate_to_cny),
+            exchange_rate_at=quote.quoted_at.isoformat(),
+            exchange_rate_source=quote.source,
             options=options,
         )

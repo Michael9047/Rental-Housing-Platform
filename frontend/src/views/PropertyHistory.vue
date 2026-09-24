@@ -247,7 +247,7 @@
           <div class="info-list">
             <div class="info-item">
               <span class="label">撤销操作</span>
-              <span class="value">{{ actionLabel(detailItem.details.reverted_action || '') }}</span>
+              <span class="value">{{ actionLabel(String(detailItem.details.reverted_action || '')) }}</span>
             </div>
             <div class="info-item">
               <span class="label">结果</span>
@@ -302,6 +302,7 @@ import { Search, Refresh, RefreshLeft } from '@element-plus/icons-vue'
 import { propertyService, type PropertyHistoryItem } from '@/services/property'
 import { buildingService } from '@/services/building'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { toUserFriendly } from '@/services/api'
 
 const router = useRouter()
 
@@ -558,8 +559,7 @@ async function confirmRevert(row: PropertyHistoryItem) {
     ElMessage.success(result.message || '撤销成功')
     await loadList()
   } catch (e: any) {
-    const msg = e?.response?.data?.detail || e?.message || '撤销失败，请稍后重试'
-    ElMessage.error(typeof msg === 'string' ? msg : '撤销失败')
+    ElMessage.error(toUserFriendly(e))
   } finally {
     revertingId.value = null
   }
@@ -617,7 +617,8 @@ async function loadList() {
     const revoked = new Set<number>()
     for (const item of arr) {
       if (item.action === 'property_revert' && item.details?.reverted_audit_log_id) {
-        revoked.add(item.details.reverted_audit_log_id)
+        const revertedId = Number(item.details.reverted_audit_log_id)
+        if (Number.isInteger(revertedId) && revertedId > 0) revoked.add(revertedId)
       }
     }
     revertedLogIds.value = revoked

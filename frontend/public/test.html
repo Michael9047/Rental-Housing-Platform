@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Test</title>
+<style>
+body{font-family:sans-serif;background:#f5f6f8;padding:20px}
+.card{background:#fff;border-radius:12px;padding:16px;margin:10px 0;box-shadow:0 2px 8px rgba(0,0,0,.06)}
+h3{margin:0 0 6px;color:#1a1a2e}
+p{margin:0;color:#909399;font-size:14px}
+</style>
+</head>
+<body>
+<h2>API Test</h2>
+<div id="app">Loading...</div>
+<script>
+fetch('/api/v1/buildings/public/list?limit=10')
+  .then(r=>r.json())
+  .then(d=>{
+    document.getElementById('app').innerHTML = '<p>Total: '+d.total+' buildings</p>'
+      + d.items.map(b=>'<div class=card><h3>'+b.name+'</h3><p>'+b.address+' | ¥'+(b.min_rent||'?' )+'/月 | '+b.unit_type_count+'户型</p></div>').join('')
+  })
+  .catch(e=>{document.getElementById('app').innerHTML='<p style=color:red>Error: '+e.message+'</p>'})
+</script>
+</body>
+</html>

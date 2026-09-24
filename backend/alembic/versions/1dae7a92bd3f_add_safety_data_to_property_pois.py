@@ -71,7 +71,7 @@ def upgrade() -> None:
     sa.Column('status', sa.String(length=30), nullable=False),
     sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
     sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
-    sa.ForeignKeyConstraint(['room_id'], ['properties.id'], ondelete='SET NULL'),
+    sa.ForeignKeyConstraint(['room_id'], ['rooms.id'], ondelete='SET NULL'),
     sa.ForeignKeyConstraint(['tenant_id'], ['tenants.id'], ondelete='SET NULL'),
     sa.PrimaryKeyConstraint('id')
     )
@@ -87,7 +87,7 @@ def upgrade() -> None:
     sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
     sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
     sa.ForeignKeyConstraint(['operator_id'], ['users.id'], ondelete='SET NULL'),
-    sa.ForeignKeyConstraint(['room_id'], ['properties.id'], ondelete='CASCADE'),
+    sa.ForeignKeyConstraint(['room_id'], ['rooms.id'], ondelete='CASCADE'),
     sa.PrimaryKeyConstraint('id')
     )
     op.create_index(op.f('ix_room_transfers_room_id'), 'room_transfers', ['room_id'], unique=False)
@@ -154,70 +154,70 @@ def upgrade() -> None:
                existing_type=postgresql.JSON(astext_type=sa.Text()),
                comment="房型名称 → 平台 PropertyType 的映射 { 'Ensuite Single': 'studio', ... }",
                existing_nullable=True)
-    op.alter_column('properties', 'title',
+    op.alter_column('rooms', 'title',
                existing_type=sa.VARCHAR(length=200),
                nullable=True)
-    op.alter_column('properties', 'address',
+    op.alter_column('rooms', 'address',
                existing_type=sa.VARCHAR(length=300),
                type_=sa.String(length=500),
                nullable=True)
-    op.alter_column('properties', 'district',
+    op.alter_column('rooms', 'district',
                existing_type=sa.VARCHAR(length=100),
                nullable=True)
-    op.alter_column('properties', 'price_monthly',
+    op.alter_column('rooms', 'price_monthly',
                existing_type=sa.NUMERIC(precision=12, scale=2),
                nullable=True)
-    op.alter_column('properties', 'bedrooms',
+    op.alter_column('rooms', 'bedrooms',
                existing_type=sa.INTEGER(),
                nullable=True)
-    op.alter_column('properties', 'bathrooms',
+    op.alter_column('rooms', 'bathrooms',
                existing_type=sa.INTEGER(),
                nullable=True)
-    op.alter_column('properties', 'property_type',
+    op.alter_column('rooms', 'property_type',
                existing_type=postgresql.ENUM('apartment', 'house', 'studio', 'shared', name='property_type'),
                type_=sa.String(length=50),
                nullable=True)
-    op.alter_column('properties', 'deposit_type',
+    op.alter_column('rooms', 'deposit_type',
                existing_type=postgresql.ENUM('one_month', 'one_three', 'two_month', 'three_month', 'half_month', 'free', 'custom', name='deposit_type'),
                type_=sa.String(length=50),
                existing_nullable=True)
-    op.alter_column('properties', 'country',
+    op.alter_column('rooms', 'country',
                existing_type=sa.VARCHAR(length=2),
                type_=sa.String(length=100),
                nullable=True,
                existing_server_default=sa.text("'CN'::character varying"))
-    op.alter_column('properties', 'rent_type',
+    op.alter_column('rooms', 'rent_type',
                existing_type=postgresql.ENUM('monthly', 'quarterly', 'yearly', name='rent_type'),
                type_=sa.String(length=50),
                nullable=True,
                existing_server_default=sa.text("'monthly'::rent_type"))
-    op.alter_column('properties', 'rental_rules',
+    op.alter_column('rooms', 'rental_rules',
                existing_type=postgresql.JSON(astext_type=sa.Text()),
                type_=postgresql.JSONB(astext_type=sa.Text()),
                existing_nullable=True)
-    op.alter_column('properties', 'embedding',
+    op.alter_column('rooms', 'embedding',
                existing_type=pgvector.sqlalchemy.vector.VECTOR(dim=1536),
                type_=sa.Text(),
                existing_nullable=True)
-    op.alter_column('properties', 'min_stay_months',
+    op.alter_column('rooms', 'min_stay_months',
                existing_type=sa.INTEGER(),
                nullable=True,
                existing_server_default=sa.text('3'))
-    op.alter_column('properties', 'min_lease_months',
+    op.alter_column('rooms', 'min_lease_months',
                existing_type=sa.INTEGER(),
                nullable=True,
                existing_server_default=sa.text('12'))
-    op.drop_index('ix_properties_country', table_name='properties')
-    op.drop_index('ix_properties_district', table_name='properties')
-    op.drop_index('ix_properties_district_status', table_name='properties')
-    op.drop_index('ix_properties_embedding_ivfflat', table_name='properties', postgresql_with={'lists': '100'}, postgresql_using='ivfflat')
-    op.create_index(op.f('ix_properties_unit_type_id'), 'properties', ['unit_type_id'], unique=False)
-    op.drop_constraint('fk_properties_institute_id_institutes', 'properties', type_='foreignkey')
-    op.create_foreign_key(None, 'properties', 'room_types', ['unit_type_id'], ['id'], ondelete='SET NULL')
-    op.drop_column('properties', 'amenities')
-    op.drop_column('properties', 'city')
-    op.drop_column('properties', 'special_discount')
-    op.drop_column('properties', 'building_block')
+    op.drop_index('ix_properties_country', table_name='rooms')
+    op.drop_index('ix_properties_district', table_name='rooms')
+    op.drop_index('ix_properties_district_status', table_name='rooms')
+    op.drop_index('ix_properties_embedding_ivfflat', table_name='rooms', postgresql_with={'lists': '100'}, postgresql_using='ivfflat')
+    op.create_index(op.f('ix_properties_unit_type_id'), 'rooms', ['unit_type_id'], unique=False)
+    op.drop_constraint('fk_properties_institute_id_institutes', 'rooms', type_='foreignkey')
+    op.create_foreign_key(None, 'rooms', 'room_types', ['unit_type_id'], ['id'], ondelete='SET NULL')
+    op.drop_column('rooms', 'amenities')
+    op.drop_column('rooms', 'city')
+    op.drop_column('rooms', 'special_discount')
+    op.drop_column('rooms', 'building_block')
     op.add_column('property_pois', sa.Column('safety_data', postgresql.JSON(astext_type=sa.Text()), nullable=True))
     op.drop_index('ix_property_pois_id', table_name='property_pois')
     op.drop_constraint('property_pois_property_id_key', 'property_pois', type_='unique')
@@ -294,7 +294,7 @@ def downgrade() -> None:
                type_=sa.BIGINT(),
                existing_nullable=False,
                autoincrement=True)
-    op.create_foreign_key('room_types_property_id_fkey', 'room_types', 'properties', ['property_id'], ['id'], ondelete='CASCADE')
+    op.create_foreign_key('room_types_property_id_fkey', 'room_types', 'rooms', ['property_id'], ['id'], ondelete='CASCADE')
     op.alter_column('room_types', 'status',
                existing_type=postgresql.ENUM('available', 'rented', 'maintenance', name='room_type_status'),
                nullable=False,
@@ -337,68 +337,68 @@ def downgrade() -> None:
     op.create_unique_constraint('property_pois_property_id_key', 'property_pois', ['property_id'])
     op.create_index('ix_property_pois_id', 'property_pois', ['id'], unique=False)
     op.drop_column('property_pois', 'safety_data')
-    op.add_column('properties', sa.Column('building_block', sa.VARCHAR(length=20), autoincrement=False, nullable=True))
-    op.add_column('properties', sa.Column('special_discount', sa.VARCHAR(length=200), autoincrement=False, nullable=True))
-    op.add_column('properties', sa.Column('city', sa.VARCHAR(length=100), autoincrement=False, nullable=True))
-    op.add_column('properties', sa.Column('amenities', postgresql.ARRAY(sa.VARCHAR(length=30)), autoincrement=False, nullable=True))
-    op.drop_constraint(None, 'properties', type_='foreignkey')
-    op.create_foreign_key('fk_properties_institute_id_institutes', 'properties', 'institutes', ['institute_id'], ['id'], ondelete='SET NULL')
-    op.drop_index(op.f('ix_properties_unit_type_id'), table_name='properties')
-    op.create_index('ix_properties_embedding_ivfflat', 'properties', ['embedding'], unique=False, postgresql_with={'lists': '100'}, postgresql_using='ivfflat')
-    op.create_index('ix_properties_district_status', 'properties', ['district', 'status'], unique=False)
-    op.create_index('ix_properties_district', 'properties', ['district'], unique=False)
-    op.create_index('ix_properties_country', 'properties', ['country'], unique=False)
-    op.alter_column('properties', 'min_lease_months',
+    op.add_column('rooms', sa.Column('building_block', sa.VARCHAR(length=20), autoincrement=False, nullable=True))
+    op.add_column('rooms', sa.Column('special_discount', sa.VARCHAR(length=200), autoincrement=False, nullable=True))
+    op.add_column('rooms', sa.Column('city', sa.VARCHAR(length=100), autoincrement=False, nullable=True))
+    op.add_column('rooms', sa.Column('amenities', postgresql.ARRAY(sa.VARCHAR(length=30)), autoincrement=False, nullable=True))
+    op.drop_constraint(None, 'rooms', type_='foreignkey')
+    op.create_foreign_key('fk_properties_institute_id_institutes', 'rooms', 'institutes', ['institute_id'], ['id'], ondelete='SET NULL')
+    op.drop_index(op.f('ix_properties_unit_type_id'), table_name='rooms')
+    op.create_index('ix_properties_embedding_ivfflat', 'rooms', ['embedding'], unique=False, postgresql_with={'lists': '100'}, postgresql_using='ivfflat')
+    op.create_index('ix_properties_district_status', 'rooms', ['district', 'status'], unique=False)
+    op.create_index('ix_properties_district', 'rooms', ['district'], unique=False)
+    op.create_index('ix_properties_country', 'rooms', ['country'], unique=False)
+    op.alter_column('rooms', 'min_lease_months',
                existing_type=sa.INTEGER(),
                nullable=False,
                existing_server_default=sa.text('12'))
-    op.alter_column('properties', 'min_stay_months',
+    op.alter_column('rooms', 'min_stay_months',
                existing_type=sa.INTEGER(),
                nullable=False,
                existing_server_default=sa.text('3'))
-    op.alter_column('properties', 'embedding',
+    op.alter_column('rooms', 'embedding',
                existing_type=sa.Text(),
                type_=pgvector.sqlalchemy.vector.VECTOR(dim=1536),
                existing_nullable=True)
-    op.alter_column('properties', 'rental_rules',
+    op.alter_column('rooms', 'rental_rules',
                existing_type=postgresql.JSONB(astext_type=sa.Text()),
                type_=postgresql.JSON(astext_type=sa.Text()),
                existing_nullable=True)
-    op.alter_column('properties', 'rent_type',
+    op.alter_column('rooms', 'rent_type',
                existing_type=sa.String(length=50),
                type_=postgresql.ENUM('monthly', 'quarterly', 'yearly', name='rent_type'),
                nullable=False,
                existing_server_default=sa.text("'monthly'::rent_type"))
-    op.alter_column('properties', 'country',
+    op.alter_column('rooms', 'country',
                existing_type=sa.String(length=100),
                type_=sa.VARCHAR(length=2),
                nullable=False,
                existing_server_default=sa.text("'CN'::character varying"))
-    op.alter_column('properties', 'deposit_type',
+    op.alter_column('rooms', 'deposit_type',
                existing_type=sa.String(length=50),
                type_=postgresql.ENUM('one_month', 'one_three', 'two_month', 'three_month', 'half_month', 'free', 'custom', name='deposit_type'),
                existing_nullable=True)
-    op.alter_column('properties', 'property_type',
+    op.alter_column('rooms', 'property_type',
                existing_type=sa.String(length=50),
                type_=postgresql.ENUM('apartment', 'house', 'studio', 'shared', name='property_type'),
                nullable=False)
-    op.alter_column('properties', 'bathrooms',
+    op.alter_column('rooms', 'bathrooms',
                existing_type=sa.INTEGER(),
                nullable=False)
-    op.alter_column('properties', 'bedrooms',
+    op.alter_column('rooms', 'bedrooms',
                existing_type=sa.INTEGER(),
                nullable=False)
-    op.alter_column('properties', 'price_monthly',
+    op.alter_column('rooms', 'price_monthly',
                existing_type=sa.NUMERIC(precision=12, scale=2),
                nullable=False)
-    op.alter_column('properties', 'district',
+    op.alter_column('rooms', 'district',
                existing_type=sa.VARCHAR(length=100),
                nullable=False)
-    op.alter_column('properties', 'address',
+    op.alter_column('rooms', 'address',
                existing_type=sa.String(length=500),
                type_=sa.VARCHAR(length=300),
                nullable=False)
-    op.alter_column('properties', 'title',
+    op.alter_column('rooms', 'title',
                existing_type=sa.VARCHAR(length=200),
                nullable=False)
     op.alter_column('pms_connections', 'room_type_mapping',

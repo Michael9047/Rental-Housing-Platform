@@ -49,7 +49,7 @@
     <div class="room-type-row3">
       <div class="footer-price">
         <span class="price-value">¥{{ property.price_monthly }}</span>
-        <span class="price-unit">/月</span>
+        <span class="price-unit">{{ property.rent_period === 'weekly' ? '/周' : '/月' }}</span>
       </div>
       <div class="footer-lease">
         <span class="lease-icon">📅</span>
@@ -166,8 +166,8 @@ const allFeatureTags = computed<string[]>(() => {
     studio: ['独立卫浴', 'WiFi', '空调'],
     shared: ['包水电', 'WiFi'],
   }
-  const defaults = typeDefaults[p.property_type] || []
-  defaults.forEach((d) => tags.add(d))
+  const defaults = typeDefaults[p.property_type || ''] || []
+  defaults.forEach((defaultTag: string) => tags.add(defaultTag))
 
   // 从描述中提取关键词
   if (p.description) {

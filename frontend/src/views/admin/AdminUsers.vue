@@ -2,7 +2,10 @@
   <div class="admin-users" v-loading="loading">
     <div class="page-head">
       <h2>用户管理</h2>
-      <el-button @click="fetchUsers">刷新</el-button>
+      <div class="page-actions">
+        <el-button @click="fetchUsers">刷新</el-button>
+        <el-button type="primary" @click="openCreateDialog">创建账户</el-button>
+      </div>
     </div>
 
     <div class="query-bar">
@@ -20,7 +23,7 @@
       <el-tab-pane label="全部" name="all" />
       <el-tab-pane label="管理员" name="admin" />
       <el-tab-pane label="租客" name="tenant" />
-      <el-tab-pane label="房东" name="landlord" />
+      <el-tab-pane label="BM/公寓经理" name="landlord" />
       <el-tab-pane label="维修工" name="maintenance_worker" />
     </el-tabs>
 
@@ -39,7 +42,7 @@
             >
               <el-option label="管理员" value="admin" />
               <el-option label="租客" value="tenant" />
-              <el-option label="房东" value="landlord" />
+              <el-option label="BM/公寓经理" value="landlord" />
               <el-option label="维修工" value="maintenance_worker" />
             </el-select>
           </template>
@@ -56,21 +59,75 @@
         </el-table-column>
       </el-table>
     </div>
+
+    <el-dialog v-model="createDialogVisible" title="创建内部账户" width="min(92vw, 520px)" destroy-on-close>
+      <el-alert
+        title="BM/公寓经理在当前数据库中继续使用 landlord 角色。"
+        type="info"
+        :closable="false"
+        show-icon
+        class="role-note"
+      />
+      <el-form label-position="top" @submit.prevent>
+        <el-form-item label="用户名" required>
+          <el-input v-model.trim="createForm.username" maxlength="100" autocomplete="off" />
+        </el-form-item>
+        <el-form-item label="初始密码" required>
+          <el-input
+            v-model="createForm.password"
+            type="password"
+            show-password
+            maxlength="128"
+            autocomplete="new-password"
+            placeholder="至少 8 位"
+          />
+        </el-form-item>
+        <el-form-item label="角色" required>
+          <el-select v-model="createForm.role" class="full-width">
+            <el-option label="BM/公寓经理" value="landlord" />
+            <el-option label="维修工" value="maintenance_worker" />
+            <el-option label="租客" value="tenant" />
+            <el-option label="管理员" value="admin" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="邮箱">
+          <el-input v-model.trim="createForm.email" maxlength="255" />
+        </el-form-item>
+        <el-form-item label="手机号">
+          <el-input v-model.trim="createForm.phone" maxlength="32" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="createDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="creating" @click="createAccount">创建账户</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref, watch } from 'vue'
+import { onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { adminService } from '@/services/admin'
 import { userService } from '@/services/user'
-import type { User } from '@/types/user'
+import { useAuthStore } from '@/stores/auth'
+import type { AdminUserCreateInput, User } from '@/types/user'
 
 const route = useRoute()
 const router = useRouter()
+const authStore = useAuthStore()
 const users = ref<User[]>([])
 const loading = ref(false)
+const creating = ref(false)
+const createDialogVisible = ref(false)
+const createForm = reactive<AdminUserCreateInput>({
+  username: '',
+  password: '',
+  email: '',
+  phone: '',
+  role: 'landlord',
+})
 const allowedRoles = new Set(['admin', 'tenant', 'landlord', 'maintenance_worker'])
 const roleFilter = ref(typeof route.query.role === 'string' && allowedRoles.has(route.query.role) ? route.query.role : 'all')
 const queryText = ref(typeof route.query.q === 'string' ? route.query.q : '')
@@ -94,11 +151,71 @@ async function fetchUsers() {
 
 async function handleRoleChange(userId: number, role: string) {
   try {
+    const target = users.value.find((user) => user.id === userId)
+    const roleLabel = ({
+      admin: '管理员',
+      tenant: '租客',
+      landlord: 'BM/公寓经理',
+      maintenance_worker: '维修工',
+    } as Record<string, string>)[role] || role
+    const selfWarning = userId === authStore.user?.id
+      ? '这是你当前登录的账户，修改后可能立即失去管理员权限。'
+      : ''
+    await ElMessageBox.confirm(
+      `确认将“${target?.username || userId}”修改为${roleLabel}？${selfWarning}`,
+      '确认修改角色',
+      { type: selfWarning ? 'error' : 'warning', confirmButtonText: '确认修改' },
+    )
     await adminService.updateUserRole(userId, role)
     ElMessage.success('角色已更新')
     await fetchUsers()
-  } catch {
-    ElMessage.error('更新失败')
+  } catch (error: any) {
+    if (error === 'cancel' || error === 'close') return
+    ElMessage.error(error?.response?.data?.detail || '更新失败')
+  }
+}
+
+function resetCreateForm() {
+  Object.assign(createForm, { username: '', password: '', email: '', phone: '', role: 'landlord' })
+}
+
+function openCreateDialog() {
+  resetCreateForm()
+  createDialogVisible.value = true
+}
+
+async function createAccount() {
+  if (!createForm.username || createForm.password.length < 8) {
+    ElMessage.warning('请填写用户名和至少 8 位的初始密码')
+    return
+  }
+  if (createForm.role === 'admin') {
+    try {
+      await ElMessageBox.confirm('新账户将拥有完整管理员权限，确认继续？', '高权限账户确认', {
+        type: 'warning',
+        confirmButtonText: '确认创建',
+      })
+    } catch {
+      return
+    }
+  }
+
+  creating.value = true
+  try {
+    await adminService.createUser({
+      username: createForm.username,
+      password: createForm.password,
+      role: createForm.role,
+      ...(createForm.email ? { email: createForm.email } : {}),
+      ...(createForm.phone ? { phone: createForm.phone } : {}),
+    })
+    ElMessage.success('账户已创建，请安全告知员工初始密码')
+    createDialogVisible.value = false
+    await fetchUsers()
+  } catch (error: any) {
+    ElMessage.error(error?.response?.data?.detail || '创建账户失败')
+  } finally {
+    creating.value = false
   }
 }
 
@@ -147,6 +264,19 @@ onMounted(fetchUsers)
   justify-content: space-between;
   gap: 16px;
   margin-bottom: 12px;
+}
+
+.page-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.role-note {
+  margin-bottom: 16px;
+}
+
+.full-width {
+  width: 100%;
 }
 
 .query-bar {

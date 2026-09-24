@@ -1,94 +1,64 @@
-"""入住日期校验路由的成功、业务错误和异常测试。"""
+"""户型入住日期校验路由测试。"""
 
-from datetime import date
+from datetime import date, timedelta
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
 from fastapi import HTTPException
 
-from app.api.v1.routes.properties import validate_booking_date
-from app.schemas.booking_availability import BookingDateValidation
-from app.services.booking_availability_service import BookingAvailabilityService
-
-
-@pytest.fixture
-def property_obj() -> SimpleNamespace:
-    return SimpleNamespace(id=68)
+from app.api.v1.routes.unit_types import validate_booking_date
 
 
 @pytest.mark.asyncio
-async def test_booking_date_validation_success(monkeypatch, property_obj) -> None:
-    monkeypatch.setattr(BookingAvailabilityService, "get_property", AsyncMock(return_value=property_obj))
-    monkeypatch.setattr(
-        BookingAvailabilityService,
-        "validate",
-        AsyncMock(return_value=(True, None, "Asia/Shanghai")),
+async def test_booking_date_validation_success() -> None:
+    move_in = date.today() + timedelta(days=1)
+    session = AsyncMock()
+    session.get.return_value = SimpleNamespace(
+        has_vacancy=True, available_count=1, available_from=None
     )
+
+    result = await validate_booking_date(68, {"move_in_date": move_in.isoformat()}, session)
+
+    assert result == {"available": True, "reason": None}
+
+
+@pytest.mark.asyncio
+async def test_booking_date_validation_rejects_empty_inventory() -> None:
+    session = AsyncMock()
+    session.get.return_value = SimpleNamespace(
+        has_vacancy=False, available_count=0, available_from=None
+    )
+
     result = await validate_booking_date(
-        property_id=68,
-        validation=BookingDateValidation(move_in_date=date(2026, 7, 23)),
-        session=AsyncMock(),
-        _current_user=SimpleNamespace(id=53),
+        68, {"move_in_date": (date.today() + timedelta(days=1)).isoformat()}, session
     )
-    assert result.model_dump(mode="json") == {
-        "available": True,
-        "property_id": 68,
-        "start_date": "2026-07-23",
-        "timezone": "Asia/Shanghai",
-        "reason": None,
-    }
+
+    assert result == {"available": False, "reason": "该户型暂无空房"}
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "reason",
-    ["入住日期不能早于房源所在地的今天", "该日期已有有效预订，暂不可入住"],
-)
-async def test_booking_date_validation_returns_conflict(monkeypatch, property_obj, reason) -> None:
-    monkeypatch.setattr(BookingAvailabilityService, "get_property", AsyncMock(return_value=property_obj))
-    monkeypatch.setattr(
-        BookingAvailabilityService,
-        "validate",
-        AsyncMock(return_value=(False, reason, "Asia/Shanghai")),
-    )
+async def test_booking_date_validation_returns_not_found() -> None:
+    session = AsyncMock()
+    session.get.return_value = None
+
     with pytest.raises(HTTPException) as exc_info:
         await validate_booking_date(
-            property_id=68,
-            validation=BookingDateValidation(move_in_date=date(2026, 7, 23)),
-            session=AsyncMock(),
-            _current_user=SimpleNamespace(id=53),
+            999999,
+            {"move_in_date": (date.today() + timedelta(days=1)).isoformat()},
+            session,
         )
-    assert exc_info.value.status_code == 409
-    assert exc_info.value.detail == reason
 
-
-@pytest.mark.asyncio
-async def test_booking_date_validation_returns_not_found(monkeypatch) -> None:
-    monkeypatch.setattr(BookingAvailabilityService, "get_property", AsyncMock(return_value=None))
-    with pytest.raises(HTTPException) as exc_info:
-        await validate_booking_date(
-            property_id=999999,
-            validation=BookingDateValidation(move_in_date=date(2026, 7, 23)),
-            session=AsyncMock(),
-            _current_user=SimpleNamespace(id=53),
-        )
     assert exc_info.value.status_code == 404
-    assert exc_info.value.detail == "Property not found"
 
 
 @pytest.mark.asyncio
-async def test_booking_date_validation_propagates_unexpected_error(monkeypatch, property_obj) -> None:
-    monkeypatch.setattr(BookingAvailabilityService, "get_property", AsyncMock(return_value=property_obj))
-    monkeypatch.setattr(
-        BookingAvailabilityService,
-        "validate",
-        AsyncMock(side_effect=RuntimeError("database unavailable")),
+async def test_booking_date_validation_rejects_invalid_date() -> None:
+    session = AsyncMock()
+    session.get.return_value = SimpleNamespace(
+        has_vacancy=True, available_count=1, available_from=None
     )
-    with pytest.raises(RuntimeError, match="database unavailable"):
-        await validate_booking_date(
-            property_id=68,
-            validation=BookingDateValidation(move_in_date=date(2026, 7, 23)),
-            session=AsyncMock(),
-            _current_user=SimpleNamespace(id=53),
-        )
+
+    result = await validate_booking_date(68, {"move_in_date": "not-a-date"}, session)
+
+    assert result == {"available": False, "reason": "日期格式不正确"}

@@ -1,6 +1,6 @@
 // 入住日期页面校验成功后的草稿保存与路由跳转测试。
 import { flushPromises, mount } from '@vue/test-utils'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import MoveInDate from '@/views/booking/MoveInDate.vue'
 
@@ -32,6 +32,13 @@ vi.mock('@/services/bookingDraft', () => ({
 }))
 
 describe('MoveInDate', () => {
+  beforeAll(() => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-07-22T08:00:00Z'))
+  })
+
+  afterAll(() => vi.useRealTimers())
+
   beforeEach(() => {
     localStorage.clear()
     vi.clearAllMocks()

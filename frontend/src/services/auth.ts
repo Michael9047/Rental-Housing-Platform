@@ -8,6 +8,9 @@ import type {
   PhoneRegisterRequest,
   SendSmsCodeRequest,
   VerifySmsCodeRequest,
+  WeChatQrUrlResponse,
+  WeChatQrLoginRequest,
+  WeChatQrStatusResponse,
 } from '@/types/auth'
 import type { User } from '@/types/user'
 
@@ -29,6 +32,16 @@ export const authService = {
     return api.get('/auth/me').then((r) => r.data)
   },
 
+  /** 请求发送密码重置邮件。 */
+  forgotPassword(data: { email: string }): Promise<{ detail: string }> {
+    return api.post('/auth/forgot-password', data).then((r) => r.data)
+  },
+
+  /** 使用一次性令牌重置密码。 */
+  resetPassword(data: { token: string; new_password: string }): Promise<{ detail: string }> {
+    return api.post('/auth/reset-password', data).then((r) => r.data)
+  },
+
   /** 发送短信验证码 */
   sendSmsCode(data: SendSmsCodeRequest): Promise<{ detail: string }> {
     return api.post('/auth/send-sms-code', data).then((r) => r.data)
@@ -47,5 +60,30 @@ export const authService = {
   /** 新用户手机号注册（验证码验证后设置用户名密码） */
   phoneRegister(data: PhoneRegisterRequest): Promise<TokenResponse> {
     return api.post('/auth/phone-register', data).then((r) => r.data)
+  },
+
+  /** 已登录用户修改密码 */
+  changePassword(data: { old_password: string; new_password: string }): Promise<{ detail: string }> {
+    return api.post('/auth/change-password', data).then((r) => r.data)
+  },
+
+  /** 已登录用户更换手机号（需短信验证） */
+  changePhone(data: { new_phone: string; sms_code: string }): Promise<{ detail: string }> {
+    return api.post('/auth/change-phone', data).then((r) => r.data)
+  },
+
+  /** 微信扫码登录 — 获取二维码 URL */
+  getWeChatQrUrl(): Promise<WeChatQrUrlResponse> {
+    return api.get('/auth/wechat/qr-url').then((r) => r.data)
+  },
+
+  /** 微信扫码登录 — 用 code+state 换取 JWT */
+  wechatQrLogin(data: WeChatQrLoginRequest): Promise<TokenResponse> {
+    return api.post('/auth/wechat/qr-login', data).then((r) => r.data)
+  },
+
+  /** 微信扫码登录 — 轮询扫码状态 */
+  getWeChatQrStatus(state: string): Promise<WeChatQrStatusResponse> {
+    return api.get(`/auth/wechat/qr-status/${state}`).then((r) => r.data)
   },
 }

@@ -1,5 +1,11 @@
 from app.db.session import Base
 from app.models.agent_cart import AgentCart, AgentCartItem
+from app.models.agent_intelligence import (
+    AgentSearchCandidate,
+    AgentSearchRun,
+    AgentSessionState,
+    AgentUserMemory,
+)
 from app.models.audit_log import AuditLog
 from app.models.booking import Booking, BookingStatus
 from app.models.booking_flow_draft import BookingFlowDraft
@@ -8,9 +14,11 @@ from app.models.building_staff import BuildingStaff
 from app.models.chat import ChatMessage, ChatMessageRole, ChatSession, ChatSessionStatus
 from app.models.compare_session import CompareSession
 from app.models.contract import Contract, ContractSignature
+from app.models.contract_template import ContractTemplate
 from app.models.data_import import DataImport, ImportSourceType, ImportStatus
 from app.models.embedding_job import EmbeddingJob, EmbeddingJobStatus
 from app.models.institute import Institute, InstituteStatus
+from app.models.listing_deletion import ListingDeletionBatch
 from app.models.institute_commute import InstituteCommute
 from app.models.notification import (
     DeliveryStatus,
@@ -43,6 +51,10 @@ from app.models.user_favorite import UserFavorite
 __all__ = [
     "AgentCart",
     "AgentCartItem",
+    "AgentSearchCandidate",
+    "AgentSearchRun",
+    "AgentSessionState",
+    "AgentUserMemory",
     "AuditLog",
     "Base",
     "Booking",
@@ -68,6 +80,7 @@ __all__ = [
     "InstituteCommute",
     "InstitutePOI",
     "InstituteStatus",
+    "ListingDeletionBatch",
     "DeliveryStatus",
     "Notification",
     "NotificationChannel",

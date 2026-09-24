@@ -42,4 +42,12 @@ export const buildingService = {
   remove(id: number): Promise<void> {
     return api.delete(`/buildings/${id}`)
   },
+  offline(id: number): Promise<{ id: number; status: string }> {
+    return api.post(`/buildings/${id}/offline`).then(r => r.data)
+  },
+  publish(id: number): Promise<{ id: number; status: string }> {
+    return api.post(`/buildings/${id}/publish`).then(r => r.data)
+  },
+  batchOffline(ids: number[]) { return api.post('/buildings/batch/offline', { ids }).then(r => r.data) },
+  batchPublish(ids: number[]) { return api.post('/buildings/batch/publish', { ids }).then(r => r.data) },
 }

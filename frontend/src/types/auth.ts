@@ -54,3 +54,24 @@ export interface VerifySmsCodeRequest {
   phone: string
   code: string
 }
+
+// ── 微信开放平台扫码登录 ──
+
+export interface WeChatQrUrlResponse {
+  qr_url: string
+  state: string
+  expires_in: number
+}
+
+export interface WeChatQrLoginRequest {
+  code: string
+  state: string
+}
+
+export interface WeChatQrStatusResponse {
+  status: 'pending' | 'scanned' | 'expired'
+  access_token?: string
+  token_type?: string
+  is_new_user?: boolean
+  user?: import('./user').User
+}

@@ -6,13 +6,21 @@ import pytest
 
 from app.models.booking import BookingStatus
 from app.services.payment_service import PaymentOrderService
+from app.services.tenant_contract_service import remaining_payment_seconds
 
 
 NOW = datetime(2026, 7, 22, 12, 0, tzinfo=timezone.utc)
 
 
+def test_contract_payment_countdown_only_exists_while_payment_is_allowed():
+    expires_at = NOW + timedelta(hours=24)
+    assert remaining_payment_seconds("payment_pending", expires_at, NOW) == 86400
+    assert remaining_payment_seconds("payment_failed", expires_at, NOW) == 86400
+    assert remaining_payment_seconds("paid", expires_at, NOW) is None
+    assert remaining_payment_seconds("paid", None, NOW) is None
+
+
 @pytest.mark.parametrize("source,target", [
-    (BookingStatus.contract_signed, BookingStatus.payment_pending),
     (BookingStatus.payment_pending, BookingStatus.payment_processing),
     (BookingStatus.payment_processing, BookingStatus.paid),
     (BookingStatus.payment_processing, BookingStatus.payment_failed),

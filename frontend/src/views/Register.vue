@@ -69,6 +69,7 @@ import { ElMessage } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
 import { useAuthStore } from '@/stores/auth'
 import { authService } from '@/services/auth'
+import { toUserFriendly } from '@/services/api'
 
 const router = useRouter()
 const authStore = useAuthStore()
@@ -181,7 +182,7 @@ async function handleRegister() {
   } catch (err: any) {
     const detail = err?.response?.data?.detail
     if (detail && typeof detail === 'string') {
-      ElMessage.error(detail)
+      ElMessage.error(toUserFriendly(err))
     } else {
       ElMessage.error('注册失败，请重试')
     }

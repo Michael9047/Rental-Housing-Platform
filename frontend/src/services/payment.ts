@@ -10,7 +10,7 @@ export interface PaymentResponse {
   checkout_url: string | null; transaction_id: string | null; paid_at: string | null
   snapshot: { order_number: string; property_id: number; property_name: string; property_address: string
     commencement_date: string; expiry_date: string; tenancy_months: number; tenant_name: string
-    agreement_id: string; agreement_number: string; fees: { deposit: Money; service_fee: Money; tax: Money; current_total: Money } }
+    agreement_id: string; agreement_number: string; fees: { booking_deposit?: Money; deposit?: Money; service_fee?: Money; tax: Money; current_total: Money } }
 }
 export interface PaymentResult extends PaymentResponse { property_image_url: string | null; booking_created_at: string; status_updated_at: string; failure_reason: string | null }
 export type PaymentMethod = 'WECHAT_PAY' | 'ALIPAY' | 'CARD_CHECKOUT'
@@ -28,6 +28,7 @@ export interface TenantOrderDetail extends TenantOrderItem {
   applicant_name:string; applicant_phone_masked:string|null; applicant_email_masked:string|null
   property_type:string; property_country:string; property_description:string|null; monthly_rent_minor:number
   deposit_amount_minor:number; service_fee_amount_minor:number; tax_amount_minor:number
+  booking_deposit_amount_minor:number; booking_deposit_currency:string; is_refundable:boolean; refund_method:string
   exchange_rate:string; exchange_rate_source:string; exchange_rate_timestamp:string; status_updated_at:string
   paid_at:string|null; transaction_id_masked:string|null; webhook_confirmed:boolean; amounts_verified:boolean; inventory_reserved:boolean
 }

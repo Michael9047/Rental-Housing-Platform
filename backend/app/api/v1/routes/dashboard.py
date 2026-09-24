@@ -3,12 +3,12 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user, get_db_session, require_landlord, require_maintenance
-from app.models.booking import Booking, BookingStatus
+from app.api.deps import get_db_session, require_landlord, require_maintenance
 from app.models.institute import Institute
 from app.models.unit_type import UnitType, UnitTypeStatus
 from app.models.repair import RepairRequest, RepairStatus, RepairWorker, WorkerStatus
-from app.models.user import User, UserRole
+from app.models.user import User
+from app.models.visit_message import VisitMessage
 
 router = APIRouter()
 
@@ -43,8 +43,11 @@ async def landlord_dashboard(
 
     # 预约统计
     pending_bookings = await session.scalar(
-        select(func.count(Booking.id)).where(
-            Booking.bm_id == current_user.id, Booking.status == BookingStatus.pending
+        select(func.count(VisitMessage.id))
+        .join(Institute, VisitMessage.apartment_id == Institute.id)
+        .where(
+            VisitMessage.is_read.is_(False),
+            (Institute.created_by == current_user.id) | (Institute.bm_id == current_user.id),
         )
     )
 

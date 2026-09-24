@@ -1,6 +1,6 @@
 """
 楼栋管理 API
-GET    /buildings          — 列表（按创建者筛选）
+GET    /buildings          — 列表（按 BM 归属筛选）
 POST   /buildings          — 创建楼栋
 GET    /buildings/{id}     — 详情
 PATCH  /buildings/{id}     — 更新
@@ -8,8 +8,10 @@ DELETE /buildings/{id}     — 删除
 """
 import re
 import logging
+from math import asin, cos, radians, sin, sqrt as _sqrt
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from pydantic import BaseModel, Field
 from sqlalchemy import select, func, or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -17,11 +19,81 @@ from sqlalchemy.orm import selectinload
 
 from app.api.deps import get_current_user, get_db_session, require_landlord
 from app.models.institute import Institute, InstituteStatus
+from app.models.unit_type import UnitType, UnitTypeStatus
 from app.models.user import User
 from app.schemas.institute import InstituteCreate, InstituteUpdate
+from app.services.institute_access import can_manage_institute, managed_institute_filter
+from app.services.inventory_service import (
+    annotate_effective_inventory,
+    occupied_booking_count_subquery,
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/buildings", tags=["buildings"])
+
+
+class BuildingLifecycleBatchRequest(BaseModel):
+    """公寓批量上下架请求。"""
+
+    ids: list[int] = Field(min_length=1, max_length=100)
+
+
+def _lifecycle_http_error(exc: Exception) -> HTTPException:
+    """将生命周期领域错误转换为稳定的接口错误。"""
+    from app.services.listing_lifecycle_service import ListingLifecycleError
+
+    if isinstance(exc, PermissionError):
+        return HTTPException(status_code=403, detail=str(exc))
+    if isinstance(exc, ListingLifecycleError):
+        detail: dict[str, object] = {"message": str(exc)}
+        if exc.missing_fields:
+            detail["missing_fields"] = list(exc.missing_fields)
+        return HTTPException(status_code=422, detail=detail)
+    return HTTPException(status_code=400, detail=str(exc))
+
+
+@router.post("/batch/offline")
+async def batch_offline_buildings(
+    body: BuildingLifecycleBatchRequest,
+    session: AsyncSession = Depends(get_db_session),
+    current_user: User = Depends(require_landlord),
+) -> dict:
+    """批量下架公寓，逐项返回结果。"""
+    from app.services.listing_lifecycle_service import ListingLifecycleService
+
+    service = ListingLifecycleService(session)
+    success: list[int] = []
+    errors: list[dict] = []
+    for building_id in body.ids:
+        try:
+            await service.offline_building(building_id, current_user)
+            success.append(building_id)
+        except Exception as exc:
+            errors.append({"id": building_id, "error": str(exc)})
+    return {"success": success, "failed": len(errors), "errors": errors}
+
+
+@router.post("/batch/publish")
+async def batch_publish_buildings(
+    body: BuildingLifecycleBatchRequest,
+    session: AsyncSession = Depends(get_db_session),
+    current_user: User = Depends(require_landlord),
+) -> dict:
+    """批量重新上架公寓，逐项返回资料缺失原因。"""
+    from app.services.listing_lifecycle_service import ListingLifecycleError, ListingLifecycleService
+
+    service = ListingLifecycleService(session)
+    success: list[int] = []
+    errors: list[dict] = []
+    for building_id in body.ids:
+        try:
+            await service.publish_building(building_id, current_user)
+            success.append(building_id)
+        except ListingLifecycleError as exc:
+            errors.append({"id": building_id, "error": str(exc), "missing_fields": list(exc.missing_fields)})
+        except Exception as exc:
+            errors.append({"id": building_id, "error": str(exc)})
+    return {"success": success, "failed": len(errors), "errors": errors}
 
 # 中国大陆手机号：1xx-xxxxxxxxx；固定电话：0xx-xxxxxxxx / xxx-xxxxxxxx
 _PHONE_RE = re.compile(r"^1[3-9]\d{9}$|^0\d{2,3}-?\d{7,8}$")
@@ -42,10 +114,73 @@ def _validate_phone(phone: str | None) -> str | None:
     )
 
 
-def _build_card(b: Institute) -> dict:
-    """构建公寓卡片数据 — 含价格区间、图片等展示字段"""
+def _upload_filename(value: str | None) -> str | None:
+    """从完整上传 URL 或文件名中提取存储文件名。"""
+    if not value:
+        return None
+    raw = value.strip()
+    if not raw:
+        return None
+    return raw.rsplit("/", 1)[-1]
+
+
+def _move_qr_from_temp(value: str | None) -> str | None:
+    """将临时微信二维码移到 uploads 根目录，并返回可持久化文件名。"""
+    if not value:
+        return None
+    import shutil
+    from pathlib import Path
+
+    from app.core.config import get_settings
+
+    raw = value.strip()
+    filename = _upload_filename(raw)
+    if not filename:
+        return None
+    if "/temp/" not in raw:
+        return filename
+
+    upload_root = Path(get_settings().upload_dir).resolve()
+    rel = raw.split("/api/v1/uploads/", 1)[-1] if "/api/v1/uploads/" in raw else None
+    if rel:
+        src = upload_root / rel
+        if src.exists():
+            try:
+                shutil.move(str(src), str(upload_root / filename))
+            except Exception:
+                logger.exception("移动负责人微信二维码失败")
+    return filename
+
+
+def _build_card(
+    b: Institute,
+    *,
+    price_min: int | None = None,
+    price_max: int | None = None,
+    property_type: str | None = None,
+) -> dict:
+    """构建公寓卡片数据，并选出符合本轮筛选的最低价代表户型。"""
     uts = b.unit_types or []
-    available_uts = [ut for ut in uts if ut.deleted_at is None and ut.status.value == "available"]
+    available_uts = [ut for ut in uts if _is_rentable_unit_type(ut)]
+    matching_uts = [
+        ut
+        for ut in uts
+        if _unit_type_matches_filters(
+            ut,
+            b,
+            price_min=price_min,
+            price_max=price_max,
+            property_type=property_type,
+        )
+    ]
+    representative_unit_type = min(
+        matching_uts,
+        key=lambda ut: (
+            float(ut.base_rent) if ut.base_rent is not None else float("inf"),
+            int(ut.id),
+        ),
+        default=None,
+    )
     prices = [float(ut.base_rent) for ut in available_uts if ut.base_rent]
     min_rent = min(prices) if prices else None
     max_rent = max(prices) if prices else None
@@ -60,10 +195,14 @@ def _build_card(b: Institute) -> dict:
     # 户型类型汇总
     pt_set = set(getattr(ut, 'property_type', None) for ut in available_uts)
     pt_vals = [v for v in pt_set if v]
-    property_type = pt_vals[0] if len(pt_vals) == 1 else None
+    aggregate_property_type = pt_vals[0] if len(pt_vals) == 1 else None
     # 户型标签列表（如 ["studio","1bed","2bed"]）
     pt_labels: dict = {"studio":"Studio","ensuite":"Ensuite","1bed":"一室","2bed":"两室","3bed":"三室","4bed":"四室","5bed+":"五室+","shared":"合租"}
     unit_type_tags = [pt_labels.get(v.value if hasattr(v,'value') else str(v), str(v)) for v in pt_set if v]
+    # 从代表户型取 rent_period / currency（若没有匹配户型则从全部可用户型取第一个）
+    ref_ut = representative_unit_type or (available_uts[0] if available_uts else None)
+    rent_period = _enum_value(ref_ut.rent_period) if ref_ut else None
+    currency = ref_ut.currency if ref_ut else None
     return {
         "id": b.id, "name": b.name, "name_cn": b.name_cn, "address": b.address,
         "country": b.country, "city": b.city, "district": b.district,
@@ -75,9 +214,18 @@ def _build_card(b: Institute) -> dict:
         "couples_allowed": bool(b.couples_allowed) if b.couples_allowed is not None else False,
         "unit_type_count": len(available_uts),
         "unit_type_tags": unit_type_tags,
+        "representative_unit_type_id": (
+            representative_unit_type.id if representative_unit_type is not None else None
+        ),
         "min_rent": min_rent, "max_rent": max_rent,
         "avg_bedrooms": 0,
-        "property_type": property_type.value if hasattr(property_type, 'value') else str(property_type) if property_type else None,
+        "currency": currency,
+        "rent_period": rent_period,
+        "property_type": (
+            aggregate_property_type.value
+            if hasattr(aggregate_property_type, 'value')
+            else str(aggregate_property_type) if aggregate_property_type else None
+        ),
         "primary_image": primary,
         "images": [{"id": img.id, "filename": img.filename, "original_name": img.original_name,
                      "sort_order": img.sort_order, "is_primary": img.is_primary}
@@ -86,8 +234,75 @@ def _build_card(b: Institute) -> dict:
         "institute_name": b.name,
     }
 
+_PROPERTY_TYPE_ALIASES = {
+    "one_bed": "1bed",
+    "1-bed": "1bed",
+    "two_bed": "2bed",
+    "2-bed": "2bed",
+    "three_bed_plus": "3bed",
+    "3-bed": "3bed",
+    "four_bed": "4bed",
+    "4-bed": "4bed",
+    "five_bed_plus": "5bed+",
+    "5-bed": "5bed+",
+}
 
-from math import radians, cos, sin, asin, sqrt as _sqrt
+
+def _enum_value(value: object | None) -> str | None:
+    """兼容 SQLAlchemy 返回枚举实例或字符串的两种情况。"""
+    if value is None:
+        return None
+    raw = getattr(value, "value", value)
+    return str(raw)
+
+
+def _is_rentable_unit_type(unit_type: UnitType) -> bool:
+    """判断户型是否仍可作为公开搜索中的可租库存。"""
+    effective_available_count = getattr(
+        unit_type,
+        "_effective_available_count",
+        unit_type.available_count,
+    )
+    return (
+        unit_type.deleted_at is None
+        and _enum_value(unit_type.status) == UnitTypeStatus.available.value
+        and bool(unit_type.has_vacancy)
+        and int(unit_type.available_count or 0) > 0
+        and int(effective_available_count or 0) > 0
+    )
+
+
+def _unit_type_matches_filters(
+    unit_type: UnitType,
+    institute: Institute,
+    *,
+    price_min: int | None,
+    price_max: int | None,
+    property_type: str | None,
+) -> bool:
+    """在同一个可租户型上同时应用价格和户型条件（设施为公寓级，不在此检查）。"""
+    if not _is_rentable_unit_type(unit_type):
+        return False
+    if price_min is not None and unit_type.base_rent < price_min:
+        return False
+    if price_max is not None and unit_type.base_rent > price_max:
+        return False
+    if property_type:
+        requested_type = property_type.strip().lower()
+        normalized_type = _PROPERTY_TYPE_ALIASES.get(requested_type, requested_type)
+        if _enum_value(unit_type.property_type) != normalized_type:
+            return False
+    return True
+
+
+def _building_has_amenities(building: Institute, required: list[str]) -> bool:
+    """检查公寓是否包含所有要求的设施（公寓级，不涉及户型）。"""
+    required_set = {str(item).strip().casefold() for item in required if str(item).strip()}
+    if not required_set:
+        return True
+    available = {str(item).strip().casefold() for item in (building.amenities or []) if str(item).strip()}
+    return required_set.issubset(available)
+
 
 def _haversine(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
     """Haversine 距离（km）"""
@@ -101,9 +316,12 @@ async def _search_buildings(
     district: str | None = None,
     country: str | None = None,
     city: str | None = None,
+    institute_id: int | None = None,
+    institute_ids: list[int] | None = None,
     price_min: int | None = None,
     price_max: int | None = None,
     property_type: str | None = None,
+    amenities: list[str] | None = None,
     sort_by: str | None = None,
     near_lat: float | None = None,
     near_lng: float | None = None,
@@ -111,6 +329,13 @@ async def _search_buildings(
     skip: int = 0,
     limit: int = 50,
 ) -> list[dict]:
+    page_limit = min(limit, 200)
+    has_radius_filter = (
+        near_lat is not None
+        and near_lng is not None
+        and bool(near_distance_km)
+    )
+
     stmt = (select(Institute)
             .options(selectinload(Institute.images))
             .options(selectinload(Institute.unit_types))
@@ -127,35 +352,136 @@ async def _search_buildings(
         stmt = stmt.where(Institute.country == country)
     if city:
         stmt = stmt.where(Institute.city.ilike(f"%{city}%"))
+    if institute_id is not None:
+        stmt = stmt.where(Institute.id == institute_id)
+    if institute_ids:
+        normalized_ids = list(dict.fromkeys(
+            value for value in institute_ids if value > 0
+        ))[:200]
+        if normalized_ids:
+            stmt = stmt.where(Institute.id.in_(normalized_ids))
+
+    # “真实可租库存”、价格和户型都放进同一个相关 EXISTS，数据库可以在分页前
+    # 完成联合筛选。设施横跨 JSON/ARRAY 两种字段，留到下方做跨数据库兼容判断。
+    occupied_booking_count = occupied_booking_count_subquery()
+    unit_type_filter = select(UnitType.id).where(
+        UnitType.institute_id == Institute.id,
+        UnitType.deleted_at.is_(None),
+        UnitType.status == UnitTypeStatus.available,
+        UnitType.has_vacancy.is_(True),
+        UnitType.available_count > 0,
+        occupied_booking_count < UnitType.total_count,
+    )
+    if price_min is not None:
+        unit_type_filter = unit_type_filter.where(UnitType.base_rent >= price_min)
+    if price_max is not None:
+        unit_type_filter = unit_type_filter.where(UnitType.base_rent <= price_max)
+    if property_type:
+        requested_type = property_type.strip().lower()
+        normalized_type = _PROPERTY_TYPE_ALIASES.get(requested_type, requested_type)
+        unit_type_filter = unit_type_filter.where(UnitType.property_type == normalized_type)
+    stmt = stmt.where(unit_type_filter.exists())
+
+    # Building 卡片的价格取所有 available、未删除户型的最低正租金；使用同一
+    # 相关子查询排序，可避免为价格排序全量加载公寓和关系。
+    min_rent = (
+        select(func.min(UnitType.base_rent))
+        .where(
+            UnitType.institute_id == Institute.id,
+            UnitType.deleted_at.is_(None),
+            UnitType.status == UnitTypeStatus.available,
+            UnitType.has_vacancy.is_(True),
+            UnitType.available_count > 0,
+            occupied_booking_count < UnitType.total_count,
+            UnitType.base_rent > 0,
+        )
+        .correlate(Institute)
+        .scalar_subquery()
+    )
     if sort_by == 'price_asc':
-        stmt = stmt.order_by(Institute.id.asc())
+        stmt = stmt.order_by(func.coalesce(min_rent, 0).asc(), Institute.id.asc())
     elif sort_by == 'price_desc':
-        stmt = stmt.order_by(Institute.id.desc())
+        stmt = stmt.order_by(func.coalesce(min_rent, 0).desc(), Institute.id.desc())
     elif sort_by == 'created_at':
         stmt = stmt.order_by(Institute.created_at.desc())
     else:
         stmt = stmt.order_by(Institute.id.desc())
-    stmt = stmt.offset(skip).limit(limit if limit <= 200 else 200)
+
+    # 普通首页、文本/地区、精确公寓和纯价格/户型查询都已能由 SQL 完整表达，
+    # 先在数据库分页，selectinload 只会加载当前页的图片与户型关系。
+    needs_post_filter = bool(amenities) or has_radius_filter
+    if not needs_post_filter:
+        stmt = stmt.offset(skip).limit(page_limit)
+
     result = await session.scalars(stmt)
-    cards = [_build_card(b) for b in result]
+    buildings = list(result)
 
-    # 客户端过滤（价格 / 户型 / 地理位置）
-    if price_min is not None:
-        cards = [c for c in cards if c.get("min_rent") is not None and c["min_rent"] >= price_min]
-    if price_max is not None:
-        cards = [c for c in cards if c.get("min_rent") is not None and c["min_rent"] <= price_max]
-    if property_type:
-        cards = [c for c in cards if c.get("property_type") == property_type]
-    if near_lat is not None and near_lng is not None and near_distance_km:
-        cards = [c for c in cards if c.get("latitude") and c.get("longitude")
-                 and _haversine(near_lat, near_lng, float(c["latitude"]), float(c["longitude"])) <= near_distance_km]
+    # 设施条件仅在公寓（Institute）级别检查，不涉及户型。
+    if amenities:
+        buildings = [
+            building
+            for building in buildings
+            if _building_has_amenities(building, amenities)
+        ]
 
-    # 按价格排序（需在过滤后）
-    if sort_by == 'price_asc':
-        cards.sort(key=lambda c: c.get("min_rent") or 0)
-    elif sort_by == 'price_desc':
-        cards.sort(key=lambda c: c.get("min_rent") or 0, reverse=True)
+    # 地理位置也必须在分页前过滤，避免前一页非匹配项挤掉后续结果。
+    if has_radius_filter:
+        radius_lat = float(near_lat)
+        radius_lng = float(near_lng)
+        radius_km = float(near_distance_km)
+        buildings = [
+            building
+            for building in buildings
+            if building.latitude is not None
+            and building.longitude is not None
+            and _haversine(
+                radius_lat,
+                radius_lng,
+                float(building.latitude),
+                float(building.longitude),
+            ) <= radius_km
+        ]
 
+    await annotate_effective_inventory(
+        session,
+        (unit_type for building in buildings for unit_type in (building.unit_types or [])),
+    )
+
+    # 批量加载安全评分（InstitutePOI.safety_data）
+    safety_map: dict[int, float | None] = {}
+    if buildings:
+        try:
+            from app.models.poi import InstitutePOI
+            poi_stmt = select(InstitutePOI.institute_id, InstitutePOI.safety_data).where(
+                InstitutePOI.institute_id.in_([b.id for b in buildings])
+            )
+            poi_rows = (await session.execute(poi_stmt)).all()
+            for institute_id, safety_data in poi_rows:
+                if safety_data and isinstance(safety_data, dict):
+                    score = safety_data.get("safety_score")
+                    if score is not None:
+                        try:
+                            safety_map[institute_id] = float(score)
+                        except (ValueError, TypeError):
+                            pass
+        except Exception:
+            logger.exception("批量加载安全评分失败")
+
+    cards = [
+        _build_card(
+            building,
+            price_min=price_min,
+            price_max=price_max,
+            property_type=property_type,
+        )
+        for building in buildings
+    ]
+    for card in cards:
+        card["safety_score"] = safety_map.get(card["institute_id"])
+
+    # 只有存在 Python 后置过滤时才在内存分页；普通路径已由数据库分页。
+    if needs_post_filter:
+        return cards[skip:skip + page_limit]
     return cards
 
 
@@ -176,9 +502,12 @@ async def search_public_buildings(
     district: str | None = Query(default=None),
     country: str | None = Query(default=None),
     city: str | None = Query(default=None),
+    institute_id: int | None = Query(default=None, ge=1),
+    institute_ids: list[int] | None = Query(default=None),
     price_min: int | None = Query(default=None),
     price_max: int | None = Query(default=None),
     property_type: str | None = Query(default=None),
+    amenities: list[str] | None = Query(default=None),
     sort_by: str | None = Query(default=None),
     near_lat: float | None = Query(default=None),
     near_lng: float | None = Query(default=None),
@@ -189,7 +518,9 @@ async def search_public_buildings(
     """公开搜索——按名称/区域/价格/户型搜索公寓，返回卡片级数据"""
     return await _search_buildings(
         session, q=q, district=district, country=country, city=city,
+        institute_id=institute_id, institute_ids=institute_ids,
         price_min=price_min, price_max=price_max, property_type=property_type,
+        amenities=amenities,
         sort_by=sort_by, near_lat=near_lat, near_lng=near_lng,
         near_distance_km=near_distance_km, skip=skip, limit=limit,
     )
@@ -207,8 +538,9 @@ async def list_buildings(
             .where(Institute.status != InstituteStatus.suspended)  # 排除已删除
             .order_by(Institute.id.desc())
             .offset(skip).limit(limit))
-    if current_user.role.value != "admin":
-        stmt = stmt.where(Institute.created_by == current_user.id)
+    scope = managed_institute_filter(current_user)
+    if scope is not None:
+        stmt = stmt.where(scope)
     result = await session.scalars(stmt)
     return [{
         "id": b.id, "name": b.name, "address": b.address,
@@ -217,7 +549,8 @@ async def list_buildings(
         "contact_phone": b.contact_phone, "contact_email": b.contact_email,
         "logo_url": b.logo_url, "description": b.description,
         "has_api": b.has_api, "status": b.status.value,
-        "created_by": b.created_by, "created_at": b.created_at.isoformat() if b.created_at else None,
+        "created_by": b.created_by, "bm_id": b.bm_id,
+        "created_at": b.created_at.isoformat() if b.created_at else None,
         "latitude": float(b.latitude) if b.latitude else None,
         "longitude": float(b.longitude) if b.longitude else None,
         "business_id": b.business_id,
@@ -245,6 +578,8 @@ async def create_building(
     contact_email = body.contact_email.strip() if body.contact_email else None
     description = body.description.strip() if body.description else None
     amenities = body.amenities or None
+    manager_wechat_qr = _move_qr_from_temp(body.manager_wechat_qr)
+    bm_wechat_qr = _move_qr_from_temp(body.bm_wechat_qr)
 
     # ── 2. 同名检查（同一房东下不允许重名） ──
     existing = await session.scalar(
@@ -278,6 +613,9 @@ async def create_building(
         amenities=amenities,
         female_only=body.female_only,
         couples_allowed=body.couples_allowed,
+        bm_id=body.bm_id if current_user.role.value == "admin" else current_user.id,
+        bm_wechat=body.bm_wechat.strip() if body.bm_wechat else None,
+        bm_wechat_qr=bm_wechat_qr,
         latitude=Decimal(str(lat)) if lat is not None and str(lat).strip() else None,
         longitude=Decimal(str(lng)) if lng is not None and str(lng).strip() else None,
         status=InstituteStatus.active,
@@ -339,6 +677,7 @@ async def create_building(
     manager_name = body.manager_name.strip() if body.manager_name else ""
     manager_phone = body.manager_phone.strip() if body.manager_phone else ""
     manager_email = body.manager_email.strip() if body.manager_email else ""
+    manager_wechat = body.manager_wechat.strip() if body.manager_wechat else ""
     if manager_name:
         from app.models.building_staff import BuildingStaff
         staff = BuildingStaff(
@@ -346,6 +685,8 @@ async def create_building(
             name=manager_name,
             role="manager",
             phone=manager_phone or None,
+            wechat=manager_wechat or None,
+            wechat_qr=manager_wechat_qr,
             notes=manager_email or None,
         )
         session.add(staff)
@@ -362,6 +703,7 @@ async def create_building(
         "description": building.description,
         "status": building.status.value,
         "created_by": building.created_by,
+        "bm_id": building.bm_id,
         "created_at": building.created_at.isoformat() if building.created_at else None,
         "latitude": float(building.latitude) if building.latitude else None,
         "longitude": float(building.longitude) if building.longitude else None,
@@ -384,15 +726,16 @@ async def list_deleted_buildings(
             .where(Institute.status == InstituteStatus.suspended)
             .order_by(Institute.updated_at.desc())
             .offset(skip).limit(limit))
-    if current_user.role.value != "admin":
-        stmt = stmt.where(Institute.created_by == current_user.id)
+    scope = managed_institute_filter(current_user)
+    if scope is not None:
+        stmt = stmt.where(scope)
     result = await session.scalars(stmt)
     return [{
         "id": b.id, "name": b.name, "address": b.address,
         "country": b.country, "city": b.city, "district": b.district,
         "street": b.street, "postal_code": b.postal_code,
         "contact_phone": b.contact_phone, "description": b.description,
-        "status": b.status.value, "created_by": b.created_by,
+        "status": b.status.value, "created_by": b.created_by, "bm_id": b.bm_id,
         "created_at": b.created_at.isoformat() if b.created_at else None,
         "updated_at": b.updated_at.isoformat() if b.updated_at else None,
         "latitude": float(b.latitude) if b.latitude else None,
@@ -411,6 +754,8 @@ async def get_building(
     b = await session.get(Institute, building_id)
     if not b:
         raise HTTPException(status_code=404, detail="楼栋不存在")
+    if not await can_manage_institute(session, current_user, building_id):
+        raise HTTPException(status_code=403, detail="无权查看该公寓")
     return {
         "id": b.id, "name": b.name, "address": b.address,
         "country": b.country, "city": b.city, "district": b.district,
@@ -418,7 +763,7 @@ async def get_building(
         "contact_phone": b.contact_phone, "contact_email": b.contact_email,
         "logo_url": b.logo_url, "description": b.description,
         "has_api": b.has_api, "status": b.status.value,
-        "created_by": b.created_by,
+        "created_by": b.created_by, "bm_id": b.bm_id,
         "created_at": b.created_at.isoformat() if b.created_at else None,
         "latitude": float(b.latitude) if b.latitude else None,
         "longitude": float(b.longitude) if b.longitude else None,
@@ -443,7 +788,13 @@ async def get_tenant_building_detail(
 ) -> dict:
     """租客端公寓详情 — 返回楼栋 + 户型 + 图片"""
     b = await session.get(Institute, building_id,
-        options=[selectinload(Institute.unit_types), selectinload(Institute.images)])
+        options=[
+            selectinload(Institute.unit_types),
+            selectinload(Institute.images),
+            selectinload(Institute.bm),
+            selectinload(Institute.creator),
+            selectinload(Institute.staff),
+        ])
     if not b or b.status != InstituteStatus.active:
         raise HTTPException(status_code=404, detail="楼栋不存在")
 
@@ -472,6 +823,44 @@ async def get_tenant_building_detail(
             "created_at": ut.created_at.isoformat() if ut.created_at else None,
         })
 
+    # 安全评分
+    safety_score = None
+    try:
+        from app.models.poi import InstitutePOI
+        poi_row = await session.get(InstitutePOI, b.id)
+        if poi_row and isinstance(poi_row.safety_data, dict):
+            raw = poi_row.safety_data.get("safety_score")
+            if raw is not None:
+                safety_score = float(raw)
+    except Exception:
+        pass
+
+    staff = [
+        {
+            "id": item.id,
+            "name": item.name,
+            "role": item.role,
+            "phone": item.phone,
+            "wechat": item.wechat,
+            "wechat_qr": item.wechat_qr,
+            "notes": item.notes,
+        }
+        for item in sorted(b.staff or [], key=lambda x: (0 if x.role == "manager" else 1, x.id))
+    ]
+    manager_staff = next((item for item in staff if item["role"] == "manager"), None)
+    bm_wechat = (
+        b.bm_wechat
+        or (b.bm.wechat if b.bm else None)
+        or (b.creator.wechat if b.creator else None)
+        or (manager_staff or {}).get("wechat")
+    )
+    bm_wechat_qr = (
+        b.bm_wechat_qr
+        or (b.bm.wechat_qr if b.bm else None)
+        or (b.creator.wechat_qr if b.creator else None)
+        or (manager_staff or {}).get("wechat_qr")
+    )
+
     return {
         "id": b.id, "name": b.name, "name_cn": b.name_cn,
         "address": b.address,
@@ -488,13 +877,16 @@ async def get_tenant_building_detail(
         "building_type": b.building_type,
         "total_floors": b.total_floors, "year_built": b.year_built,
         "total_units": b.total_units, "has_elevator": bool(b.has_elevator),
-        "bm_wechat": b.bm_wechat, "bm_wechat_qr": b.bm_wechat_qr,
+        "bm_wechat": bm_wechat,
+        "bm_wechat_qr": bm_wechat_qr,
         "status": b.status.value if hasattr(b.status, 'value') else str(b.status),
         "business_id": b.business_id,
         "images": [{"id": img.id, "filename": img.filename, "original_name": img.original_name,
                      "sort_order": img.sort_order, "is_primary": img.is_primary}
                    for img in sorted(b.images or [], key=lambda x: x.sort_order)],
         "unit_types": uts,
+        "staff": staff,
+        "safety_score": safety_score,
     }
 
 
@@ -507,8 +899,8 @@ async def update_building(
     b = await session.get(Institute, building_id)
     if not b:
         raise HTTPException(status_code=404, detail="楼栋不存在")
-    if b.created_by != current_user.id and current_user.role.value != "admin":
-        raise HTTPException(status_code=403, detail="无权修改此楼栋，您只能修改自己创建的公寓")
+    if not await can_manage_institute(session, current_user, building_id):
+        raise HTTPException(status_code=403, detail="无权修改该公寓")
 
     # 获取客户端实际发送的字段（排除未设置的）
     data = body.model_dump(exclude_unset=True)
@@ -530,12 +922,20 @@ async def update_building(
 
     # 基础字段更新（包含结构化地址字段）
     text_fields = ["name", "address", "country", "city", "district", "street",
-                   "postal_code", "contact_phone", "contact_email", "description"]
+                   "postal_code", "contact_phone", "contact_email", "description",
+                   "bm_wechat"]
     for field in text_fields:
         if field in data and data[field] is not None:
             val = str(data[field]).strip()
             if val:
                 setattr(b, field, val)
+
+    if "bm_id" in data and current_user.role.value != "admin":
+        raise HTTPException(status_code=403, detail="只有管理员可以变更公寓 BM")
+    if "bm_id" in data:
+        b.bm_id = data["bm_id"]
+    if "bm_wechat_qr" in data:
+        b.bm_wechat_qr = _move_qr_from_temp(data["bm_wechat_qr"])
 
     # amenities 数组
     if "amenities" in data:
@@ -588,6 +988,11 @@ async def update_building(
     manager_name = body.manager_name.strip() if body.manager_name else ""
     manager_phone = body.manager_phone.strip() if body.manager_phone else ""
     manager_email = body.manager_email.strip() if body.manager_email else ""
+    manager_wechat = body.manager_wechat.strip() if body.manager_wechat else ""
+    manager_wechat_qr = (
+        _move_qr_from_temp(data["manager_wechat_qr"])
+        if "manager_wechat_qr" in data else None
+    )
     if manager_name:
         from app.models.building_staff import BuildingStaff
         existing_staff = await session.scalar(
@@ -599,6 +1004,9 @@ async def update_building(
         if existing_staff:
             existing_staff.name = manager_name
             existing_staff.phone = manager_phone or None
+            existing_staff.wechat = manager_wechat or None
+            if "manager_wechat_qr" in data:
+                existing_staff.wechat_qr = manager_wechat_qr
             existing_staff.notes = manager_email or None
         else:
             staff = BuildingStaff(
@@ -606,6 +1014,8 @@ async def update_building(
                 name=manager_name,
                 role="manager",
                 phone=manager_phone or None,
+                wechat=manager_wechat or None,
+                wechat_qr=manager_wechat_qr,
                 notes=manager_email or None,
             )
             session.add(staff)
@@ -632,6 +1042,38 @@ async def update_building(
     }
 
 
+@router.post("/{building_id}/offline")
+async def offline_building(
+    building_id: int,
+    session: AsyncSession = Depends(get_db_session),
+    current_user: User = Depends(require_landlord),
+) -> dict:
+    """下架公寓但保留户型原始状态和全部历史业务。"""
+    from app.services.listing_lifecycle_service import ListingLifecycleService
+
+    try:
+        building = await ListingLifecycleService(session).offline_building(building_id, current_user)
+    except Exception as exc:
+        raise _lifecycle_http_error(exc) from exc
+    return {"id": building.id, "status": building.status.value}
+
+
+@router.post("/{building_id}/publish")
+async def publish_building(
+    building_id: int,
+    session: AsyncSession = Depends(get_db_session),
+    current_user: User = Depends(require_landlord),
+) -> dict:
+    """资料完整时重新上架公寓。"""
+    from app.services.listing_lifecycle_service import ListingLifecycleService
+
+    try:
+        building = await ListingLifecycleService(session).publish_building(building_id, current_user)
+    except Exception as exc:
+        raise _lifecycle_http_error(exc) from exc
+    return {"id": building.id, "status": building.status.value}
+
+
 @router.delete("/{building_id}")
 async def delete_building(
     building_id: int,
@@ -639,36 +1081,19 @@ async def delete_building(
     current_user: User = Depends(require_landlord),
 ) -> dict:
     """级联软删除：公寓 → 户型 全部进回收站"""
-    from datetime import datetime
-    from app.models.unit_type import UnitType
-
     b = await session.get(Institute, building_id)
     if not b:
         raise HTTPException(status_code=404, detail="楼栋不存在")
-    if b.created_by != current_user.id and current_user.role.value != "admin":
+    if not await can_manage_institute(session, current_user, building_id):
         raise HTTPException(status_code=403, detail="无权删除此楼栋")
 
-    now = datetime.utcnow()
-
-    # 1. 软删除所有下属户型（Room 表已在三层改两层重构中移除）
-    ut_result = await session.execute(
-        select(UnitType).where(UnitType.institute_id == building_id, UnitType.deleted_at.is_(None))
-    )
-    unit_types = ut_result.scalars().all()
-    for ut in unit_types:
-        ut.deleted_at = now
-
-    # 2. 停用公寓本身
-    b.status = InstituteStatus.suspended
-    await session.commit()
+    from app.services.listing_lifecycle_service import ListingLifecycleService
 
     try:
-        from app.models.audit_log import AuditLog
-        log = AuditLog(action="删除公寓", resource_type="building", resource_id=building_id,
-                       details={"公寓名": b.name, "级联删除户型": len(unit_types)})
-        session.add(log); await session.commit()
-    except Exception: pass
-    return {"ok": True, "cascaded_unit_types": len(unit_types)}
+        batch = await ListingLifecycleService(session).move_building_to_recycle_bin(building_id, current_user)
+    except Exception as exc:
+        raise _lifecycle_http_error(exc) from exc
+    return {"ok": True, "cascaded_unit_types": len(batch.unit_types)}
 
 
 @router.post("/{building_id}/restore")
@@ -678,34 +1103,15 @@ async def restore_building(
     current_user: User = Depends(require_landlord),
 ) -> dict:
     """级联恢复：公寓 → 户型 全部恢复"""
-    from app.models.unit_type import UnitType
+    from app.services.listing_lifecycle_service import ListingLifecycleService
 
-    b = await session.get(Institute, building_id)
-    if not b:
-        raise HTTPException(status_code=404, detail="楼栋不存在")
-    if b.status != InstituteStatus.suspended:
-        raise HTTPException(status_code=400, detail="该公寓不在回收站中")
-    if b.created_by != current_user.id and current_user.role.value != "admin":
-        raise HTTPException(status_code=403, detail="无权操作")
-
-    b.status = InstituteStatus.active
-
-    # 恢复下属户型（Room 表已在三层改两层重构中移除）
-    ut_result = await session.execute(
-        select(UnitType).where(UnitType.institute_id == building_id, UnitType.deleted_at.isnot(None))
-    )
-    unit_types = ut_result.scalars().all()
-    for ut in unit_types:
-        ut.deleted_at = None
-
-    await session.commit()
     try:
-        from app.models.audit_log import AuditLog
-        log = AuditLog(action="恢复公寓", resource_type="building", resource_id=building_id,
-                       details={"公寓名": b.name, "恢复户型": len(unit_types)})
-        session.add(log); await session.commit()
-    except Exception: pass
-    return {"ok": True, "id": b.id, "name": b.name, "restored_unit_types": len(unit_types)}
+        building, restored = await ListingLifecycleService(session).restore_building_from_recycle_bin(
+            building_id, current_user
+        )
+    except Exception as exc:
+        raise _lifecycle_http_error(exc) from exc
+    return {"ok": True, "id": building.id, "name": building.name, "restored_unit_types": restored}
 
 
 @router.delete("/{building_id}/hard", status_code=204)
@@ -720,8 +1126,17 @@ async def hard_delete_building(
     b = await session.get(Institute, building_id)
     if not b:
         raise HTTPException(status_code=404, detail="楼栋不存在")
+    if not await can_manage_institute(session, current_user, building_id):
+        raise HTTPException(status_code=403, detail="无权管理该公寓")
     if b.status != InstituteStatus.suspended:
         raise HTTPException(status_code=400, detail="请先将公寓移入回收站再硬删除")
+
+    from app.services.listing_lifecycle_service import ListingLifecycleService
+
+    try:
+        await ListingLifecycleService(session).ensure_hard_delete_allowed(building_id=building_id)
+    except Exception as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
     # 硬删除下属户型（Room 表已在三层改两层重构中移除）
     ut_result = await session.execute(
