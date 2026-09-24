@@ -1,4 +1,10 @@
-"""Structured logging, request/response middleware, and global exception handlers."""
+"""Structured logging, request/response middleware, and global exception handlers.
+
+日志输出策略（行业标准双写）：
+  - 终端：保持不变（dev 彩色 / prod JSON）
+  - 文件：logs/app.log（全量，按天轮转，保留 30 天）
+           logs/error.log（仅 ERROR，方便快速定位故障）
+"""
 
 from __future__ import annotations
 
@@ -11,6 +17,8 @@ import traceback
 import uuid
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
+from logging.handlers import TimedRotatingFileHandler
+from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, Request, Response
@@ -22,6 +30,24 @@ from starlette.responses import JSONResponse
 from app.core.config import get_settings
 
 settings = get_settings()
+
+# ── 日志文件目录：backend/logs/ ──
+_LOG_DIR = Path(__file__).resolve().parent.parent.parent / "logs"
+
+# ── 无 ANSI 颜色的纯文本格式（供文件日志使用）──
+class PlainTextFormatter(logging.Formatter):
+    """纯文本格式化器，不含 ANSI 颜色码，适合写入文件。
+    包含异常堆栈，方便从日志文件直接定位问题。"""
+
+    def format(self, record: logging.LogRecord) -> str:
+        base = f"{record.levelname:<8} {record.name}: {record.getMessage()}"
+        if hasattr(record, "request_id") and record.request_id:
+            base = f"[{record.request_id[:8]}] {base}"
+        # 异常堆栈信息（与 ColoredFormatter 不同，文件需要完整 traceback）
+        if record.exc_info and record.exc_info[0]:
+            import traceback
+            base += "\n" + "".join(traceback.format_exception(*record.exc_info))
+        return base
 
 SENSITIVE_FIELDS = {"password", "phone", "email", "secret", "token", "authorization", "cookie"}
 SENSITIVE_PATTERNS = [
@@ -69,32 +95,62 @@ class ColoredFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
         color = self.COLORS.get(record.levelno, "")
         base = f"{color}{record.levelname:<8}{self.RESET} {record.name}: {record.getMessage()}"
-        if hasattr(record, "request_id"):
+        if hasattr(record, "request_id") and record.request_id:
             base = f"[{record.request_id[:8]}] {base}"
         return base
 
 
 def setup_logging() -> None:
-    """Configure root logger with structured JSON (prod) or colored console (dev)."""
-    import io
+    """Configure root logger：终端（彩色/JSON）+ 文件（纯文本双写）。"""
     root = logging.getLogger()
-    root.setLevel(logging.DEBUG if settings.debug else logging.INFO)
+    is_test_environment = settings.environment in {"ci", "test"}
+    root.setLevel(logging.INFO if is_test_environment else logging.DEBUG if settings.debug else logging.INFO)
 
     for handler in root.handlers[:]:
         root.removeHandler(handler)
 
-    utf8_stream = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
-
+    # ── 1. 终端 handler（保持原有行为）──
     if settings.environment == "production":
-        handler = logging.StreamHandler(utf8_stream)
-        handler.setFormatter(JsonFormatter())
-        handler.setLevel(logging.INFO)
+        console_handler = logging.StreamHandler(sys.stdout)
+        console_handler.setFormatter(JsonFormatter())
+        console_handler.setLevel(logging.INFO)
     else:
-        handler = logging.StreamHandler(utf8_stream)
-        handler.setFormatter(ColoredFormatter())
-        handler.setLevel(logging.DEBUG)
+        console_handler = logging.StreamHandler(sys.stdout)
+        console_handler.setFormatter(ColoredFormatter())
+        console_handler.setLevel(logging.INFO if is_test_environment else logging.DEBUG)
 
-    root.addHandler(handler)
+    root.addHandler(console_handler)
+
+    # ── 2. 文件 handler（行业标准双写）──
+    if is_test_environment:
+        return
+
+    _LOG_DIR.mkdir(parents=True, exist_ok=True)
+    file_fmt = PlainTextFormatter()
+
+    # 全量日志：按天轮转，保留 30 天
+    app_handler = TimedRotatingFileHandler(
+        filename=str(_LOG_DIR / "app.log"),
+        when="midnight",
+        interval=1,
+        backupCount=30,
+        encoding="utf-8",
+    )
+    app_handler.setFormatter(file_fmt)
+    app_handler.setLevel(logging.DEBUG)
+    root.addHandler(app_handler)
+
+    # 错误日志：仅 ERROR 及以上，方便快速定位故障
+    error_handler = TimedRotatingFileHandler(
+        filename=str(_LOG_DIR / "error.log"),
+        when="midnight",
+        interval=1,
+        backupCount=30,
+        encoding="utf-8",
+    )
+    error_handler.setFormatter(file_fmt)
+    error_handler.setLevel(logging.ERROR)
+    root.addHandler(error_handler)
 
     # Quiet noisy third-party loggers in production
     if settings.environment == "production":
@@ -138,8 +194,9 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
             response = await call_next(request)
         except Exception:
             duration_ms = (time.monotonic() - start) * 1000
-            logger.error(
-                "Unhandled exception",
+            logger.exception(
+                "Unhandled exception in %s %s",
+                request.method, request.url.path,
                 extra={
                     "request_id": request_id,
                     "method": request.method,
@@ -223,25 +280,24 @@ async def http_exception_handler(request: Request, exc: StarletteHTTPException) 
 
 
 async def generic_exception_handler(request: Request, exc: Exception) -> JSONResponse:
-    msg = str(exc) if settings.debug else "Internal server error"
     error_type = type(exc).__name__
+    request_id = getattr(request.state, "request_id", None)
 
-    # 开发环境：打印简洁的错误摘要到控制台
-    if settings.debug:
-        import os as _os
-        _tb = traceback.extract_tb(exc.__traceback__)[-1] if exc.__traceback__ else None
-        _loc = f"{_os.path.basename(_tb.filename)}:{_tb.lineno}" if _tb else "?"
-        logging.getLogger("app.error").error(
-            "❌ %s → %s: %s [%s]", request.method, request.url.path, msg, _loc
-        )
-    else:
-        logging.getLogger("app.error").exception(
-            "Unhandled exception on %s %s",
-            request.method, request.url.path,
-            extra={"request_id": getattr(request.state, "request_id", None)},
-        )
+    # 完整技术细节仅写入日志，不返回给客户端
+    import os as _os
+    _tb = traceback.extract_tb(exc.__traceback__)[-1] if exc.__traceback__ else None
+    _loc = f"{_os.path.basename(_tb.filename)}:{_tb.lineno}" if _tb else "?"
+    logging.getLogger("app.error").exception(
+        "❌ %s → %s: %s [%s]",
+        request.method, request.url.path, str(exc), _loc,
+        extra={"request_id": request_id},
+    )
 
-    return _build_error_response(500, msg, error_type)
+    # 返回用户可读的错误提示，技术细节通过 request_id 在日志中追溯
+    user_msg = f"服务器内部错误，请稍后重试"
+    if request_id:
+        user_msg += f" (ID: {request_id[:8]})"
+    return _build_error_response(500, user_msg, error_type)
 
 
 def register_exception_handlers(app: FastAPI) -> None:

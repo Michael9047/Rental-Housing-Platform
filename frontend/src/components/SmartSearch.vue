@@ -148,7 +148,7 @@
                 >
                   <el-icon><House /></el-icon>
                   <span class="item-name">{{ prop.title }}</span>
-                  <span class="item-price" v-if="prop.price_monthly">¥{{ prop.price_monthly }}/月</span>
+                  <span class="item-price" v-if="prop.price_monthly">¥{{ prop.price_monthly }}{{ (prop as any).rent_period === 'weekly' ? '/周' : '/月' }}</span>
                 </div>
               </div>
             </div>
@@ -173,6 +173,9 @@ import { ElMessage } from 'element-plus'
 import { Search, Location, House, Microphone, Loading } from '@element-plus/icons-vue'
 import { School } from '@element-plus/icons-vue'
 import api from '@/services/api'
+import { createLogger } from '@/utils/logger'
+
+const log = createLogger('SmartSearch')
 
 interface SuggestionCity {
   type: 'city'
@@ -212,6 +215,8 @@ interface SuggestionProperty {
   title: string
   district: string
   price_monthly: number | null
+  /** main 搜索建议可能同时返回户型 ID 与所属公寓 ID。 */
+  institute_id?: number | null
   query: { property_id: number }
 }
 
@@ -275,7 +280,7 @@ async function fetchSuggestions(searchQuery?: string) {
       popularUniversities.value = data.popular_universities || []
     }
   } catch (err) {
-    console.error('获取搜索建议失败:', err)
+    log.error('获取搜索建议失败', { source: 'suggestions' }, err)
   } finally {
     loading.value = false
   }

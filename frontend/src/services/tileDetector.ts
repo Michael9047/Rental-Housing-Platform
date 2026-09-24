@@ -1,153 +1,70 @@
-// 地图瓦片加载 —— IP 地理位置预判 + tileerror 兜底
-// 每次页面加载实时检测 IP，国内走高德、海外走 OSM；tileerror 自动切备用源
-
+// 地图瓦片服务：国内房源使用高德，海外房源使用 Google
 import L from 'leaflet'
 
-/** OSM 官方瓦片源 —— 国内使用 */
-const OSM_URL = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png'
-/** OSM 法国 Humanitarian（OSM 备用镜像） */
-const OSMFR_HOT_URL = 'https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png'
-/** Google Maps 瓦片 —— 海外使用（标准地图样式，含中文标注） */
+const AMAP_URL = 'https://webrd0{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=7&x={x}&y={y}&z={z}'
 const GM_TILE_URL = 'https://mt{s}.google.com/vt/lyrs=m&hl=zh-CN&x={x}&y={y}&z={z}'
-/** 连续 tileerror 阈值 */
-const ERROR_THRESHOLD = 2
+const THRESHOLD = 3
 
-/** 内存缓存：同一页面内多个地图组件共享检测结果，避免重复请求 */
-let regionCache: 'CN' | 'OS' | null = null
+export type TileProvider = 'amap' | 'google'
+
+/** 根据房源国家选择地图源；国家缺失时按海外房源处理。 */
+export function getTileProvider(country?: string | null): TileProvider {
+  const normalized = country?.trim().toUpperCase()
+  return ['CN', 'CHN', 'CHINA', '中国', '中华人民共和国'].includes(normalized || '')
+    ? 'amap'
+    : 'google'
+}
 
 export interface TileHandle {
   destroy(): void
+  attribution: string
 }
 
-// ── IP 地理位置检测 ──────────────────────────────
+function _layer(
+  map: L.Map,
+  primaryUrl: string, primaryOpts: Record<string, any>,
+  fallbackUrl: string, fallbackOpts: Record<string, any>,
+): TileHandle {
+  let cur = L.tileLayer(primaryUrl, primaryOpts as any)
+  const fb = L.tileLayer(fallbackUrl, fallbackOpts as any)
+  let errs = 0
+  let done = false
 
-/**
- * 判断用户是否在中国境内（基于当下网络环境，每次页面加载实时检测）。
- * 仅内存缓存——同一页面内多次调用共享结果，刷新页面重新检测。
- * 不依赖浏览器语言（留学生中文系统不能说明地理位置）。
- */
-async function detectRegion(): Promise<'CN' | 'OS'> {
-  if (regionCache) return regionCache
+  function onErr() {
+    if (done) return
+    if (++errs >= THRESHOLD) {
+      done = true
+      map.removeLayer(cur)
+      cur = fb
+      cur.addTo(map)
+    }
+  }
+  cur.on('tileerror', onErr)
+  cur.on('tileload', () => { errs = 0 })
+  cur.addTo(map)
 
-  try {
-    const res = await fetch('https://ip-api.com/json/?fields=countryCode', {
-      signal: AbortSignal.timeout(3000),
-    })
-    const data = await res.json()
-    const region: 'CN' | 'OS' = data.countryCode === 'CN' ? 'CN' : 'OS'
-    regionCache = region
-    return region
-  } catch {
-    // IP 查询失败 → 走 OSM + tileerror 回退 HOT
-    return 'OS'
+  return {
+    attribution: (primaryOpts.attribution as string) || '',
+    destroy() {
+      try { cur.off('tileerror', onErr); map.removeLayer(cur) } catch { /* ok */ }
+    },
   }
 }
 
-/** 清除内存缓存（tileerror 触发自动调用，以便同一页面内重试 OSM） */
-function clearRegionCache() {
-  regionCache = null
-}
-
-// ── 瓦片图层工厂 ──────────────────────────────────
-
-//** Google Maps 瓦片（海外用户），带 tileerror 回退 OSM */
-function createGMLayer(map: L.Map): TileHandle {
-  let currentLayer = L.tileLayer(GM_TILE_URL, {
+export async function loadTiles(map: L.Map, country?: string | null): Promise<TileHandle> {
+  const amapOpts = {
+    maxZoom: 18,
+    subdomains: ['1', '2', '3', '4'],
+    attribution: '© 高德地图',
+  }
+  const gmOpts = {
     maxZoom: 20,
     subdomains: ['0', '1', '2', '3'],
-  } as any)
-
-  let errorCount = 0
-  let switched = false
-
-  function onError() {
-    if (switched) return
-    errorCount++
-    if (errorCount >= ERROR_THRESHOLD) {
-      switched = true
-      clearRegionCache()
-      map.removeLayer(currentLayer)
-      const fallback = createOSMLayerWithFallback(map)
-      currentLayer = fallback as any
-    }
+    attribution: '© Google',
   }
 
-  function onLoad() {
-    if (!switched) errorCount = 0
+  if (getTileProvider(country) === 'amap') {
+    return _layer(map, AMAP_URL, amapOpts, GM_TILE_URL, gmOpts)
   }
-
-  currentLayer.on('tileerror', onError)
-  currentLayer.on('tileload', onLoad)
-  currentLayer.addTo(map)
-
-  return {
-    destroy() {
-      currentLayer.off('tileerror', onError)
-      currentLayer.off('tileload', onLoad)
-      try { map.removeLayer(currentLayer) } catch { /* ignore */ }
-    },
-  }
-}
-
-/** OSM 主源 + tileerror 回退法国 Humanitarian */
-function createOSMLayerWithFallback(map: L.Map): TileHandle {
-  let currentLayer = L.tileLayer(OSM_URL, {
-    maxZoom: 19,
-    crossOrigin: 'anonymous' as any,
-  } as any)
-
-  let errorCount = 0
-  let switched = false
-
-  function onError() {
-    if (switched) return
-    errorCount++
-    if (errorCount >= ERROR_THRESHOLD) {
-      switched = true
-      map.removeLayer(currentLayer)
-      currentLayer = L.tileLayer(OSMFR_HOT_URL, {
-        maxZoom: 20,
-        subdomains: 'abc',
-        crossOrigin: 'anonymous' as any,
-      } as any)
-      currentLayer.addTo(map)
-    }
-  }
-
-  function onLoad() {
-    if (!switched) errorCount = 0
-  }
-
-  currentLayer.on('tileerror', onError)
-  currentLayer.on('tileload', onLoad)
-  currentLayer.addTo(map)
-
-  return {
-    destroy() {
-      currentLayer.off('tileerror', onError)
-      currentLayer.off('tileload', onLoad)
-      try { map.removeLayer(currentLayer) } catch { /* ignore */ }
-    },
-  }
-}
-
-// ── 公共入口 ─────────────────────────────────────
-
-/**
- * 根据用户地理位置加载最优瓦片源。
- * 国内 → OSM（GFW 屏蔽 Google），海外 → Google Maps。
- * tileerror 自动切换到备用源。
- */
-export async function loadTiles(map: L.Map): Promise<TileHandle> {
-  const region = await detectRegion()
-
-  if (region === 'CN') {
-    return createOSMLayerWithFallback(map)
-  }
-  return createGMLayer(map)
-}
-
-/** @deprecated 使用 loadTiles 代替 */
-export function loadOSMTiles(map: L.Map): TileHandle {
-  return createOSMLayerWithFallback(map)
+  return _layer(map, GM_TILE_URL, gmOpts, AMAP_URL, amapOpts)
 }

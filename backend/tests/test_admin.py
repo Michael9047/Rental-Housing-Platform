@@ -146,6 +146,49 @@ async def test_admin_update_user_role(
 
 
 @pytest.mark.asyncio
+async def test_admin_can_create_bm_account(
+    client: AsyncClient,
+    session_maker,
+) -> None:
+    from app.core.security import verify_password
+    from app.models.user import User
+
+    admin_payload = {
+        "username": "create_admin",
+        "email": "create_admin@example.com",
+        "password": "admin-pass",
+        "role": "admin",
+    }
+    await client.post("/api/v1/auth/register", json=admin_payload)
+    login = await client.post(
+        "/api/v1/auth/login",
+        json={"username_or_email": "create_admin", "password": "admin-pass"},
+    )
+    headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+
+    response = await client.post(
+        "/api/v1/admin/users",
+        headers=headers,
+        json={
+            "username": "new_bm",
+            "email": "new_bm@example.com",
+            "password": "temporary-password",
+            "role": "landlord",
+        },
+    )
+
+    assert response.status_code == 201
+    created = response.json()
+    assert created["role"] == "landlord"
+    assert "password_hash" not in created
+
+    async with session_maker() as session:
+        user = await session.get(User, created["id"])
+        assert user is not None
+        assert verify_password("temporary-password", user.password_hash)
+
+
+@pytest.mark.asyncio
 async def test_admin_audit_logs(
     client: AsyncClient,
 ) -> None:

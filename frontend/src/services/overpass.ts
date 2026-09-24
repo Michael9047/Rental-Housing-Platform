@@ -1,4 +1,7 @@
 /** POI 周边搜索 —— 国内高德 + 海外 Overpass 双引擎 */
+import { createLogger } from '@/utils/logger'
+
+const log = createLogger('Overpass')
 
 export interface OverpassPOI {
   id: number
@@ -57,7 +60,7 @@ export async function fetchAmapPOIs(
     })
     return dedupeAndFilter(raw, category)
   } catch (err) {
-    console.error('Amap POI query failed:', err)
+    log.error('高德 POI 查询失败', { provider: 'amap' }, err)
     return []
   }
 }
@@ -182,7 +185,7 @@ export async function fetchOverpassPOIs(
       })
     return dedupeAndFilter(raw, category)
   } catch (err) {
-    console.error('Overpass POI query failed:', err)
+    log.error('Overpass POI 查询失败', { provider: 'overpass' }, err)
     return []
   }
 }

@@ -8,14 +8,18 @@ class BookingEmergencyContactValidation(BaseModel):
     given_name_pinyin: str | None = None
     surname_pinyin: str | None = None
     relation: str | None = None
+    relationship: str | None = None
     birth_date: str | None = None
+    phone_country_code: str | None = None
     phone: str | None = None
     email: str | None = None
     gender: str | None = None
     region: str | None = None
+    address_line: str | None = None
     address_detail: str | None = None
     postal_code: str | None = None
     consultant_id: str | None = None
+    same_as_personal_address: bool | None = None
 
 
 class BookingEmergencyContactValidationRead(BaseModel):

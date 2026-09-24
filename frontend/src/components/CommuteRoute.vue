@@ -26,7 +26,7 @@
         <el-icon class="is-loading" :size="28"><Loading /></el-icon>
       </div>
       <!-- 右下角地图商标 -->
-      <div class="map-attribution">© OpenStreetMap contributors</div>
+      <div class="map-attribution">{{ mapAttribution }}</div>
     </div>
 
     <!-- 底部摘要（仅学校上下文时显示）-->
@@ -41,11 +41,15 @@
 import { ref, computed, watch, onMounted, onUnmounted, nextTick, shallowRef } from 'vue'
 import { Loading } from '@element-plus/icons-vue'
 import { commuteService, type RouteDetailResponse, type RouteSegment } from '@/services/commute'
+import { createLogger } from '@/utils/logger'
+import { loadTiles, type TileHandle } from '@/services/tileDetector'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import markerIcon2x from 'leaflet/dist/images/marker-icon-2x.png'
 import markerIcon from 'leaflet/dist/images/marker-icon.png'
 import markerShadow from 'leaflet/dist/images/marker-shadow.png'
+
+const log = createLogger('CommuteRoute')
 
 // Fix Leaflet default icon paths
 delete (L.Icon.Default.prototype as any)._getIconUrl
@@ -96,22 +100,22 @@ buildModes()
 
 // ── Leaflet 地图 ──
 const mapContainer = ref<HTMLElement | null>(null)
+const mapAttribution = ref('')
 let mapInstance: L.Map | null = null
 let mapReady = false
+let _tileHandle: TileHandle | null = null
 const allLayers = shallowRef<L.Layer[]>([])
 
-function initMap() {
+async function initMap() {
   if (!mapContainer.value || mapReady) return
   mapInstance = L.map(mapContainer.value, {
     zoomControl: true,
     attributionControl: false,
   }).setView([30, 0], 2)
 
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    maxZoom: 19,
-  }).addTo(mapInstance)
+  _tileHandle = await loadTiles(mapInstance, props.country)
+  mapAttribution.value = _tileHandle.attribution
 
-  // 确保容器尺寸正确后再刷新地图
   setTimeout(() => {
     mapInstance?.invalidateSize()
   }, 200)
@@ -271,7 +275,7 @@ async function fetchRoute() {
     routeDetail.value = result
     drawSegments(result.segments, result.mode)
   } catch {
-    console.debug('路线详情获取失败')
+    log.debug('路线详情获取失败')
   } finally {
     loading.value = false
   }
@@ -292,6 +296,7 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  _tileHandle?.destroy()
   if (mapInstance) {
     mapInstance.remove()
     mapInstance = null

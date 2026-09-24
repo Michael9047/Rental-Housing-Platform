@@ -2,6 +2,11 @@ import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { useAuthStore } from '@/stores/auth'
 
+const scopedStoreMocks = vi.hoisted(() => ({
+  resetAgentChat: vi.fn(),
+  clearCart: vi.fn(),
+}))
+
 vi.mock('@/services/auth', () => ({
   authService: {
     login: vi.fn(),
@@ -12,6 +17,14 @@ vi.mock('@/services/auth', () => ({
 
 vi.mock('@/router', () => ({
   default: { push: vi.fn() },
+}))
+
+vi.mock('@/stores/agentChat', () => ({
+  useAgentChatStore: () => ({ reset: scopedStoreMocks.resetAgentChat }),
+}))
+
+vi.mock('@/stores/cart', () => ({
+  useCartStore: () => ({ clear: scopedStoreMocks.clearCart }),
 }))
 
 describe('useAuthStore', () => {
@@ -38,7 +51,7 @@ describe('useAuthStore', () => {
     expect(store.isLoggedIn).toBe(true)
   })
 
-  it('clears auth on logout', () => {
+  it('clears auth and user-scoped AI/cart state on logout', () => {
     localStorage.setItem('access_token', 'test-token')
     const store = useAuthStore()
     store.loadFromStorage()
@@ -46,6 +59,8 @@ describe('useAuthStore', () => {
     expect(store.isLoggedIn).toBe(false)
     expect(store.token).toBeNull()
     expect(store.user).toBeNull()
+    expect(scopedStoreMocks.resetAgentChat).toHaveBeenCalledOnce()
+    expect(scopedStoreMocks.clearCart).toHaveBeenCalledOnce()
   })
 
   it('isLandlord returns true for landlord role', () => {

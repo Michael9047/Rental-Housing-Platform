@@ -12,12 +12,16 @@ from app.core.security import (
     check_sms_rate_limit,
     consume_reset_token,
     hash_password,
+    mask_phone,
     store_reset_token,
     store_sms_code,
     verify_and_consume_sms_code,
+    verify_password,
 )
 from app.models.user import User, UserStatus
 from app.schemas.auth import (
+    ChangePasswordRequest,
+    ChangePhoneRequest,
     CurrentUserResponse,
     ForgotPasswordRequest,
     LoginRequest,
@@ -57,15 +61,12 @@ async def register(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="手机号注册需要提供短信验证码",
             )
-        logger.info(
-            "register: verifying SMS for phone=%s code=%s",
-            phone, sms_code,
-        )
+        logger.info("register: verifying SMS for phone=%s", mask_phone(phone))
         verified = await verify_and_consume_sms_code(phone, sms_code)
         if not verified:
             logger.warning(
-                "register: SMS verification FAILED for phone=%s code=%s",
-                phone, sms_code,
+                "register: SMS verification failed for phone=%s",
+                mask_phone(phone),
             )
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -168,6 +169,67 @@ async def read_current_user(current_user: User = Depends(get_current_user)) -> C
     return current_user
 
 
+# ── 账号安全 ──────────────────────────────────────────────────
+
+
+@router.post("/change-password")
+async def change_password(
+    req: ChangePasswordRequest,
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db_session),
+) -> dict:
+    """已登录用户修改密码"""
+    # 验证旧密码
+    if not verify_password(req.old_password, current_user.password_hash or ""):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="旧密码不正确",
+        )
+
+    # 更新密码
+    current_user.password_hash = hash_password(req.new_password)
+    await session.commit()
+
+    logger.info("User %d changed password", current_user.id)
+    return {"detail": "密码已修改"}
+
+
+@router.post("/change-phone")
+async def change_phone(
+    req: ChangePhoneRequest,
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db_session),
+) -> dict:
+    """已登录用户更换手机号（需短信验证）"""
+    new_phone = req.new_phone.strip()
+    sms_code = req.sms_code.strip()
+
+    # 验证短信验证码（发给新手机号）
+    verified = await verify_and_consume_sms_code(new_phone, sms_code)
+    if not verified:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="验证码错误或已过期",
+        )
+
+    # 检查新手机号是否已被其他用户绑定
+    stmt = select(User).where(User.phone == new_phone)
+    result = await session.scalars(stmt)
+    existing = result.first()
+    if existing and existing.id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="该手机号已被其他账号绑定",
+        )
+
+    # 更新手机号
+    current_user.phone = new_phone
+    await session.commit()
+
+    logger.info("User %d changed phone to %s", current_user.id, new_phone)
+    return {"detail": "手机号已修改"}
+
+
 # ── SMS 验证码 ──────────────────────────────────────────────
 
 
@@ -190,11 +252,11 @@ async def send_sms_code(
 
     # 存储到 Redis（5 分钟过期）
     await store_sms_code(phone, code, ttl=300)
-    logger.info("SMS code stored for phone=%s code=%s", phone, code)
+    logger.info("SMS code stored for phone=%s", mask_phone(phone))
 
     # 发送验证码短信
     sms = SmsService()
-    result = await sms.send(phone, template_param={"code": code, "min": "5"})
+    result = await sms.send_verification_code(phone, code=code, ttl_minutes=5)
 
     if result.get("status") == "failed":
         raise HTTPException(
@@ -259,10 +321,13 @@ async def phone_login(
     sms_code = req.sms_code.strip()
 
     # 1. 验证短信验证码
-    logger.info("phone-login: verifying SMS for phone=%s code=%s", phone, sms_code)
+    logger.info("phone-login: verifying SMS for phone=%s", mask_phone(phone))
     verified = await verify_and_consume_sms_code(phone, sms_code)
     if not verified:
-        logger.warning("phone-login: SMS verification FAILED for phone=%s code=%s", phone, sms_code)
+        logger.warning(
+            "phone-login: SMS verification failed for phone=%s",
+            mask_phone(phone),
+        )
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="验证码错误或已过期",

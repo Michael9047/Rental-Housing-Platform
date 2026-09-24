@@ -62,7 +62,7 @@
               <span class="drawer-title">{{ p.title }}</span>
               <span class="drawer-addr">📍 {{ p.district }} · {{ p.address }}</span>
               <span class="drawer-price">
-                ¥{{ numberFormat(p.price_monthly) }}/月 · {{ p.bedrooms }}室{{ p.bathrooms }}卫
+                ¥{{ numberFormat(p.price_monthly) }}{{ (p as any).rent_period === 'weekly' ? '/周' : '/月' }} · {{ p.bedrooms }}室{{ p.bathrooms }}卫
               </span>
             </div>
           </div>
@@ -77,6 +77,7 @@ import { ref, onMounted, onUnmounted, nextTick } from 'vue'
 import { ElMessage } from 'element-plus'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
+import { loadTiles, type TileHandle } from '@/services/tileDetector'
 import { mapService } from '@/services/map'
 import type { MapProperty, MapBounds } from '@/services/map'
 
@@ -99,6 +100,7 @@ const mapCountry = ref<string | undefined>(undefined)
 const viewportProperties = ref<MapProperty[]>([])
 
 let map: L.Map | null = null
+let _tileHandle: TileHandle | null = null
 let markerLayer = L.layerGroup()
 let clusterLayer = L.layerGroup()
 let debounceTimer: ReturnType<typeof setTimeout> | null = null
@@ -271,7 +273,7 @@ function buildPopupContent(p: MapProperty): string {
     <div class="map-popup">
       <h4>${escapeHtml(p.title)}</h4>
       <p class="popup-addr">📍 ${escapeHtml(p.district)} · ${escapeHtml(p.address)}</p>
-      <p class="popup-price">¥${numberFormat(p.price_monthly)}/月 · ${p.bedrooms}室${p.bathrooms}卫</p>
+      <p class="popup-price">¥${numberFormat(p.price_monthly)}${(p as any).rent_period === 'weekly' ? '/周' : '/月'} · ${p.bedrooms}室${p.bathrooms}卫</p>
       <a href="/property/${p.id}" class="popup-link">查看详情 →</a>
     </div>
   `
@@ -342,7 +344,7 @@ function flyToProperty(p: MapProperty) {
 }
 
 // ==================== 地图初始化 ====================
-function initMap() {
+async function initMap() {
   if (map) return
 
   map = L.map('map', {
@@ -351,12 +353,10 @@ function initMap() {
     zoomControl: true,
     minZoom: 3,
     maxZoom: 18,
+    attributionControl: false,
   })
 
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
-    maxZoom: 18,
-  }).addTo(map)
+  _tileHandle = await loadTiles(map)
 
   // 初始空图层
   markerLayer.addTo(map)
@@ -380,6 +380,7 @@ onMounted(() => {
 
 onUnmounted(() => {
   if (debounceTimer) clearTimeout(debounceTimer)
+  _tileHandle?.destroy(); _tileHandle = null
   map?.off('moveend', debouncedLoad)
   map?.off('zoomend', debouncedLoad)
   map?.remove()

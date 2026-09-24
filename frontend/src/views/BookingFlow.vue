@@ -24,7 +24,7 @@
         <div class="summary-right">
           <div class="summary-price">
             <span class="price-num">{{ formatPrice(Number(bookingFlow.property.price_monthly) || 0) }}</span>
-            <span class="price-unit">/月</span>
+            <span class="price-unit">{{ bookingFlow.property.rent_period === 'weekly' ? '/周' : '/月' }}</span>
           </div>
         </div>
       </div>
@@ -69,6 +69,8 @@ import LeaseStep from '@/components/booking/LeaseStep.vue'
 import PersonalInfoStep from '@/components/booking/PersonalInfoStep.vue'
 import AgreementStep from '@/components/booking/AgreementStep.vue'
 import { bookingService } from '@/services/booking'
+import { bookingDraftService } from '@/services/bookingDraft'
+import { toUserFriendly } from '@/services/api'
 
 const route = useRoute()
 const router = useRouter()
@@ -106,7 +108,8 @@ async function loadProperty() {
 
   loading.value = true
   try {
-    const property = await propertyStore.fetchById(propertyId.value)
+    await propertyStore.fetchById(propertyId.value)
+    const property = propertyStore.currentProperty
     if (property) {
       bookingFlow.setProperty(property)
       if (authStore.user) {
@@ -120,12 +123,31 @@ async function loadProperty() {
   }
 }
 
-function handleNextDate() {
-  bookingFlow.nextStep()
+async function handleNextDate() {
+  if (!bookingFlow.property || !bookingFlow.start_date) return
+  try {
+    await bookingDraftService.save(bookingFlow.property.id, {
+      move_in_date: bookingFlow.start_date,
+      current_step: 'lease_term',
+    })
+    bookingFlow.nextStep()
+  } catch (err: any) {
+    ElMessage.error(toUserFriendly(err))
+  }
 }
 
-function handleNextLease() {
-  bookingFlow.nextStep()
+async function handleNextLease() {
+  if (!bookingFlow.property || !bookingFlow.lease_months) return
+  try {
+    await bookingDraftService.save(bookingFlow.property.id, {
+      move_in_date: bookingFlow.start_date,
+      lease_months: bookingFlow.lease_months,
+      current_step: 'personal_info',
+    })
+    bookingFlow.nextStep()
+  } catch (err: any) {
+    ElMessage.error(toUserFriendly(err))
+  }
 }
 
 function handleInfoPrev() {
@@ -141,14 +163,13 @@ async function handleConfirmAgreements() {
   loading.value = true
   try {
     const result = await bookingService.create({
-      property_id: bookingFlow.property.id,
+      unit_type_id: bookingFlow.property.id,
+      institute_id: bookingFlow.property.institute_id,
       message: '',
       scheduled_date: bookingFlow.start_date,
       deposit_amount: bookingFlow.deposit_amount,
       service_fee: bookingFlow.service_fee,
-      // @ts-ignore
       lease_months: bookingFlow.lease_months,
-      // @ts-ignore
       application_data: {
         applicant: bookingFlow.applicant,
         guarantor: bookingFlow.guarantor,
@@ -163,10 +184,8 @@ async function handleConfirmAgreements() {
     const detail = err?.response?.data?.detail
     if (status === 409) {
       ElMessage.warning('您已对该房源发起过预约')
-    } else if (detail && typeof detail === 'string') {
-      ElMessage.error(detail)
     } else {
-      ElMessage.error('提交失败，请重试')
+      ElMessage.error(toUserFriendly(err))
     }
   } finally {
     loading.value = false

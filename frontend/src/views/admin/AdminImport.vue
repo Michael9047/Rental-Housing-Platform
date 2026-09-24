@@ -190,8 +190,11 @@ import { UploadFilled, CircleCheckFilled, CircleCloseFilled, Loading, RemoveFill
 import type { UploadFile } from 'element-plus'
 import { ElMessage } from 'element-plus'
 import { adminService } from '@/services/admin'
-import { extractErrorMessage } from '@/services/api'
+import { toUserFriendly } from '@/services/api'
 import type { ImportResult, ImportTask, RowResult } from '@/types/admin'
+import { createLogger } from '@/utils/logger'
+
+const log = createLogger('AdminImport')
 
 const selectedFile = ref<File | null>(null)
 const previewLoading = ref(false)
@@ -224,7 +227,7 @@ function handleFileRemove() { doReset() }
 async function handleFileChange(file: UploadFile) {
   const raw = file.raw
   if (!raw) return
-  console.log('[AdminImport] file changed:', raw.name, raw.size)
+  log.debug('文件变更', { name: raw.name, size: raw.size })
   selectedFile.value = raw
   importResult.value = null
   previewRows.value = []
@@ -232,13 +235,13 @@ async function handleFileChange(file: UploadFile) {
   previewLoading.value = true
   try {
     const data: any = await adminService.previewImport(raw)
-    console.log('[AdminImport] preview result:', data)
+    log.debug('预览结果', { previewId: data.preview_id, rows: data.rows?.length })
     previewId.value = data.preview_id
     previewRows.value = data.rows
     for (const r of data.rows) ignoreMap[r.row] = false
     ElMessage.success(`预览完成：${data.total_records} 行已解析`)
   } catch (err: any) {
-    ElMessage.error(extractErrorMessage(err) || '预览失败')
+    ElMessage.error(toUserFriendly(err))
     selectedFile.value = null
   } finally { previewLoading.value = false }
 }
@@ -278,7 +281,7 @@ async function doConfirm() {
     ElMessage.success(`导入完成：成功 ${result.success_records} 条，跳过 ${skipRows.length} 条`)
     fetchHistory()
   } catch (err: any) {
-    ElMessage.error(extractErrorMessage(err) || '导入失败')
+    ElMessage.error(toUserFriendly(err))
   } finally { confirming.value = false }
 }
 

@@ -54,6 +54,7 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
+import { toUserFriendly } from '@/services/api'
 import { workerService } from '@/services/repair'
 import { useAuthStore } from '@/stores/auth'
 import { WORKER_SCOPE_LABELS } from '@/types/repair'
@@ -102,16 +103,7 @@ async function doCreate() {
     skillsStr.value = ''
     await fetchData()
   } catch (e: any) {
-    const detail = e?.response?.data?.detail
-    if (Array.isArray(detail)) {
-      // FastAPI 422 validation errors
-      const msgs = detail.map((d: any) => d.msg || '').filter(Boolean).join('；')
-      ElMessage.error(msgs || '创建失败')
-    } else if (typeof detail === 'string') {
-      ElMessage.error(detail)
-    } else {
-      ElMessage.error('创建失败')
-    }
+    ElMessage.error(toUserFriendly(e))
   } finally {
     createLoading.value = false
   }

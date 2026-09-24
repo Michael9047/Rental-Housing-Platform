@@ -3,7 +3,7 @@
  */
 import type { PaymentResult } from '@/services/payment'
 
-export type PaymentResultKind = 'success' | 'failed' | 'expired' | 'review' | 'refunded' | 'cancelled' | 'pending' | 'unknown'
+export type PaymentResultKind = 'success' | 'awaiting_confirmation' | 'awaiting_signature' | 'failed' | 'expired' | 'review' | 'refunded' | 'cancelled' | 'pending' | 'unknown'
 
 /** 支付结果归类 — 可接受 PaymentResult 对象或原始状态字符串 */
 export function paymentResultKind(
@@ -12,7 +12,10 @@ export function paymentResultKind(
   if (!result) return 'unknown'
   const s = typeof result === 'string' ? result : (result.order_status || result.status)
   if (!s) return 'unknown'
-  if (s === 'paid' || (typeof result !== 'string' && result.paid_at)) return 'success'
+  // 支付成功只代表进入 BM 房号确认阶段，租客签署合同后才算预订成功。
+  if (s === 'contract_signed' || s === 'completed') return 'success'
+  if (s === 'contract_ready') return 'awaiting_signature'
+  if (s === 'paid' || (typeof result !== 'string' && result.paid_at)) return 'awaiting_confirmation'
   if (s === 'refunded') return 'refunded'
   if (s === 'cancelled') return 'cancelled'
   if (s === 'payment_expired') return 'expired'

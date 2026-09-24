@@ -1,65 +1,53 @@
 <template>
-  <div class="building-page">
-    <h2>🏢 公寓管理</h2>
-    <p class="sub">管理公寓信息，配置户型与人员。</p>
+  <BmPageShell eyebrow="BM WORKSPACE" title="公寓管理" description="维护公寓基础资料、展示状态，以及关联的户型和工作人员。">
 
-    <!-- 管理/回收站 切换 -->
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px">
+    <template #actions><div class="header-actions">
       <el-radio-group v-model="viewMode" size="small">
-        <el-radio-button value="active">📋 管理中</el-radio-button>
-        <el-radio-button value="trash">🗑️ 回收站</el-radio-button>
+        <el-radio-button value="active">管理中</el-radio-button>
+        <el-radio-button value="offline">已下架</el-radio-button>
+        <el-radio-button value="trash">回收站</el-radio-button>
       </el-radio-group>
-      <el-button v-if="viewMode==='active'" type="primary" @click="openCreate">+ 新建公寓</el-button>
-    </div>
+      <el-button v-if="viewMode==='active'" type="primary" @click="showSharedCreate=true">+ 新建公寓</el-button>
+    </div></template>
+
+    <template #summary><BmSummaryStrip :items="buildingSummary" :active-key="viewMode" @select="selectView" /></template>
+    <template #toolbar><div class="building-toolbar">
+      <el-input v-model="keyword" :prefix-icon="Search" clearable placeholder="搜索公寓名称、城市或地址" />
+      <span class="filter-result">当前显示 {{ viewMode==='trash' ? displayedTrashItems.length : displayedBuildings.length }} 个公寓</span>
+    </div></template>
 
     <!-- 管理模式：正常列表 -->
-    <el-table v-if="viewMode==='active'" :data="buildings" v-loading="loading" border stripe>
-      <el-table-column prop="name" label="公寓名称" min-width="160" />
-      <el-table-column prop="address" label="地址" min-width="200" show-overflow-tooltip />
+    <el-table v-if="viewMode!=='trash'" :data="displayedBuildings" v-loading="loading" stripe empty-text="当前标签下暂无公寓" class="building-table">
+      <el-table-column label="公寓" min-width="190"><template #default="{row}"><div class="primary-cell"><strong>{{ row.name }}</strong><span>{{ [row.city, row.country].filter(Boolean).join(' · ') || '地区待补充' }}</span></div></template></el-table-column>
+      <el-table-column prop="address" label="地址" min-width="220" show-overflow-tooltip><template #default="{row}">{{ row.address || '地址待补充' }}</template></el-table-column>
       <el-table-column prop="contact_phone" label="电话" width="130" />
-      <el-table-column label="操作" width="280" fixed="right">
+      <el-table-column label="状态" width="100">
+        <template #default="{row}"><el-tag :type="listingStatusTag(row.status)">{{ listingStatusLabel('building', row.status) }}</el-tag></template>
+      </el-table-column>
+      <el-table-column label="操作" width="240" fixed="right">
         <template #default="{row}">
-          <el-button size="small" @click="$router.push('/buildings/'+row.id+'/unit-types')">查看房型</el-button>
-          <el-button size="small" @click="$router.push('/buildings/'+row.id+'/staff')">人员配置</el-button>
-          <el-button size="small" type="primary" @click="openEdit(row)">编辑</el-button>
-          <el-button size="small" type="danger" @click="del(row.id)">删除</el-button>
+          <el-button link type="primary" @click="$router.push('/buildings/'+row.id+'/unit-types')">查看户型</el-button>
+          <el-button link @click="openEdit(row)">编辑</el-button>
+          <el-dropdown trigger="click" @command="(command:string)=>handleBuildingAction(row, command)">
+            <el-button text>更多</el-button>
+            <template #dropdown><el-dropdown-menu><el-dropdown-item command="staff">人员配置</el-dropdown-item><el-dropdown-item v-if="listingPrimaryAction(row.status)==='offline'" command="offline">下架公寓</el-dropdown-item><el-dropdown-item v-if="listingPrimaryAction(row.status)==='publish'" command="publish">重新上架</el-dropdown-item><el-dropdown-item divided command="delete">移入回收站</el-dropdown-item></el-dropdown-menu></template>
+          </el-dropdown>
         </template>
       </el-table-column>
     </el-table>
 
     <!-- 回收站模式 -->
-    <div v-if="viewMode==='trash'" v-loading="trashLoading">
-      <div v-if="!trashItems.length && !trashLoading" style="text-align:center;padding:40px;color:#909399">
-        🗑️ 回收站为空
-      </div>
-      <div class="trash-cards" v-if="trashItems.length">
-        <div v-for="b in trashItems" :key="b.id" class="trash-card">
-          <div class="trash-card-left">
-            <span class="trash-icon">🏢</span>
-            <div class="trash-card-info">
-              <div class="trash-card-name">{{ b.name }}</div>
-              <div class="trash-card-meta" v-if="b.address">📍 {{ b.address }}</div>
-              <div class="trash-card-meta" v-if="b.contact_phone">📞 {{ b.contact_phone }}</div>
-            </div>
-          </div>
-          <div class="trash-card-right">
-            <div style="text-align:right">
-              <el-tag size="small" type="info">已删除</el-tag>
-              <div class="trash-time" v-if="b.updated_at">{{ fmtTime(b.updated_at) }}</div>
-            </div>
-            <el-button size="small" type="primary" @click="restoreBuilding(b.id)">🔄 恢复</el-button>
-            <el-popconfirm title="确定永久删除？不可恢复！" @confirm="hardDeleteBuilding(b.id)">
-              <template #reference>
-                <el-button size="small" type="danger" plain>💥 硬删除</el-button>
-              </template>
-            </el-popconfirm>
-          </div>
-        </div>
-      </div>
-    </div>
+    <el-table v-if="viewMode==='trash'" :data="displayedTrashItems" v-loading="trashLoading" stripe empty-text="回收站为空" class="building-table">
+      <el-table-column label="公寓" min-width="190"><template #default="{row}"><div class="primary-cell"><strong>{{ row.name }}</strong><span>{{ [row.city,row.country].filter(Boolean).join(' · ') || '地区待补充' }}</span></div></template></el-table-column>
+      <el-table-column label="地址" min-width="220" show-overflow-tooltip><template #default="{row}">{{ row.address || '地址待补充' }}</template></el-table-column>
+      <el-table-column prop="contact_phone" label="电话" width="130"><template #default="{row}">{{ row.contact_phone || '-' }}</template></el-table-column>
+      <el-table-column label="删除时间" width="180"><template #default="{row}">{{ row.updated_at ? fmtTime(row.updated_at) : '-' }}</template></el-table-column>
+      <el-table-column label="操作" width="190" fixed="right"><template #default="{row}"><el-button link type="primary" @click="restoreBuilding(row.id)">恢复</el-button><el-popconfirm title="确定永久删除？不可恢复！" @confirm="hardDeleteBuilding(row.id)"><template #reference><el-button link type="danger">永久删除</el-button></template></el-popconfirm></template></el-table-column>
+    </el-table>
 
     <!-- ═══════ 新建/编辑对话框 ═══════ -->
-    <el-dialog v-model="show" :title="editId?'编辑公寓':'新建公寓'" width="720px" :close-on-click-modal="false" @opened="onDialogOpened">
+    <BuildingCreateDialog v-model="showSharedCreate" @created="load" />
+    <el-dialog v-model="show" title="编辑公寓" width="720px" :close-on-click-modal="false" @opened="onDialogOpened">
       <el-form ref="fRef" :model="f" label-width="100px">
         <el-form-item label="公寓名称" required><el-input v-model="f.name" placeholder="中/英文均可" maxlength="200" /></el-form-item>
 
@@ -191,22 +179,46 @@
         </el-tooltip>
       </template>
     </el-dialog>
-  </div>
+  </BmPageShell>
 </template>
 
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted, nextTick, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { Search } from '@element-plus/icons-vue'
+import { useRouter } from 'vue-router'
 import { buildingService } from '@/services/building'
-import api from '@/services/api'
+import api, { toUserFriendly } from '@/services/api'
+import { loadTiles, type TileHandle } from '@/services/tileDetector'
 import ImageUploader from '@/components/ImageUploader.vue'
+import BuildingCreateDialog from '@/components/building/BuildingCreateDialog.vue'
+import BmPageShell from '@/components/bm/BmPageShell.vue'
+import BmSummaryStrip, { type BmSummaryItem } from '@/components/bm/BmSummaryStrip.vue'
+import { listingPrimaryAction, listingStatusLabel, listingStatusTag } from '@/utils/listingStatus'
 
 const buildings = ref<any[]>([])
 const trashItems = ref<any[]>([])
 const loading = ref(false); const trashLoading = ref(false)
-const show = ref(false); const saving = ref(false); const geoLoading = ref(false)
+const show = ref(false); const showSharedCreate = ref(false); const saving = ref(false); const geoLoading = ref(false)
 const editId = ref<number|null>(null)
-const viewMode = ref<'active'|'trash'>('active')
+const viewMode = ref<'active'|'offline'|'trash'>('active')
+const router = useRouter()
+const keyword = ref('')
+const displayedBuildings = computed(() => {
+  const query = keyword.value.trim().toLowerCase()
+  return buildings.value.filter((building) => {
+    const lifecycle = listingPrimaryAction(building.status) === 'offline' ? 'active' : 'offline'
+    if (lifecycle !== viewMode.value) return false
+    return !query || [building.name, building.address, building.city, building.country].some((value) => value?.toLowerCase().includes(query))
+  })
+})
+const displayedTrashItems = computed(() => {
+  const query = keyword.value.trim().toLowerCase()
+  return trashItems.value.filter((building) => !query || [building.name,building.address,building.city,building.country].some((value)=>value?.toLowerCase().includes(query)))
+})
+const buildingSummary = computed<BmSummaryItem[]>(() => [{key:'active',label:'展示中',value:buildings.value.filter((item)=>listingPrimaryAction(item.status)==='offline').length,note:'租客端可见'},{key:'offline',label:'已下架',value:buildings.value.filter((item)=>listingPrimaryAction(item.status)==='publish').length,note:'保留资料与历史'},{key:'trash',label:'回收站',value:trashItems.value.length,note:'可恢复或永久删除'}])
+function selectView(key:string){viewMode.value=key as typeof viewMode.value}
+function handleBuildingAction(row:any,command:string){if(command==='staff')router.push(`/buildings/${row.id}/staff`);else if(command==='offline'||command==='publish')changeLifecycle(row,command);else if(command==='delete')del(row.id)}
 const selectedAmenities = ref<string[]>([])
 const uploadedImages = ref<string[]>([])
 const imageUploaderRef = ref<InstanceType<typeof ImageUploader>>()
@@ -247,7 +259,7 @@ async function onMgrQrUpload(e: Event) {
     const r = await api.post('/upload/temp', fd, { headers: { 'Content-Type': 'multipart/form-data' } })
     mgrQrTempUrl.value = r.data.urls?.[0] || ''
     f.mgrWechatQr = mgrQrTempUrl.value.split('/').pop() || ''
-  } catch { ElMessage.error('上传失败') }
+  } catch (e: any) { if (e.config) e.config._handled = true; ElMessage.error('上传失败') }
 }
 const mgrQrPreview = computed(() => mgrQrTempUrl.value || (f.mgrWechatQr ? '/api/v1/uploads/' + f.mgrWechatQr : ''))
 
@@ -260,7 +272,7 @@ const saveDisabledReason = computed(() => {
 })
 
 // ── 地图 ──
-let mapInst:any=null, markerInst:any=null
+let mapInst:any=null, markerInst:any=null, _mapTileHandle: TileHandle|null=null
 
 function getL(){ return (window as any).L }
 
@@ -286,8 +298,8 @@ async function initMap(lat:number|null, lng:number|null){
   const L = await ensureLeaflet()
   const center:[number,number] = (lat!=null&&lng!=null&&isFinite(lat)&&isFinite(lng)) ? [lat,lng] : [31.27,120.73]
   const zoom = (lat!=null&&lng!=null) ? 17 : 12
-  mapInst = L.map(mapEl.value, {center, zoom})
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'&copy;OSM',maxZoom:19}).addTo(mapInst)
+  mapInst = L.map(mapEl.value, {center, zoom, attributionControl: false})
+  _mapTileHandle = await loadTiles(mapInst, f.country)
   mapInst.on('click', (e:any)=>{ placeMarker(e.latlng.lat, e.latlng.lng, true) })
   if(lat!=null && lng!=null) placeMarker(lat, lng, false)
 }
@@ -304,6 +316,7 @@ function placeMarker(lat:number, lng:number, rev:boolean){
 }
 
 function destroyMap(){
+  _mapTileHandle?.destroy(); _mapTileHandle = null
   if(mapInst){ try{mapInst.remove()}catch(e){} }
   mapInst=null; markerInst=null
 }
@@ -381,8 +394,22 @@ async function loadTrash(){trashLoading.value=true;try{const r=await api.get('/b
 
 function fmtTime(iso:string):string{try{return new Date(iso).toLocaleString('zh-CN',{hour12:false})}catch{return iso}}
 
-async function restoreBuilding(id:number){try{await api.post('/buildings/'+id+'/restore');ElMessage.success('已恢复');loadTrash();load()}catch(e:any){ElMessage.error(e?.response?.data?.detail||'恢复失败')}}
-async function hardDeleteBuilding(id:number){try{await api.delete('/buildings/'+id+'/hard');ElMessage.success('已永久删除');loadTrash();load()}catch(e:any){ElMessage.error(e?.response?.data?.detail||'删除失败')}}
+async function restoreBuilding(id:number){try{await api.post('/buildings/'+id+'/restore');ElMessage.success('已恢复');loadTrash();load()}catch(e:any){if(e.config)e.config._handled=true;ElMessage.error(toUserFriendly(e))}}
+async function hardDeleteBuilding(id:number){try{await api.delete('/buildings/'+id+'/hard');ElMessage.success('已永久删除');loadTrash();load()}catch(e:any){if(e.config)e.config._handled=true;ElMessage.error(toUserFriendly(e))}}
+
+async function changeLifecycle(row:any, action:'offline'|'publish') {
+  try {
+    const result = action === 'offline' ? await buildingService.batchOffline([row.id]) : await buildingService.batchPublish([row.id])
+    if (result.failed) throw new Error(result.errors?.[0]?.error || '公寓状态更新失败')
+    ElMessage.success(action === 'offline' ? '公寓已下架，已有订单不受影响' : '公寓已重新上架')
+    await load()
+  } catch (e:any) {
+    if (e.config) e.config._handled = true
+    ElMessageBox.alert(toUserFriendly(e), action === 'publish' ? '资料尚未完善' : '操作失败', {
+      confirmButtonText: '前往编辑', callback: () => action === 'publish' && openEdit(row),
+    })
+  }
+}
 
 async function openCreate(){
   editId.value=null
@@ -436,8 +463,8 @@ async function save(){
     else{await buildingService.create(p);ElMessage.success('已创建')}
     closeDialog();load()
   }catch(e:any){
-    const msg=e?.response?.data?.error?.message||e?.response?.data?.detail||'保存失败'
-    ElMessage.error(typeof msg==='string'?msg:'保存失败')
+    if(e.config)e.config._handled=true
+    ElMessage.error(toUserFriendly(e))
   }finally{saving.value=false}
 }
 
@@ -449,20 +476,13 @@ onMounted(()=>{load();loadTrash()})
 </script>
 
 <style scoped>
-.building-page{max-width:960px;margin:0 auto}
-h2{font-size:22px;color:#303133;margin-bottom:8px}
-.sub{color:#909399;margin-bottom:20px;font-size:14px}
+.header-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.building-toolbar{display:grid;grid-template-columns:minmax(280px,1fr) auto;align-items:center;gap:12px}
+.building-toolbar .el-input{max-width:440px}.filter-result{color:var(--text-muted);font-size:13px;white-space:nowrap}
+.building-table{width:100%;overflow:hidden;border:1px solid var(--border);border-radius:var(--radius)}
+.primary-cell{display:grid;gap:4px}.primary-cell strong{color:var(--text-primary)}.primary-cell span{color:var(--text-muted);font-size:12px}
 .amenity-group{display:flex;flex-wrap:wrap;gap:6px}
 .amenity-group .el-checkbox{margin-right:0}
 
-.trash-cards{display:flex;flex-direction:column;gap:8px}
-.trash-card{display:flex;justify-content:space-between;align-items:center;padding:14px 18px;background:#fff;border:1px solid #ebeef5;border-radius:12px;transition:box-shadow 0.15s}
-.trash-card:hover{box-shadow:0 2px 12px rgba(0,0,0,0.06)}
-.trash-card-left{display:flex;align-items:center;gap:14px;flex:1;min-width:0}
-.trash-icon{font-size:28px;opacity:0.6}
-.trash-card-info{min-width:0}
-.trash-card-name{font-size:16px;font-weight:600;color:#303133}
-.trash-card-meta{font-size:13px;color:#909399;margin-top:2px}
-.trash-card-right{display:flex;align-items:center;gap:12px;flex-shrink:0}
-.trash-time{font-size:11px;color:#c0c4cc;margin-top:3px;white-space:nowrap}
+@media(max-width:720px){.building-toolbar{grid-template-columns:1fr}.header-actions{align-items:flex-start;flex-direction:column}}
 </style>

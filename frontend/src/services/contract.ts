@@ -29,6 +29,7 @@ export interface ContractSnapshot {
   content_hash: string
 }
 export interface SignaturePoint { x: number; y: number; pressure: number }
+export interface ContractExecution { mode: 'mock_sign' | 'dropbox_sign'; available: boolean; reason?: string }
 export interface ContractSignatureRecord { agreement_id: string; agreement_version: number; agreement_content_hash: string; tenant_user_id: number; tenant_name: string; signed_at: string; property_timezone: string; consent_text_version: string; signature_hash: string; pdf_status: 'pending' | 'ready' | 'failed' }
 export type ContractCategory = 'pending_effective' | 'effective' | 'expiring_soon' | 'invalid'
 export interface TenantContractItem {
@@ -47,8 +48,9 @@ export interface TenantContractDetail extends TenantContractItem { content:strin
 export const contractService = {
   listMine(): Promise<TenantContractItem[]> { return api.get('/contracts/my').then(r=>r.data.items) },
   getMine(contractId:string): Promise<TenantContractDetail> { return api.get(`/contracts/my/${contractId}`).then(r=>r.data) },
+  getManaged(contractId:string): Promise<TenantContractDetail> { return api.get(`/contracts/landlord/${contractId}`).then(r=>r.data) },
   getSignature(contractId:string): Promise<Blob> { return api.get(`/contracts/my/${contractId}/signature`, { responseType: 'blob' }).then(r=>r.data) },
-  getSignedDownloadLink(contractId:string): Promise<{url?:string;expires_at?:string;code?:string;message?:string}> { return api.get(`/contracts/my/${contractId}/signed-download-link`).then(r=>r.data) },
+  getSignedDownloadLink(contractId:string): Promise<{url?:string;expires_at?:string;code?:string;message?:string}> { return api.get(`/contracts/${contractId}/signed-download-link`).then(r=>r.data) },
   generate(bookingId: number): Promise<Contract> {
     return api.post(`/contracts/${bookingId}/generate`).then((r) => r.data)
   },
@@ -67,6 +69,10 @@ export const contractService = {
 
   confirmSignature(contractId: string, data: { agreement_version: number; agreement_content_hash: string; tenant_name: string; consent_text_version: string; idempotency_key: string; strokes: SignaturePoint[][]; name_confirmed: boolean; electronic_signature_consent: boolean }): Promise<ContractSignatureRecord> {
     return api.post(`/contracts/${contractId}/sign`, data).then((r) => r.data)
+  },
+
+  getExecution(contractId: string): Promise<ContractExecution> {
+    return api.get(`/contracts/${contractId}/execution`).then((r) => r.data)
   },
 
   download(contractId: string): Promise<Blob> {

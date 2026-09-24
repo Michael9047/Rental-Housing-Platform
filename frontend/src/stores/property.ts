@@ -56,10 +56,11 @@ export const usePropertyStore = defineStore('property', () => {
     }
   }
 
-  async function fetchById(id: number) {
+  async function fetchById(id: number): Promise<Property | null> {
     loading.value = true
     try {
       currentProperty.value = await propertyService.getById(id)
+      return currentProperty.value
     } catch {
       currentProperty.value = null
       throw new Error('Failed to load property')
@@ -194,12 +195,6 @@ export const usePropertyStore = defineStore('property', () => {
     }
   }
 
-  /** 直接注入预加载结果（来自 Agent 推荐），跳过后端 API 搜索 */
-  function setSearchResults(results: PropertySearchResult[]) {
-    searchResults.value = results
-    loading.value = false
-  }
-
   return {
     properties, searchResults, currentProperty, loading,
     total, page, pageSize, totalPages,
@@ -209,7 +204,6 @@ export const usePropertyStore = defineStore('property', () => {
     batchUpdateStatus, batchDelete,
     hardDeleteProperty, batchRestore, batchHardDelete,
     remove,
-    setSearchResults,
     fetchImages, fetchImagesRef, uploadImages, deleteImage, setPrimaryImage,
   }
 })

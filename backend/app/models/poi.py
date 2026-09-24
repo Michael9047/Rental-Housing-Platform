@@ -1,8 +1,7 @@
 """公寓周边设施模型 — 关联楼栋而非户型"""
-import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, String, Text as SAText
+from sqlalchemy import Boolean, DateTime, ForeignKey, Text as SAText
 from sqlalchemy.dialects.postgresql import JSON
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -13,11 +12,8 @@ from app.db.session import Base
 class InstitutePOI(TimestampMixin, Base):
     __tablename__ = "institute_pois"
 
-    id: Mapped[str] = mapped_column(
-        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
-    )
     institute_id: Mapped[int] = mapped_column(
-        ForeignKey("institutes.id", ondelete="CASCADE"), unique=True, index=True
+        ForeignKey("institutes.id", ondelete="CASCADE"), primary_key=True, unique=True
     )
     content: Mapped[str] = mapped_column(SAText, nullable=False)
     poi_data: Mapped[dict | None] = mapped_column(JSON, nullable=True)

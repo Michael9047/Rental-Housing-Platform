@@ -19,7 +19,10 @@ class EmbeddingJob(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
     property_id: Mapped[int] = mapped_column(
-        ForeignKey("properties.id", ondelete="CASCADE"), index=True
+        # ``property_id`` is kept as an API/task compatibility name.  The
+        # persisted identifier is a UnitType.id in the current two-level
+        # Institute -> UnitType model.
+        ForeignKey("unit_types.id", ondelete="CASCADE"), index=True
     )
     status: Mapped[EmbeddingJobStatus] = mapped_column(
         Enum(EmbeddingJobStatus, name="embedding_job_status"),

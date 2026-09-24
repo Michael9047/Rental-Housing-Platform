@@ -111,7 +111,7 @@ async function handleCancel() {
     })
     await repairService.cancel(repair.value.id)
     ElMessage.success('报修已取消')
-    router.push('/profile?tab=repairs')
+    router.push('/repairs')
   } catch { /* cancelled */ }
 }
 

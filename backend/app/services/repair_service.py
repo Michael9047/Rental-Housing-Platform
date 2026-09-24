@@ -44,6 +44,18 @@ class RepairService:
         # 无维修工 → 跳过房东，进入Admin待派单
         initial_status = RepairStatus.pending if has_workers else RepairStatus.pending_escalated
 
+        # 检测房东是否有自己的维修工
+        from app.models.repair import RepairWorker, WorkerScope
+        worker_stmt = select(RepairWorker).where(
+            (RepairWorker.manager_id == property_obj.landlord_id) &
+            (RepairWorker.scope == WorkerScope.apartment)
+        )
+        worker_result = await self.session.execute(worker_stmt)
+        has_workers = worker_result.first() is not None
+
+        # 无维修工 → 跳过房东，进入Admin待派单
+        initial_status = RepairStatus.pending if has_workers else RepairStatus.pending_escalated
+
         repair = RepairRequest(
             unit_type_id=repair_in.property_id,
             tenant_id=tenant_id,

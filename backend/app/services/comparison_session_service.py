@@ -9,6 +9,7 @@ from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.models.compare_session import (
     CompareMessage,
@@ -31,9 +32,10 @@ class ComparisonSessionService:
         property_ids: list[int],
         priority: str = "balanced",
     ) -> CompareSession:
+        """创建会话；property_ids 是兼容字段名，值为 UnitType.id。"""
         sess = CompareSession(
             user_id=user_id,
-            property_ids=property_ids,
+            unit_type_ids=list(dict.fromkeys(property_ids)),
             priority=priority,
             status=CompareSessionStatus.active,
         )
@@ -46,10 +48,13 @@ class ComparisonSessionService:
         self, session_id: int, user_id: int
     ) -> CompareSession | None:
         row = await self.db.execute(
-            select(CompareSession).where(
+            select(CompareSession)
+            .where(
                 CompareSession.id == session_id,
                 CompareSession.user_id == user_id,
             )
+            .options(selectinload(CompareSession.messages))
+            .execution_options(populate_existing=True)
         )
         return row.scalar_one_or_none()
 
@@ -90,4 +95,11 @@ class ComparisonSessionService:
         sess = await self.db.get(CompareSession, session_id)
         if sess:
             sess.result_cache = result
+            await self.db.commit()
+
+    async def update_priority(self, session_id: int, priority: str) -> None:
+        """持久化用户在追问中切换的对比优先级。"""
+        sess = await self.db.get(CompareSession, session_id)
+        if sess is not None:
+            sess.priority = priority
             await self.db.commit()

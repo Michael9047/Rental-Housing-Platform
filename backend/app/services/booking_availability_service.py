@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.booking import Booking, BookingStatus
 from app.models.unit_type import UnitType, UnitTypeStatus
+from app.services.listing_visibility import is_listable
 
 logger = logging.getLogger(__name__)
 
@@ -78,7 +79,7 @@ class BookingAvailabilityService:
         if move_in < today:
             return False, "入住日期不能早于今天", {}
 
-        if ut.status != UnitTypeStatus.available:
+        if not is_listable(ut):
             return False, "该户型当前不可预订", {}
 
         if ut.available_from and move_in < ut.available_from:

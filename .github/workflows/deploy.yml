@@ -55,6 +55,9 @@ jobs:
           port: ${{ secrets.DEPLOY_PORT || 22 }}
           script: |
             cd /opt/rental-housing
+            export BACKEND_IMAGE="ghcr.io/${{ github.repository }}/backend"
+            export FRONTEND_IMAGE="ghcr.io/${{ github.repository }}/frontend"
+            export IMAGE_TAG="${{ steps.tag.outputs.tag }}"
             docker compose -f docker-compose.prod.yml pull
 
             # Run database migrations before restart
@@ -63,6 +66,9 @@ jobs:
 
             # Restart services
             docker compose -f docker-compose.prod.yml up -d --remove-orphans
+
+            # 输出实际运行镜像，便于确认并回滚不可变版本
+            docker compose -f docker-compose.prod.yml images
 
             # Prune old images
             docker image prune -af --filter "until=24h"

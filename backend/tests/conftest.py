@@ -22,6 +22,8 @@ os.environ.setdefault("REDIS_URL", "disabled://tests")
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.ext.compiler import compiles
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.api.deps import get_db_session
@@ -29,6 +31,12 @@ from app.db.session import Base
 from app.main import app
 
 TEST_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
+
+
+# 部分生产模型直接使用 PostgreSQL JSONB；测试库 SQLite 按通用 JSON 编译。
+@compiles(JSONB, "sqlite")
+def compile_jsonb_for_sqlite(_type, _compiler, **_kwargs) -> str:
+    return "JSON"
 
 
 @pytest_asyncio.fixture

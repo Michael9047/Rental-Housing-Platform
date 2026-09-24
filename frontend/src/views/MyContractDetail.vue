@@ -1,11 +1,11 @@
 <template>
   <main class="contract-detail" v-loading="loading">
     <el-result v-if="error" icon="error" title="无法查看合同" :sub-title="error">
-      <template #extra><el-button @click="router.push('/profile?tab=contracts')">返回我的合同</el-button></template>
+      <template #extra><el-button @click="router.push(backPath)">{{ backLabel }}</el-button></template>
     </el-result>
     <template v-else-if="contract">
       <div class="page-actions">
-        <el-button @click="router.push('/profile?tab=contracts')">返回我的合同</el-button>
+        <el-button @click="router.push(backPath)">{{ backLabel }}</el-button>
         <el-button :disabled="!contract.signed_pdf_available" @click="downloadPdf">下载已签署 PDF</el-button>
       </div>
       <el-card shadow="never" class="summary-card">
@@ -22,44 +22,55 @@
           <div class="hash"><dt>合同哈希</dt><dd>{{ contract.agreement_content_hash }}</dd></div>
           <div><dt>合同状态</dt><dd>{{ contract.category_label }}</dd></div>
           <div><dt>支付状态</dt><dd>{{ paymentLabel }}</dd></div>
-          <div><dt>预订状态</dt><dd>{{ contract.reservation_status === 'confirmed' ? '预订成功' : '预订未成功' }}</dd></div>
+          <div><dt>预订状态</dt><dd>{{ contract.booking_status === 'confirmed' ? '预订成功' : '预订未成功' }}</dd></div>
           <div><dt>房源</dt><dd><router-link :to="`/property/${contract.property_id}`">{{ contract.property_name }}</router-link></dd></div>
         </dl>
       </el-card>
 
-      <article class="agreement-paper">
-        <p class="template-notice">业务开发模板，待房源所在地法务审核</p>
-        <template v-if="contract.snapshot?.sections?.length">
-          <section v-for="section in contract.snapshot.sections" :key="section.number" class="agreement-section">
-            <h2>{{ section.title_zh }}</h2><h3>{{ section.title_en }}</h3>
-            <p>{{ section.zh }}</p><p class="english">{{ section.en }}</p>
-          </section>
-        </template>
-        <pre v-else class="locked-content">{{ contract.content }}</pre>
-        <section class="signature-block">
-          <h2>租客电子签名 / Tenant Electronic Signature</h2>
-          <img v-if="signatureObjectUrl" :src="signatureObjectUrl" alt="租客签署时锁定的电子签名" />
-          <p>签署时间 / Signed At: {{ formatDateTime(contract.signed_at) }}</p>
-          <p>合同版本及哈希 / Agreement Version and Hash: v{{ contract.agreement_version }} · {{ contract.agreement_content_hash }}</p>
-        </section>
-      </article>
+      <section class="pdf-preview" v-loading="pdfLoading" element-loading-text="正在加载已签署合同">
+        <iframe
+          v-if="pdfObjectUrl"
+          :src="pdfObjectUrl"
+          :title="`${contract.agreement_number} 已签署合同 PDF`"
+          class="pdf-frame"
+        />
+        <el-result
+          v-else-if="pdfError"
+          icon="warning"
+          title="合同预览暂不可用"
+          :sub-title="pdfError"
+        >
+          <template #extra>
+            <el-button :disabled="!contract.signed_pdf_available" @click="loadPdfPreview">重新加载</el-button>
+            <el-button type="primary" :disabled="!contract.signed_pdf_available" @click="downloadPdf">下载已签署 PDF</el-button>
+          </template>
+        </el-result>
+      </section>
     </template>
   </main>
 </template>
 
 <script setup lang="ts">
-// 本页面只读取签署时锁定的合同快照，不重新生成或修改合同。
+// 本页面预览并下载同一份已签署 PDF，不再重新渲染历史合同模板正文。
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useRoute, useRouter } from 'vue-router'
 import { contractService, type TenantContractDetail } from '@/services/contract'
+import { extractErrorMessage } from '@/services/api'
+import { useAuthStore } from '@/stores/auth'
 
 const route = useRoute()
 const router = useRouter()
+const authStore = useAuthStore()
 const loading = ref(true)
 const error = ref('')
 const contract = ref<TenantContractDetail | null>(null)
-const signatureObjectUrl = ref('')
+const pdfLoading = ref(false)
+const pdfError = ref('')
+const pdfObjectUrl = ref('')
+const isBm = computed(() => authStore.user?.role === 'landlord')
+const backPath = computed(() => isBm.value ? '/contracts/landlord' : '/profile?tab=contracts')
+const backLabel = computed(() => isBm.value ? '返回合约管理' : '返回我的合同')
 
 const paymentLabel = computed(() => contract.value?.status_labels[0] || contract.value?.payment_status || '未知')
 
@@ -70,17 +81,46 @@ function formatDateTime(value: string) {
 async function loadContract() {
   try {
     const id = String(route.params.id)
-    contract.value = await contractService.getMine(id)
-    try {
-      const signature = await contractService.getSignature(id)
-      signatureObjectUrl.value = URL.createObjectURL(signature)
-    } catch {
-      // 合同正文仍可查看；签名文件暂不可用时不掩盖合同元数据。
-    }
+    contract.value = isBm.value
+      ? await contractService.getManaged(id)
+      : await contractService.getMine(id)
+    await loadPdfPreview()
   } catch (reason: any) {
-    error.value = reason?.response?.status === 404 ? '合同不存在或您无权查看。' : '合同暂时无法加载，请稍后重试。'
+    const status = reason?.response?.status
+    const detail = extractErrorMessage(reason)
+    error.value = status === 404
+      ? '合同不存在或您无权查看。'
+      : status === 401
+        ? '登录状态已失效，请重新登录。'
+        : detail || '合同暂时无法加载，请稍后重试。'
   } finally {
     loading.value = false
+  }
+}
+
+async function loadPdfPreview() {
+  if (!contract.value) return
+  if (!contract.value.signed_pdf_available) {
+    pdfError.value = '已签署 PDF 正在生成，请稍后重新加载。'
+    return
+  }
+  pdfLoading.value = true
+  pdfError.value = ''
+  try {
+    const link = await contractService.getSignedDownloadLink(contract.value.agreement_id)
+    if (!link.url) {
+      pdfError.value = link.message || '已签署 PDF 正在生成，请稍后重新加载。'
+      return
+    }
+    const response = await fetch(link.url, { credentials: 'same-origin' })
+    if (!response.ok) throw new Error(`PDF 请求失败：${response.status}`)
+    const pdf = await response.blob()
+    if (pdfObjectUrl.value) URL.revokeObjectURL(pdfObjectUrl.value)
+    pdfObjectUrl.value = URL.createObjectURL(pdf)
+  } catch {
+    pdfError.value = '无法加载已签署 PDF，您仍可尝试直接下载。'
+  } finally {
+    pdfLoading.value = false
   }
 }
 
@@ -96,7 +136,7 @@ async function downloadPdf() {
 }
 
 onMounted(loadContract)
-onBeforeUnmount(() => { if (signatureObjectUrl.value) URL.revokeObjectURL(signatureObjectUrl.value) })
+onBeforeUnmount(() => { if (pdfObjectUrl.value) URL.revokeObjectURL(pdfObjectUrl.value) })
 </script>
 
 <style scoped>
@@ -108,11 +148,7 @@ h1 { margin: 0 0 6px; font-size: 25px; } .title-row p { margin: 0 0 18px; color:
 .meta-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px 32px; margin: 20px 0 0; }
 .meta-grid div { min-width: 0; } dt { color: var(--text-muted); font-size: 13px; } dd { margin: 5px 0 0; overflow-wrap: anywhere; }
 .hash { grid-column: 1 / -1; }
-.agreement-paper { padding: 48px 58px; border: 1px solid var(--border); background: #fff; box-shadow: 0 8px 28px rgb(0 0 0 / 6%); }
-.template-notice { padding: 10px; text-align: center; color: #ad6800; background: #fffbe6; }
-.agreement-section { margin: 30px 0; page-break-inside: avoid; } .agreement-section h2 { margin: 0; font-size: 18px; } .agreement-section h3 { margin: 4px 0 14px; font-size: 15px; color: #555; }
-.agreement-section p { line-height: 1.75; white-space: pre-wrap; } .english { color: #444; }
-.locked-content { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; line-height: 1.75; }
-.signature-block { margin-top: 44px; padding-top: 24px; border-top: 1px solid #bbb; } .signature-block img { display: block; width: min(420px, 100%); max-height: 180px; margin: 18px 0; object-fit: contain; object-position: left center; }
-@media (max-width: 768px) { .contract-detail { width: min(100% - 20px, 980px); } .agreement-paper { padding: 26px 20px; } .meta-grid { grid-template-columns: 1fr; } .hash { grid-column: auto; } .title-row { flex-direction: column; } }
+.pdf-preview { min-height: 72vh; overflow: hidden; border: 1px solid var(--border); border-radius: 8px; background: #f5f6f8; box-shadow: 0 8px 28px rgb(0 0 0 / 6%); }
+.pdf-frame { display: block; width: 100%; height: 78vh; min-height: 640px; border: 0; background: #fff; }
+@media (max-width: 768px) { .contract-detail { width: min(100% - 20px, 980px); } .meta-grid { grid-template-columns: 1fr; } .hash { grid-column: auto; } .title-row { flex-direction: column; } .pdf-frame { height: 70vh; min-height: 520px; } }
 </style>

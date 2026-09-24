@@ -14,6 +14,7 @@ router = APIRouter()
 async def create_user(
     user_in: UserCreate,
     session: AsyncSession = Depends(get_db_session),
+    _: User = Depends(require_admin),
 ) -> UserRead:
     try:
         return await UserService(session).create(user_in)

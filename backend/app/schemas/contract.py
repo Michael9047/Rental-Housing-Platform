@@ -14,7 +14,7 @@ class ContractResponse(BaseModel):
     id: str
     booking_id: int
     tenant_id: int
-    property_id: int
+    property_id: int = 0
     template_name: str
     agreement_number: str | None = None
     version: int = 1
@@ -69,7 +69,7 @@ class TenantContractListItem(BaseModel):
     agreement_content_hash: str
     order_id: str
     booking_id: int
-    property_id: int
+    property_id: int = 0
     tenant_user_id: int
     signed_at: datetime | None = None
     lease_start_date: str | None

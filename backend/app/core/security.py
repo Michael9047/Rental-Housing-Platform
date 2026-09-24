@@ -42,6 +42,14 @@ from redis.asyncio import Redis as _Redis
 logger = logging.getLogger(__name__)
 
 
+def mask_phone(phone: str) -> str:
+    """隐藏手机号中间数字，避免认证日志泄露完整联系方式。"""
+    normalized = phone.strip()
+    if len(normalized) <= 7:
+        return "***"
+    return f"{normalized[:3]}****{normalized[-4:]}"
+
+
 async def _redis() -> _Redis:
     settings = get_settings()
     return _Redis.from_url(settings.redis_url)
@@ -53,9 +61,9 @@ async def store_sms_code(phone: str, code: str, ttl: int = 300) -> None:
     r = await _redis()
     try:
         await r.setex(key, ttl, code)
-        logger.info("SMS code stored: key=%s code=%s ttl=%s", key, code, ttl)
+        logger.info("SMS code stored: phone=%s ttl=%s", mask_phone(phone), ttl)
     except Exception:
-        logger.exception("Failed to store SMS code: key=%s", key)
+        logger.exception("Failed to store SMS code: phone=%s", mask_phone(phone))
         raise
     finally:
         await r.close()
@@ -68,17 +76,19 @@ async def verify_and_consume_sms_code(phone: str, code: str) -> bool:
     try:
         stored = await r.get(key)
         if stored is None:
-            logger.warning("SMS code NOT FOUND in Redis: key=%s input_code=%s", key, code)
+            logger.warning("SMS code not found: phone=%s", mask_phone(phone))
             return False
         stored_str = stored.decode()
         if stored_str == code:
             await r.delete(key)
-            logger.info("SMS code verified and consumed: key=%s", key)
+            logger.info("SMS code verified and consumed: phone=%s", mask_phone(phone))
             return True
-        logger.warning("SMS code MISMATCH: key=%s stored=%s input=%s", key, stored_str, code)
+        logger.warning("SMS code mismatch: phone=%s", mask_phone(phone))
         return False
     except Exception:
-        logger.exception("Redis error while verifying SMS code: key=%s", key)
+        logger.exception(
+            "Redis error while verifying SMS code: phone=%s", mask_phone(phone)
+        )
         return False
     finally:
         await r.close()
@@ -114,6 +124,55 @@ async def consume_reset_token(token: str) -> int | None:
         if raw:
             await r.delete(f"pwd_reset:{token}")
             return int(raw.decode())
+        return None
+    finally:
+        await r.close()
+
+
+# ── 微信扫码登录 state/code Redis 辅助函数 ─────────────────
+
+
+async def store_wechat_qr_state(state: str, ttl: int = 300) -> None:
+    """微信扫码登录 state token → Redis，默认 5 分钟过期"""
+    r = await _redis()
+    try:
+        await r.setex(f"wechat_qr_state:{state}", ttl, "pending")
+    finally:
+        await r.close()
+
+
+async def verify_and_consume_wechat_qr_state(state: str) -> bool:
+    """校验并消费微信扫码 state token，返回是否有效"""
+    r = await _redis()
+    try:
+        key = f"wechat_qr_state:{state}"
+        exists = await r.exists(key)
+        if exists:
+            await r.delete(key)
+            return True
+        return False
+    finally:
+        await r.close()
+
+
+async def store_wechat_qr_code(state: str, code: str, ttl: int = 120) -> None:
+    """暂存微信回调的 authorization_code，供前端轮询消费"""
+    r = await _redis()
+    try:
+        await r.setex(f"wechat_qr_code:{state}", ttl, code)
+    finally:
+        await r.close()
+
+
+async def consume_wechat_qr_code(state: str) -> str | None:
+    """消费暂存的 authorization_code，返回 code 或 None"""
+    r = await _redis()
+    try:
+        key = f"wechat_qr_code:{state}"
+        raw = await r.get(key)
+        if raw:
+            await r.delete(key)
+            return raw.decode()
         return None
     finally:
         await r.close()

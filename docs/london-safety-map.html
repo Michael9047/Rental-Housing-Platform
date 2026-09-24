@@ -1,0 +1,666 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>伦敦区域安全评分 — 租房安全算法演示</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  background: #0f1923;
+  color: #e0e0e0;
+  height: 100vh;
+  display: flex;
+  overflow: hidden;
+}
+
+/* ===== 侧边栏 ===== */
+#sidebar {
+  width: 420px;
+  min-width: 420px;
+  background: #1a2733;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  border-right: 1px solid #2a3a4a;
+  z-index: 10;
+}
+#sidebar::-webkit-scrollbar { width: 6px; }
+#sidebar::-webkit-scrollbar-thumb { background: #3a4a5a; border-radius: 3px; }
+
+.sidebar-header {
+  background: linear-gradient(135deg, #1e3a5f 0%, #1a2733 100%);
+  padding: 24px 20px;
+  border-bottom: 1px solid #2a3a4a;
+  text-align: center;
+}
+.sidebar-header h1 {
+  font-size: 22px;
+  font-weight: 700;
+  color: #fff;
+  margin-bottom: 4px;
+}
+.sidebar-header .subtitle {
+  font-size: 13px;
+  color: #7eb8da;
+  letter-spacing: 1px;
+}
+
+/* 统计卡片行 */
+.stats-row {
+  display: flex;
+  gap: 10px;
+  padding: 16px 20px;
+  border-bottom: 1px solid #2a3a4a;
+}
+.stat-card {
+  flex: 1;
+  background: #1e2e3d;
+  border-radius: 8px;
+  padding: 12px;
+  text-align: center;
+  border-top: 3px solid transparent;
+}
+.stat-card.green  { border-top-color: #2ecc71; }
+.stat-card.yellow { border-top-color: #f1c40f; }
+.stat-card.red    { border-top-color: #e74c3c; }
+.stat-card .stat-value {
+  font-size: 28px;
+  font-weight: 700;
+  color: #fff;
+}
+.stat-card .stat-label {
+  font-size: 11px;
+  color: #8899aa;
+  margin-top: 2px;
+}
+.stat-card.green  .stat-value { color: #2ecc71; }
+.stat-card.yellow .stat-value { color: #f1c40f; }
+.stat-card.red    .stat-value { color: #e74c3c; }
+
+/* 算法面板 */
+.section {
+  padding: 18px 20px;
+  border-bottom: 1px solid #2a3a4a;
+}
+.section h2 {
+  font-size: 15px;
+  font-weight: 600;
+  color: #7eb8da;
+  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.section h2 .icon { font-size: 18px; }
+
+/* 算法公式 */
+.formula-box {
+  background: #0d1a24;
+  border: 1px solid #2a4a5a;
+  border-radius: 8px;
+  padding: 14px 16px;
+  font-family: "SF Mono", "Fira Code", "Consolas", monospace;
+  font-size: 12px;
+  line-height: 1.8;
+  color: #aac8e0;
+}
+.formula-box .hl { color: #f1c40f; font-weight: 600; }
+.formula-box .kw { color: #7eb8da; }
+.formula-box .num { color: #2ecc71; }
+.formula-box .op { color: #e74c3c; }
+
+/* 权重条 */
+.weight-bar-row {
+  display: flex;
+  align-items: center;
+  margin-bottom: 8px;
+  font-size: 12px;
+}
+.weight-bar-label {
+  width: 130px;
+  color: #aac8e0;
+  flex-shrink: 0;
+}
+.weight-bar-track {
+  flex: 1;
+  height: 6px;
+  background: #1e2e3d;
+  border-radius: 3px;
+  overflow: hidden;
+}
+.weight-bar-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.4s;
+}
+
+/* 图例 */
+.legend-list { display: flex; flex-direction: column; gap: 8px; }
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  color: #c0d0e0;
+}
+.legend-dot {
+  width: 14px; height: 14px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  border: 2px solid rgba(255,255,255,0.3);
+}
+
+/* 地区列表 */
+.area-list { display: flex; flex-direction: column; gap: 6px; }
+.area-item {
+  background: #1e2e3d;
+  border-radius: 6px;
+  padding: 10px 12px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  cursor: pointer;
+  transition: all 0.2s;
+  border-left: 4px solid transparent;
+}
+.area-item:hover { background: #253545; transform: translateX(4px); }
+.area-item.high   { border-left-color: #2ecc71; }
+.area-item.medium { border-left-color: #f1c40f; }
+.area-item.low    { border-left-color: #e74c3c; }
+.area-item .area-name { font-size: 14px; font-weight: 500; color: #e0e0e0; }
+.area-item .area-tier { font-size: 11px; color: #8899aa; }
+.area-item .area-score {
+  font-size: 20px;
+  font-weight: 700;
+}
+.area-item.high   .area-score { color: #2ecc71; }
+.area-item.medium .area-score { color: #f1c40f; }
+.area-item.low    .area-score { color: #e74c3c; }
+
+/* 地图容器 */
+#map-container { flex: 1; position: relative; }
+#map { width: 100%; height: 100%; }
+
+/* 地图上的信息卡 */
+.map-popup { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif; }
+.popup-header {
+  font-size: 15px;
+  font-weight: 700;
+  margin-bottom: 8px;
+  padding-bottom: 6px;
+  border-bottom: 2px solid #eee;
+}
+.popup-score {
+  font-size: 36px;
+  font-weight: 800;
+  text-align: center;
+  margin: 8px 0;
+}
+.popup-factors {
+  font-size: 11px;
+  line-height: 1.8;
+  color: #555;
+}
+.popup-factor-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 2px 0;
+}
+.popup-factor-label { width: 90px; text-align: right; font-size: 11px; }
+.popup-factor-track {
+  flex: 1; height: 5px; background: #eee; border-radius: 3px; overflow: hidden;
+}
+.popup-factor-fill { height: 100%; border-radius: 3px; }
+
+/* 底部备注 */
+.footer-note {
+  padding: 12px 20px;
+  font-size: 11px;
+  color: #667788;
+  text-align: center;
+  border-top: 1px solid #2a3a4a;
+}
+
+/* 响应式 */
+@media (max-width: 900px) {
+  body { flex-direction: column; }
+  #sidebar { width: 100%; min-width: unset; max-height: 45vh; }
+  #map-container { flex: 1; min-height: 55vh; }
+}
+</style>
+</head>
+<body>
+
+<!-- ===== 侧边栏 ===== -->
+<div id="sidebar">
+
+  <div class="sidebar-header">
+    <h1>🔐 伦敦区域安全评分</h1>
+    <div class="subtitle">RENTAL HOUSING SAFETY ALGORITHM · LONDON PILOT</div>
+  </div>
+
+  <!-- 统计卡片 -->
+  <div class="stats-row">
+    <div class="stat-card green">
+      <div class="stat-value" id="stat-high">5</div>
+      <div class="stat-label">🟢 高安全区域</div>
+    </div>
+    <div class="stat-card yellow">
+      <div class="stat-value" id="stat-mid">5</div>
+      <div class="stat-label">🟡 中安全区域</div>
+    </div>
+    <div class="stat-card red">
+      <div class="stat-value" id="stat-low">5</div>
+      <div class="stat-label">🔴 低安全区域</div>
+    </div>
+  </div>
+
+  <!-- 算法说明 -->
+  <div class="section">
+    <h2><span class="icon">📐</span> 安全评分算法</h2>
+    <div class="formula-box">
+      <span class="kw">SafetyScore</span> =
+      <span class="hl">(C × 0.35)</span> <span class="op">+</span>
+      <span class="hl">(E × 0.20)</span> <span class="op">+</span>
+      <span class="hl">(P × 0.15)</span> <span class="op">+</span><br>
+      &nbsp;&nbsp;&nbsp;&nbsp;<span class="hl">(L × 0.10)</span> <span class="op">+</span>
+      <span class="hl">(N × 0.10)</span> <span class="op">+</span>
+      <span class="hl">(D × 0.10)</span><br><br>
+      <span class="kw">其中各因子 (0-100):</span><br>
+      &nbsp;&nbsp;<span class="hl">C</span> = 犯罪率倒数指数<br>
+      &nbsp;&nbsp;<span class="hl">E</span> = 经济水平指数<br>
+      &nbsp;&nbsp;<span class="hl">P</span> = 警力部署密度<br>
+      &nbsp;&nbsp;<span class="hl">L</span> = 街道照明与基础设施<br>
+      &nbsp;&nbsp;<span class="hl">N</span> = 夜间安全指数<br>
+      &nbsp;&nbsp;<span class="hl">D</span> = 社区凝聚力
+    </div>
+  </div>
+
+  <!-- 权重可视化 -->
+  <div class="section">
+    <h2><span class="icon">⚖️</span> 因子权重分配</h2>
+    <div class="weight-bar-row">
+      <span class="weight-bar-label">犯罪率倒数 C</span>
+      <div class="weight-bar-track"><div class="weight-bar-fill" style="width:35%;background:#e74c3c;"></div></div>
+      <span style="width:40px;text-align:right;font-size:12px;color:#e74c3c">35%</span>
+    </div>
+    <div class="weight-bar-row">
+      <span class="weight-bar-label">经济水平 E</span>
+      <div class="weight-bar-track"><div class="weight-bar-fill" style="width:20%;background:#f39c12;"></div></div>
+      <span style="width:40px;text-align:right;font-size:12px;color:#f39c12">20%</span>
+    </div>
+    <div class="weight-bar-row">
+      <span class="weight-bar-label">警力部署 P</span>
+      <div class="weight-bar-track"><div class="weight-bar-fill" style="width:15%;background:#3498db;"></div></div>
+      <span style="width:40px;text-align:right;font-size:12px;color:#3498db">15%</span>
+    </div>
+    <div class="weight-bar-row">
+      <span class="weight-bar-label">照明基础设施 L</span>
+      <div class="weight-bar-track"><div class="weight-bar-fill" style="width:10%;background:#2ecc71;"></div></div>
+      <span style="width:40px;text-align:right;font-size:12px;color:#2ecc71">10%</span>
+    </div>
+    <div class="weight-bar-row">
+      <span class="weight-bar-label">夜间安全 N</span>
+      <div class="weight-bar-track"><div class="weight-bar-fill" style="width:10%;background:#9b59b6;"></div></div>
+      <span style="width:40px;text-align:right;font-size:12px;color:#9b59b6">10%</span>
+    </div>
+    <div class="weight-bar-row">
+      <span class="weight-bar-label">社区凝聚力 D</span>
+      <div class="weight-bar-track"><div class="weight-bar-fill" style="width:10%;background:#1abc9c;"></div></div>
+      <span style="width:40px;text-align:right;font-size:12px;color:#1abc9c">10%</span>
+    </div>
+  </div>
+
+  <!-- 图例 -->
+  <div class="section">
+    <h2><span class="icon">🗺️</span> 安全等级划分</h2>
+    <div class="legend-list">
+      <div class="legend-item">
+        <div class="legend-dot" style="background:#2ecc71;"></div>
+        <span><strong>高安全区</strong> — 得分 75-100 · 富人区/低犯罪率</span>
+      </div>
+      <div class="legend-item">
+        <div class="legend-dot" style="background:#f1c40f;"></div>
+        <span><strong>中安全区</strong> — 得分 50-74 · 混合型城区</span>
+      </div>
+      <div class="legend-item">
+        <div class="legend-dot" style="background:#e74c3c;"></div>
+        <span><strong>低安全区</strong> — 得分 25-49 · 高犯罪率/治安薄弱</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- 区域列表 -->
+  <div class="section">
+    <h2><span class="icon">📍</span> 采样区域 (15个)</h2>
+    <div class="area-list" id="area-list"></div>
+  </div>
+
+  <div class="footer-note">
+    🎓 组会演示用 · 数据为基于公开统计的模拟评分 · 仅供学术研究参考
+  </div>
+</div>
+
+<!-- ===== 地图 ===== -->
+<div id="map-container">
+  <div id="map"></div>
+</div>
+
+<script>
+// ==================== 安全评分算法 ====================
+//
+// SafetyScore = Σ (factor_i × weight_i)
+//
+// 六个因子，每个 0-100 分，加权求和得出总分 (0-100)
+
+const WEIGHTS = {
+  crime:      0.35,  // 犯罪率倒数指数
+  economy:    0.20,  // 经济水平指数
+  police:     0.15,  // 警力部署密度
+  lighting:   0.10,  // 街道照明与基础设施
+  night:      0.10,  // 夜间安全指数
+  community:  0.10,  // 社区凝聚力
+};
+
+/**
+ * 计算综合安全得分
+ * @param {Object} factors - 六个因子的得分 (0-100)
+ * @returns {number} 综合得分 (0-100)
+ */
+function computeSafetyScore(factors) {
+  let score = 0;
+  for (const [key, weight] of Object.entries(WEIGHTS)) {
+    score += (factors[key] || 0) * weight;
+  }
+  return Math.round(score);
+}
+
+/**
+ * 根据得分判定安全等级
+ */
+function getTier(score) {
+  if (score >= 75) return { level: 'high',   label: '高安全', color: '#2ecc71', icon: '🟢' };
+  if (score >= 50) return { level: 'medium', label: '中安全', color: '#f1c40f', icon: '🟡' };
+  return             { level: 'low',    label: '低安全', color: '#e74c3c', icon: '🔴' };
+}
+
+// ==================== 伦敦区域数据 ====================
+// 坐标、六个因子得分 (0-100)、区域描述
+
+const LONDON_AREAS = [
+  // ===== 🟢 高安全区 (富人区 / 低犯罪率) =====
+  {
+    id: 'kensington',
+    name: 'Kensington & Chelsea',
+    nameZh: '肯辛顿-切尔西',
+    lat: 51.5010, lng: -0.1910,
+    factors: { crime: 88, economy: 95, police: 82, lighting: 85, night: 90, community: 78 },
+    desc: '伦敦最富裕的皇家自治市，大使馆与豪华公寓云集，警力充沛，夜间治安极佳。',
+  },
+  {
+    id: 'richmond',
+    name: 'Richmond upon Thames',
+    nameZh: '里士满',
+    lat: 51.4613, lng: -0.3037,
+    factors: { crime: 92, economy: 88, police: 75, lighting: 80, night: 88, community: 90 },
+    desc: '泰晤士河畔富人区，拥有最大皇家公园，社区高度同质化，邻里守望体系完善。',
+  },
+  {
+    id: 'hampstead',
+    name: 'Hampstead',
+    nameZh: '汉普斯特德',
+    lat: 51.5556, lng: -0.1782,
+    factors: { crime: 85, economy: 93, police: 78, lighting: 82, night: 85, community: 85 },
+    desc: '北伦敦传统高端住宅区，文化名流聚集地，绿地覆盖率全伦敦最高之一。',
+  },
+  {
+    id: 'belgravia',
+    name: 'Belgravia',
+    nameZh: '贝尔格莱维亚',
+    lat: 51.4980, lng: -0.1546,
+    factors: { crime: 90, economy: 98, police: 88, lighting: 90, night: 92, community: 75 },
+    desc: '全球最贵住宅区之一，多国使馆所在地，24小时私人安保与公共警力双重覆盖。',
+  },
+  {
+    id: 'stjohnswood',
+    name: "St. John's Wood",
+    nameZh: '圣约翰伍德',
+    lat: 51.5344, lng: -0.1733,
+    factors: { crime: 86, economy: 91, police: 76, lighting: 83, night: 84, community: 82 },
+    desc: '毗邻摄政公园的经典富人区，低密度别墅为主，Abbey Road 录音室所在地。',
+  },
+
+  // ===== 🟡 中安全区 (混合城区) =====
+  {
+    id: 'camden',
+    name: 'Camden Town',
+    nameZh: '卡姆登镇',
+    lat: 51.5390, lng: -0.1426,
+    factors: { crime: 55, economy: 65, police: 62, lighting: 60, night: 48, community: 68 },
+    desc: '潮流文化中心，旅游人流密集，白天安全但夜间酒吧区偶有滋事，警力充足但人流复杂。',
+  },
+  {
+    id: 'greenwich',
+    name: 'Greenwich',
+    nameZh: '格林威治',
+    lat: 51.4821, lng: -0.0066,
+    factors: { crime: 68, economy: 62, police: 58, lighting: 65, night: 62, community: 72 },
+    desc: '世界遗产所在地，旅游与居住混合，整体治安良好，但部分区域夜间人流稀少。',
+  },
+  {
+    id: 'islington',
+    name: 'Islington',
+    nameZh: '伊斯灵顿',
+    lat: 51.5362, lng: -0.1033,
+    factors: { crime: 58, economy: 68, police: 60, lighting: 63, night: 55, community: 65 },
+    desc: '中产绅士化典型区域，年轻白领聚集，白天安全但部分公屋区夜间偶有偷窃。',
+  },
+  {
+    id: 'bermondsey',
+    name: 'Bermondsey (Southwark)',
+    nameZh: '伯蒙德西',
+    lat: 51.4988, lng: -0.0743,
+    factors: { crime: 60, economy: 55, police: 55, lighting: 58, night: 52, community: 64 },
+    desc: '泰晤士河南岸转型区，新旧混合，近年来治安明显改善但个别地段仍需注意。',
+  },
+  {
+    id: 'canarywharf',
+    name: 'Canary Wharf',
+    nameZh: '金丝雀码头',
+    lat: 51.5054, lng: -0.0216,
+    factors: { crime: 72, economy: 90, police: 80, lighting: 88, night: 70, community: 40 },
+    desc: '伦敦新金融城，工作日安保严密，但周末人流骤减后空旷区域安全感下降。',
+  },
+
+  // ===== 🔴 低安全区 (高犯罪率 / 治安薄弱) =====
+  {
+    id: 'brixton',
+    name: 'Brixton',
+    nameZh: '布里克斯顿',
+    lat: 51.4613, lng: -0.1150,
+    factors: { crime: 35, economy: 38, police: 42, lighting: 40, night: 30, community: 50 },
+    desc: '南伦敦多元文化区，历史上帮派活动较多，持刀犯罪率高于伦敦均值，夜间需警惕。',
+  },
+  {
+    id: 'hackney',
+    name: 'Hackney Central',
+    nameZh: '哈克尼中心',
+    lat: 51.5450, lng: -0.0553,
+    factors: { crime: 40, economy: 42, police: 45, lighting: 38, night: 35, community: 48 },
+    desc: '东伦敦快速绅士化区域，新旧矛盾突出，街头抢劫与入室盗窃案发率仍偏高。',
+  },
+  {
+    id: 'whitechapel',
+    name: 'Whitechapel (Tower Hamlets)',
+    nameZh: '白教堂',
+    lat: 51.5194, lng: -0.0612,
+    factors: { crime: 38, economy: 35, police: 40, lighting: 36, night: 28, community: 45 },
+    desc: '东伦敦传统劳工区，历史上为开膛手杰克案发地，贫困率与犯罪率长期高于均值。',
+  },
+  {
+    id: 'croydon',
+    name: 'Croydon',
+    nameZh: '克罗伊登',
+    lat: 51.3762, lng: -0.0982,
+    factors: { crime: 42, economy: 40, police: 38, lighting: 44, night: 33, community: 42 },
+    desc: '南伦敦大型通勤镇，商业中心人流混杂，近年持刀犯罪与反社会行为呈上升趋势。',
+  },
+  {
+    id: 'stratford',
+    name: 'Stratford (Newham)',
+    nameZh: '斯特拉特福德',
+    lat: 51.5424, lng: -0.0007,
+    factors: { crime: 45, economy: 45, police: 48, lighting: 50, night: 38, community: 40 },
+    desc: '奥运新城，贫困率居伦敦前列，大型商场周边扒窃频发，夜间僻静路段需注意。',
+  },
+];
+
+// 计算每个区域的得分与等级
+const scoredAreas = LONDON_AREAS.map(area => {
+  const score = computeSafetyScore(area.factors);
+  const tier = getTier(score);
+  return { ...area, score, tier };
+});
+
+// ==================== 地图初始化 ====================
+const map = L.map('map', { zoomControl: true }).setView([51.5074, -0.1278], 12);
+
+// 使用 CartoDB 暗色主题瓦片（适配暗色 UI）
+L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+  attribution: '&copy; <a href="https://carto.com/">CARTO</a> | &copy; <a href="https://www.openstreetmap.org/copyright">OSM</a>',
+  subdomains: 'abcd',
+  maxZoom: 18,
+}).addTo(map);
+
+// ==================== 在地图上添加标记 ====================
+const markers = [];
+
+scoredAreas.forEach(area => {
+  const { lat, lng, name, nameZh, score, tier, factors, desc } = area;
+
+  // 自定义圆形标记（颜色 + 得分）
+  const markerColor = tier.color;
+  const radius = tier.level === 'high' ? 16 : tier.level === 'medium' ? 14 : 12;
+
+  const circleMarker = L.circleMarker([lat, lng], {
+    radius: radius,
+    fillColor: markerColor,
+    color: '#fff',
+    weight: 2.5,
+    opacity: 0.9,
+    fillOpacity: 0.85,
+  }).addTo(map);
+
+  // 得分标签（用 DivIcon 在地图上直接显示数字）
+  const scoreIcon = L.divIcon({
+    className: '',
+    html: `<div style="
+      font-size: 10px; font-weight: 800; color: #fff;
+      text-shadow: 0 1px 2px rgba(0,0,0,0.6);
+      text-align: center; line-height: 1;
+      transform: translate(-50%, -50%);
+      pointer-events: none;
+    ">${score}</div>`,
+    iconSize: [30, 30],
+    iconAnchor: [15, 15],
+  });
+  L.marker([lat, lng], { icon: scoreIcon }).addTo(map);
+
+  // 弹出信息卡
+  const factorRows = Object.entries(factors).map(([key, val]) => {
+    const labelMap = { crime:'犯罪率倒数', economy:'经济水平', police:'警力部署', lighting:'照明设施', night:'夜间安全', community:'社区凝聚' };
+    const barColor = val >= 75 ? '#2ecc71' : val >= 50 ? '#f1c40f' : '#e74c3c';
+    return `
+      <div class="popup-factor-bar">
+        <span class="popup-factor-label">${labelMap[key]}</span>
+        <div class="popup-factor-track"><div class="popup-factor-fill" style="width:${val}%;background:${barColor};"></div></div>
+        <span style="font-size:11px;font-weight:600;width:28px;text-align:right;">${val}</span>
+      </div>`;
+  }).join('');
+
+  const tierEmoji = tier.level === 'high' ? '🟢' : tier.level === 'medium' ? '🟡' : '🔴';
+
+  circleMarker.bindPopup(`
+    <div class="map-popup" style="min-width:240px;">
+      <div class="popup-header">${tierEmoji} ${nameZh}<br><span style="font-size:12px;color:#888;">${name}</span></div>
+      <div class="popup-score" style="color:${tier.color};">${score}<span style="font-size:14px;color:#999;"> /100</span></div>
+      <div style="font-size:11px;color:#666;margin-bottom:6px;">${desc}</div>
+      <div style="font-weight:600;font-size:12px;margin-bottom:4px;color:#333;">📊 六因子分解</div>
+      ${factorRows}
+    </div>
+  `, { maxWidth: 320, className: '' });
+
+  markers.push({ area, circleMarker });
+});
+
+// ==================== 侧边栏区域列表 ====================
+const areaListEl = document.getElementById('area-list');
+
+// 按得分降序排列
+const sortedAreas = [...scoredAreas].sort((a, b) => b.score - a.score);
+
+sortedAreas.forEach(area => {
+  const item = document.createElement('div');
+  item.className = `area-item ${area.tier.level}`;
+  item.innerHTML = `
+    <div>
+      <div class="area-name">${area.tier.icon} ${area.nameZh}</div>
+      <div class="area-tier">${area.name} · ${area.tier.label}</div>
+    </div>
+    <div class="area-score">${area.score}</div>
+  `;
+
+  // 点击定位到地图
+  item.addEventListener('click', () => {
+    map.flyTo([area.lat, area.lng], 15, { duration: 1.2 });
+    // 找到对应 marker 并打开 popup
+    const found = markers.find(m => m.area.id === area.id);
+    if (found) {
+      found.circleMarker.openPopup();
+    }
+  });
+
+  areaListEl.appendChild(item);
+});
+
+// ==================== 统计计数 ====================
+const highCount = scoredAreas.filter(a => a.tier.level === 'high').length;
+const midCount  = scoredAreas.filter(a => a.tier.level === 'medium').length;
+const lowCount  = scoredAreas.filter(a => a.tier.level === 'low').length;
+
+document.getElementById('stat-high').textContent = highCount;
+document.getElementById('stat-mid').textContent = midCount;
+document.getElementById('stat-low').textContent = lowCount;
+
+// 计算各等级平均分
+const avgHigh = Math.round(scoredAreas.filter(a => a.tier.level === 'high').reduce((s,a) => s + a.score, 0) / highCount);
+const avgMid  = Math.round(scoredAreas.filter(a => a.tier.level === 'medium').reduce((s,a) => s + a.score, 0) / midCount);
+const avgLow  = Math.round(scoredAreas.filter(a => a.tier.level === 'low').reduce((s,a) => s + a.score, 0) / lowCount);
+
+// 更新统计卡片副标题
+document.querySelector('.stat-card.green .stat-label').innerHTML  = `🟢 高安全 · 均分 ${avgHigh}`;
+document.querySelector('.stat-card.yellow .stat-label').innerHTML = `🟡 中安全 · 均分 ${avgMid}`;
+document.querySelector('.stat-card.red .stat-label').innerHTML    = `🔴 低安全 · 均分 ${avgLow}`;
+
+// ==================== 全局得分分布 ====================
+console.log('===== 伦敦区域安全评分报告 =====');
+console.log(`总计 ${scoredAreas.length} 个采样区域`);
+scoredAreas.forEach(a => {
+  console.log(`  ${a.tier.icon} ${a.nameZh} (${a.name}): ${a.score}/100 — ${a.tier.label}`);
+});
+console.log(`高安全区 ${highCount} 个, 均分 ${avgHigh}`);
+console.log(`中安全区 ${midCount} 个, 均分 ${avgMid}`);
+console.log(`低安全区 ${lowCount} 个, 均分 ${avgLow}`);
+console.log('===================================');
+
+// 初始自适应
+map.invalidateSize();
+</script>
+</body>
+</html>

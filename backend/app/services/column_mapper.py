@@ -30,6 +30,14 @@ COLUMN_ALIASES: dict[str, list[str]] = {
         "monthly rent", "rent", "租金(月)", "月租金(元)", "每月租金",
         "房租", "月房租", "租金/月",
     ],
+    "rent_period": [
+        "rent_period", "租金周期", "租金频率", "rent period",
+        "rent frequency", "payment period", "周租/月租", "计费周期",
+    ],
+    "currency": [
+        "currency", "货币", "币种", "货币代码", "currency code",
+        "币制", "计价货币",
+    ],
     "area_sqm": [
         "area_sqm", "面积", "建筑面积", "使用面积", "area", "size",
         "平方米", "㎡", "平米", "平方", "房屋面积", "套内面积",

@@ -4,12 +4,14 @@ import hashlib
 import json
 from datetime import datetime, timezone
 from decimal import Decimal
+from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.booking import Booking, BookingStatus
 from app.models.contract import Contract
+from app.models.institute import Institute
 from app.models.policy_consent import PolicyConsent
 from app.models.property import Property, PropertyType
 from app.models.user import User
@@ -41,11 +43,13 @@ class ContractService:
         self.session = session
 
     async def _build_source_snapshot(self, booking: Booking) -> dict:
-        tenant = await self.session.get(User, booking.tenant_id)
+        tenant = await self.session.get(User, booking.user_id)
         landlord = await self.session.get(User, booking.bm_id)
-        property_obj = await self.session.get(Property, booking.institute_id)
+        # 三层改两层后 Property = UnitType，用 unit_type_id 而非 institute_id 查询
+        property_obj = await self.session.get(Property, booking.unit_type_id)
         if not property_obj:
-            raise ValueError("Property not found")
+            raise ValueError(f"UnitType not found for id={booking.unit_type_id}")
+        institute = await self.session.get(Institute, booking.institute_id)
 
         application = booking.application_data or {}
         personal = application.get("personal_info") or {}
@@ -119,11 +123,11 @@ class ContractService:
             "platform_role": PLATFORM_ROLE,
             "tenant_name_cn": tenant_cn,
             "tenant_name_en": tenant_en,
-            "property_name": getattr(getattr(property_obj, 'unit_type', None), 'name', property_obj.room_number or ''),
-            "property_address": getattr(getattr(getattr(property_obj, 'unit_type', None), 'institute', None), 'address', ''),
+            "property_name": property_obj.name or '',
+            "property_address": institute.address if institute else '',
             "property_id": property_obj.id,
-            "room_type": getattr(getattr(property_obj, 'unit_type', None), 'name', '') or '',
-            "occupancy_limit": property_rules.get("occupancy_limit") or max(1, getattr(getattr(property_obj, 'unit_type', None), 'bedrooms', 0) or 1),
+            "room_type": property_obj.name or '',
+            "occupancy_limit": property_rules.get("occupancy_limit") or max(1, getattr(property_obj, 'bedrooms', 0) or 1),
             "commencement_date": commencement,
             "expiry_date": option["end_date"],
             "tenancy_months": booking.lease_months,
@@ -204,10 +208,10 @@ class ContractService:
         ).hexdigest()
         snapshot["content_hash"] = content_hash
         contract = Contract(
-            booking_id=booking.id, tenant_id=booking.tenant_id, property_id=booking.institute_id,
+            booking_id=booking.id, tenant_id=booking.user_id, unit_type_id=booking.unit_type_id,
             template_name="housing_reservation_tenancy_bilingual", agreement_number=agreement_number,
             version=version, template_version=TEMPLATE_VERSION, content_hash=content_hash,
-            snapshot=snapshot, generated_at=generated_at, content=content, status="generated",
+            snapshot=snapshot, generated_at=generated_at, content=content, status="awaiting_signature",
         )
         self.session.add(contract)
         if booking.status not in {BookingStatus.cancelled, BookingStatus.rejected, BookingStatus.completed}:
@@ -218,6 +222,42 @@ class ContractService:
         await self.session.commit()
         await self.session.refresh(contract)
         return contract
+
+    async def build_contract_context(self, booking_id: int) -> dict[str, Any]:
+        """为 PDF 渲染构建上下文字典。"""
+        booking = await self.session.get(Booking, booking_id)
+        if not booking:
+            raise ValueError(f"Booking not found: {booking_id}")
+        source = await self._build_source_snapshot(booking)
+        tenant = await self.session.get(User, booking.user_id)
+        institute = await self.session.get(Institute, booking.institute_id)
+        unit_type = await self.session.get(Property, booking.unit_type_id)
+        application = booking.application_data or {}
+        personal = application.get("personal_info") or {}
+        return {
+            "tenant_name": source.get("tenant_name_cn", ""),
+            "tenant_phone": getattr(tenant, "phone", None) or "",
+            "tenant_email": getattr(tenant, "email", None) or "",
+            "tenant_school": personal.get("school", "") or "",
+            "tenant_passport": personal.get("passport_number", "") or "",
+            "property_name": source.get("property_name", ""),
+            "property_address": source.get("property_address", ""),
+            "unit_type_name": getattr(unit_type, "name", "") if unit_type else "",
+            "room_number": booking.room_number or "",
+            "monthly_rent": source.get("monthly_rent", ""),
+            "deposit_amount": source.get("deposit", ""),
+            "lease_start": source.get("commencement_date", ""),
+            "lease_end": source.get("expiry_date", ""),
+            "sign_date": datetime.now(timezone.utc).strftime("%Y-%m-%d"),
+            # 中文别名，兼容不同 renderer 的 key 命名
+            "tenant_name_cn": source.get("tenant_name_cn", ""),
+            "tenant_name_en": source.get("tenant_name_en", ""),
+            "order_number": source.get("order_number", ""),
+            "commencement_date": source.get("commencement_date", ""),
+            "end_date": source.get("expiry_date", ""),
+            "lease_months": str(source.get("tenancy_months", "")),
+            "security_deposit": source.get("deposit", ""),
+        }
 
     async def get_contract(self, contract_id: str) -> Contract | None:
         return await self.session.get(Contract, contract_id)

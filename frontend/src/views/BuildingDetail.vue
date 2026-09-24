@@ -10,11 +10,11 @@
           </div>
           <div class="hd-right">
             <div class="score-card safety">
-              <span class="sc-label">安全评分</span>
-              <span class="sc-num">{{ building.safety_score ?? '--' }}</span>
-              <span class="sc-sub">/10</span>
+              <span class="sc-label">安全</span>
+              <span class="sc-num">{{ building.safety_score != null ? building.safety_score.toFixed(1) : '--' }}</span>
+              <span class="sc-sub">/5</span>
             </div>
-            <el-button type="primary" size="large" class="hd-book-btn" @click="showContactDialog = true">📅 预约看房</el-button>
+            <el-button type="primary" size="large" class="hd-book-btn" @click="showContactDialog = true">预约看房</el-button>
           </div>
         </div>
       </section>
@@ -72,13 +72,16 @@
         </div>
       </section>
 
-      <!-- ═══ 5. 地理位置 ═══ -->
-      <section class="bd-map">
-        <h2 class="sec-title">📍 地理位置</h2>
-        <p class="map-addr">{{ building.address || '地址未设置' }}</p>
-        <div v-if="building.latitude" ref="mapContainer" class="map-box"></div>
-        <p v-else class="map-empty">暂无地图坐标</p>
-      </section>
+      <!-- ═══ 5. 地理位置 + 周边设施 ═══ -->
+      <PropertyMapCard
+        v-if="building.latitude && building.longitude"
+        :property-id="building.id"
+        :property-lat="building.latitude"
+        :property-lng="building.longitude"
+        :property-title="building.name"
+        :property-address="building.address || '地址未设置'"
+        :country="building.country || undefined"
+      />
 
       <!-- ═══ 6. 特别说明 ═══ -->
       <section class="bd-special" v-if="specialMarkers.length">
@@ -115,7 +118,7 @@
               </div>
             </div>
             <div class="ut-price-col">
-              <div class="ut-rent">{{ formatPrice(ut.base_rent, ut.currency) }}<em>/月</em></div>
+              <div class="ut-rent">{{ formatPrice(ut.base_rent, ut.currency) }}<em>{{ ut.rent_period === 'weekly' ? '/周' : '/月' }}</em></div>
               <div class="ut-deposit" v-if="ut.deposit_amount">押金 {{ formatPrice(ut.deposit_amount, ut.currency) }}</div>
               <el-button class="ut-book" @click="handleBook(ut.id)">立即预定</el-button>
             </div>
@@ -139,14 +142,25 @@
           <el-input v-model="visitForm.guestMessage" type="textarea" :rows="3" placeholder="选填：期望看房时间、特殊需求等" maxlength="500" show-word-limit />
         </el-form-item>
       </el-form>
-      <div v-if="building?.staff?.length" style="margin-top:16px;padding-top:16px;border-top:1px solid #eee">
-        <div style="font-size:14px;font-weight:600;color:#303133;margin-bottom:8px">📋 公寓联系人</div>
-        <div v-for="s in building.staff" :key="s.name" class="ct-item">
-          <div class="ct-name">{{ s.name }} <el-tag size="small">{{ s.role === 'manager' ? '负责人' : s.role }}</el-tag></div>
-          <div v-if="s.phone" class="ct-info">📞 {{ s.phone }}</div>
-          <div v-if="s.wechat" class="ct-info">💬 微信：{{ s.wechat }}</div>
-          <div v-if="s.email" class="ct-info">📧 {{ s.email }}</div>
-          <el-image v-if="s.wechat_qr" :src="imgUrl(s.wechat_qr)" :preview-src-list="[imgUrl(s.wechat_qr)]" style="width:80px;height:80px;margin-top:4px;border-radius:6px;cursor:pointer" fit="cover" />
+      <div v-if="visitContacts.length" style="margin-top:16px;padding-top:16px;border-top:1px solid #eee">
+        <div style="font-size:14px;font-weight:600;color:#303133;margin-bottom:10px">📋 公寓管家微信</div>
+        <div class="ct-list">
+          <div v-for="contact in visitContacts" :key="contact.key" class="ct-item visit-contact">
+            <div class="ct-name">
+              {{ contact.name }}
+              <el-tag size="small">{{ contact.role === 'manager' ? '负责人' : contact.role }}</el-tag>
+            </div>
+            <div v-if="contact.phone" class="ct-info">📞 {{ contact.phone }}</div>
+            <div v-if="contact.wechat" class="ct-info">💬 微信：{{ contact.wechat }}</div>
+            <el-image
+              v-if="contact.wechat_qr"
+              :src="imgUrl(contact.wechat_qr)"
+              :preview-src-list="[imgUrl(contact.wechat_qr)]"
+              style="width:180px;height:180px;border-radius:8px;cursor:pointer"
+              fit="cover"
+            />
+            <div v-if="contact.wechat_qr" style="font-size:12px;color:#909399;margin-top:6px">扫码添加管家微信，咨询看房</div>
+          </div>
         </div>
       </div>
       <template #footer>
@@ -160,27 +174,17 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, nextTick, watch } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import api from '@/services/api'
-import L from 'leaflet'
+import api, { toUserFriendly } from '@/services/api'
 import { formatPrice } from '@/data/currency'
-import 'leaflet/dist/leaflet.css'
-
-delete (L.Icon.Default.prototype as any)._getIconUrl
-L.Icon.Default.mergeOptions({
-  iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
-  iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
-  shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
-})
+import PropertyMapCard from '@/components/PropertyMapCard.vue'
 
 const route = useRoute(); const router = useRouter()
 const loading = ref(true); const error = ref('')
 const building = ref<any>(null); const showContactDialog = ref(false)
 const descExpanded = ref(false)
-const mapContainer = ref<HTMLElement | null>(null); let mapInstance: L.Map | null = null
-
 // 预约看房表单
 const visitFormRef = ref()
 const visitSubmitting = ref(false)
@@ -202,14 +206,55 @@ async function submitVisit() {
     showContactDialog.value = false
     visitForm.value = { guestPhone: '', guestMessage: '' }
   } catch (e: any) {
-    ElMessage.error(e?.response?.data?.detail || '发送失败，请重试')
+    ElMessage.error(toUserFriendly(e))
   } finally { visitSubmitting.value = false }
 }
 
-const imgUrl = (fn: string) => '/api/v1/uploads/' + fn
+type VisitContact = {
+  key: string
+  name: string
+  role: string
+  phone?: string | null
+  wechat?: string | null
+  wechat_qr?: string | null
+}
 
-watch(building, async (val) => {
-  if (val?.latitude) { await nextTick(); setTimeout(() => { initMap(); mapInstance?.invalidateSize() }, 400) }
+const imgUrl = (fn: string) => {
+  if (!fn) return ''
+  if (/^https?:\/\//i.test(fn) || fn.startsWith('/api/')) return fn
+  return '/api/v1/uploads/' + fn.replace(/^\/+/, '')
+}
+
+const visitContacts = computed<VisitContact[]>(() => {
+  const contacts: VisitContact[] = []
+  const seen = new Set<string>()
+  const push = (contact: VisitContact) => {
+    const key = `${contact.role}:${contact.name}:${contact.wechat || ''}:${contact.wechat_qr || ''}`
+    if ((!contact.wechat && !contact.wechat_qr) || seen.has(key)) return
+    seen.add(key)
+    contacts.push({ ...contact, key })
+  }
+
+  for (const staff of building.value?.staff || []) {
+    push({
+      key: '',
+      name: staff.name || '公寓管家',
+      role: staff.role || 'staff',
+      phone: staff.phone,
+      wechat: staff.wechat,
+      wechat_qr: staff.wechat_qr,
+    })
+  }
+
+  push({
+    key: '',
+    name: '公寓管家',
+    role: 'manager',
+    wechat: building.value?.bm_wechat,
+    wechat_qr: building.value?.bm_wechat_qr,
+  })
+
+  return contacts
 })
 
 const CATS: Record<string, { name: string; icon: string; items: string[] }> = {
@@ -277,14 +322,6 @@ function openLightbox(index: number) {
   cl.onclick=(e)=>{e.stopPropagation();o.remove()}; o.appendChild(cl); o.onclick=()=>o.remove(); document.body.appendChild(o)
 }
 
-function initMap() {
-  if (!building.value?.latitude || !mapContainer.value) return
-  mapInstance?.remove(); mapInstance = null
-  mapInstance = L.map(mapContainer.value, { center:[building.value.latitude,building.value.longitude], zoom:15, scrollWheelZoom:true, dragging:true })
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution:'© OpenStreetMap' }).addTo(mapInstance)
-  L.marker([building.value.latitude,building.value.longitude]).addTo(mapInstance)
-}
-
 onMounted(async () => {
   try { const r = await api.get(`/buildings/${route.params.id}/tenant-detail`); building.value = r.data }
   catch (e: any) { error.value = e?.response?.status === 404 ? '公寓不存在' : '加载失败' }
@@ -305,11 +342,13 @@ onMounted(async () => {
 .hd-title { font-size: 32px; font-weight: 800; margin: 0 0 6px; color: #1a1a2e; letter-spacing: .5px; line-height: 1.2 }
 .hd-addr { font-size: 15px; color: #888; margin: 0 }
 .hd-desc { color: #555; line-height: 1.7; font-size: 16px; margin: 0; white-space: pre-wrap; max-height: 180px; overflow: auto }
-.score-card { display:flex; flex-direction:column; align-items:center; justify-content:center;  border-radius:14px; background:#fff; box-shadow:0 2px 12px rgba(0,0,0,.06); transition:transform .2s }
-.score-card.safety { border:2px solid #e8f5e9; background:linear-gradient(135deg,#f1f8e9,#fff) }
-.sc-num { font-size:30px; font-weight:800; color:#1a1a2e; line-height:1 }
-.sc-sub { font-size:11px; color:#999;  }
-.hd-book-btn { font-size: 16px; padding: 14px 0; border-radius: 10px; font-weight: 600; letter-spacing: 2px; width: 100% }
+.score-card { display:flex; flex-direction:column; align-items:center; justify-content:center; border-radius:14px; background:#fff; box-shadow:0 2px 12px rgba(0,0,0,.06); transition:transform .2s; height:72px; box-sizing:border-box; flex-shrink:0 }
+.score-card.safety { border:2px solid #e8f5e9; background:linear-gradient(135deg,#f1f8e9,#fff); width:72px; padding:8px 4px }
+.sc-label { font-size:12px; color:#888; line-height:1.3 }
+.sc-num { font-size:24px; font-weight:800; color:#1a1a2e; line-height:1.2 }
+.sc-sub { font-size:11px; color:#999; line-height:1.3 }
+.hd-book-btn { font-size:16px; font-weight:600; letter-spacing:2px; height:72px; width:130px; flex-shrink:0; border-radius:36px; border:none; background:linear-gradient(135deg,#FF6B35,#ff8c5a) }
+.hd-book-btn:hover { background:linear-gradient(135deg,#e55a2b,#ff6B35); box-shadow:0 4px 14px rgba(255,107,53,.3) }
 
 /* ═══ 2. 图片轮播 ═══ */
 .bd-gallery { margin-bottom: 24px }

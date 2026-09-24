@@ -1,6 +1,6 @@
 """支付成功后的房东邮件与站内通知测试。"""
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch
 
@@ -9,19 +9,19 @@ import pytest
 from app.models.booking import BookingStatus
 from app.models.notification import NotificationOutboxStatus
 from app.models.payment import PaymentStatus
+from app.models.user import UserRole
 from app.services.email_templates import render
 from app.services.order_notification_service import OrderNotificationService
 from app.services.payment_service import PaymentOrderService
-from app.tasks.outbox_tasks import record_delivery_failure
 
 
 def make_booking(status=BookingStatus.paid):
-    return SimpleNamespace(id=42, property_id=8, status=status, scheduled_date="2026-08-01", lease_months=12)
+    return SimpleNamespace(id=42, user_id=7, unit_type_id=8, bm_id=9, status=status, scheduled_date="2026-08-01", lease_months=12)
 
 
 def make_payment(status=PaymentStatus.success):
     return SimpleNamespace(
-        id="pay-42", status=status, paid_at=datetime(2026, 7, 22, tzinfo=timezone.utc),
+        id="pay-42", order_id="order-42", status=status, paid_at=datetime(2026, 7, 22, tzinfo=timezone.utc),
         settlement_currency="GBP", settlement_amount_minor=100000,
         cny_reference_amount_minor=920000, property_currency="GBP",
         snapshot={"commencement_date":"2026-08-01","expiry_date":"2027-08-01","tenancy_months":12,
@@ -31,14 +31,14 @@ def make_payment(status=PaymentStatus.success):
 
 
 def make_property():
-    return SimpleNamespace(id=8, landlord_id=9, title="测试公寓", address="测试地址", property_type=SimpleNamespace(value="apartment"))
+    return SimpleNamespace(id=8, name="测试户型", institute=SimpleNamespace(bm_id=9, address="测试地址"))
 
 
 @pytest.mark.asyncio
 async def test_paid_webhook_event_enqueues_landlord_once():
-    session=Mock(); session.scalar=AsyncMock(return_value=None)
-    landlord=SimpleNamespace(id=9,username="房东",email="landlord@example.test",email_verified=True)
-    session.get=AsyncMock(side_effect=[make_property(),landlord])
+    session=Mock(); session.scalar=AsyncMock(side_effect=[None,make_property()])
+    landlord=SimpleNamespace(id=9,username="房东",email="landlord@example.test",email_verified=True,role=UserRole.landlord)
+    session.get=AsyncMock(return_value=landlord)
     row=await OrderNotificationService(session).enqueue_landlord_booking_confirmed(make_booking(),make_payment(),contract=SimpleNamespace(agreement_number="C-42"))
     assert row.event_key=="landlord-booking-confirmed:42:pay-42"
     assert row.event_type=="LANDLORD_BOOKING_CONFIRMED" and row.recipient_email==landlord.email
@@ -67,21 +67,13 @@ async def test_non_paid_states_never_enqueue_success_notice(booking_status,payme
 
 @pytest.mark.asyncio
 async def test_unverified_landlord_email_creates_failed_record_and_admin_alert():
-    session=Mock(); session.scalar=AsyncMock(return_value=None); session.scalars=AsyncMock(return_value=[SimpleNamespace(id=99)])
-    landlord=SimpleNamespace(id=9,username="房东",email="unverified@example.test",email_verified=False)
-    session.get=AsyncMock(side_effect=[make_property(),landlord])
+    session=Mock(); session.scalar=AsyncMock(side_effect=[None,make_property()]); session.scalars=AsyncMock(return_value=[SimpleNamespace(id=99)])
+    landlord=SimpleNamespace(id=9,username="房东",email="unverified@example.test",email_verified=False,role=UserRole.landlord)
+    session.get=AsyncMock(return_value=landlord)
     row=await OrderNotificationService(session).enqueue_landlord_booking_confirmed(make_booking(),make_payment(),contract=SimpleNamespace(agreement_number="C-42"))
     assert row.status==NotificationOutboxStatus.failed and row.retryable is False
     assert row.recipient_email is None and row.last_error=="LANDLORD_EMAIL_NOT_VERIFIED"
     assert session.add.called
-
-
-def test_email_failure_is_retryable_with_backoff():
-    row=SimpleNamespace(attempts=0,status=NotificationOutboxStatus.processing,last_error=None,next_attempt_at=None)
-    now=datetime(2026,7,22,tzinfo=timezone.utc)
-    record_delivery_failure(row,RuntimeError("mailpit unavailable"),now)
-    assert row.attempts==1 and row.status==NotificationOutboxStatus.failed
-    assert row.next_attempt_at>now
 
 
 def test_landlord_email_contains_no_sensitive_tenant_data():
@@ -94,14 +86,14 @@ def test_landlord_email_contains_no_sensitive_tenant_data():
 @pytest.mark.asyncio
 async def test_verified_success_webhook_is_the_trigger_for_landlord_notice():
     session=Mock(); session.scalar=AsyncMock(); session.commit=AsyncMock(); session.refresh=AsyncMock()
-    booking=SimpleNamespace(id=42,property_id=8,status=BookingStatus.payment_processing,deposit_status="unpaid",payment_transaction_id=None,inventory_reserved=True)
-    payment=make_payment(); payment.status=PaymentStatus.processing; payment.booking_id=42; payment.provider_payment_id="provider-pay-42"; payment.expires_at=datetime(2026,7,23,tzinfo=timezone.utc)
+    booking=SimpleNamespace(id=42,user_id=7,unit_type_id=8,institute_id=3,bm_id=9,status=BookingStatus.payment_processing,deposit_status="unpaid",payment_transaction_id=None,inventory_reserved=True)
+    payment=make_payment(); payment.status=PaymentStatus.processing; payment.booking_id=42; payment.provider_payment_id="provider-pay-42"; payment.expires_at=datetime.now(timezone.utc)+timedelta(hours=1)
     property_obj=SimpleNamespace(status="available")
     session.scalar.side_effect=[None,payment,booking,payment,property_obj]
     service=PaymentOrderService(session)
     service.provider.verify_webhook=Mock(return_value={"event_id":"evt-success","provider_payment_id":"provider-pay-42","status":"succeeded","transaction_id":"txn-42"})
     service.validate_event=Mock()
-    with patch.object(OrderNotificationService,"enqueue",new=AsyncMock()), patch.object(OrderNotificationService,"enqueue_landlord_booking_confirmed",new=AsyncMock()) as landlord_enqueue:
+    with patch.object(OrderNotificationService,"enqueue",new=AsyncMock()), patch("app.services.notification_service.NotificationService.add_admin_order_notifications",new=AsyncMock()), patch.object(OrderNotificationService,"enqueue_landlord_booking_confirmed",new=AsyncMock()) as landlord_enqueue:
         await service.process_webhook(b"signed-provider-payload","valid-signature")
     assert booking.status==BookingStatus.paid and payment.status==PaymentStatus.success
     landlord_enqueue.assert_awaited_once_with(booking,payment)

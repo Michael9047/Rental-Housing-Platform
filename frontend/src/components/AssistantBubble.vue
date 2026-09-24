@@ -74,9 +74,12 @@
                   </div>
                   <div class="ab-rec-info">
                     <div class="ab-rec-title" :title="rec.property.title">{{ rec.property.title }}</div>
-                    <div class="ab-rec-meta">{{ rec.property.district }} · ¥{{ rec.property.price_monthly }}/月</div>
+                    <div class="ab-rec-meta">
+                      {{ rec.property.district || rec.property.institute_name || '位置待确认' }} ·
+                      {{ recommendationPrice(rec) }}/月
+                    </div>
                     <div class="ab-rec-acts">
-                      <el-button size="small" text type="primary" @click="goLink(`/building/${rec.property_id}`)">
+                      <el-button size="small" text type="primary" @click="openRecommendation(rec)">
                         详情
                       </el-button>
                       <el-tooltip
@@ -130,6 +133,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
+import { storeToRefs } from 'pinia'
 import {
   ChatDotRound,
   Check,
@@ -141,22 +145,34 @@ import {
 } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { agentService } from '@/services/agent'
+import { formatPrice } from '@/data/currency'
 import { getImageUrl } from '@/utils/image'
 import { useAuthStore } from '@/stores/auth'
 import { useAgentChatStore } from '@/stores/agentChat'
 import { useCartStore } from '@/stores/cart'
-import type { AgentChatMessage, AgentRecommendation, FaqChip } from '@/types/agent'
+import { uniqueAgentRecommendations } from '@/utils/agentRecommendations'
+import type {
+  AgentChatMessage,
+  AgentFilters,
+  AgentRecommendation,
+  AgentStreamMeta,
+  FaqChip,
+} from '@/types/agent'
 import type { PropertySearchResult } from '@/types/property'
 
 const router = useRouter()
 const authStore = useAuthStore()
 const agentChatStore = useAgentChatStore()
 const cartStore = useCartStore()
+const {
+  sessionId,
+  messages,
+  aiAvailable,
+  rememberedPreferences,
+} = storeToRefs(agentChatStore)
 
 const open = ref(false)
 const maximized = ref(false)
-const sessionId = ref<number | null>(null)
-const messages = ref<AgentChatMessage[]>([])
 const inputText = ref('')
 const sending = ref(false)
 const faqChips = ref<FaqChip[]>([])
@@ -244,21 +260,27 @@ watch(() => agentChatStore.pendingQuery, async (q) => {
   // 消费查询（防止重复触发）
   const query = agentChatStore.consumeQuery()
   if (!query) return
+  if (!authStore.isLoggedIn) {
+    ElMessage.warning('请先登录后再使用 AI 租房管家')
+    const redirect = router.resolve({ name: 'ai-search', query: { q: query } }).fullPath
+    void router.push({ name: 'login', query: { redirect } })
+    return
+  }
   // 打开面板并确保会话存在
   open.value = true
-  if (sessionId.value === null) {
-    try {
-      const session = await agentService.createSession()
-      sessionId.value = session.session_id
-    } catch {
-      ElMessage.error('助手启动失败，请稍后重试')
-      return
-    }
+  try {
+    await agentChatStore.ensureSession()
+  } catch {
+    ElMessage.error('助手启动失败，请稍后重试')
+    return
   }
   await send(query)
 })
 
 function imageUrl(property: PropertySearchResult): string | null {
+  if (property.primary_image_url) return getImageUrl(property.primary_image_url)
+  if (property.image_urls?.length) return getImageUrl(property.image_urls[0])
+  if (property.primary_image?.filename) return getImageUrl(property.primary_image.filename)
   const images = property.images
   if (!images || images.length === 0) return null
   const primary = images.find((img) => img.is_primary) || images[0]
@@ -271,32 +293,87 @@ async function scrollToBottom() {
 }
 
 async function handleOpen() {
+  if (!authStore.isLoggedIn) {
+    ElMessage.warning('请先登录后再使用 AI 租房管家')
+    void router.push({
+      name: 'login',
+      query: { redirect: router.currentRoute.value.fullPath },
+    })
+    return
+  }
   open.value = true
   if (faqChips.value.length === 0) {
     agentService.getFaqs().then((chips) => (faqChips.value = chips)).catch(() => undefined)
   }
-  if (sessionId.value === null) {
-    try {
-      const session = await agentService.createSession()
-      sessionId.value = session.session_id
-      // 首次打开：主动打招呼
-      if (messages.value.length === 0) {
-        messages.value.push({
-          role: 'assistant',
-          content:
-            '你好，我是 AI 租房管家 👋\n找房、预订流程、合同、押金退款…都可以问我，也可以点下面的快捷按钮。',
-        })
-      }
-    } catch {
-      ElMessage.error('助手启动失败，请稍后重试')
-      open.value = false
-    }
+  try {
+    await agentChatStore.ensureSession()
+  } catch {
+    ElMessage.error('助手启动失败，请稍后重试')
+    open.value = false
   }
 }
 
-async function send(preset?: string) {
+function activeContextFilters(): AgentFilters | undefined {
+  for (let index = messages.value.length - 1; index >= 0; index -= 1) {
+    const summary = messages.value[index].stateSummary
+    // 空 filters 也是服务端确认过的会话状态；不能因此回退到长期偏好，
+    // 否则刚清除的条件会在下一轮被重新提交。
+    if (summary) return (summary.filters || {}) as AgentFilters
+  }
+  return Object.keys(rememberedPreferences.value).length
+    ? { ...rememberedPreferences.value }
+    : undefined
+}
+
+function recommendationPrice(recommendation: AgentRecommendation): string {
+  const property = recommendation.property
+  return formatPrice(
+    property.price_monthly ?? property.base_rent,
+    property.currency || undefined,
+    property.country,
+  )
+}
+
+function applyMeta(message: AgentChatMessage, meta: AgentStreamMeta): void {
+  if (meta.thinking_steps) message.thinkingSteps = meta.thinking_steps
+  if (meta.query_rewrite) message.queryRewrite = meta.query_rewrite
+  if (meta.sources) message.sources = meta.sources
+  if (meta.state_summary) message.stateSummary = meta.state_summary
+  if (meta.guided_options) message.guidedOptions = meta.guided_options
+  if (meta.quick_replies) message.quickReplies = meta.quick_replies
+  if (meta.links) message.links = meta.links
+  if (meta.filter_patch) message.filterPatch = meta.filter_patch
+  if (meta.cleared_filters) message.clearedFilters = meta.cleared_filters
+  if (meta.ai_available !== undefined) {
+    message.aiAvailable = meta.ai_available
+    aiAvailable.value = meta.ai_available
+  }
+
+  const recommendations = uniqueAgentRecommendations(meta.recommendations)
+  const topPicks = uniqueAgentRecommendations(meta.top_picks)
+  if (recommendations.length) {
+    message.recommendations = recommendations.slice(0, 3)
+    message.allRecommendations = recommendations
+    message.topPicks = topPicks.length ? topPicks : undefined
+  } else if (topPicks.length) {
+    message.recommendations = topPicks.slice(0, 3)
+    message.allRecommendations = topPicks
+    message.topPicks = topPicks
+  }
+}
+
+async function send(preset?: string): Promise<void> {
   const text = (preset ?? inputText.value).trim()
-  if (!text || sending.value || sessionId.value === null) return
+  if (!text || sending.value) return
+
+  if (sessionId.value === null) {
+    try {
+      await agentChatStore.ensureSession()
+    } catch {
+      ElMessage.error('会话创建失败，请稍后重试')
+      return
+    }
+  }
 
   messages.value.push({ role: 'user', content: text })
   if (!preset) inputText.value = ''
@@ -304,36 +381,40 @@ async function send(preset?: string) {
   await scrollToBottom()
 
   // 先插入空的 AI 消息占位，流式逐 token 填充
-  const assistantMsg: AgentChatMessage = {
-    role: 'assistant',
-    content: '',
-  }
-  messages.value.push(assistantMsg)
+  const assistantMsg = agentChatStore.appendStreamingAssistant()
 
   try {
     await agentService.sendMessageStream(
-      sessionId.value,
-      { message: text },
+      sessionId.value!,
+      {
+        message: text,
+        context_filters: activeContextFilters(),
+        mode: 'auto',
+      },
       {
         onToken(token: string) {
           assistantMsg.content += token
-          scrollToBottom()
+          void scrollToBottom()
         },
         onMeta(meta) {
-          if (meta.intent && (meta.intent === 'search' || meta.intent === 'recommend')) {
-            if (meta.recommendations?.length) {
-              assistantMsg.recommendations = meta.recommendations.slice(0, 3) as any
-            }
-          }
-          if (meta.quick_replies?.length) assistantMsg.quickReplies = meta.quick_replies
-          if (meta.cart_changed) cartStore.fetch()
+          applyMeta(assistantMsg, meta)
+          if (meta.cart_changed) void cartStore.fetch()
+        },
+        onError(message) {
+          if (!assistantMsg.content) assistantMsg.content = `抱歉，${message}`
         },
       },
     )
-  } catch {
-    assistantMsg.content = assistantMsg.content || '抱歉，请求失败了，请稍后再试。'
+    if (!assistantMsg.content) assistantMsg.content = '这次没有生成有效回复，请换一种说法再试。'
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : '请求失败，请稍后再试'
+    assistantMsg.content = assistantMsg.content
+      ? `${assistantMsg.content}\n\n（连接中断：${reason}）`
+      : `抱歉，${reason}`
   } finally {
+    assistantMsg.streaming = false
     sending.value = false
+    void agentChatStore.fetchSessions()
     await scrollToBottom()
   }
 }
@@ -360,6 +441,21 @@ async function toggleCart(rec: AgentRecommendation) {
 function goLink(to: string) {
   open.value = false
   router.push(to)
+}
+
+/** 推荐实体是 UnitType；详情页路由使用 Institute ID，并保留户型定位参数。 */
+function openRecommendation(recommendation: AgentRecommendation): void {
+  open.value = false
+  const instituteId = Number(recommendation.property.institute_id)
+  if (Number.isInteger(instituteId) && instituteId > 0) {
+    void router.push({
+      name: 'building-detail',
+      params: { id: instituteId },
+      query: { unit_type_id: String(recommendation.property_id) },
+    })
+    return
+  }
+  void router.push({ name: 'property-detail', params: { id: recommendation.property_id } })
 }
 </script>
 

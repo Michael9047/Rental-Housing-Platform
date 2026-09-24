@@ -12,9 +12,15 @@ data/
 # Frontend
 frontend/node_modules/
 frontend/dist/
+frontend/vite_out.txt
+frontend/vite_err.txt
 
 # Uploads
 backend/uploads/
+backend/private_objects/
+
+# Logs
+backend/logs/
 
 # Dev database (SQLite)
 *.db
@@ -39,3 +45,7 @@ uhomes-design/screenshots/
 # Misc large binaries
 .mcp/*.png
 docs/*.png
+
+# 前端静态数据属于源码，必须随项目提交
+!frontend/src/data/
+!frontend/src/data/**

@@ -36,7 +36,11 @@ async def test_create_get_update_delete_user(
         },
     )
 
-    create_response = await client.post("/api/v1/users", json=landlord_payload)
+    create_response = await client.post(
+        "/api/v1/users",
+        json=landlord_payload,
+        headers=admin_headers,
+    )
     assert create_response.status_code == 201
     created = create_response.json()
     assert created["username"] == "landlord_demo"
@@ -74,6 +78,16 @@ async def test_create_get_update_delete_user(
 @pytest.mark.asyncio
 async def test_unauthenticated_user_cannot_list_users(client: AsyncClient) -> None:
     response = await client.get("/api/v1/users")
+
+    assert response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_unauthenticated_user_cannot_create_user(
+    client: AsyncClient,
+    landlord_payload: dict[str, str],
+) -> None:
+    response = await client.post("/api/v1/users", json=landlord_payload)
 
     assert response.status_code == 401
 

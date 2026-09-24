@@ -49,10 +49,19 @@
         {{ p.address }}
       </p>
 
+      <div v-if="entity === 'unit-type'" class="card-facts">
+        <span>{{ p.bedrooms }}室{{ p.bathrooms }}卫</span>
+        <span v-if="p.area_sqm != null">{{ p.area_sqm }}㎡</span>
+      </div>
+
       <div class="card-footer">
         <div class="price-block">
           <span class="card-price">{{ formatPrice(p.price_monthly, p.currency) }}</span>
-          <span class="price-unit">/月</span>
+          <span class="price-unit">{{ property.rent_period === 'weekly' ? '/周' : '/月' }}</span>
+        </div>
+        <!-- 安全评分 — 与 BuildingDetail 统一格式：x.x/5 -->
+        <div v-if="property.safety_score != null" class="safety-badge" :class="safetyLevel">
+          🛡 {{ property.safety_score.toFixed(1) }}<span class="safety-sub">/5</span>
         </div>
         <div class="card-actions" @click.stop>
           <el-button
@@ -70,14 +79,15 @@
             查看详情
           </el-button>
           <el-tooltip
-            v-if="authStore.isLoggedIn"
-            :content="inCart ? '点击移出候选清单' : '加入候选清单'"
+            v-if="canUseCart"
+            :content="!authStore.isLoggedIn ? '登录后加入候选清单' : inCart ? '点击移出候选清单' : '加入候选清单'"
             placement="top"
           >
             <button
               class="add-cart-btn"
               :class="{ 'is-added': inCart }"
               :disabled="busy"
+              :aria-label="!authStore.isLoggedIn ? '登录后加入候选清单' : inCart ? '移出候选清单' : '加入候选清单'"
               @click="handleToggleCart"
             >
               <el-icon><Check v-if="inCart" /><Plus v-else /></el-icon>
@@ -91,7 +101,7 @@
 
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { PictureFilled, LocationFilled, Plus, Check } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import type { Property, PropertySearchResult, PropertyType } from '@/types/property'
@@ -99,6 +109,7 @@ import { getImageUrl } from '@/utils/image'
 import { formatPrice, countryToCurrency } from '@/data/currency'
 import { useAuthStore } from '@/stores/auth'
 import { useCartStore } from '@/stores/cart'
+import { toUserFriendly } from '@/services/api'
 
 export interface CommuteInfo {
   dist_km: number
@@ -117,6 +128,8 @@ const props = defineProps<{
   linkQuery?: Record<string, string>
   /** 禁用点击跳转（仅用于地图卡片列表） */
   noNavigate?: boolean
+  /** 卡片表示公寓还是具体户型。 */
+  entity?: 'building' | 'unit-type'
 }>()
 
 const emit = defineEmits<{
@@ -124,6 +137,7 @@ const emit = defineEmits<{
 }>()
 
 const router = useRouter()
+const route = useRoute()
 const authStore = useAuthStore()
 const cartStore = useCartStore()
 
@@ -147,28 +161,46 @@ const p = computed(() => ({
       ? (props.property.images[0].filename.startsWith('http') ? props.property.images[0].filename : `/api/v1/uploads/${props.property.images[0].filename}`)
       : null,
 }))
-const inCart = computed(() => cartStore.has(props.property.id))
+const entity = computed(() => props.entity ?? 'unit-type')
+const cartTargetId = computed<number | null>(() => (
+  entity.value === 'building'
+    ? (props.property.representative_unit_type_id ?? null)
+    : props.property.id
+))
+const canUseCart = computed(() => cartTargetId.value != null)
+const inCart = computed(() => cartTargetId.value != null && cartStore.has(cartTargetId.value))
+// 安全评分等级
+const safetyLevel = computed(() => {
+  const s = (props.property as any).safety_score
+  if (s == null) return ''
+  if (s >= 4) return 'safe-high'
+  if (s >= 3) return 'safe-mid'
+  return 'safe-low'
+})
 
 async function handleToggleCart() {
-  if (busy.value) return
+  if (busy.value || cartTargetId.value == null) return
+  if (!authStore.isLoggedIn) {
+    await router.push({ name: 'login', query: { redirect: route.fullPath } })
+    return
+  }
   busy.value = true
   try {
     if (inCart.value) {
-      await cartStore.remove(props.property.id)
+      await cartStore.remove(cartTargetId.value)
       ElMessage.info(`已从候选清单移出「${p.value.title}」`)
     } else {
-      await cartStore.add(props.property.id)
+      await cartStore.add(cartTargetId.value)
       ElMessage.success(`已将「${p.value.title}」加入候选清单`)
     }
   } catch (e: any) {
-    const msg = e?.response?.data?.error?.message || e?.message || ''
-    ElMessage.error(msg || '操作失败，请稍后重试')
+    ElMessage.error(toUserFriendly(e))
   } finally {
     busy.value = false
   }
 }
 
-const typeLabels: Record<PropertyType, string> = {
+const typeLabels: Partial<Record<PropertyType, string>> = {
   studio: '单间',
   '1-bed': '一室',
   '2-bed': '两室+',
@@ -242,8 +274,7 @@ const amenityTags = computed(() => {
 
 function goDetail() {
   if (props.noNavigate) return
-  // 两层结构：始终导航到公寓详情页
-  router.push({ name: 'building-detail', params: { id: props.property.institute_id || props.property.id } })
+  router.push(detailRoute.value)
 }
 
 function handleBook() {
@@ -251,8 +282,18 @@ function handleBook() {
 }
 
 function openDetail() {
-  router.push({ name: 'building-detail', params: { id: props.property.institute_id || props.property.id } })
+  router.push(detailRoute.value)
 }
+
+const detailRoute = computed(() => {
+  const query = { ...(props.linkQuery || {}) }
+  if (entity.value === 'unit-type') query.unit_type_id = String(props.property.id)
+  return {
+    name: 'building-detail',
+    params: { id: String(entity.value === 'building' ? props.property.id : (props.property.institute_id || props.property.id)) },
+    query,
+  }
+})
 </script>
 
 <style scoped>
@@ -417,6 +458,14 @@ function openDetail() {
   margin-bottom: 12px;
 }
 
+.card-facts {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 10px;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
 .card-footer {
   margin-top: auto;
   display: flex;
@@ -429,6 +478,17 @@ function openDetail() {
   align-items: baseline;
   gap: 2px;
 }
+
+/* ── 安全评分 ── */
+.safety-badge {
+  font-size: 13px; font-weight: 600;
+  padding: 2px 10px; border-radius: 12px;
+  white-space: nowrap;
+}
+.safety-badge.safe-high { background: #e8f5e9; color: #2e7d32; }
+.safety-badge.safe-mid  { background: #fff8e1; color: #f57f17; }
+.safety-badge.safe-low  { background: #fbe9e7; color: #c62828; }
+.safety-sub { font-size: 10px; opacity: 0.7; font-weight: 400; margin-left: 1px; }
 
 .card-price {
   font-size: 22px;

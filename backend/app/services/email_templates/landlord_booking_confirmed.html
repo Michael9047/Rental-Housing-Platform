@@ -1,0 +1,18 @@
+<h2 style="margin:0 0 16px;color:#2563eb;font-size:20px;">{event_title}</h2>
+<p style="margin:0 0 12px;color:#475569;line-height:1.7;">您好，{user_name}：</p>
+<p style="margin:0 0 16px;color:#475569;line-height:1.7;">以下房源已收到经支付服务商确认的付款，请进入管理后台继续处理。</p>
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;margin-bottom:20px;">
+<tr><td style="padding:16px;color:#334155;font-size:14px;line-height:1.8;">
+<strong>订单编号：</strong>{order_number}<br>
+<strong>公寓：</strong>{property_name}<br>
+<strong>地址：</strong>{property_address}<br>
+<strong>户型：</strong>{room_type}<br>
+<strong>预计入住：</strong>{move_in_date}<br>
+<strong>租期：</strong>{tenancy_months} 个月<br>
+<strong>结算金额：</strong>{settlement_amount}<br>
+<strong>人民币参考：</strong>{cny_reference_amount}<br>
+<strong>支付时间：</strong>{paid_at}<br>
+<strong>合同编号：</strong>{contract_number}
+</td></tr></table>
+<p style="margin:0 0 20px;"><a href="{order_url}" style="display:inline-block;background:#2563eb;color:#fff;padding:11px 20px;border-radius:6px;text-decoration:none;">{action_label}</a></p>
+<p style="margin:0;color:#64748b;font-size:13px;">邮件仅包含处理订单所需的最少信息，不包含证件、签名或支付凭据。如需帮助，请联系 {support_email}。</p>

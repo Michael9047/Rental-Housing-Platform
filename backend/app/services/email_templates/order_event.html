@@ -1,0 +1,15 @@
+<h2 style="margin:0 0 16px;color:#2563eb;font-size:20px;">{event_title}</h2>
+<p style="margin:0 0 12px;color:#475569;line-height:1.7;">您好，{user_name}：</p>
+<p style="margin:0 0 16px;color:#475569;line-height:1.7;">您的订单通知已生成，请通过下方入口前往对应业务页面办理下一步操作。</p>
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;margin-bottom:20px;">
+<tr><td style="padding:16px;color:#334155;font-size:14px;line-height:1.8;">
+<strong>订单编号：</strong>{order_number}<br>
+<strong>房源：</strong>{property_name}<br>
+<strong>入住日期：</strong>{move_in_date}<br>
+<strong>租期：</strong>{tenancy_months} 个月<br>
+<strong>金额：</strong>{amount}<br>
+<strong>当前状态：</strong>{status}<br>
+<strong>截止时间：</strong>{payment_deadline}
+</td></tr></table>
+<p style="margin:0 0 20px;"><a href="{order_url}" style="display:inline-block;background:#2563eb;color:#fff;padding:11px 20px;border-radius:6px;text-decoration:none;">{action_label}</a></p>
+<p style="margin:0;color:#64748b;font-size:13px;">如需帮助，请联系平台客服：{support_email}。请勿直接回复本邮件。</p>

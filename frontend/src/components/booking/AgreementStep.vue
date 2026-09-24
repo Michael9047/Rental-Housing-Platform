@@ -147,7 +147,8 @@ const countryCode = computed(() => bookingFlow.property?.country || 'CN')
 const firstPayment = computed(() => {
   if (!bookingFlow.property) return 0
   const monthly = Number(bookingFlow.property.price_monthly) || 0
-  return Math.round(monthly + bookingFlow.deposit_amount + bookingFlow.service_fee)
+  // 平台支付仅为固定预订金，月租和房源历史费用不参与本次应付金额。
+  return 2000
 })
 
 function formatPrice(priceCNY: number): string {

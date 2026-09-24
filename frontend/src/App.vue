@@ -1,26 +1,111 @@
 <template>
-  <div v-if="error" style="padding:40px;color:red;background:#fff;max-width:800px;margin:40px auto;border-radius:12px;font-family:monospace">
-    <h2>⚠️ Vue App Error</h2>
-    <pre style="white-space:pre-wrap;word-break:break-all">{{ error }}</pre>
-    <button @click="error=null" style="margin-top:20px;padding:10px 20px;background:#e94560;color:#fff;border:none;border-radius:8px;cursor:pointer">🔄 Retry</button>
+  <!-- 错误横幅：悬浮在页面顶部，不阻挡用户操作 -->
+  <div v-if="errorInfo" class="error-banner" :class="{ 'error-banner--dev': isDev }">
+    <span class="error-banner__icon">⚠️</span>
+    <span class="error-banner__msg">{{ isDev ? errorInfo.message : '应用遇到了问题，请刷新页面重试' }}</span>
+    <span v-if="isDev" class="error-banner__meta">{{ errorInfo.category }} · {{ errorInfo.source }}</span>
+    <button class="error-banner__close" @click="errorInfo = null">✕</button>
   </div>
-  <router-view v-else />
+  <router-view />
 </template>
 
 <script setup lang="ts">
 import { ref, onErrorCaptured } from 'vue'
-const error = ref<string | null>(null)
+import { useRouter } from 'vue-router'
+import { createLogger } from '@/utils/logger'
+
+const log = createLogger('App')
+const router = useRouter()
+const isDev = import.meta.env.DEV
+
+/** 错误分类 */
+type ErrorCategory = 'network' | 'auth' | 'not_found' | 'server' | 'unknown'
+
+interface ErrorInfo {
+  id: string
+  timestamp: string
+  category: ErrorCategory
+  message: string
+  source?: string
+}
+
+const errorInfo = ref<ErrorInfo | null>(null)
+
+/** 生成简短的 UUID v4 */
+function generateId(): string {
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0
+    return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16)
+  })
+}
+
+/** 从错误消息推断分类 */
+function categorizeError(msg: string): ErrorCategory {
+  if (/network|fetch|ECONN|\bnet\b|timeout|NetworkError/i.test(msg)) return 'network'
+  if (/401|unauthorized|token|login|expired|auth/i.test(msg)) return 'auth'
+  if (/404|not.?found|不存在/i.test(msg)) return 'not_found'
+  if (/500|internal.?server|server.?error/i.test(msg)) return 'server'
+  return 'unknown'
+}
+
+function _isNoise(msg: string | undefined): boolean {
+  if (!msg) return false
+  return msg.includes('ResizeObserver') || msg.includes('Script error')
+}
+
+let _dismissTimer: ReturnType<typeof setTimeout> | null = null
+
+function setError(message: string, source?: string) {
+  if (_isNoise(message)) return
+  errorInfo.value = {
+    id: generateId(),
+    timestamp: new Date().toISOString(),
+    category: categorizeError(message),
+    message,
+    source,
+  }
+  log.error('Error boundary 捕获', {
+    errorId: errorInfo.value.id,
+    category: errorInfo.value.category,
+    source,
+  }, message)
+
+  // 8 秒后自动消失
+  if (_dismissTimer) clearTimeout(_dismissTimer)
+  _dismissTimer = setTimeout(() => { errorInfo.value = null }, 8000)
+}
+
+function handleRetry() {
+  // 生产环境直接刷新页面；开发环境清空错误让 Vite HMR 恢复
+  if (isDev) {
+    errorInfo.value = null
+  } else {
+    window.location.reload()
+  }
+}
+
+function handleGoHome() {
+  errorInfo.value = null
+  router.push('/')
+}
+
 onErrorCaptured((err: any) => {
-  error.value = err?.message || err?.toString() || 'Unknown error'
-  console.error('Caught:', err)
+  const msg = err?.message || err?.toString() || ''
+  if (_isNoise(msg)) return false
+  setError(msg || 'Unknown error', 'Vue component')
   return false
 })
+
 // Global error handler
 window.addEventListener('error', (e) => {
-  error.value = `[${e.filename?.split('/').pop()}:${e.lineno}] ${e.message}`
+  if (_isNoise(e.message)) return
+  setError(e.message || 'Unknown error', `${e.filename?.split('/').pop()}:${e.lineno}`)
 })
+
 window.addEventListener('unhandledrejection', (e) => {
-  error.value = `[Promise] ${e.reason?.message || e.reason}`
+  const msg = e.reason?.message || e.reason?.toString() || ''
+  if (_isNoise(msg)) return
+  setError(msg || 'Unknown error', 'Promise')
 })
 </script>
 
@@ -79,6 +164,40 @@ body {
   background: var(--bg);
   color: var(--text-primary);
 }
+
+/* ===== 错误横幅（不阻挡页面） ===== */
+.error-banner {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 20px;
+  background: #fff3cd;
+  border-bottom: 2px solid #ffc107;
+  font-size: 14px;
+  line-height: 1.4;
+}
+.error-banner--dev {
+  background: #f8d7da;
+  border-color: #f5c2c7;
+}
+.error-banner__icon { flex-shrink: 0; font-size: 18px; }
+.error-banner__msg { flex: 1; min-width: 0; font-weight: 500; }
+.error-banner__meta { flex-shrink: 0; font-size: 12px; color: var(--text-muted); font-family: monospace; }
+.error-banner__close {
+  flex-shrink: 0;
+  border: none;
+  background: none;
+  font-size: 16px;
+  cursor: pointer;
+  padding: 2px 6px;
+  opacity: 0.6;
+}
+.error-banner__close:hover { opacity: 1; }
 
 /* ===== 全局圆角覆盖 ===== */
 .el-card {

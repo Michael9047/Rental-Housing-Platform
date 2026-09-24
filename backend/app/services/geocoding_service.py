@@ -703,21 +703,47 @@ class NominatimGeocodingService(BaseGeocodingService):
 
 
 # ---------------------------------------------------------------------------
-# 工厂：按 country 选择主引擎 + 备用
+# 工厂：按服务器区域 + 地址 country 选择主引擎
 # ---------------------------------------------------------------------------
 
 
+def _is_server_in_china() -> bool:
+    """检测服务器是否在中国大陆（基于 SERVER_REGION 配置）"""
+    return get_settings().server_region.upper() == "CN"
+
+
 def _is_amap_primary(country: str | None) -> bool:
-    """判断是否以高德为主引擎（仅中国大陆房源，其余默认 Overpass/OSM）"""
+    """判断地址 country 是否为高德覆盖范围（仅中国大陆地址）。
+
+    供通勤服务 (commute_service) 使用 —— 高德路线仅支持中国境内。
+    """
     if not country:
-        return False  # 默认海外（主要市场是留学生租房）
+        return False
     return country.upper() in _AMAP_PRIMARY_COUNTRIES
 
 
+def _should_use_amap(country: str | None) -> bool:
+    """判断地理编码是否应优先使用高德：
+    1. 服务器在中国大陆 → 始终用高德（GM/Nominatim 被墙）
+    2. 地址 country 明确为中国 → 用高德
+    """
+    if _is_server_in_china():
+        return True
+    if country and country.upper() in _AMAP_PRIMARY_COUNTRIES:
+        return True
+    return False
+
+
 def get_primary_service(country: str | None = None) -> BaseGeocodingService:
-    """根据国家/地区代码返回主地理编码服务"""
-    if _is_amap_primary(country):
-        return AmapGeocodingService()
+    """根据服务器区域 + 地址国家选择主地理编码服务"""
+    if _should_use_amap(country):
+        amap_service = AmapGeocodingService()
+        if amap_service.web_key:
+            return amap_service
+        # 高德 key 未配置时，降级到 Overpass（至少不会像 GM 那样被墙）
+        logger.warning("服务器在中国但 AMAP_WEB_KEY 未配置，降级使用 Overpass")
+        return OverpassGeocodingService()
+
     # 海外 → GM 优先（Overpass 作为降级在 search_nearby_with_fallback 中）
     gm_service = GoogleGeocodingService()
     if gm_service.api_key:
@@ -726,7 +752,10 @@ def get_primary_service(country: str | None = None) -> BaseGeocodingService:
 
 
 def get_fallback_service() -> BaseGeocodingService:
-    """返回备用地理编码服务（全球统一使用 Nominatim）"""
+    """返回备用地理编码服务"""
+    if _is_server_in_china():
+        # 国内：Nominatim 大概率被墙，直接用 Overpass（虽然 geocode 不支持，但至少不卡 15s）
+        return OverpassGeocodingService()
     return NominatimGeocodingService()
 
 
@@ -735,18 +764,41 @@ async def geocode_with_fallback(
     city: str | None = None,
     country: str | None = None,
 ) -> GeocodeResult:
-    """地理编码：主引擎失败时自动降级到 Nominatim"""
-    primary = get_primary_service(country)
-    try:
-        return await primary.geocode(address, city)
-    except Exception as exc:
-        logger.warning(
-            "Primary geocoding failed for country=%s: %s, falling back to Nominatim",
-            country,
-            exc,
-        )
-        fallback = get_fallback_service()
-        return await fallback.geocode(address, city)
+    """地理编码：按地址国家 + 服务器网络环境选择主引擎并降级。
+
+    CN 地址 → Amap → GM → Overpass
+    非 CN 地址 → GM → Amap → Overpass
+    """
+    # 按 country 决定优先级：中国地址高德优先，其他（含未知）GM 优先
+    # 默认 GM 优先 —— 本平台主要市场是留学生租房（英国/新加坡），Amap 仅对中文地址更好
+    if country and country.upper() in _AMAP_PRIMARY_COUNTRIES:
+        chain = ["amap", "gm"]
+    else:
+        chain = ["gm", "amap"]
+
+    last_error = None
+    for engine in chain:
+        try:
+            if engine == "amap":
+                service: BaseGeocodingService = AmapGeocodingService()
+                if not cast(AmapGeocodingService, service).web_key:
+                    continue
+            elif engine == "gm":
+                service = GoogleGeocodingService()
+                if not cast(GoogleGeocodingService, service).api_key:
+                    continue
+            else:
+                # Overpass 不支持 geocode → 跳过
+                continue
+
+            return await service.geocode(address, city)
+        except Exception as exc:
+            last_error = exc
+            logger.warning("Geocoding engine %s failed: %s", engine, exc)
+
+    raise RuntimeError(
+        f"所有地理编码服务均不可用（{' → '.join(chain)} 均失败：{last_error}）"
+    )
 
 
 async def search_nearby_with_fallback(

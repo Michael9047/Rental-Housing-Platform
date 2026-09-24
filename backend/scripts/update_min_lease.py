@@ -28,12 +28,12 @@ async def main():
     )
     
     try:
-        await conn.execute("UPDATE properties SET min_lease_months = 1 WHERE min_lease_months = 12")
+        await conn.execute("UPDATE rooms SET min_lease_months = 1 WHERE min_lease_months = 12")
         print("Updated min_lease_months to 1")
     except Exception as e:
         print(f"Update failed: {e}")
     
-    rows = await conn.fetch("SELECT id, title, min_lease_months, max_lease_months FROM properties")
+    rows = await conn.fetch("SELECT id, title, min_lease_months, max_lease_months FROM rooms")
     for row in rows:
         print(dict(row))
     

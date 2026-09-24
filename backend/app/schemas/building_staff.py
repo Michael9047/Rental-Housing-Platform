@@ -7,6 +7,8 @@ class BuildingStaffCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=100)
     role: str = Field(default="staff", description="manager/sales/staff")
     phone: str | None = None
+    wechat: str | None = None
+    wechat_qr: str | None = None  # 微信二维码图片文件名
     notes: str | None = None
 
 
@@ -14,6 +16,8 @@ class BuildingStaffUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=100)
     role: str | None = None
     phone: str | None = None
+    wechat: str | None = None
+    wechat_qr: str | None = None
     notes: str | None = None
 
 
@@ -23,6 +27,8 @@ class BuildingStaffRead(BaseModel):
     name: str
     role: str
     phone: str | None = None
+    wechat: str | None = None
+    wechat_qr: str | None = None
     notes: str | None = None
     created_at: datetime
     updated_at: datetime

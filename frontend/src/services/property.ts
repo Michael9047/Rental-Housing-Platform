@@ -10,6 +10,66 @@ import type {
   RoomType,
 } from '@/types/property'
 
+// ── 租期价格类型（对应后端 LeasePricingService）──
+
+/** 金额 */
+export interface MoneyAmount {
+  currency: string
+  minor_units: number
+  minor_unit_exponent: number
+  decimal: string
+}
+
+/** 费用桶（local + cny） */
+export interface FeeBucket {
+  local: MoneyAmount
+  cny: MoneyAmount
+}
+
+/** 费用集合 */
+export interface PriceSet {
+  booking_deposit?: FeeBucket
+  deposit: FeeBucket
+  service_fee: FeeBucket
+  monthly_rent: FeeBucket
+  amount_due_now: FeeBucket
+  rent_total: FeeBucket
+}
+
+/** 租期选项 */
+export interface LeaseOption {
+  months: number
+  end_date: string
+  prices: PriceSet
+}
+
+/** 租期价格快照 */
+export interface LeasePricing {
+  property_id: number
+  calculation_date: string
+  move_in_date: string
+  local_currency: string
+  exchange_rate_to_cny: string
+  exchange_rate_at: string
+  exchange_rate_source: string
+  options: LeaseOption[]
+}
+
+/** 预订日期可用性 */
+export interface BookingDateAvailability {
+  property_id: number
+  timezone: string
+  local_today: string
+  available_from: string | null
+  blocked_dates: string[]
+}
+
+/** 日期校验结果 */
+export interface BookingDateValidation {
+  available: boolean
+  reason?: string | null
+}
+
 export interface PropertyPOI {
   content: string
   poi_data: Record<string, { name: string; distance: string }[]>
@@ -57,6 +117,17 @@ export const propertyService = {
     return api.post(`/unit-types/${id}/restore`).then((r) => r.data)
   },
 
+  offline(id: number | string): Promise<Property> {
+    return api.post(`/unit-types/${id}/offline`).then(r => r.data)
+  },
+
+  publish(id: number | string): Promise<Property> {
+    return api.post(`/unit-types/${id}/publish`).then(r => r.data)
+  },
+
+  batchOffline(ids: number[]) { return api.post('/unit-types/batch/offline', { ids }).then(r => r.data) },
+  batchPublish(ids: number[]) { return api.post('/unit-types/batch/publish', { ids }).then(r => r.data) },
+
   batchUpdateStatus(ids: number[], status: string): Promise<{ success: number; failed: number; errors?: any[] }> {
     return api.post('/unit-types/batch/status', { ids, status }).then((r) => r.data)
   },
@@ -84,6 +155,8 @@ export const propertyService = {
     if (params.country) sp.country = params.country
     if (params.city) sp.city = params.city
     if (params.limit) sp.limit = params.limit
+    if (params.institute_id != null) sp.institute_id = params.institute_id
+    if (params.institute_ids?.length) sp.institute_ids = params.institute_ids
     if (params.price_min != null) sp.price_min = params.price_min
     if (params.price_max != null) sp.price_max = params.price_max
     if (params.property_type) sp.property_type = params.property_type
@@ -91,11 +164,15 @@ export const propertyService = {
     if (params.near_lat != null) sp.near_lat = params.near_lat
     if (params.near_lng != null) sp.near_lng = params.near_lng
     if (params.near_distance_km != null) sp.near_distance_km = params.near_distance_km
-    return api.get('/buildings/public/search', { params: { ...sp, _t: Date.now() } }).then((r) => r.data)
+    if (params.amenities?.length) sp.amenities = params.amenities
+    return api.get('/buildings/public/search', {
+      params: { ...sp, _t: Date.now() },
+      paramsSerializer: { indexes: null },
+    }).then((r) => r.data)
   },
 
-  getById(id: number | string): Promise<Property> {
-    return api.get(`/unit-types/${id}`).then((r) => r.data)
+  getById(id: number | string, silent = false): Promise<Property> {
+    return api.get(`/unit-types/${id}`, { suppressGlobalError: silent } as any).then((r) => r.data)
   },
 
   create(data: PropertyCreate): Promise<Property> {
@@ -175,19 +252,16 @@ export const propertyService = {
 
   // ── 预订管线：日历可用性 + 日期校验 + 租期价格 ──
 
-  getBookingDateAvailability(unitTypeId: number, year: number, month: number): Promise<{
-    property_id: number; timezone: string; local_today: string;
-    available_from: string | null; blocked_dates: string[];
-  }> {
+  getBookingDateAvailability(unitTypeId: number, year: number, month: number): Promise<BookingDateAvailability> {
     return api.get(`/unit-types/${unitTypeId}/booking-availability`, { params: { year, month } }).then((r) => r.data)
   },
 
-  validateBookingDate(unitTypeId: number, moveInDate: string): Promise<{ available: boolean; reason?: string | null }> {
+  validateBookingDate(unitTypeId: number, moveInDate: string): Promise<BookingDateValidation> {
     return api.post(`/unit-types/${unitTypeId}/validate-booking-date`, { move_in_date: moveInDate }).then((r) => r.data)
   },
 
-  getLeasePricing(unitTypeId: number, moveInDate: string): Promise<any> {
-    return api.get(`/unit-types/${unitTypeId}/lease-pricing`, { params: { move_in_date: moveInDate } }).then((r) => r.data)
+  getLeasePricing(unitTypeId: number, moveInDate: string, silent = false): Promise<LeasePricing> {
+    return api.get(`/unit-types/${unitTypeId}/lease-pricing`, { params: { move_in_date: moveInDate }, suppressGlobalError: silent } as any).then((r) => r.data)
   },
 
   // ---- 修改历史 ----
@@ -220,6 +294,7 @@ export const propertyService = {
   clearAuditLogs(): Promise<{ deleted: number }> {
     return api.post('/unit-types/audit/clear').then((r) => r.data)
   },
+
 }
 
 export interface PropertyHistoryItem {
@@ -227,6 +302,7 @@ export interface PropertyHistoryItem {
   user_id: number | null
   username?: string | null
   action: string
+  resource_type?: string | null
   resource_id: number | null
   details: Record<string, any> | null
   ip_address: string | null

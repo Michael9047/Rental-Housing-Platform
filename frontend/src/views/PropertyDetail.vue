@@ -115,7 +115,7 @@
               </div>
               <div class="ut-card-price">
                 <span class="price-value">{{ cur(ut.currency) }}{{ Number(ut.base_rent).toLocaleString() }}</span>
-                <span class="price-period">/月</span>
+                <span class="price-period">{{ ut.rent_period === 'weekly' ? '/周' : '/月' }}</span>
               </div>
               <div class="ut-card-tags" v-if="ut.amenities?.length">
                 <span v-for="a in ut.amenities.slice(0, 4)" :key="a" class="ut-tag">{{ a }}</span>
@@ -179,7 +179,7 @@
         <!-- 预定按钮 -->
         <div class="ut-book-bar">
           <el-button type="primary" size="large" round @click="goBook" style="min-width:200px;font-weight:600">
-            🏠 立即预定 · {{ cur(selectedUnitType.currency) }}{{ Number(selectedUnitType.base_rent).toLocaleString() }}/月
+            🏠 立即预定 · {{ cur(selectedUnitType.currency) }}{{ Number(selectedUnitType.base_rent).toLocaleString() }}{{ selectedUnitType.rent_period === 'weekly' ? '/周' : '/月' }}
           </el-button>
         </div>
       </div>
@@ -197,11 +197,13 @@ import { ref, computed, onMounted, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Plus, Check } from '@element-plus/icons-vue'
-import api from '@/services/api'
+import api, { toUserFriendly } from '@/services/api'
+import { createLogger } from '@/utils/logger'
 import PropertyMapCard from '@/components/PropertyMapCard.vue'
 import { useCartStore } from '@/stores/cart'
 import { useAuthStore } from '@/stores/auth'
 
+const log = createLogger('PropertyDetail')
 const route = useRoute()
 const router = useRouter()
 const cartStore = useCartStore()
@@ -228,7 +230,7 @@ async function toggleCart() {
   }
   if (!authStore.isLoggedIn) {
     ElMessage.warning('请先登录后再使用候选清单')
-    router.push('/login')
+    router.push({ path: '/login', query: { redirect: route.fullPath } })
     return
   }
   cartLoading.value = true
@@ -241,8 +243,7 @@ async function toggleCart() {
       ElMessage.success('已加入候选清单')
     }
   } catch (e: any) {
-    const msg = e?.response?.data?.error?.message || e?.message || ''
-    ElMessage.error(msg || '操作失败，请稍后重试')
+    ElMessage.error(toUserFriendly(e))
   } finally { cartLoading.value = false }
 }
 
@@ -316,7 +317,7 @@ async function loadBuilding() {
         building.value.unit_types = (utsRes.data.items || []).map((ut: any) => ({ ...ut, room_count: 0, rooms: [] }))
       } catch { /* */ }
     }
-  } catch (e: any) { console.error('PropertyDetail load failed:', e?.message || e) }
+  } catch (e: any) { log.error('加载房源详情失败', { id: route.params.id }, e) }
   finally { loading.value = false }
 }
 

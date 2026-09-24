@@ -67,6 +67,7 @@
               <span v-if="row.value.local.currency !== 'CNY'">{{ money(row.value.local) }}</span>
             </div>
           </div>
+          <p class="booking-deposit-note">平台当前仅收取人民币2000元预订金，用于协助预订该房源。月租及租金总额仅供参考，不计入本次支付。租约正常到期且符合退款条件后，预订金将按原支付渠道退还。</p>
         </el-card>
 
         <el-alert
@@ -87,7 +88,7 @@ import { useRoute, useRouter } from 'vue-router'
 import BookingFlowLayout from '@/components/booking/BookingFlowLayout.vue'
 import { propertyService, type LeaseOption, type LeasePricing, type MoneyAmount } from '@/services/property'
 import { bookingDraftService } from '@/services/bookingDraft'
-import { extractErrorMessage } from '@/services/api'
+import { toUserFriendly } from '@/services/api'
 
 const route = useRoute(); const router = useRouter()
 const propertyId = computed(() => Number(route.params.propertyId))
@@ -112,18 +113,15 @@ const customPriceRows = computed(() => {
   const base = pricing.value.options[0]
   if (!base) return []
   const monthly = base.prices.monthly_rent.local.minor_units / 100
-  const deposit = base.prices.deposit.local.minor_units / 100
-  const serviceFee = base.prices.service_fee.local.minor_units / 100
   const rentTotal = monthly * customMonths.value
-  const amountDue = deposit + serviceFee
   const cur = base.prices.monthly_rent.local.currency
   const mk = (v: number) => ({ currency: cur, minor_units: v * 100, minor_unit_exponent: 2, decimal: v.toFixed(2) })
+  const bookingDeposit = { currency: 'CNY', minor_units: 200000, minor_unit_exponent: 2, decimal: '2000.00' }
   return [
     { label: '月租', value: { local: mk(monthly), cny: mk(monthly) } },
     { label: '租金总额', value: { local: mk(rentTotal), cny: mk(rentTotal) } },
-    { label: '押金', value: { local: mk(deposit), cny: mk(deposit) } },
-    { label: '服务费', value: { local: mk(serviceFee), cny: mk(serviceFee) } },
-    { label: '当前应付金额', value: { local: mk(amountDue), cny: mk(amountDue) }, total: true },
+    { label: '预订金', value: { local: bookingDeposit, cny: bookingDeposit } },
+    { label: '当前应付金额', value: { local: bookingDeposit, cny: bookingDeposit }, total: true },
   ]
 })
 
@@ -134,8 +132,7 @@ const priceRows = computed(() => {
   return [
     { label: '月租', value: selectedOption.value.prices.monthly_rent },
     { label: '租金总额', value: selectedOption.value.prices.rent_total },
-    { label: '押金', value: selectedOption.value.prices.deposit },
-    { label: '服务费', value: selectedOption.value.prices.service_fee },
+    { label: '预订金', value: selectedOption.value.prices.booking_deposit || selectedOption.value.prices.deposit },
     { label: '当前应付金额', value: selectedOption.value.prices.amount_due_now, total: true },
   ]
 })
@@ -194,7 +191,7 @@ async function selectOption(option: LeaseOption) {
       local_currency: pricing.value.local_currency,
     }))
   } catch (error: any) {
-    errorMessage.value = extractErrorMessage(error) || '无法保存租期草稿'
+    errorMessage.value = toUserFriendly(error) || '无法保存租期草稿'
   }
 }
 
@@ -208,7 +205,7 @@ async function saveCustomAndProceed() {
       current_step: 'personal_info',
     })
   } catch (error: any) {
-    errorMessage.value = extractErrorMessage(error) || '无法保存租期草稿'
+    errorMessage.value = toUserFriendly(error) || '无法保存租期草稿'
     throw error
   }
 }
@@ -257,7 +254,7 @@ onMounted(async () => {
       selectedMonths.value = draft.lease_months
     }
   } catch (error: any) {
-    errorMessage.value = extractErrorMessage(error) || '无法加载租期和价格'
+    errorMessage.value = toUserFriendly(error) || '无法加载租期和价格'
   } finally {
     loading.value = false
   }
@@ -277,6 +274,7 @@ onMounted(async () => {
 .amounts { display: grid; justify-items: end; gap: 3px; }
 .amounts span { color: var(--text-muted); font-size: 13px; }
 .price-row.total { color: var(--primary); font-size: 17px; }
+.booking-deposit-note { margin: 16px 0 0; padding: 12px; color: var(--text-secondary); line-height: 1.7; background: #fff8ef; border-radius: 8px; }
 .custom-option { border-style: dashed; border-color: var(--primary); color: var(--primary); }
 .custom-option.selected { background: var(--primary-light); }
 .custom-months { display: flex; align-items: center; gap: 12px; padding: 16px 20px; background: #fff; border-radius: var(--radius); border: 1px solid var(--border); }

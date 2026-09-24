@@ -56,6 +56,18 @@ def test_payment_expiry_removes_payability_and_invalidates_contract():
     assert expired.invalid_reason == "支付期限已过，预订未生效"
 
 
+def test_contract_signed_remains_a_confirmed_booking():
+    """订单进入签约完成阶段后，不应从预订成功退回未成功。"""
+    assert booking_is_confirmed(BookingStatus.contract_signed, "paid") is True
+
+    effective = classify_contract(
+        agreement_status="signed", booking_status=BookingStatus.contract_signed,
+        payment_status="paid", today=TODAY,
+        lease_end=TODAY + timedelta(days=365), expiring_days=30,
+    )
+    assert effective.category == "effective"
+
+
 def test_processing_and_cancelled_never_count_as_payable():
     assert payment_status_can_pay("payment_processing") is False
     assert payment_status_can_pay("cancelled") is False

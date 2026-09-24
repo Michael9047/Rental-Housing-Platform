@@ -847,15 +847,9 @@ async def calculate_commute_batch(
                 source="api" if api_ok else "haversine_fallback",
             )
         else:
-            service = ORSCommuteService()
-            if not service.api_key:
-                logger.warning("ORS API Key 未配置，降级为 Haversine 估算")
-                return _fallback_batch(origin_lat, origin_lng, destinations)
-
-            results = await service.get_batch(origin_lat, origin_lng, destinations)
-            return BatchCommuteResult(
-                results=results,
-                source=results[0].source if results else "api",
+            # 非 CN → 优先 ORS（失败则降级到高德，再失败才 Haversine）
+            return await calculate_commute_batch_resilient(
+                origin_lat, origin_lng, destinations, country=country, city=city,
             )
     except Exception:
         logger.exception("通勤计算异常，降级为 Haversine 估算")
@@ -1041,9 +1035,8 @@ async def calculate_commute_batch_resilient(
     if not destinations:
         return BatchCommuteResult(source="api")
 
-    amap_reachable = await _probe_amap_reachable()
-
-    if amap_reachable:
+    # 按地址国家选主引擎：国内高德、国际 GM，保持数据质量优先（不依赖网络探测）
+    if _is_amap_primary(country):
         chain = ["amap", "gm", "ors"]
     else:
         chain = ["gm", "ors", "amap"]

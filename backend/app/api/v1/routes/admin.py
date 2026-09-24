@@ -3,9 +3,11 @@ from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
 from sqlalchemy import select, func
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, get_db_session, require_admin, require_landlord
+from app.core.security import hash_password
 from app.models.audit_log import AuditLog
 from app.models.booking import Booking, BookingStatus
 from app.models.contract import Contract
@@ -20,7 +22,7 @@ from app.models.system_alert import (
 )
 from app.models.user import User, UserRole
 from app.schemas.system_alert import SystemAlertCreate
-from app.schemas.user import UserRead
+from app.schemas.user import AdminUserCreate, UserCreate, UserRead
 from app.services.audit_service import AuditService
 from app.services.payment_provider import provider_availability
 from app.services.property_service import PropertyService
@@ -28,6 +30,13 @@ from app.services.stats_service import StatsService
 from app.services.user_service import UserService
 
 router = APIRouter()
+
+ADMIN_CREATABLE_ROLES = {
+    UserRole.tenant,
+    UserRole.landlord,
+    UserRole.maintenance_worker,
+    UserRole.admin,
+}
 
 
 class SystemAlertResolveRequest(BaseModel):
@@ -598,7 +607,7 @@ async def resolve_system_alert(
 @router.get("/stats")
 async def get_stats(
     session: AsyncSession = Depends(get_db_session),
-    _: User = Depends(require_landlord),
+    _: User = Depends(require_admin),
 ) -> dict:
     return await StatsService(session).get_stats()
 
@@ -716,6 +725,43 @@ async def update_user_role(
         resource_type="user",
         resource_id=user_id,
         details={"new_role": new_role},
+    )
+    return user
+
+
+@router.post("/users", response_model=UserRead, status_code=status.HTTP_201_CREATED)
+async def create_managed_user(
+    body: AdminUserCreate,
+    session: AsyncSession = Depends(get_db_session),
+    current_user: User = Depends(require_admin),
+) -> UserRead:
+    """由管理员创建平台内部账户，BM 暂时沿用 landlord 数据库角色。"""
+    if body.role not in ADMIN_CREATABLE_ROLES:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unsupported user role")
+
+    try:
+        user = await UserService(session).create(
+            UserCreate(
+                username=body.username,
+                email=body.email,
+                phone=body.phone,
+                role=body.role,
+                password_hash=hash_password(body.password),
+            )
+        )
+    except IntegrityError as exc:
+        await session.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="username, email, or phone already exists",
+        ) from exc
+
+    await AuditService(session).create_log(
+        user_id=current_user.id,
+        action="user_create",
+        resource_type="user",
+        resource_id=user.id,
+        details={"role": body.role.value},
     )
     return user
 

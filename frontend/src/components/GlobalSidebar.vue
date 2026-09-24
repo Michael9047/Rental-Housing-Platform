@@ -1,5 +1,5 @@
 <template>
-  <el-aside :class="['layout-sidebar', { collapsed }]" :width="collapsed ? '64px' : '200px'">
+  <el-aside :class="['layout-sidebar', { collapsed, 'bm-sidebar': authStore.user?.role === 'landlord' }]" :width="collapsed ? '64px' : '200px'">
     <!-- 折叠切换按钮 -->
     <div class="sidebar-toggle" @click="collapsed = !collapsed">
       <el-icon :size="20">
@@ -9,7 +9,7 @@
     </div>
     <el-menu :default-active="activeMenu" router class="sidebar-menu" :collapse="collapsed">
       <!-- 公共 -->
-      <el-menu-item index="/">
+      <el-menu-item v-if="!authStore.isAdmin" index="/">
         <el-icon><HomeFilled /></el-icon>
         <span>首页</span>
       </el-menu-item>
@@ -30,10 +30,6 @@
 
       <!-- ====== 房东侧边栏 ====== -->
       <template v-if="authStore.isLandlord">
-        <el-menu-item index="/workspace">
-          <el-icon><DataAnalysis /></el-icon>
-          <span>运营工作台</span>
-        </el-menu-item>
         <el-menu-item index="/buildings">
           <el-icon><HomeFilled /></el-icon>
           <span>公寓管理</span>
@@ -42,37 +38,41 @@
           <el-icon><Grid /></el-icon>
           <span>户型管理</span>
         </el-menu-item>
-        <el-menu-item index="/property/history">
-          <el-icon><Clock /></el-icon>
-          <span>修改记录</span>
-        </el-menu-item>
         <el-menu-item index="/bookings/landlord">
           <el-icon><Tickets /></el-icon>
           <span>预约管理</span>
         </el-menu-item>
-        <el-menu-item index="/notifications">
-          <el-icon><Bell /></el-icon>
-          <span>消息通知</span>
+        <el-menu-item index="/contracts/landlord">
+          <el-icon><Document /></el-icon>
+          <span>合约管理</span>
+        </el-menu-item>
+        <el-menu-item index="/orders/manage">
+          <el-icon><Tickets /></el-icon>
+          <span>订单管理</span>
+        </el-menu-item>
+        <el-menu-item index="/tenants/manage">
+          <el-icon><User /></el-icon>
+          <span>租客管理</span>
+        </el-menu-item>
+        <el-menu-item index="/repairs/manage">
+          <el-icon><Tools /></el-icon>
+          <span>维修工单</span>
+        </el-menu-item>
+        <el-menu-item index="/landlord/profile">
+          <el-icon><Setting /></el-icon>
+          <span>个人中心</span>
         </el-menu-item>
       </template>
 
       <!-- 管理员：系统管理（不含仪表盘，仪表盘归房东） -->
       <template v-if="authStore.isAdmin">
-        <el-menu-item index="/admin">
-          <el-icon><DataAnalysis /></el-icon>
-          <span>仪表盘</span>
-        </el-menu-item>
         <el-menu-item index="/admin/users">
           <el-icon><User /></el-icon>
           <span>用户管理</span>
         </el-menu-item>
         <el-menu-item index="/admin/alerts">
           <el-icon><Warning /></el-icon>
-          <span>异常处理</span>
-        </el-menu-item>
-        <el-menu-item index="/admin/notifications">
-          <el-icon><Bell /></el-icon>
-          <span>信息通知</span>
+          <span>系统异常</span>
         </el-menu-item>
         <el-menu-item index="/admin/logs">
           <el-icon><Document /></el-icon>
@@ -88,7 +88,7 @@ import { ref, computed, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import {
   HomeFilled, Bell, DataAnalysis, User, Document, Warning,
-  Tickets, Fold, Expand, Grid, Clock,
+  Tickets, Fold, Expand, Grid, Tools, Setting,
 } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 
@@ -104,19 +104,16 @@ watch(collapsed, (v) => localStorage.setItem(SIDEBAR_KEY, String(v)))
 // 当前激活菜单高亮
 const activeMenu = computed(() => {
   const path = route.path
+  if (path.startsWith('/orders') || path.startsWith('/admin/orders')) return '/orders/manage'
   if (path.startsWith('/admin')) return path
-  if (path.startsWith('/notifications')) return '/notifications'
-  if (path.startsWith('/property/')) {
-    if (path === '/property/create') return '/property/create'
-    if (path === '/property/manage') return '/property/manage'
-    return '/search'
-  }
   if (path.startsWith('/bookings/')) return path
   if (path.startsWith('/buildings')) return '/buildings'
-  if (path.startsWith('/unit-type')) return path.startsWith('/unit-type/create') ? '/unit-type/create' : '/unit-type/manage'
-  if (path.startsWith('/tenants')) return '/tenants'
-  if (path.startsWith('/orders')) return '/orders'
-  if (path.startsWith('/workspace')) return '/workspace'
+  if (path.startsWith('/unit-type')) return '/unit-type/manage'
+  if (path.startsWith('/contracts')) return '/contracts/landlord'
+  if (path.startsWith('/tenants')) return '/tenants/manage'
+  if (path.startsWith('/repairs')) return '/repairs/manage'
+  if (path.startsWith('/notifications')) return '/notifications'
+  if (path.startsWith('/landlord/profile')) return '/landlord/profile'
   return path
 })
 </script>
@@ -129,6 +126,14 @@ const activeMenu = computed(() => {
   overflow: hidden;
   display: flex;
   flex-direction: column;
+}
+
+/* BM 工作台切换页面或折叠侧栏时直接完成布局，不做主内容区横向铺展动画。 */
+.layout-sidebar.bm-sidebar,
+.layout-sidebar.bm-sidebar .sidebar-menu,
+.layout-sidebar.bm-sidebar :deep(*) {
+  transition-duration: 0s !important;
+  animation-duration: 0s !important;
 }
 
 /* 折叠切换按钮 */

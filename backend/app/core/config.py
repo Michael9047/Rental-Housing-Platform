@@ -1,4 +1,5 @@
 from functools import lru_cache
+from decimal import Decimal
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -12,6 +13,12 @@ class Settings(BaseSettings):
     environment: str = "development"
     debug: bool = True
 
+    # 服务器所在区域：CN = 中国大陆（默认高德），否则走 Google Maps
+    server_region: str = Field(
+        default="CN",
+        validation_alias="SERVER_REGION",
+    )
+
     database_url: str = Field(
         default="postgresql+asyncpg://rental:rental@localhost:5432/rental_housing",
         validation_alias="DATABASE_URL",
@@ -22,6 +29,26 @@ class Settings(BaseSettings):
     )
 
     redis_url: str = Field(default="redis://localhost:6379/0", validation_alias="REDIS_URL")
+
+    # 平台预订金是唯一可支付项目；不得由房源、租期或客户端请求覆盖。
+    booking_deposit_amount_cny: Decimal = Field(
+        default=Decimal("2000.00"), validation_alias="BOOKING_DEPOSIT_AMOUNT_CNY"
+    )
+    booking_deposit_currency: str = Field(
+        default="CNY", validation_alias="BOOKING_DEPOSIT_CURRENCY"
+    )
+
+    # 开发环境中是否由 Web 进程执行通知提醒扫描。默认关闭，避免数据库尚未启动时后台任务反复报错。
+    local_notification_scheduler_enabled: bool = Field(
+        default=False,
+        validation_alias="LOCAL_NOTIFICATION_SCHEDULER_ENABLED",
+    )
+
+    # 批量导入仍依赖已下线的旧 Property 模型，完成 UnitType 迁移前必须默认关闭。
+    bulk_import_enabled: bool = Field(
+        default=False,
+        validation_alias="BULK_IMPORT_ENABLED",
+    )
 
     auth_secret_key: str = Field(
         default="dev-only-change-me",
@@ -39,7 +66,7 @@ class Settings(BaseSettings):
 
     # CORS
     cors_origins: list[str] = Field(
-        default=["http://localhost:5173"],
+        default=["http://127.0.0.1:5173", "http://localhost:5173"],
         validation_alias="CORS_ORIGINS",
     )
 
@@ -65,7 +92,7 @@ class Settings(BaseSettings):
         validation_alias="DEEPSEEK_API_KEY",
     )
     deepseek_chat_model: str = Field(
-        default="deepseek-chat",
+        default="deepseek-v4-pro",
         validation_alias="DEEPSEEK_CHAT_MODEL",
     )
     deepseek_base_url: str = Field(
@@ -90,6 +117,42 @@ class Settings(BaseSettings):
     embedding_dimensions: int = Field(
         default=1536,
         validation_alias="EMBEDDING_DIMENSIONS",
+    )
+
+    # ========== Agent Memory / RAG 配置 ==========
+    agent_memory_enabled: bool = Field(
+        default=True,
+        validation_alias="AGENT_MEMORY_ENABLED",
+    )
+    agent_retrieval_pool_size: int = Field(
+        default=120,
+        validation_alias="AGENT_RETRIEVAL_POOL_SIZE",
+    )
+    agent_min_results: int = Field(
+        default=3,
+        validation_alias="AGENT_MIN_RESULTS",
+    )
+    agent_history_char_budget: int = Field(
+        default=8000,
+        validation_alias="AGENT_HISTORY_CHAR_BUDGET",
+    )
+    agent_context_char_budget: int = Field(
+        default=12000,
+        validation_alias="AGENT_CONTEXT_CHAR_BUDGET",
+    )
+    agent_recommend_temperature: float = Field(
+        default=0.35,
+        validation_alias="AGENT_RECOMMEND_TEMPERATURE",
+    )
+
+    # ========== 汇率服务 ==========
+    exchange_rate_api_url: str = Field(
+        default="https://api.exchangerate-api.com/v4/latest/CNY",
+        validation_alias="EXCHANGE_RATE_API_URL",
+    )
+    exchange_rate_timeout_seconds: float = Field(
+        default=8.0,
+        validation_alias="EXCHANGE_RATE_TIMEOUT_SECONDS",
     )
 
     # ========== 高德地图（中国大陆主引擎） ==========
@@ -157,7 +220,7 @@ class Settings(BaseSettings):
         validation_alias="GM_NEARBY_URL",
     )
     gm_geocode_timeout_seconds: float = Field(
-        default=10.0,
+        default=5.0,
         validation_alias="GM_GEOCODE_TIMEOUT_SECONDS",
     )
     gm_nearby_radius_meters: int = Field(
@@ -185,7 +248,7 @@ class Settings(BaseSettings):
         validation_alias="NOMINATIM_URL",
     )
     nominatim_timeout_seconds: float = Field(
-        default=15.0,
+        default=5.0,
         validation_alias="NOMINATIM_TIMEOUT_SECONDS",
     )
 
@@ -199,7 +262,7 @@ class Settings(BaseSettings):
         validation_alias="ORS_DIRECTIONS_URL",
     )
     ors_timeout_seconds: float = Field(
-        default=8.0,
+        default=4.0,
         validation_alias="ORS_TIMEOUT_SECONDS",
     )
 
@@ -224,6 +287,24 @@ class Settings(BaseSettings):
     wechat_token_url: str = Field(
         default="https://api.weixin.qq.com/cgi-bin/token",
         validation_alias="WECHAT_TOKEN_URL",
+    )
+
+    # ── 微信开放平台 OAuth（Web 扫码登录）────────────────
+    wechat_open_appid: str = Field(
+        default="",
+        validation_alias="WECHAT_OPEN_APPID",
+    )
+    wechat_open_secret: str = Field(
+        default="",
+        validation_alias="WECHAT_OPEN_SECRET",
+    )
+    wechat_open_redirect_uri: str = Field(
+        default="",
+        validation_alias="WECHAT_OPEN_REDIRECT_URI",
+    )
+    wechat_open_dev_mode: bool = Field(
+        default=True,
+        validation_alias="WECHAT_OPEN_DEV_MODE",
     )
 
     # SMS 验证码 (Alibaba Cloud 号码认证 dypnsapi)
@@ -311,10 +392,18 @@ class Settings(BaseSettings):
 
     # Frontend
     frontend_url: str = Field(
-        default="http://localhost:5173",
+        default="http://127.0.0.1:5173",
         validation_alias="FRONTEND_URL",
     )
     payment_provider: str = Field(default="mock_hosted", validation_alias="PAYMENT_PROVIDER")
+    exchange_rate_api_url: str = Field(
+        default="https://api.frankfurter.dev/v1/latest",
+        validation_alias="EXCHANGE_RATE_API_URL",
+    )
+    exchange_rate_timeout_seconds: float = Field(
+        default=3.0,
+        validation_alias="EXCHANGE_RATE_TIMEOUT_SECONDS",
+    )
     payment_mock_webhook_secret: str = Field(default="local-test-only-change-me", validation_alias="PAYMENT_MOCK_WEBHOOK_SECRET")
     payment_mock_merchant_account: str = Field(default="mock_test_account", validation_alias="PAYMENT_MOCK_MERCHANT_ACCOUNT")
     payments_live_enabled: bool = Field(default=False, validation_alias="PAYMENTS_LIVE_ENABLED")
@@ -336,6 +425,10 @@ class Settings(BaseSettings):
     card_success_url: str = Field(default="", validation_alias="CARD_SUCCESS_URL")
     card_cancel_url: str = Field(default="", validation_alias="CARD_CANCEL_URL")
     contract_expiring_soon_days: int = Field(default=30, validation_alias="CONTRACT_EXPIRING_SOON_DAYS")
+    dropbox_sign_api_key: str = Field(default="", validation_alias="DROPBOX_SIGN_API_KEY")
+    dropbox_sign_client_id: str = Field(default="", validation_alias="DROPBOX_SIGN_CLIENT_ID")
+    dropbox_sign_webhook_enabled: bool = Field(default=False, validation_alias="DROPBOX_SIGN_WEBHOOK_ENABLED")
+    dropbox_sign_test_mode: bool = Field(default=True, validation_alias="DROPBOX_SIGN_TEST_MODE")
 
 
 @lru_cache

@@ -95,6 +95,8 @@ class BookingService:
             return None
 
         booking.status = status
+        from app.services.inventory_service import sync_unit_type_inventory
+        await sync_unit_type_inventory(self.session, booking.unit_type_id)
         await self.session.commit()
         await self.session.refresh(booking)
 
@@ -161,14 +163,23 @@ class BookingService:
         return list(result)
 
     async def list_by_landlord(self, bm_id: int) -> list[Booking]:
-        """按 BM 列出预约（兼容旧 landlord_id 参数名）。"""
-        stmt = (
-            select(Booking)
-            .where(Booking.bm_id == bm_id)
-            .order_by(Booking.created_at.desc())
-        )
+        """按 BM 列出预约，同时兜底 Institute 级别的 bm_id/created_by 匹配。"""
+        from app.services.institute_access import managed_institute_filter
+        from app.models.user import User, UserRole
+        from app.models.institute import Institute
+        user = await self.session.get(User, bm_id)
+        if not user:
+            return []
+        stmt = select(Booking).join(Institute, Booking.institute_id == Institute.id, isouter=True)
+        if user.role == UserRole.admin:
+            pass  # 管理员看全部
+        else:
+            scope = managed_institute_filter(user)
+            from sqlalchemy import or_
+            stmt = stmt.where(or_(Booking.bm_id == bm_id, scope))
+        stmt = stmt.order_by(Booking.created_at.desc())
         result = await self.session.scalars(stmt)
-        return list(result)
+        return list(result.unique())
 
     async def get(self, booking_id: int) -> Booking | None:
         return await self.session.get(Booking, booking_id)

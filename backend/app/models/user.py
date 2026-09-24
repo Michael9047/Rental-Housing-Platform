@@ -1,7 +1,7 @@
 """用户模型 - 租客、房东、BD经理、系统管理员"""
 import enum
 
-from sqlalchemy import Enum, String
+from sqlalchemy import Boolean, Date, Enum, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.mixins import TimestampMixin
@@ -30,6 +30,8 @@ class User(TimestampMixin, Base):
     phone: Mapped[str | None] = mapped_column(String(32), unique=True, index=True)
     wechat_openid: Mapped[str | None] = mapped_column(String(128), unique=True, index=True)
     email: Mapped[str | None] = mapped_column(String(255), unique=True, index=True)
+    wechat: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    wechat_qr: Mapped[str | None] = mapped_column(String(500), nullable=True)
     role: Mapped[UserRole] = mapped_column(
         Enum(UserRole, name="user_role"),
         default=UserRole.tenant,

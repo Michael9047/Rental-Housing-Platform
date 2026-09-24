@@ -1,19 +1,20 @@
-"""户型 Pydantic 模式"""
+"""户型 Pydantic 模式（稳定版）"""
 from datetime import date, datetime
 from decimal import Decimal
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class UnitTypeCreate(BaseModel):
     """创建户型"""
     institute_id: int = Field(..., description="所属公寓ID")
     name: str = Field(..., min_length=1, max_length=100)
-    property_type: str | None = Field(default=None, description="户型分类: studio/ensuite/1bed/2bed/3bed/4bed/5bed+/shared")
+    property_type: str = Field(..., min_length=1, description="户型分类: studio/ensuite/1bed/2bed/3bed/4bed/5bed+/shared")
     bedrooms: int = Field(default=0, ge=0, description="卧室数量")
     bathrooms: int = Field(default=1, ge=0, description="卫生间数量")
     hall_count: int = Field(default=0, ge=0, description="厅数量")
     area_sqm: Decimal | None = Field(default=None, gt=0, description="面积(㎡)")
-    base_rent: Decimal = Field(..., ge=0, description="标准月租金")
+    base_rent: Decimal = Field(..., ge=0, description="标准租金")
+    rent_period: str | None = Field(default=None, description="租金周期: monthly/weekly")
     deposit_amount: int | None = Field(default=None, description="押金")
     deposit_type: str | None = Field(default=None, description="押金类型")
     lease_start: str | None = Field(default=None, description="起租时间(自由文本)")
@@ -31,6 +32,12 @@ class UnitTypeCreate(BaseModel):
     available_count: int = Field(default=1, ge=0, description="剩余可租套数")
     status: str = Field(default="available")
 
+    @model_validator(mode="after")
+    def validate_inventory(self):
+        if self.available_count > self.total_count:
+            raise ValueError("可租套数不能大于总套数")
+        return self
+
 
 class UnitTypeUpdate(BaseModel):
     """更新户型 — 所有字段可选"""
@@ -40,12 +47,18 @@ class UnitTypeUpdate(BaseModel):
     bedrooms: int | None = Field(default=None, ge=0)
     bathrooms: int | None = Field(default=None, ge=0)
     hall_count: int | None = Field(default=None, ge=0)
-    area_sqm: Decimal | None = Field(default=None, gt=0)
-    base_rent: Decimal | None = Field(default=None, ge=0)
-    deposit_amount: int | None = None
+    area_sqm: float | None = Field(default=None, gt=0)
+    base_rent: float | None = Field(default=None, ge=0)
+    rent_period: str | None = Field(default=None, description="租金周期: monthly/weekly")
+    deposit_amount: float | None = None
     deposit_type: str | None = None
     lease_start: str | None = None
+    lease_start_date: date | None = None
     lease_end: str | None = None
+    lease_end_date: date | None = None
+    rental_requirements: str | None = None
+    currency: str | None = None
+    special_offer: str | None = None
     floor_pricing: list[dict] | None = None
     amenities: list[str] | None = None
     image_urls: list[str] | None = None
@@ -56,8 +69,12 @@ class UnitTypeUpdate(BaseModel):
     total_count: int | None = Field(default=None, ge=0)
     available_count: int | None = Field(default=None, ge=0)
     status: str | None = None
-    currency: str | None = None
-    special_offer: str | None = None
+
+    @model_validator(mode="after")
+    def validate_inventory(self):
+        if self.total_count is not None and self.available_count is not None and self.available_count > self.total_count:
+            raise ValueError("可租套数不能大于总套数")
+        return self
 
 
 class UnitTypeRead(BaseModel):
@@ -72,15 +89,17 @@ class UnitTypeRead(BaseModel):
     bedrooms: int
     bathrooms: int
     hall_count: int
-    area_sqm: Decimal | None = None
-    base_rent: Decimal
-    deposit_amount: int | None = None
+    area_sqm: float | None = None
+    base_rent: float
+    deposit_amount: float | None = None
     deposit_type: str | None = None
     lease_start: str | None = None
-    lease_end: str | None = None
     lease_start_date: date | None = None
+    lease_end: str | None = None
     lease_end_date: date | None = None
+    rental_requirements: str | None = None
     currency: str | None = None
+    rent_period: str = "monthly"
     special_offer: str | None = None
     floor_pricing: list[dict] | None = None
     amenities: list[str] | None = None
@@ -92,6 +111,9 @@ class UnitTypeRead(BaseModel):
     total_count: int = 1
     available_count: int = 1
     status: str
+    room_count: int = 0
+    rented_count: int = 0
+    images: list[dict] | None = None
     deleted_at: datetime | None = None
     created_at: datetime
     updated_at: datetime

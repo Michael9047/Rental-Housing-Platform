@@ -97,7 +97,7 @@ import { ref, nextTick, onMounted, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Plus, Headset, Loading, UserFilled } from '@element-plus/icons-vue'
 import { chatService } from '@/services/chat'
-import api from '@/services/api'
+import api, { toUserFriendly } from '@/services/api'
 import type { ChatSession, ChatMessage } from '@/types/chat'
 
 // ── 状态 ──
@@ -254,7 +254,7 @@ async function handleSend() {
       }
     }
   } catch (e: any) {
-    ElMessage.error('消息发送失败：' + (e.message || '网络异常'))
+    ElMessage.error(toUserFriendly(e))
     streamingText.value = ''
   }
 

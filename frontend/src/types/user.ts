@@ -21,3 +21,11 @@ export interface UserProfileUpdate {
   phone?: string
   email?: string
 }
+
+export interface AdminUserCreateInput {
+  username: string
+  password: string
+  email?: string
+  phone?: string
+  role: Exclude<UserRole, 'bd_manager'>
+}
